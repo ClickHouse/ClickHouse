@@ -1,3 +1,8 @@
+if (NOT ENABLE_KAFKA)
+    message(STATUS "Not using kafka")
+    return()
+endif()
+
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/cppkafka")
 
 set(SRCS
@@ -22,12 +27,13 @@ set(SRCS
     "${LIBRARY_DIR}/src/topic.cpp"
 )
 
-add_library(cppkafka ${SRCS})
+add_library(_cppkafka ${SRCS})
+add_library(ch_contrib::cppkafka ALIAS _cppkafka)
 
-target_link_libraries(cppkafka
+target_link_libraries(_cppkafka
     PRIVATE
-        ${RDKAFKA_LIBRARY}
+        ch_contrib::rdkafka
         boost::headers_only
 )
-target_include_directories(cppkafka PRIVATE "${LIBRARY_DIR}/include/cppkafka")
-target_include_directories(cppkafka SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")
+target_include_directories(_cppkafka PRIVATE "${LIBRARY_DIR}/include/cppkafka")
+target_include_directories(_cppkafka SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")

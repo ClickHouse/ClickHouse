@@ -1,7 +1,7 @@
-<yandex>
+<clickhouse>
     <users>
         <default>
             <quota>myQuota</quota>
         </default>
     </users>
-</yandex>
+</clickhouse>

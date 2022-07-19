@@ -13,34 +13,34 @@ namespace ErrorCodes
 
 void RowPolicy::setDatabase(const String & database)
 {
-    name_parts.database = database;
-    IAccessEntity::setName(name_parts.getName());
+    full_name.database = database;
+    IAccessEntity::setName(full_name.toString());
 }
 
 void RowPolicy::setTableName(const String & table_name)
 {
-    name_parts.table_name = table_name;
-    IAccessEntity::setName(name_parts.getName());
+    full_name.table_name = table_name;
+    IAccessEntity::setName(full_name.toString());
 }
 
 void RowPolicy::setShortName(const String & short_name)
 {
-    name_parts.short_name = short_name;
-    IAccessEntity::setName(name_parts.getName());
+    full_name.short_name = short_name;
+    IAccessEntity::setName(full_name.toString());
 }
 
-void RowPolicy::setNameParts(const String & short_name, const String & database, const String & table_name)
+void RowPolicy::setFullName(const String & short_name, const String & database, const String & table_name)
 {
-    name_parts.short_name = short_name;
-    name_parts.database = database;
-    name_parts.table_name = table_name;
-    IAccessEntity::setName(name_parts.getName());
+    full_name.short_name = short_name;
+    full_name.database = database;
+    full_name.table_name = table_name;
+    IAccessEntity::setName(full_name.toString());
 }
 
-void RowPolicy::setNameParts(const NameParts & name_parts_)
+void RowPolicy::setFullName(const RowPolicyName & full_name_)
 {
-    name_parts = name_parts_;
-    IAccessEntity::setName(name_parts.getName());
+    full_name = full_name_;
+    IAccessEntity::setName(full_name.toString());
 }
 
 void RowPolicy::setName(const String &)
@@ -54,8 +54,18 @@ bool RowPolicy::equal(const IAccessEntity & other) const
     if (!IAccessEntity::equal(other))
         return false;
     const auto & other_policy = typeid_cast<const RowPolicy &>(other);
-    return (name_parts == other_policy.name_parts) && boost::range::equal(conditions, other_policy.conditions)
+    return (full_name == other_policy.full_name) && boost::range::equal(filters, other_policy.filters)
         && restrictive == other_policy.restrictive && (to_roles == other_policy.to_roles);
+}
+
+std::vector<UUID> RowPolicy::findDependencies() const
+{
+    return to_roles.findDependencies();
+}
+
+void RowPolicy::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+{
+    to_roles.replaceDependencies(old_to_new_ids);
 }
 
 }

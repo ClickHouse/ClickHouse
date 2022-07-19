@@ -21,7 +21,7 @@ void GTIDSet::tryMerge(size_t i)
     intervals.erase(intervals.begin() + i + 1, intervals.begin() + i + 1 + 1);
 }
 
-void GTIDSets::parse(const String gtid_format)
+void GTIDSets::parse(String gtid_format)
 {
     if (gtid_format.empty())
     {
@@ -41,7 +41,7 @@ void GTIDSets::parse(const String gtid_format)
         GTIDSet set;
         set.uuid = DB::parse<UUID>(server_ids[0]);
 
-        for (size_t k = 1; k < server_ids.size(); k++)
+        for (size_t k = 1; k < server_ids.size(); ++k)
         {
             std::vector<String> inters;
             boost::split(inters, server_ids[k], [](char c) { return c == '-'; });
@@ -74,7 +74,7 @@ void GTIDSets::update(const GTID & other)
     {
         if (set.uuid == other.uuid)
         {
-            for (auto i = 0U; i < set.intervals.size(); i++)
+            for (auto i = 0U; i < set.intervals.size(); ++i)
             {
                 auto & current = set.intervals[i];
 
@@ -134,7 +134,7 @@ String GTIDSets::toString() const
 {
     WriteBufferFromOwnString buffer;
 
-    for (size_t i = 0; i < sets.size(); i++)
+    for (size_t i = 0; i < sets.size(); ++i)
     {
         GTIDSet set = sets[i];
         writeUUIDText(set.uuid, buffer);

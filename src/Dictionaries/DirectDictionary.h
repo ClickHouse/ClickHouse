@@ -3,15 +3,12 @@
 #include <atomic>
 #include <variant>
 #include <vector>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Common/Arena.h>
-#include <Core/Block.h>
-#include <Common/HashTable/HashMap.h>
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
+
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
+
 
 namespace DB
 {
@@ -20,8 +17,7 @@ template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
 public:
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by direct dictionary");
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     DirectDictionary(
         const StorageID & dict_id_,
@@ -30,7 +26,7 @@ public:
 
     std::string getTypeName() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return "Direct";
         else
             return "ComplexKeyDirect";
@@ -59,7 +55,7 @@ public:
         return std::make_shared<DirectDictionary>(getDictionaryID(), dict_struct, source_ptr->clone());
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -97,10 +93,10 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
-    BlockInputStreamPtr getSourceBlockInputStream(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    Pipe getSourcePipe(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -110,7 +106,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 };
 
-extern template class DirectDictionary<DictionaryKeyType::simple>;
-extern template class DirectDictionary<DictionaryKeyType::complex>;
+extern template class DirectDictionary<DictionaryKeyType::Simple>;
+extern template class DirectDictionary<DictionaryKeyType::Complex>;
 
 }

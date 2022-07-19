@@ -28,7 +28,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         MutableColumns && columns_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr) override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }

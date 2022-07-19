@@ -2,7 +2,7 @@
 
 #include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
 namespace DB
@@ -28,13 +28,16 @@ public:
         GRPC = 3,
         MYSQL = 4,
         POSTGRESQL = 5,
+        LOCAL = 6,
+        TCP_INTERSERVER = 7,
     };
 
     enum class HTTPMethod : uint8_t
     {
         UNKNOWN = 0,
-        GET = 1,
-        POST = 2,
+        GET     = 1,
+        POST    = 2,
+        OPTIONS = 3
     };
 
     enum class QueryKind : uint8_t
@@ -52,11 +55,6 @@ public:
     String current_query_id;
     Poco::Net::SocketAddress current_address;
 
-#if defined(ARCADIA_BUILD)
-    /// This field is only used in foreign "Arcadia" build.
-    String current_password;
-#endif
-
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
@@ -71,6 +69,7 @@ public:
     /// All below are parameters related to initial query.
 
     Interface interface = Interface::TCP;
+    bool is_secure = false;
 
     /// For tcp
     String os_user;
@@ -81,12 +80,20 @@ public:
     UInt64 client_version_patch = 0;
     unsigned client_tcp_protocol_version = 0;
 
+    /// In case of distributed query, client info for query is actually a client info of client.
+    /// In order to get a version of server-initiator, use connection_ values.
+    /// Also for tcp only.
+    UInt64 connection_client_version_major = 0;
+    UInt64 connection_client_version_minor = 0;
+    UInt64 connection_client_version_patch = 0;
+    unsigned connection_tcp_protocol_version = 0;
+
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
 
-    /// For mysql
+    /// For mysql and postgresql
     UInt64 connection_id = 0;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
@@ -100,14 +107,21 @@ public:
 
     UInt64 distributed_depth = 0;
 
+    bool is_replicated_database_internal = false;
+
+    /// For parallel processing on replicas
+    bool collaborate_with_initiator{false};
+    UInt64 count_participating_replicas{0};
+    UInt64 number_of_current_replica{0};
+
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
     /** Serialization and deserialization.
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    void write(WriteBuffer & out, const UInt64 server_protocol_revision) const;
-    void read(ReadBuffer & in, const UInt64 client_protocol_revision);
+    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
+    void read(ReadBuffer & in, UInt64 client_protocol_revision);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();

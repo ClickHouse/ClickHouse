@@ -5,9 +5,14 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc99-extensions"
+#endif
 
 namespace DB
 {
@@ -79,14 +84,6 @@ private:
 class ParserUnionList : public IParserBase
 {
 public:
-    ParserUnionList(ParserPtr && elem_parser_, ParserPtr && s_union_parser_, ParserPtr && s_all_parser_, ParserPtr && s_distinct_parser_)
-        : elem_parser(std::move(elem_parser_))
-        , s_union_parser(std::move(s_union_parser_))
-        , s_all_parser(std::move(s_all_parser_))
-        , s_distinct_parser(std::move(s_distinct_parser_))
-    {
-    }
-
     template <typename ElemFunc, typename SepFunc>
     static bool parseUtil(Pos & pos, const ElemFunc & parse_element, const SepFunc & parse_separator)
     {
@@ -116,11 +113,7 @@ protected:
     const char * getName() const override { return "list of union elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 private:
-    ParserPtr elem_parser;
-    ParserPtr s_union_parser;
-    ParserPtr s_all_parser;
-    ParserPtr s_distinct_parser;
-    ASTSelectWithUnionQuery::UnionModes union_modes;
+    SelectUnionModes union_modes;
 };
 
 /** An expression with an infix binary left-associative operator.
@@ -133,6 +126,8 @@ private:
     Operators_t overlapping_operators_to_skip = { (const char *[]){ nullptr } };
     ParserPtr first_elem_parser;
     ParserPtr remaining_elem_parser;
+    /// =, !=, <, > ALL (subquery) / ANY (subquery)
+    bool comparison_expression = false;
 
 public:
     /** `operators_` - allowed operators and their corresponding functions
@@ -142,8 +137,10 @@ public:
     {
     }
 
-    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_, Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_)
-        : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_), first_elem_parser(std::move(first_elem_parser_))
+    ParserLeftAssociativeBinaryOperatorList(Operators_t operators_,
+            Operators_t overlapping_operators_to_skip_, ParserPtr && first_elem_parser_, bool comparison_expression_ = false)
+        : operators(operators_), overlapping_operators_to_skip(overlapping_operators_to_skip_),
+          first_elem_parser(std::move(first_elem_parser_)), comparison_expression(comparison_expression_)
     {
     }
 
@@ -212,7 +209,13 @@ protected:
 class ParserCastExpression : public IParserBase
 {
 private:
-    ParserExpressionElement elem_parser;
+    ParserPtr elem_parser;
+
+public:
+    explicit ParserCastExpression(ParserPtr && elem_parser_)
+        : elem_parser(std::move(elem_parser_))
+    {
+    }
 
 protected:
     const char * getName() const override { return "CAST expression"; }
@@ -249,7 +252,7 @@ class ParserUnaryExpression : public IParserBase
 {
 private:
     static const char * operators[];
-    ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserTupleElementExpression>()};
+    ParserPrefixUnaryOperatorExpression operator_parser {operators, std::make_unique<ParserCastExpression>(std::make_unique<ParserTupleElementExpression>())};
 
 protected:
     const char * getName() const override { return "unary expression"; }
@@ -353,7 +356,8 @@ class ParserComparisonExpression : public IParserBase
 private:
     static const char * operators[];
     static const char * overlapping_operators_to_skip[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>()};
+    ParserLeftAssociativeBinaryOperatorList operator_parser {operators,
+        overlapping_operators_to_skip, std::make_unique<ParserBetweenExpression>(), true};
 
 protected:
     const char * getName() const  override{ return "comparison expression"; }
@@ -363,7 +367,6 @@ protected:
         return operator_parser.parse(pos, node, expected);
     }
 };
-
 
 /** Parser for nullity checking with IS (NOT) NULL.
   */
@@ -519,6 +522,26 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserGroupingSetsExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "grouping sets expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserGroupingSetsExpressionListElements : public IParserBase
+{
+protected:
+    const char * getName() const override { return "grouping sets expression elements"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserInterpolateExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "interpolate expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /// Parser for key-value pair, where value can be list of pairs.
 class ParserKeyValuePair : public IParserBase
@@ -546,3 +569,7 @@ protected:
 };
 
 }
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif

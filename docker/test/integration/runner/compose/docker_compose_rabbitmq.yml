@@ -2,7 +2,7 @@ version: '2.3'
 
 services:
     rabbitmq1:
-        image: rabbitmq:3-management-alpine
+        image: rabbitmq:3.8-management-alpine
         hostname: rabbitmq1
         expose:
             - ${RABBITMQ_PORT}

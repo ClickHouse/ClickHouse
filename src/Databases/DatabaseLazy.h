@@ -26,9 +26,7 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
-    void loadStoredObjects(
-        ContextMutablePtr context,
-        bool has_force_restore_data_flag, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
 
     void createTable(
         ContextPtr context,
@@ -39,7 +37,7 @@ public:
     void dropTable(
         ContextPtr context,
         const String & table_name,
-        bool no_delay) override;
+        bool sync) override;
 
     void renameTable(
         ContextPtr context,
@@ -64,11 +62,11 @@ public:
 
     bool empty() const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
-    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
-    StoragePtr detachTable(const String & table_name) override;
+    StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void shutdown() override;
 
@@ -104,8 +102,8 @@ private:
     const time_t expiration_time;
 
     /// TODO use DatabaseWithOwnTablesBase::tables
-    mutable TablesCache tables_cache;
-    mutable CacheExpirationQueue cache_expiration_queue;
+    mutable TablesCache tables_cache TSA_GUARDED_BY(mutex);
+    mutable CacheExpirationQueue cache_expiration_queue TSA_GUARDED_BY(mutex);
 
     StoragePtr loadTable(const String & table_name) const;
 
@@ -119,7 +117,7 @@ class DatabaseLazyIterator final : public IDatabaseTablesIterator
 {
 public:
     DatabaseLazyIterator(
-        DatabaseLazy & database_,
+        const DatabaseLazy & database_,
         Strings && table_names_);
 
     void next() override;

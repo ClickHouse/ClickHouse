@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database, no-parallel
+-- Tag no-replicated-database: Does not support renaming of multiple tables in single query
+
 RENAME TABLE test.hits TO test.visits_tmp, test.visits TO test.hits, test.visits_tmp TO test.visits;
 
 SELECT sum(Sign) FROM test.hits WHERE CounterID = 912887;

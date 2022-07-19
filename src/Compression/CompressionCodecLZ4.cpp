@@ -62,6 +62,7 @@ private:
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
 }
@@ -93,7 +94,10 @@ UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_si
 
 void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
+    bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
+
+    if (!success)
+        throw Exception("Cannot decompress", ErrorCodes::CANNOT_DECOMPRESS);
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
@@ -141,6 +145,12 @@ CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     : level(level_)
 {
     setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
+}
+
+
+CompressionCodecPtr getCompressionCodecLZ4(int level)
+{
+    return std::make_shared<CompressionCodecLZ4HC>(level);
 }
 
 }

@@ -1,10 +1,8 @@
 ---
-toc_folder_title: Development
-toc_hidden: true
-toc_priority: 58
-toc_title: hidden
+sidebar_label: Development
+sidebar_position: 58
 ---
 
-# ClickHouse Development {#clickhouse-development}
+# ClickHouse Development
 
-[Original article](https://clickhouse.tech/docs/en/development/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/development/) <!--hide-->

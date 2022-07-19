@@ -45,7 +45,7 @@ namespace DB
   * Remove specified parameter from URL.
   *  cutURLParameter(URL, name)
   *
-  * Get array of URL 'hierarchy' as in Yandex.Metrica tree-like reports. See docs.
+  * Get array of URL 'hierarchy' as in web-analytics tree-like reports. See the docs.
   *  URLHierarchy(URL)
   */
 

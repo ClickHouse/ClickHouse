@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Formats/Impl/ConstantExpressionTemplate.h>
 
 namespace DB
@@ -32,13 +33,17 @@ public:
     String getName() const override { return "ValuesBlockInputFormat"; }
 
     void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
 
     /// TODO: remove context somehow.
-    void setContext(ContextPtr context_) { context = Context::createCopy(context_); }
+    void setContext(ContextPtr & context_) { context = Context::createCopy(context_); }
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
 private:
+    ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
+                           const FormatSettings & format_settings_);
+
     enum class ParserType
     {
         Streaming,
@@ -64,9 +69,7 @@ private:
     void readPrefix();
     void readSuffix();
 
-    bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
-
-    PeekableReadBuffer buf;
+    std::unique_ptr<PeekableReadBuffer> buf;
 
     const RowInputFormatParams params;
 
@@ -89,6 +92,21 @@ private:
     Serializations serializations;
 
     BlockMissingValues block_missing_values;
+};
+
+class ValuesSchemaReader : public IRowSchemaReader
+{
+public:
+    ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
+
+private:
+    DataTypes readRowAndGetDataTypes() override;
+
+    PeekableReadBuffer buf;
+    const FormatSettings format_settings;
+    ParserExpression parser;
+    bool first_row = true;
+    bool end_of_data = false;
 };
 
 }

@@ -1,9 +1,9 @@
 ---
-toc_priority: 37
-toc_title: VersionedCollapsingMergeTree
+sidebar_position: 80
+sidebar_label:  VersionedCollapsingMergeTree
 ---
 
-# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
+# VersionedCollapsingMergeTree
 
 This engine:
 
@@ -31,21 +31,25 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
 
-**Engine Parameters**
+### Engine Parameters
 
 ``` sql
 VersionedCollapsingMergeTree(sign, version)
 ```
 
--   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+#### sign
+
+`sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
     The column data type should be `Int8`.
 
--   `version` — Name of the column with the version of the object state.
+#### version
+
+`version` — Name of the column with the version of the object state.
 
     The column data type should be `UInt*`.
 
-**Query Clauses**
+### Query Clauses
 
 When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 
@@ -53,8 +57,9 @@ When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../.
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects. If possible, switch the old projects to the method described above.
+:::warning
+Do not use this method in new projects. If possible, switch old projects to the method described above.
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -233,4 +238,4 @@ SELECT * FROM UAct FINAL
 
 This is a very inefficient way to select data. Don’t use it for large tables.
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

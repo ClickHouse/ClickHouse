@@ -1,8 +1,8 @@
 #include "parseIdentifierOrStringLiteral.h"
 
-#include "ExpressionElementParsers.h"
-#include "ASTLiteral.h"
-#include "ASTIdentifier.h"
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Common/typeid_cast.h>

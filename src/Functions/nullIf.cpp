@@ -37,6 +37,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -60,7 +61,7 @@ public:
         auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
         auto if_res = func_if->execute(if_columns, result_type, input_rows_count);
 
-        return makeNullable(std::move(if_res));
+        return makeNullable(if_res);
     }
 };
 

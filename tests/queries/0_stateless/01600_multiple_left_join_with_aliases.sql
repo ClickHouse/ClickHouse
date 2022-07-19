@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 drop database if exists test_01600;
 create database test_01600;
 

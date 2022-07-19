@@ -1,4 +1,4 @@
-# system.row_policies {#system_tables-row_policies}
+# row_policies
 
 Contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 
@@ -13,7 +13,7 @@ Columns:
 
 -    `id` ([UUID](../../sql-reference/data-types/uuid.md)) — Row policy ID.
 
--    `storage` ([String](../../sql-reference/data-types/string.md)) — Name of the directory where the row policy is stored. 
+-    `storage` ([String](../../sql-reference/data-types/string.md)) — Name of the directory where the row policy is stored.
 
 -    `select_filter` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Condition which is used to filter rows.
 
@@ -31,4 +31,4 @@ Columns:
 
 -   [SHOW POLICIES](../../sql-reference/statements/show.md#show-policies-statement)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/row_policies) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/row_policies) <!--hide-->

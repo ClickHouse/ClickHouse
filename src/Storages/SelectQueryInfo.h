@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
 
@@ -39,10 +41,14 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
+struct MergeTreeDataSelectAnalysisResult;
+using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
+
+struct SubqueryForSet;
+using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+
 struct PrewhereInfo
 {
-    /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ActionsDAGPtr alias_actions;
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
     ActionsDAGPtr row_level_filter;
@@ -81,18 +87,22 @@ struct FilterDAGInfo
 
 struct InputOrderInfo
 {
+    SortDescription order_key_fixed_prefix_descr;
     SortDescription order_key_prefix_descr;
     int direction;
+    UInt64 limit;
 
-    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
-
-    bool operator ==(const InputOrderInfo & other) const
+    InputOrderInfo(
+        const SortDescription & order_key_fixed_prefix_descr_,
+        const SortDescription & order_key_prefix_descr_,
+        int direction_, UInt64 limit_)
+        : order_key_fixed_prefix_descr(order_key_fixed_prefix_descr_)
+        , order_key_prefix_descr(order_key_prefix_descr_)
+        , direction(direction_), limit(limit_)
     {
-        return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
     }
 
-    bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
+    bool operator==(const InputOrderInfo &) const = default;
 };
 
 class IMergeTreeDataPart;
@@ -102,7 +112,7 @@ using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
-    const ProjectionDescription * desc{};
+    ProjectionDescriptionRawPtr desc{};
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
     String where_column_name;
@@ -117,16 +127,22 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
+    SortDescription group_by_elements_order_descr;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
 
 /** Query along with some additional data,
   *  that can be used during query processing
   *  inside storage engines.
   */
-struct SelectQueryInfo
+struct SelectQueryInfoBase
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
+    ASTPtr original_query; /// Unmodified query for projection analysis
+
+    std::shared_ptr<const StorageLimitsList> storage_limits;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -157,6 +173,20 @@ struct SelectQueryInfo
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
     bool is_projection_query = false;
+    bool merge_tree_empty_result = false;
+    bool settings_limit_offset_done = false;
+    Block minmax_count_projection_block;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+};
+
+/// Contains non-copyable stuff
+struct SelectQueryInfo : SelectQueryInfoBase
+{
+    SelectQueryInfo() = default;
+    SelectQueryInfo(const SelectQueryInfo & other) : SelectQueryInfoBase(other) {}
+
+    /// Make subquery_for_sets reusable across different interpreters.
+    SubqueriesForSets subquery_for_sets;
 };
 
 }

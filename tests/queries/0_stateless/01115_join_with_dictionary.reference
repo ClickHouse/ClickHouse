@@ -16,6 +16,12 @@ flat: any left
 2	2	2	2
 3	3	3	3
 4	0		0
+flat: any left + any_join_distinct_right_table_keys
+0	0	0	0
+1	1	1	1
+2	2	2	2
+3	3	3	3
+4	0		0
 flat: semi left
 0	0	0	0
 1	1	1	1
@@ -31,6 +37,11 @@ flat: inner on
 1	1	1	1	1
 2	2	2	2	2
 3	3	3	3	3
+flat: inner or
+0	0	0	0	0
+1000	1	1	1	1
+2	2	2	2	2
+3000	3	3	3	3
 hashed: left on
 0	0	0	0	0
 1	1	1	1	1

@@ -1,9 +1,10 @@
 ---
-toc_priority: 68
-toc_title: C++ Guide
+sidebar_position: 69
+sidebar_label: C++ Guide
+description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
 
-# How to Write C++ Code {#how-to-write-c-code}
+# How to Write C++ Code
 
 ## General Recommendations {#general-recommendations}
 
@@ -195,7 +196,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 The same is true for small methods in any classes or structs.
 
-For templated classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+For template classes and structs, do not separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
 
 **31.** You can wrap lines at 140 characters, instead of 80.
 
@@ -284,7 +285,7 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 /// WHAT THE FAIL???
 ```
 
-**14.** Do not use comments to make delimeters.
+**14.** Do not use comments to make delimiters.
 
 ``` cpp
 ///******************************************************
@@ -322,7 +323,7 @@ std::string getName() const override { return "Memory"; }
 class StorageMemory : public IStorage
 ```
 
-**4.** `using` are named the same way as classes, or with `_t` on the end.
+**4.** `using` are named the same way as classes.
 
 **5.** Names of template type arguments: in simple cases, use `T`; `T`, `U`; `T1`, `T2`.
 
@@ -404,9 +405,9 @@ enum class CompressionMethod
 };
 ```
 
-**15.** All names must be in English. Transliteration of Russian words is not allowed.
+**15.** All names must be in English. Transliteration of Hebrew words is not allowed.
 
-    not Stroka
+    not T_PAAMAYIM_NEKUDOTAYIM
 
 **16.** Abbreviations are acceptable if they are well known (when you can easily find the meaning of the abbreviation in Wikipedia or in a search engine).
 
@@ -490,7 +491,7 @@ if (0 != close(fd))
     throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
 
-`Do not use assert`.
+You can use assert to check invariant in code.
 
 **4.** Exception types.
 
@@ -551,9 +552,9 @@ Do not try to implement lock-free data structures unless it is your primary area
 
 In most cases, prefer references.
 
-**10.** const.
+**10.** `const`.
 
-Use constant references, pointers to constants, `const_iterator`, and const methods.
+Use constant references, pointers to constants, `const_iterator`, and `const` methods.
 
 Consider `const` to be default and use non-`const` only when necessary.
 
@@ -571,7 +572,7 @@ Don’t use these types for numbers: `signed/unsigned long`, `long long`, `short
 
 **13.** Passing arguments.
 
-Pass complex values by reference (including `std::string`).
+Pass complex values by value if they are going to be moved and use std::move; pass by reference if you want to update value in a loop.
 
 If a function captures ownership of an object created in the heap, make the argument type `shared_ptr` or `unique_ptr`.
 
@@ -581,7 +582,7 @@ In most cases, just use `return`. Do not write `return std::move(res)`.
 
 If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
 
-In rare cases you might need to return the value via an argument. In this case, the argument should be a reference.
+In rare cases (updating a value in a loop) you might need to return the value via an argument. In this case, the argument should be a reference.
 
 ``` cpp
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
@@ -595,7 +596,7 @@ public:
     AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
 ```
 
-**15.** namespace.
+**15.** `namespace`.
 
 There is no need to use a separate `namespace` for application code.
 
@@ -605,7 +606,7 @@ For medium to large libraries, put everything in a `namespace`.
 
 In the library’s `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
 
-In a `.cpp` file, you can use a `static` or anonymous namespace to hide symbols.
+In a `.cpp` file, you can use a `static` or anonymous `namespace` to hide symbols.
 
 Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it’s better to use an `enum class`).
 
@@ -693,6 +694,49 @@ auto s = std::string{"Hello"};
 
 **2.** Exception specifiers from C++03 are not used.
 
+**3.** Constructs which have convenient syntactic sugar in modern C++, e.g.
+
+```
+// Traditional way without syntactic sugar
+template <typename G, typename = std::enable_if_t<std::is_same<G, F>::value, void>> // SFINAE via std::enable_if, usage of ::value
+std::pair<int, int> func(const E<G> & e) // explicitly specified return type
+{
+    if (elements.count(e)) // .count() membership test
+    {
+        // ...
+    }
+
+    elements.erase(
+        std::remove_if(
+            elements.begin(), elements.end(),
+            [&](const auto x){
+                return x == 1;
+            }),
+        elements.end()); // remove-erase idiom
+
+    return std::make_pair(1, 2); // create pair via make_pair()
+}
+
+// With syntactic sugar (C++14/17/20)
+template <typename G>
+requires std::same_v<G, F> // SFINAE via C++20 concept, usage of C++14 template alias
+auto func(const E<G> & e) // auto return type (C++14)
+{
+    if (elements.contains(e)) // C++20 .contains membership test
+    {
+        // ...
+    }
+
+    elements.erase_if(
+        elements,
+        [&](const auto x){
+            return x == 1;
+        }); // C++20 std::erase_if
+
+    return {1, 2}; // or: return std::pair(1, 2); // create pair via initialization list or value initialization (C++17)
+}
+```
+
 ## Platform {#platform}
 
 **1.** We write code for a specific platform.
@@ -749,7 +793,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse.
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](contrib.md#adding-third-party-libraries) for details.
 
 **3.** Preference is always given to libraries that are already in use.
 
@@ -828,4 +872,4 @@ function(
       size_t limit)
 ```
 
-[Original article](https://clickhouse.tech/docs/en/development/style/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/development/style/) <!--hide-->

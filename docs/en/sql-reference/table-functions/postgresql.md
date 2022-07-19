@@ -1,9 +1,9 @@
 ---
-toc_priority: 42
-toc_title: postgresql
+sidebar_position: 42
+sidebar_label: postgresql
 ---
 
-# postgresql {#postgresql}
+# postgresql
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server.
 
@@ -26,10 +26,11 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 
 A table object with the same columns as the original PostgreSQL table.
 
-!!! info "Note"
-    In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
+:::note    
+In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
+:::
 
-## Implementation Details {#implementation-details}
+## Implementation Details
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
@@ -41,9 +42,10 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL Array types converts into ClickHouse arrays.
 
-!!! info "Note"
-    Be careful, in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
-	
+:::note    
+Be careful, in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
+:::
+
 Supports multiple replicas that must be listed by `|`. For example:
 
 ```sql
@@ -129,4 +131,4 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
 -   [Using PostgreSQL as a source of external dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/postgresql/) <!--hide-->

@@ -3,10 +3,10 @@
 #include <string>
 #include <Columns/IColumn.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Poco/Timespan.h>
-#include <Common/Stopwatch.h>
 
+class Stopwatch;
 
 namespace DB
 {

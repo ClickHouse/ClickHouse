@@ -25,8 +25,14 @@
 │ Counter │                   0 │                 1 │                 1 │                  0 │
 └─────────┴─────────────────────┴───────────────────┴───────────────────┴────────────────────┘
 Check total_bytes/total_rows for TinyLog
-\N	\N
-\N	\N
+0	0
+27	\N
+Check total_bytes/total_rows for Log
+0	0
+43	1
+Check total_bytes/total_rows for StripeLog
+0	0
+113	1
 Check total_bytes/total_rows for Memory
 0	0
 64	1

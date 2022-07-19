@@ -7,19 +7,18 @@
 #include <Poco/Version.h>
 #include <Poco/Exception.h>
 
+#include <base/defines.h>
 #include <Common/StackTrace.h>
 
 #include <fmt/format.h>
-
-#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
-#define ABORT_ON_LOGICAL_ERROR
-#endif
 
 namespace Poco { class Logger; }
 
 
 namespace DB
 {
+
+void abortOnFailedAssertion(const String & description);
 
 class Exception : public Poco::Exception
 {
@@ -28,17 +27,16 @@ public:
 
     Exception() = default;
     Exception(const std::string & msg, int code, bool remote_ = false);
-    Exception(const std::string & msg, const Exception & nested, int code);
 
     Exception(int code, const std::string & message)
         : Exception(message, code)
     {}
 
     // Format message with fmt::format, like the logging functions.
-    template <typename ...Args>
-    Exception(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
-    {}
+    template <typename... Args>
+    Exception(int code, fmt::format_string<Args...> fmt, Args &&... args) : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
+    {
+    }
 
     struct CreateFromPocoTag {};
     struct CreateFromSTDTag {};
@@ -48,12 +46,12 @@ public:
 
     Exception * clone() const override { return new Exception(*this); }
     void rethrow() const override { throw *this; }
-    const char * name() const throw() override { return "DB::Exception"; }
-    const char * what() const throw() override { return message().data(); }
+    const char * name() const noexcept override { return "DB::Exception"; }
+    const char * what() const noexcept override { return message().data(); }
 
     /// Add something to the existing message.
-    template <typename ...Args>
-    void addMessage(const std::string& format, Args&&... args)
+    template <typename... Args>
+    void addMessage(fmt::format_string<Args...> format, Args &&... args)
     {
         extendedMessage(fmt::format(format, std::forward<Args>(args)...));
     }
@@ -77,11 +75,12 @@ private:
 #endif
     bool remote = false;
 
-    const char * className() const throw() override { return "DB::Exception"; }
+    const char * className() const noexcept override { return "DB::Exception"; }
 };
 
 
 std::string getExceptionStackTraceString(const std::exception & e);
+std::string getExceptionStackTraceString(std::exception_ptr e);
 
 
 /// Contains an additional member `saved_errno`. See the throwFromErrno function.
@@ -95,14 +94,14 @@ public:
     void rethrow() const override { throw *this; }
 
     int getErrno() const { return saved_errno; }
-    const std::optional<std::string> getPath() const { return path; }
+    std::optional<std::string> getPath() const { return path; }
 
 private:
     int saved_errno;
     std::optional<std::string> path;
 
-    const char * name() const throw() override { return "DB::ErrnoException"; }
-    const char * className() const throw() override { return "DB::ErrnoException"; }
+    const char * name() const noexcept override { return "DB::ErrnoException"; }
+    const char * className() const noexcept override { return "DB::ErrnoException"; }
 };
 
 
@@ -116,10 +115,10 @@ public:
     ParsingException(int code, const std::string & message);
 
     // Format message with fmt::format, like the logging functions.
-    template <typename ...Args>
-    ParsingException(int code, const std::string & fmt, Args&&... args)
-        : Exception(fmt::format(fmt, std::forward<Args>(args)...), code)
-    {}
+    template <typename... Args>
+    ParsingException(int code, fmt::format_string<Args...> fmt, Args &&... args) : Exception(code, fmt, std::forward<Args>(args)...)
+    {
+    }
 
 
     std::string displayText() const
@@ -128,15 +127,22 @@ public:
 #endif
     ;
 
-    int getLineNumber() { return line_number_; }
-    void setLineNumber(int line_number) { line_number_ = line_number;}
+    int getLineNumber() const { return line_number; }
+    void setLineNumber(int line_number_) { line_number = line_number_;}
+
+    String getFileName() const { return file_name; }
+    void setFileName(const String & file_name_) { file_name = file_name_; }
+
+    Exception * clone() const override { return new ParsingException(*this); }
+    void rethrow() const override { throw *this; }
 
 private:
-    ssize_t line_number_{-1};
-    mutable std::string formatted_message_;
+    ssize_t line_number{-1};
+    String file_name;
+    mutable std::string formatted_message;
 
-    const char * name() const throw() override { return "DB::ParsingException"; }
-    const char * className() const throw() override { return "DB::ParsingException"; }
+    const char * name() const noexcept override { return "DB::ParsingException"; }
+    const char * className() const noexcept override { return "DB::ParsingException"; }
 };
 
 
@@ -167,7 +173,10 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
+int getExceptionErrorCode(std::exception_ptr e);
 
+/// Returns string containing extra diagnostic info for specific exceptions (like "no space left on device" and "memory limit exceeded")
+std::string getExtraExceptionInfo(const std::exception & e);
 
 /// An execution status of any piece of code, contains return code and optional error
 struct ExecutionStatus
@@ -181,6 +190,8 @@ struct ExecutionStatus
     : code(return_code), message(exception_message) {}
 
     static ExecutionStatus fromCurrentException(const std::string & start_of_message = "");
+
+    static ExecutionStatus fromText(const std::string & data);
 
     std::string serializeText() const;
 
@@ -201,11 +212,12 @@ void rethrowFirstException(const Exceptions & exceptions);
 
 
 template <typename T>
-std::enable_if_t<std::is_pointer_v<T>, T> exception_cast(std::exception_ptr e)
+requires std::is_pointer_v<T>
+T exception_cast(std::exception_ptr e)
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(e);
     }
     catch (std::remove_pointer_t<T> & concrete)
     {

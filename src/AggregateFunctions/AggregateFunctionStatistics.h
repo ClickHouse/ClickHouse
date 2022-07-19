@@ -114,7 +114,7 @@ class AggregateFunctionVariance final
     : public IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>
 {
 public:
-    AggregateFunctionVariance(const DataTypePtr & arg)
+    explicit AggregateFunctionVariance(const DataTypePtr & arg)
         : IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>({arg}, {}) {}
 
     String getName() const override { return Op::name; }
@@ -136,12 +136,12 @@ public:
         this->data(place).mergeWith(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }
@@ -249,7 +249,6 @@ protected:
         readBinary(right_m2, buf);
     }
 
-protected:
     Float64 left_m2 = 0.0;
     Float64 right_m2 = 0.0;
 };
@@ -367,7 +366,7 @@ class AggregateFunctionCovariance final
         AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>
 {
 public:
-    AggregateFunctionCovariance(const DataTypes & args) : IAggregateFunctionDataHelper<
+    explicit AggregateFunctionCovariance(const DataTypes & args) : IAggregateFunctionDataHelper<
         CovarianceData<T, U, Op, compute_marginal_moments>,
         AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>(args, {}) {}
 
@@ -390,12 +389,12 @@ public:
         this->data(place).mergeWith(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

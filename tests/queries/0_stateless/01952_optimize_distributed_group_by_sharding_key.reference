@@ -1,0 +1,75 @@
+-- { echo }
+explain select distinct k1 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- not optimized
+Expression (Projection)
+  Distinct
+    Union
+      Distinct (Preliminary DISTINCT)
+        Expression ((Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))))
+          ReadFromStorage (SystemNumbers)
+      ReadFromRemote (Read from remote replica)
+explain select distinct k1, k2 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- optimized
+Union
+  Expression (Projection)
+    Distinct
+      Distinct (Preliminary DISTINCT)
+        Expression ((Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))))
+          ReadFromStorage (SystemNumbers)
+  ReadFromRemote (Read from remote replica)
+explain select distinct on (k1) k2 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- not optimized
+Expression (Projection)
+  LimitBy
+    Expression (Before LIMIT BY)
+      Union
+        LimitBy
+          Expression ((Before LIMIT BY + (Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY))))))
+            ReadFromStorage (SystemNumbers)
+        ReadFromRemote (Read from remote replica)
+explain select distinct on (k1, k2) v from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)); -- optimized
+Union
+  Expression (Projection)
+    LimitBy
+      Expression ((Before LIMIT BY + (Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY))))))
+        ReadFromStorage (SystemNumbers)
+  ReadFromRemote (Read from remote replica)
+explain select distinct k1 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)) order by v; -- not optimized
+Expression (Projection)
+  Distinct
+    Sorting (Merge sorted streams for ORDER BY, without aggregation)
+      Union
+        Sorting (Sorting for ORDER BY)
+          Distinct (Preliminary DISTINCT)
+            Expression ((Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))))
+              ReadFromStorage (SystemNumbers)
+        ReadFromRemote (Read from remote replica)
+explain select distinct k1, k2 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)) order by v; -- optimized
+Expression (Projection)
+  Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+    Union
+      Distinct
+        Sorting (Sorting for ORDER BY)
+          Distinct (Preliminary DISTINCT)
+            Expression ((Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))))
+              ReadFromStorage (SystemNumbers)
+      ReadFromRemote (Read from remote replica)
+explain select distinct on (k1) k2 from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)) order by v; -- not optimized
+Expression (Projection)
+  LimitBy
+    Expression (Before LIMIT BY)
+      Sorting (Merge sorted streams for ORDER BY, without aggregation)
+        Union
+          LimitBy
+            Expression ((Before LIMIT BY + (Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))) [lifted up part]))
+              Sorting (Sorting for ORDER BY)
+                Expression ((Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))))
+                  ReadFromStorage (SystemNumbers)
+          ReadFromRemote (Read from remote replica)
+explain select distinct on (k1, k2) v from remote('127.{1,2}', view(select 1 k1, 2 k2, 3 v from numbers(2)), cityHash64(k1, k2)) order by v; -- optimized
+Expression (Projection)
+  Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+    Union
+      LimitBy
+        Expression ((Before LIMIT BY + (Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))) [lifted up part]))
+          Sorting (Sorting for ORDER BY)
+            Expression ((Before ORDER BY + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Projection + Before ORDER BY)))))
+              ReadFromStorage (SystemNumbers)
+      ReadFromRemote (Read from remote replica)

@@ -6,14 +6,16 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 
 namespace DB
 {
+
 StoragePtr TableFunctionHDFS::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
-    return StorageHDFS::create(
+    return std::make_shared<StorageHDFS>(
         source,
         StorageID(getDatabaseName(), table_name),
         format_,
@@ -24,12 +26,18 @@ StoragePtr TableFunctionHDFS::getStorage(
         compression_method_);
 }
 
+ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context) const
+{
+    if (structure == "auto")
+        return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
 
-#if USE_HDFS
+    return parseColumnsListFromString(structure, context);
+}
+
 void registerTableFunctionHDFS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHDFS>();
 }
-#endif
+
 }
 #endif

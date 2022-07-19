@@ -1,3 +1,5 @@
 #!/bin/bash
 
-git tag --list | grep -P 'v.+-(stable|lts)' | sort -V | xargs git show --format='%ai' | awk '/^v/ { version = $1 } /^[0-9]+/ { if (version) { date = $1 } } { if (version && date) { print version "\t" date; version = ""; date = ""; } }' | tac
+# refname:strip=2: default tag name when format is not set
+# creatordate is always defined for all tags
+git tag --list 'v*-lts' 'v*-stable' --format='%(refname:short)	%(creatordate:short)' | sort -rV

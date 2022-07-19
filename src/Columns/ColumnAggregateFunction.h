@@ -75,6 +75,9 @@ private:
     /// Source column. Used (holds source from destruction),
     ///  if this column has been constructed from another and uses all or part of its values.
     ColumnPtr src;
+    /// Do not share the source column (`src`) after further modifications (i.e. insertRangeFrom()).
+    /// This may be useful for proper memory tracking, since source column may contain aggregate states.
+    bool force_data_ownership = false;
 
     /// Array of pointers to aggregation states, that are placed in arenas.
     Container data;
@@ -82,30 +85,31 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
+    std::optional<size_t> version;
+
     ColumnAggregateFunction() = default;
 
     /// Create a new column that has another column as a source.
     MutablePtr createView() const;
 
-    /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
-    /// This is needed before inserting new elements, because we must own these elements (to destroy them in destructor),
-    ///  but ownership of different elements cannot be mixed by different columns.
-    void ensureOwnership();
+    explicit ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_);
-
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_,
-                            const ConstArenas & arenas_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_);
+    void set(const AggregateFunctionPtr & func_, size_t version_);
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
+
+    /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
+    /// This is needed before inserting new elements, because we must own these elements (to destroy them in destructor),
+    ///  but ownership of different elements cannot be mixed by different columns.
+    void ensureOwnership() override;
 
     /// Take shared ownership of Arena, that holds memory for states of aggregate functions.
     void addArena(ConstArenaPtr arena_);
@@ -131,6 +135,11 @@ public:
     Field operator[](size_t n) const override;
 
     void get(size_t n, Field & res) const override;
+
+    bool isDefaultAt(size_t) const override
+    {
+        throw Exception("Method isDefaultAt is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     StringRef getDataAt(size_t n) const override;
 
@@ -177,6 +186,8 @@ public:
 
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
+    void expand(const Filter & mask, bool inverted) override;
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -205,8 +216,21 @@ public:
         throw Exception("Method hasEqualValues is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
-    void updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_range) const override;
+    double getRatioOfDefaultRows(double) const override
+    {
+        throw Exception("Method getRatioOfDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
+    {
+        throw Exception("Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, Permutation & res) const override;
+
+    void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
+                        size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
 
     /** More efficient manipulation methods */
     Container & getData()

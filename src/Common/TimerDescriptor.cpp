@@ -6,6 +6,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -27,7 +29,7 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
         throwFromErrno("Cannot set O_NONBLOCK for timer_fd", ErrorCodes::CANNOT_FCNTL);
 }
 
-TimerDescriptor::TimerDescriptor(TimerDescriptor && other) : timer_fd(other.timer_fd)
+TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(other.timer_fd)
 {
     other.timer_fd = -1;
 }
@@ -70,20 +72,29 @@ void TimerDescriptor::drain() const
 
             if (errno != EINTR)
                 throwFromErrno("Cannot drain timer_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+            else
+                LOG_TEST(&Poco::Logger::get("TimerDescriptor"), "EINTR");
         }
     }
 }
 
-void TimerDescriptor::setRelative(Poco::Timespan timespan) const
+void TimerDescriptor::setRelative(uint64_t usec) const
 {
+    static constexpr uint32_t TIMER_PRECISION = 1e6;
+
     itimerspec spec;
     spec.it_interval.tv_nsec = 0;
     spec.it_interval.tv_sec = 0;
-    spec.it_value.tv_sec = timespan.totalSeconds();
-    spec.it_value.tv_nsec = timespan.useconds() * 1000;
+    spec.it_value.tv_sec = usec / TIMER_PRECISION;
+    spec.it_value.tv_nsec = (usec % TIMER_PRECISION) * 1'000;
 
     if (-1 == timerfd_settime(timer_fd, 0 /*relative timer */, &spec, nullptr))
         throwFromErrno("Cannot set time for timer_fd", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+}
+
+void TimerDescriptor::setRelative(Poco::Timespan timespan) const
+{
+    setRelative(timespan.totalMicroseconds());
 }
 
 }

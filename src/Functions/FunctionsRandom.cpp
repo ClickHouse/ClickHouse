@@ -3,7 +3,7 @@
 #include <Functions/VectorExtension.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #if USE_MULTITARGET_CODE
 #  include <x86intrin.h>
 #endif

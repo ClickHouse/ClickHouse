@@ -1,10 +1,10 @@
 ---
-toc_priority: 202
+sidebar_position: 202
 ---
 
-# quantileExact Functions {#quantileexact-functions}
+# quantileExact Functions
 
-## quantileExact {#quantileexact}
+## quantileExact
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -51,7 +51,7 @@ Result:
 └───────────────────────┘
 ```
 
-## quantileExactLow {#quantileexactlow}
+## quantileExactLow
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -109,13 +109,13 @@ Result:
 │                        4 │
 └──────────────────────────┘
 ```
-## quantileExactHigh {#quantileexacthigh}
+## quantileExactHigh
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
 All the passed values are combined into an array, which is then fully sorted, to get the exact value.  The sorting [algorithm's](https://en.cppreference.com/w/cpp/algorithm/sort) complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
 
-The return value depends on the quantile level and the number of elements in the selection, i.e. if the level is 0.5, then the function returns the higher median value for an even number of elements and the middle median value for an odd number of elements. Median is calculated similarly to the [median_high](https://docs.python.org/3/library/statistics.html#statistics.median_high) implementation which is used in python. For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned. 
+The return value depends on the quantile level and the number of elements in the selection, i.e. if the level is 0.5, then the function returns the higher median value for an even number of elements and the middle median value for an odd number of elements. Median is calculated similarly to the [median_high](https://docs.python.org/3/library/statistics.html#statistics.median_high) implementation which is used in python. For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned.
 
 This implementation behaves exactly similar to the current `quantileExact` implementation.
 
@@ -160,7 +160,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## quantileExactExclusive {#quantileexactexclusive}
+## quantileExactExclusive
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -212,9 +212,9 @@ Result:
 └────────────────────────────────┘
 ```
 
-## quantileExactInclusive {#quantileexactinclusive}
+## quantileExactInclusive
 
-Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence. 
+Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
 To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is a number of values that were passed. However, for a small number of values, the function is very effective.
 

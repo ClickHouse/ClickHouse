@@ -7,12 +7,7 @@
           "Node Type": "Expression",
           "Plans": [
             {
-              "Node Type": "SettingQuotaAndLimits",
-              "Plans": [
-                {
-                  "Node Type": "ReadFromStorage"
-                }
-              ]
+              "Node Type": "ReadFromStorage"
             }
           ]
         },
@@ -20,12 +15,7 @@
           "Node Type": "Expression",
           "Plans": [
             {
-              "Node Type": "SettingQuotaAndLimits",
-              "Plans": [
-                {
-                  "Node Type": "ReadFromStorage"
-                }
-              ]
+              "Node Type": "ReadFromStorage"
             }
           ]
         }
@@ -73,8 +63,7 @@
                 "Argument Types": ["UInt64"],
                 "Result Type": "Float64"
               },
-              "Arguments": ["number"],
-              "Argument Positions": [0]
+              "Arguments": ["number"]
             },
             {
               "Name": "sumIf(number, greater(number, 0))",
@@ -83,8 +72,7 @@
                 "Argument Types": ["UInt64", "UInt8"],
                 "Result Type": "UInt64"
               },
-              "Arguments": ["number", "greater(number, 0)"],
-              "Argument Positions": [0, 2]
+              "Arguments": ["number", "greater(number, 0)"]
             }
           ],
 --------
@@ -111,31 +99,3 @@
                 }
               ],
               "Limit": 3,
---
-                  "Sort Description": [
-                    {
-                      "Column": "number",
-                      "Ascending": false,
-                      "With Fill": false
-                    },
-                    {
-                      "Column": "plus(number, 1)",
-                      "Ascending": true,
-                      "With Fill": false
-                    }
-                  ],
-                  "Limit": 3,
---
-                      "Sort Description": [
-                        {
-                          "Column": "number",
-                          "Ascending": false,
-                          "With Fill": false
-                        },
-                        {
-                          "Column": "plus(number, 1)",
-                          "Ascending": true,
-                          "With Fill": false
-                        }
-                      ],
-                      "Limit": 3,

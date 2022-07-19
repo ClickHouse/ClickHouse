@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: distributed, no-parallel, no-fasttest
+# Tag no-fasttest: Checks system.errors
 
 # query finish should not produce any NETWORK_ERROR
 # (NETWORK_ERROR will be in case of connection reset)

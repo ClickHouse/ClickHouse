@@ -1,14 +1,12 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #include <string>
 
 #include <Poco/DOM/Document.h>
 #include "Poco/DOM/AutoPtr.h"
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #if USE_YAML_CPP
 

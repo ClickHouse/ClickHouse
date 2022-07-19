@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
 <dictionary>
     <name>experimental_dict</name>
     <source>
@@ -70,4 +70,4 @@
         </attribute>
     </structure>
 </dictionary>
-</yandex>
+</clickhouse>

@@ -25,7 +25,7 @@
     </substitutions>
 
     <create_query>CREATE TABLE `zz_{type}_{engine}` (x {type}) ENGINE {engine}</create_query>
-    <fill_query>INSERT INTO `zz_{type}_{engine}` SELECT rand() FROM numbers(1000000000)</fill_query>
+    <fill_query>INSERT INTO `zz_{type}_{engine}` SELECT rand() FROM numbers(500000000)</fill_query>
 
     <query>SELECT sum(x) FROM `zz_{type}_{engine}`</query>
 

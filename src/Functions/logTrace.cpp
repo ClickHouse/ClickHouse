@@ -6,7 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -27,6 +27,8 @@ namespace
 
         size_t getNumberOfArguments() const override { return 1; }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (!isString(arguments[0]))
@@ -46,7 +48,7 @@ namespace
                     "First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             static auto * log = &Poco::Logger::get("FunctionLogTrace");
-            LOG_TRACE(log, message);
+            LOG_TRACE(log, fmt::runtime(message));
 
             return DataTypeUInt8().createColumnConst(input_rows_count, 0);
         }

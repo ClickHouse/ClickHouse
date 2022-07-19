@@ -2,12 +2,12 @@
 
 #include <sys/file.h>
 #include <fcntl.h>
-#include <errno.h>
+#include <cerrno>
 
-#include <common/logger_useful.h>
-#include <common/errnoToString.h>
+#include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
-#include <common/LocalDateTime.h>
+#include <Common/LocalDateTime.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>

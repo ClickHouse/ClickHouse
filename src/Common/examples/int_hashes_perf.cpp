@@ -1,3 +1,7 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #if defined (OS_LINUX)
 #   include <sched.h>
 #endif
@@ -12,7 +16,7 @@
 
 static void setAffinity()
 {
-#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__sun)
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD) && !defined(__sun)
     cpu_set_t mask;
     CPU_ZERO(&mask);
     CPU_SET(0, &mask);
@@ -279,7 +283,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 1) test<identity>  (n, data.data(), "0: identity");
     if (!method || method == 2) test<intHash32> (n, data.data(), "1: intHash32");
-#if !defined(__APPLE__) /// The difference in size_t: unsigned long on Linux, unsigned long long on Mac OS.
+#if !defined(OS_DARWIN) /// The difference in size_t: unsigned long on Linux, unsigned long long on Mac OS.
     if (!method || method == 3) test<intHash64> (n, data.data(), "2: intHash64");
 #endif
     if (!method || method == 4) test<hash3>     (n, data.data(), "3: two rounds");

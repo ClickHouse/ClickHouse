@@ -9,13 +9,16 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
 
 namespace DB
 {
@@ -184,7 +187,7 @@ private:
     DataTypes dictionary_attributes_types;
 };
 
-static inline void insertDefaultValuesIntoColumns(
+static inline void insertDefaultValuesIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     size_t row_index)
@@ -203,7 +206,7 @@ static inline void insertDefaultValuesIntoColumns(
 
 /// Deserialize column value and insert it in columns.
 /// Skip unnecessary columns that were not requested from deserialization.
-static inline void deserializeAndInsertIntoColumns(
+static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
     const char * place_for_serialized_columns)
@@ -238,8 +241,7 @@ public:
     using ColumnType =
         std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
             std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-                std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
-                    ColumnVector<DictionaryAttributeType>>>>;
+                ColumnVectorOrDecimal<DictionaryAttributeType>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
@@ -265,7 +267,7 @@ public:
         {
             return ColumnType::create(size);
         }
-        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
+        else if constexpr (is_decimal<DictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);
             auto scale = getDecimalScale(*nested_type);
@@ -378,14 +380,14 @@ template <DictionaryKeyType key_type>
 class DictionaryKeysArenaHolder;
 
 template <>
-class DictionaryKeysArenaHolder<DictionaryKeyType::simple>
+class DictionaryKeysArenaHolder<DictionaryKeyType::Simple>
 {
 public:
     static Arena * getComplexKeyArena() { return nullptr; }
 };
 
 template <>
-class DictionaryKeysArenaHolder<DictionaryKeyType::complex>
+class DictionaryKeysArenaHolder<DictionaryKeyType::Complex>
 {
 public:
 
@@ -400,8 +402,7 @@ template <DictionaryKeyType key_type>
 class DictionaryKeysExtractor
 {
 public:
-    using KeyType = std::conditional_t<key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(key_type != DictionaryKeyType::range, "Range key type is not supported by DictionaryKeysExtractor");
+    using KeyType = std::conditional_t<key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     explicit DictionaryKeysExtractor(const Columns & key_columns_, Arena * complex_key_arena_)
         : key_columns(key_columns_)
@@ -409,9 +410,9 @@ public:
     {
         assert(!key_columns.empty());
 
-        if constexpr (key_type == DictionaryKeyType::simple)
+        if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            key_columns[0] = key_columns[0]->convertToFullColumnIfConst();
+            key_columns[0] = recursiveRemoveSparse(key_columns[0]->convertToFullColumnIfConst());
 
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
@@ -435,7 +436,7 @@ public:
     {
         assert(current_key_index < keys_size);
 
-        if constexpr (key_type == DictionaryKeyType::simple)
+        if constexpr (key_type == DictionaryKeyType::Simple)
         {
             const auto & column_vector = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]);
             const auto & data = column_vector.getData();
@@ -463,7 +464,7 @@ public:
 
     void rollbackCurrentKey() const
     {
-        if constexpr (key_type == DictionaryKeyType::complex)
+        if constexpr (key_type == DictionaryKeyType::Complex)
             complex_key_arena->rollback(current_complex_key.size);
     }
 
@@ -495,18 +496,31 @@ private:
     Arena * complex_key_arena;
 };
 
+/// Deserialize columns from keys array using dictionary structure
+MutableColumns deserializeColumnsFromKeys(
+    const DictionaryStructure & dictionary_structure,
+    const PaddedPODArray<StringRef> & keys,
+    size_t start,
+    size_t end);
+
+/// Deserialize columns with type and name from keys array using dictionary structure
+ColumnsWithTypeAndName deserializeColumnsWithTypeAndNameFromKeys(
+    const DictionaryStructure & dictionary_structure,
+    const PaddedPODArray<StringRef> & keys,
+    size_t start,
+    size_t end);
+
 /** Merge block with blocks from stream. If there are duplicate keys in block they are filtered out.
   * In result block_to_update will be merged with blocks from stream.
   * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
   */
 template <DictionaryKeyType dictionary_key_type>
-void mergeBlockWithStream(
+void mergeBlockWithPipe(
     size_t key_columns_size,
     Block & block_to_update,
-    BlockInputStreamPtr & stream)
+    QueryPipeline pipeline)
 {
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by updatePreviousyLoadedBlockWithStream");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     Columns saved_block_key_columns;
     saved_block_key_columns.reserve(key_columns_size);
@@ -554,10 +568,13 @@ void mergeBlockWithStream(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    stream->readPrefix();
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
 
-    while (Block block = stream->read())
+    while (executor.pull(block))
     {
+        convertToFullIfSparse(block);
+
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);
 
@@ -590,8 +607,6 @@ void mergeBlockWithStream(
         }
     }
 
-    stream->readSuffix();
-
     size_t result_fetched_rows = result_fetched_columns.front()->size();
     size_t filter_hint = filter.size() - indexes_to_remove_count;
 
@@ -619,7 +634,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
     PaddedPODArray<T> & backup_storage)
 {
     bool is_const_column = isColumnConst(*column);
-    auto full_column = column->convertToFullColumnIfConst();
+    auto full_column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
     if (!vector_col)
@@ -644,4 +659,35 @@ static const PaddedPODArray<T> & getColumnVectorData(
     }
 }
 
+template <typename T>
+static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array)
+{
+    auto column_vector = ColumnVector<T>::create();
+    column_vector->getData().reserve(array.size());
+    column_vector->getData().insert(array.begin(), array.end());
+
+    return column_vector;
 }
+
+template <typename T>
+static ColumnPtr getColumnFromPODArray(PaddedPODArray<T> && array)
+{
+    auto column_vector = ColumnVector<T>::create();
+    column_vector->getData() = std::move(array);
+
+    return column_vector;
+}
+
+template <typename T>
+static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array, size_t start, size_t length)
+{
+    auto column_vector = ColumnVector<T>::create();
+    column_vector->getData().reserve(length);
+    column_vector->getData().insert(array.begin() + start, array.begin() + start + length);
+
+    return column_vector;
+}
+
+}
+
+

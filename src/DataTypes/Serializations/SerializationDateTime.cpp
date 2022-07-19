@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
-#include <common/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
@@ -27,14 +27,16 @@ inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & setti
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
             return;
+        case FormatSettings::DateTimeInputFormat::BestEffortUS:
+            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
+            return;
     }
 }
 
 }
 
-SerializationDateTime::SerializationDateTime(
-    const DateLUTImpl & time_zone_, const DateLUTImpl & utc_time_zone_)
-    : time_zone(time_zone_), utc_time_zone(utc_time_zone_)
+SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
+    : TimezoneMixin(time_zone_)
 {
 }
 
@@ -63,6 +65,8 @@ void SerializationDateTime::serializeTextEscaped(const IColumn & column, size_t 
 void SerializationDateTime::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextEscaped(column, istr, settings);
+    if (!istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "DateTime");
 }
 
 void SerializationDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

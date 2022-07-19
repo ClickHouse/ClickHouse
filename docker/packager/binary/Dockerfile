@@ -1,7 +1,12 @@
-#  docker build -t yandex/clickhouse-binary-builder .
+# rebuild in #33610
+# docker build -t clickhouse/binary-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=14
 
 RUN apt-get update \
     && apt-get install \
@@ -20,43 +25,34 @@ RUN apt-get update \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
-        /etc/apt/sources.list
+        /etc/apt/sources.list \
+    && apt-get clean
 
 # initial packages
 RUN apt-get update \
     && apt-get install \
         bash \
-        fakeroot \
-        ccache \
-        curl \
-        software-properties-common \
-        --yes --no-install-recommends
-
-RUN apt-get update \
-    && apt-get install \
-        bash \
         build-essential \
         ccache \
-        clang-11 \
-        clang-tidy-11 \
+        clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
         cmake \
         curl \
-        g++-10 \
-        gcc-10 \
+        fakeroot \
         gdb \
         git \
         gperf \
-        libicu-dev \
-        libreadline-dev \
-        lld-11 \
-        llvm-11 \
-        llvm-11-dev \
+        lld-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION}-dev \
         moreutils \
         ninja-build \
         pigz \
         rename \
+        software-properties-common \
         tzdata \
-        --yes --no-install-recommends
+        --yes --no-install-recommends \
+    && apt-get clean
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
@@ -65,7 +61,7 @@ ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # libtapi is required to support .tbh format from recent MacOS SDKs
-RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
+RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
     && INSTALLPREFIX=/cctools ./build.sh \
     && ./install.sh \
@@ -73,7 +69,7 @@ RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && rm -rf apple-libtapi
 
 # Build and install tools for cross-linking to Darwin (x86-64)
-RUN git clone https://github.com/tpoechtrager/cctools-port.git \
+RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
@@ -82,7 +78,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && rm -rf cctools-port
 
 # Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone https://github.com/tpoechtrager/cctools-port.git \
+RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=aarch64-apple-darwin \
@@ -93,23 +89,34 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
 # Download toolchain and SDK for Darwin
 RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
 
-# Download toolchain for ARM
-# It contains all required headers and libraries. Note that it's named as "gcc" but actually we are using clang for cross compiling.
-RUN wget -nv "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz?revision=2e88a73f-d233-4f96-b1f4-d8b36e9bb0b9&la=en" -O gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz
+# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
+    && apt-get update \
+    && apt-get install gcc-11 g++-11 --yes \
+    && apt-get clean
 
-# Download toolchain for FreeBSD 11.3
-RUN wget -nv https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/freebsd-11.3-toolchain.tar.xz
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
+ARG NFPM_VERSION=2.16.0
 
-# NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.
-# Current workaround is to use latest version proposed repo. Remove as soon as
-# gcc-10.2 appear in stable repo.
-RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main multiverse universe' > /etc/apt/sources.list.d/proposed-repositories.list
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
+  && dpkg -i /tmp/nfpm.deb \
+  && rm /tmp/nfpm.deb
 
-RUN apt-get update \
-    && apt-get install gcc-10 g++-10 --yes
+ARG GO_VERSION=1.18.3
+# We need go for clickhouse-diagnostics
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+  && tar -xzf /tmp/go.tgz -C /usr/local/ \
+  && rm /tmp/go.tgz
 
-RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
+ENV PATH="$PATH:/usr/local/go/bin"
+ENV GOPATH=/workdir/go
+ENV GOCACHE=/workdir/
 
+RUN mkdir /workdir && chmod 777 /workdir
+WORKDIR /workdir
 
 COPY build.sh /
-CMD ["bash", "-c", "/build.sh 2>&1 | ts"]
+CMD ["bash", "-c", "/build.sh 2>&1"]

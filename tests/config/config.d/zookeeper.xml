@@ -1,8 +1,10 @@
-<yandex>
+<clickhouse>
     <zookeeper>
+        <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
+        <zookeeper_load_balancing>random</zookeeper_load_balancing>
         <node index="1">
             <host>localhost</host>
             <port>9181</port>
         </node>
     </zookeeper>
-</yandex>
+</clickhouse>

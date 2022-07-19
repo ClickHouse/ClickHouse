@@ -4,7 +4,6 @@
 #include <string>
 #include <cerrno>
 
-
 namespace DB
 {
 
@@ -14,9 +13,13 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
+namespace
+{
 
-static void localBackupImpl(const DiskPtr & disk, const String & source_path, const String & destination_path, size_t level,
-                            std::optional<size_t> max_level)
+void localBackupImpl(
+    const DiskPtr & disk, const String & source_path,
+    const String & destination_path, bool make_source_readonly, size_t level,
+    std::optional<size_t> max_level)
 {
     if (max_level && level > *max_level)
         return;
@@ -33,17 +36,57 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
 
         if (!disk->isDirectory(source))
         {
-            disk->setReadOnly(source);
+            if (make_source_readonly)
+                disk->setReadOnly(source);
             disk->createHardLink(source, destination);
         }
         else
         {
-            localBackupImpl(disk, source, destination, level + 1, max_level);
+            localBackupImpl(disk, source, destination, make_source_readonly, level + 1, max_level);
         }
     }
 }
 
-void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level)
+class CleanupOnFail
+{
+public:
+    explicit CleanupOnFail(std::function<void()> && cleaner_)
+        : cleaner(cleaner_)
+    {}
+
+    ~CleanupOnFail()
+    {
+        if (!is_success)
+        {
+            /// We are trying to handle race condition here. So if we was not
+            /// able to backup directory try to remove garbage, but it's ok if
+            /// it doesn't exist.
+            try
+            {
+                cleaner();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+
+    void success()
+    {
+        is_success = true;
+    }
+
+private:
+    std::function<void()> cleaner;
+    bool is_success{false};
+};
+}
+
+void localBackup(
+    const DiskPtr & disk, const String & source_path,
+    const String & destination_path, bool make_source_readonly,
+    std::optional<size_t> max_level, bool copy_instead_of_hardlinks)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
@@ -53,15 +96,20 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
     size_t try_no = 0;
     const size_t max_tries = 10;
 
+    CleanupOnFail cleanup([disk, destination_path]() { disk->removeRecursive(destination_path); });
+
     /** Files in the directory can be permanently added and deleted.
       * If some file is deleted during an attempt to make a backup, then try again,
-      *  because it's important to take into account any new files that might appear.
+      * because it's important to take into account any new files that might appear.
       */
     while (true)
     {
         try
         {
-            localBackupImpl(disk, source_path, destination_path, 0, max_level);
+            if (copy_instead_of_hardlinks)
+                disk->copyDirectoryContent(source_path, disk, destination_path);
+            else
+                localBackupImpl(disk, source_path, destination_path, make_source_readonly, 0, max_level);
         }
         catch (const DB::ErrnoException & e)
         {
@@ -88,6 +136,8 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
 
         break;
     }
+
+    cleanup.success();
 }
 
 }

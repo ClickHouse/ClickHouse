@@ -8,7 +8,7 @@
 
 #include <Common/assert_cast.h>
 
-#include <time.h>
+#include <ctime>
 
 
 namespace DB
@@ -67,13 +67,13 @@ private:
 class FunctionBaseNow64 : public IFunctionBase
 {
 public:
-    explicit FunctionBaseNow64(Field time_, DataTypePtr return_type_) : time_value(time_), return_type(return_type_) {}
+    explicit FunctionBaseNow64(Field time_, DataTypes argument_types_, DataTypePtr return_type_)
+        : time_value(time_), argument_types(std::move(argument_types_)), return_type(std::move(return_type_)) {}
 
     String getName() const override { return "now64"; }
 
     const DataTypes & getArgumentTypes() const override
     {
-        static const DataTypes argument_types;
         return argument_types;
     }
 
@@ -89,9 +89,11 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     Field time_value;
+    DataTypes argument_types;
     DataTypePtr return_type;
 };
 
@@ -138,14 +140,19 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale, timezone_name);
     }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         UInt32 scale = DataTypeDateTime64::default_scale;
         auto res_type = removeNullable(result_type);
         if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(res_type.get()))
             scale = type->getScale();
 
-        return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), result_type);
+        DataTypes arg_types;
+        arg_types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            arg_types.push_back(arg.type);
+
+        return std::make_unique<FunctionBaseNow64>(nowSubsecond(scale), std::move(arg_types), result_type);
     }
 };
 

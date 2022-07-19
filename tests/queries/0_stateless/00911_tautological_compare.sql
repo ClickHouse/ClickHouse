@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- TODO: Tautological optimization breaks JIT expression compilation, because it can return constant result
 -- for non constant columns. And then sample blocks from same ActionsDAGs can be mismatched.
 -- This optimization cannot be performed on AST rewrite level, because we does not have information about types
@@ -17,14 +19,6 @@
 
 -- column_column_comparison.xml
 -- <test>
---     <tags>
---         <tag>comparison</tag>
---     </tags>
-
---     <preconditions>
---         <table_exists>hits_100m_single</table_exists>
---     </preconditions>
-
 
 --     <query short="1"><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < URL]]></query>
 --     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < PageCharset]]></query>

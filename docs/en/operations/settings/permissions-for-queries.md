@@ -1,9 +1,9 @@
 ---
-toc_priority: 58
-toc_title: Permissions for Queries
+sidebar_position: 58
+sidebar_label: Permissions for Queries
 ---
 
-# Permissions for Queries {#permissions_for_queries}
+# Permissions for Queries
 
 Queries in ClickHouse can be divided into several types:
 
@@ -56,4 +56,4 @@ You can’t execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current sessi
 
 Default value: 1
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/settings/permissions_for_queries/) <!--hide-->

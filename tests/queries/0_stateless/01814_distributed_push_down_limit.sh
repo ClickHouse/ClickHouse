@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: distributed
+
 # shellcheck disable=SC2206
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -67,8 +69,9 @@ function test_distributed_push_down_limit_with_query_log()
         system flush logs;
         select read_rows from system.query_log
             where
-                event_date = today()
+                event_date >= yesterday()
                 and query_kind = 'Select' /* exclude DESC TABLE */
+                and type = 'QueryFinish'
                 and initial_query_id = '$query_id' and initial_query_id != query_id;
     " | xargs # convert new lines to spaces
 }
@@ -86,9 +89,11 @@ function test_distributed_push_down_limit_0()
 function test_distributed_push_down_limit_1()
 {
     local args=(
-        "remote('127.{2,3}', $CLICKHOUSE_DATABASE, data_01814)"
+        "remote('127.{2,3}', $CLICKHOUSE_DATABASE, data_01814, key)"
         0 # offset
         --distributed_push_down_limit 1
+        --optimize_skip_unused_shards 1
+        --optimize_distributed_group_by_sharding_key 1
     )
     test_distributed_push_down_limit_with_query_log "${args[@]}"
 }
@@ -97,22 +102,11 @@ function test_distributed_push_down_limit_1_offset()
 {
     local settings_and_opts=(
         --distributed_push_down_limit 1
-    )
-
-    $CLICKHOUSE_CLIENT "${settings_and_opts[@]}" -q "select * from remote('127.{2,3}', $CLICKHOUSE_DATABASE, data_01814) group by key order by key desc limit 5, 10"
-}
-
-function test_auto_distributed_push_down_limit()
-{
-    local args=(
-        dist_01814
-        0 # offset
         --optimize_skip_unused_shards 1
         --optimize_distributed_group_by_sharding_key 1
-        --prefer_localhost_replica 0
-        --distributed_push_down_limit 0
     )
-    test_distributed_push_down_limit_with_query_log "${args[@]}"
+
+    $CLICKHOUSE_CLIENT "${settings_and_opts[@]}" -q "select * from remote('127.{2,3}', $CLICKHOUSE_DATABASE, data_01814, key) group by key order by key desc limit 5, 10"
 }
 
 function main()
@@ -144,16 +138,6 @@ function main()
     echo 'distributed_push_down_limit=1'
     for ((i = 0; i < max_tries; ++i)); do
         out=$(test_distributed_push_down_limit_1)
-        out_lines=( $out )
-        if [[ ${#out_lines[@]} -gt 2 ]] && [[ ${out_lines[-1]} = 40 ]] && [[ ${out_lines[-2]} = 40 ]]; then
-            break
-        fi
-    done
-    echo "$out"
-
-    echo 'auto-distributed_push_down_limit'
-    for ((i = 0; i < max_tries; ++i)); do
-        out=$(test_auto_distributed_push_down_limit)
         out_lines=( $out )
         if [[ ${#out_lines[@]} -gt 2 ]] && [[ ${out_lines[-1]} = 40 ]] && [[ ${out_lines[-2]} = 40 ]]; then
             break

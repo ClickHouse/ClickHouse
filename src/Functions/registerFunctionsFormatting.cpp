@@ -3,17 +3,19 @@ namespace DB
 
 class FunctionFactory;
 
-void registerFunctionBitmaskToList(FunctionFactory &);
+void registerFunctionsBitToArray(FunctionFactory &);
 void registerFunctionFormatReadableSize(FunctionFactory &);
 void registerFunctionFormatReadableQuantity(FunctionFactory &);
 void registerFunctionFormatReadableTimeDelta(FunctionFactory &);
+void registerFunctionParseTimeDelta(FunctionFactory &);
 
 void registerFunctionsFormatting(FunctionFactory & factory)
 {
-    registerFunctionBitmaskToList(factory);
+    registerFunctionsBitToArray(factory);
     registerFunctionFormatReadableSize(factory);
     registerFunctionFormatReadableQuantity(factory);
     registerFunctionFormatReadableTimeDelta(factory);
+    registerFunctionParseTimeDelta(factory);
 }
 
 }

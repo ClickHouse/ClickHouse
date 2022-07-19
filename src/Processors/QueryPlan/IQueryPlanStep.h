@@ -3,14 +3,12 @@
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
-namespace JSONBuilder { class JSONMap; }
-
 namespace DB
 {
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
-using QueryPipelines = std::vector<QueryPipelinePtr>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -27,7 +25,7 @@ public:
 
     /// Tuples with those columns are distinct.
     /// It doesn't mean that columns are distinct separately.
-    /// Removing any column from this list brakes this invariant.
+    /// Removing any column from this list breaks this invariant.
     NameSet distinct_columns = {};
 
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
@@ -80,7 +78,7 @@ public:
     ///   * header from each pipeline is the same as header from corresponding input_streams
     /// Result pipeline must contain any number of streams with compatible output header is hasOutputStream(),
     ///   or pipeline should be completed otherwise.
-    virtual QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings) = 0;
+    virtual QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) = 0;
 
     const DataStreams & getInputStreams() const { return input_streams; }
 

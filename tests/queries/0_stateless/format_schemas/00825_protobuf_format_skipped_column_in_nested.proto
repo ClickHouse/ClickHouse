@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+message UpdateMessage {
+  string identifier = 1;
+  //string unused1 = 100;
+
+  message Module {
+    uint32 module_id = 2;
+    uint32 supply = 3;
+    uint32 temp = 4;
+
+    message ModuleNode {
+      uint32 node_id = 5;
+      uint32 opening_time = 6;
+      uint32 closing_time = 7; // The column in the table is named `closing_time_time`
+      uint32 current = 8;
+
+      message Coords {
+        //float x = 8;
+        float y = 9;
+      }
+      Coords coords = 10;
+    }
+
+    repeated ModuleNode nodes = 11;
+  }
+
+  repeated Module modules = 12;
+}

@@ -41,6 +41,8 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
@@ -100,7 +102,7 @@ public:
         {
             if (!length_column || length_column->onlyNull())
             {
-                return array_column;
+                return arguments[0].column;
             }
             else if (isColumnConst(*length_column))
                 sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, length_column->getInt(0));

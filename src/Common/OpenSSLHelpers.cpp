@@ -1,10 +1,8 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_SSL
 #include "OpenSSLHelpers.h"
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <openssl/err.h>
 #include <openssl/sha.h>
 
@@ -12,7 +10,7 @@ namespace DB
 {
 #pragma GCC diagnostic warning "-Wold-style-cast"
 
-std::string encodeSHA256(const std::string_view & text)
+std::string encodeSHA256(std::string_view text)
 {
     return encodeSHA256(text.data(), text.size());
 }
@@ -23,7 +21,7 @@ std::string encodeSHA256(const void * text, size_t size)
     encodeSHA256(text, size, reinterpret_cast<unsigned char *>(out.data()));
     return out;
 }
-void encodeSHA256(const std::string_view & text, unsigned char * out)
+void encodeSHA256(std::string_view text, unsigned char * out)
 {
     encodeSHA256(text.data(), text.size(), out);
 }

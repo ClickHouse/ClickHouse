@@ -39,7 +39,7 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array &) const override
+        const Array & params) const override
     {
         const DataTypePtr & argument = arguments[0];
 
@@ -53,7 +53,7 @@ public:
                 + ", because it corresponds to different aggregate function: " + function->getFunctionName() + " instead of " + nested_function->getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return std::make_shared<AggregateFunctionMerge>(nested_function, argument);
+        return std::make_shared<AggregateFunctionMerge>(nested_function, argument, params);
     }
 };
 

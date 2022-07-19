@@ -1,7 +1,9 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/TSKVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -17,7 +19,7 @@ namespace ErrorCodes
 
 
 TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(getPort().getHeader().columns())
 {
     const auto & sample_block = getPort().getHeader();
     size_t num_columns = sample_block.columns();
@@ -30,7 +32,7 @@ void TSKVRowInputFormat::readPrefix()
 {
     /// In this format, we assume that column name cannot contain BOM,
     ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
-    skipBOMIfExists(in);
+    skipBOMIfExists(*in);
 }
 
 
@@ -52,6 +54,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         if (next_pos == buf.buffer().end())
         {
             tmp.append(buf.position(), next_pos - buf.position());
+            buf.position() = buf.buffer().end();
             buf.next();
             continue;
         }
@@ -95,7 +98,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 
 bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (in.eof())
+    if (in->eof())
         return false;
 
     const auto & header = getPort().getHeader();
@@ -105,17 +108,17 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     read_columns.assign(num_columns, false);
     seen_columns.assign(num_columns, false);
 
-    if (unlikely(*in.position() == '\n'))
+    if (unlikely(*in->position() == '\n'))
     {
         /// An empty string. It is permissible, but it is unclear why.
-        ++in.position();
+        ++in->position();
     }
     else
     {
         while (true)
         {
             StringRef name_ref;
-            bool has_value = readName(in, name_ref, name_buf);
+            bool has_value = readName(*in, name_ref, name_buf);
             ssize_t index = -1;
 
             if (has_value)
@@ -131,7 +134,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
                     /// If the key is not found, skip the value.
                     NullOutput sink;
-                    readEscapedStringInto(sink, in);
+                    readEscapedStringInto(sink, *in);
                 }
                 else
                 {
@@ -143,10 +146,10 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
-                    if (format_settings.null_as_default && !type->isNullable())
-                        read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], in, format_settings, serialization);
+                    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+                        read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], *in, format_settings, serialization);
                     else
-                        serialization->deserializeTextEscaped(*columns[index], in, format_settings);
+                        serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
                 }
             }
             else
@@ -156,18 +159,18 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     throw Exception("Found field without value while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
             }
 
-            if (in.eof())
+            if (in->eof())
             {
                 throw ParsingException("Unexpected end of stream after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_READ_ALL_DATA);
             }
-            else if (*in.position() == '\t')
+            else if (*in->position() == '\t')
             {
-                ++in.position();
+                ++in->position();
                 continue;
             }
-            else if (*in.position() == '\n')
+            else if (*in->position() == '\n')
             {
-                ++in.position();
+                ++in->position();
                 break;
             }
             else
@@ -198,7 +201,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
 void TSKVRowInputFormat::syncAfterError()
 {
-    skipToUnescapedNextLineOrEOF(in);
+    skipToUnescapedNextLineOrEOF(*in);
 }
 
 
@@ -210,15 +213,78 @@ void TSKVRowInputFormat::resetParser()
     name_buf.clear();
 }
 
-void registerInputFormatProcessorTSKV(FormatFactory & factory)
+TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : IRowWithNamesSchemaReader(in_, getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::Escaped))
+    , format_settings(format_settings_)
 {
-    factory.registerInputFormatProcessor("TSKV", [](
+}
+
+NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
+{
+    if (first_row)
+    {
+        skipBOMIfExists(in);
+        first_row = false;
+    }
+
+    if (in.eof())
+    {
+        eof = true;
+        return {};
+    }
+
+    if (*in.position() == '\n')
+    {
+        ++in.position();
+        return {};
+    }
+
+    NamesAndTypesList names_and_types;
+    StringRef name_ref;
+    String name_buf;
+    String value;
+    do
+    {
+        bool has_value = readName(in, name_ref, name_buf);
+        String name = String(name_ref);
+        if (has_value)
+        {
+            readEscapedString(value, in);
+            names_and_types.emplace_back(std::move(name), determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Escaped));
+        }
+        else
+        {
+            /// The only thing that can go without value is `tskv` fragment that is ignored.
+            if (!(name_ref.size == 4 && 0 == memcmp(name_ref.data, "tskv", 4)))
+                throw Exception("Found field without value while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+        }
+
+    }
+    while (checkChar('\t', in));
+
+    assertChar('\n', in);
+
+    return names_and_types;
+}
+
+void registerInputFormatTSKV(FormatFactory & factory)
+{
+    factory.registerInputFormat("TSKV", [](
         ReadBuffer & buf,
         const Block & sample,
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
         return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
+    });
+
+    factory.markFormatSupportsSubsetOfColumns("TSKV");
+}
+void registerTSKVSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("TSKV", [](ReadBuffer & buf, const FormatSettings & settings)
+    {
+        return std::make_shared<TSKVSchemaReader>(buf, settings);
     });
 }
 

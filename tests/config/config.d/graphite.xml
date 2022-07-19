@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <graphite_rollup>
         <version_column_name>Version</version_column_name>
         <pattern>
@@ -25,4 +25,4 @@
             </retention>
         </default>
     </graphite_rollup>
-</yandex>
+</clickhouse>

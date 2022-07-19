@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 SharedLibraryHandlerPtr SharedLibraryHandlerFactory::get(const std::string & dictionary_id)
 {
     std::lock_guard lock(mutex);
@@ -29,32 +24,32 @@ void SharedLibraryHandlerFactory::create(
     const std::vector<std::string> & attributes_names)
 {
     std::lock_guard lock(mutex);
-    library_handlers[dictionary_id] = std::make_shared<SharedLibraryHandler>(library_path, library_settings, sample_block, attributes_names);
+    if (!library_handlers.contains(dictionary_id))
+        library_handlers.emplace(std::make_pair(dictionary_id, std::make_shared<SharedLibraryHandler>(library_path, library_settings, sample_block, attributes_names)));
+    else
+        LOG_WARNING(&Poco::Logger::get("SharedLibraryHandlerFactory"), "Library handler with dictionary id {} already exists", dictionary_id);
 }
 
 
-void SharedLibraryHandlerFactory::clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id)
+bool SharedLibraryHandlerFactory::clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id)
 {
     std::lock_guard lock(mutex);
     auto from_library_handler = library_handlers.find(from_dictionary_id);
 
-    /// This is not supposed to happen as libClone is called from copy constructor of LibraryDictionarySource
-    /// object, and shared library handler of from_dictionary is removed only in its destructor.
-    /// And if for from_dictionary there was no shared library handler, it would have received and exception in
-    /// its constructor, so no libClone would be made from it.
     if (from_library_handler == library_handlers.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No shared library handler found");
+        return false;
 
     /// libClone method will be called in copy constructor
     library_handlers[to_dictionary_id] = std::make_shared<SharedLibraryHandler>(*from_library_handler->second);
+    return true;
 }
 
 
-void SharedLibraryHandlerFactory::remove(const std::string & dictionary_id)
+bool SharedLibraryHandlerFactory::remove(const std::string & dictionary_id)
 {
     std::lock_guard lock(mutex);
     /// libDelete is called in destructor.
-    library_handlers.erase(dictionary_id);
+    return library_handlers.erase(dictionary_id);
 }
 
 

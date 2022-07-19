@@ -3,11 +3,9 @@
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Core/Block.h>
 
-#include <Core/MySQL/Authentication.h>
-#include <Core/MySQL/PacketsGeneric.h>
-#include <Core/MySQL/PacketsConnection.h>
-#include <Core/MySQL/PacketsProtocolText.h>
-#include <Formats/FormatSettings.h>
+#include <Core/MySQL/PacketEndpoint.h>
+#include <Processors/Formats/IOutputFormat.h>
+
 
 namespace DB
 {
@@ -15,6 +13,7 @@ namespace DB
 class IColumn;
 class IDataType;
 class WriteBuffer;
+struct FormatSettings;
 
 /** A stream for outputting data in a binary line-by-line format.
   */
@@ -27,20 +26,17 @@ public:
 
     void setContext(ContextPtr context_);
 
-    void consume(Chunk) override;
-    void finalize() override;
     void flush() override;
-    void doWritePrefix() override { initialize(); }
-
-    void initialize();
 
 private:
-    bool initialized = false;
+    void consume(Chunk) override;
+    void finalizeImpl() override;
+    void writePrefix() override;
 
-    std::optional<MySQLWireContext> own_mysql_context;
-    MySQLWireContext * mysql_context = nullptr;
+    uint32_t client_capabilities = 0;
+    uint8_t * sequence_id = nullptr;
+    uint8_t dummy_sequence_id = 0;
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
-    FormatSettings format_settings;
     DataTypes data_types;
     Serializations serializations;
 };

@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: 授权操作
+sidebar_position: 39
+sidebar_label: 授权操作
 ---
 
 # 授权 {#grant}
@@ -12,7 +12,7 @@ toc_title: 授权操作
 ## 授权操作语法 {#grant-privigele-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 ```
 
 -   `privilege` — 权限类型
@@ -20,17 +20,19 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 -   `user` — 用户账号
 
 `WITH GRANT OPTION` 授予 `user` 或 `role`执行 `GRANT` 操作的权限。用户可将在自身权限范围内的权限进行授权
+`WITH REPLACE OPTION` 以当前sql里的新权限替代掉 `user` 或 `role`的旧权限，如果没有该选项则是追加授权。
 
 ## 角色分配的语法 {#assign-role-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 ```
 
 -   `role` —  角色
 -   `user` —  用户
 
  `WITH ADMIN OPTION`  授予 `user` 或 `role` 执行[ADMIN OPTION](#admin-option-privilege) 的权限
+`WITH REPLACE OPTION` 以当前sql里的新role替代掉 `user` 或 `role`的旧role，如果没有该选项则是追加roles。
 
 ## 用法 {#grant-usage}
 
@@ -86,7 +88,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             -   `ALTER CLEAR INDEX`
         -   `ALTER CONSTRAINT`
             -   `ALTER ADD CONSTRAINT`
-            
+
             -   `ALTER DROP CONSTRAINT`
         -   `ALTER TTL`
         -   `ALTER MATERIALIZE TTL`
@@ -469,4 +471,4 @@ GRANT INSERT(x,y) ON db.table TO john
 
 `ADMIN OPTION` 权限允许用户将他们的角色分配给其它用户
 
-[原始文档](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/en/query_language/grant/) <!--hide-->

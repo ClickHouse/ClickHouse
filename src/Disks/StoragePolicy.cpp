@@ -1,6 +1,7 @@
 #include "StoragePolicy.h"
 #include "DiskFactory.h"
 #include "DiskLocal.h"
+#include "createVolume.h"
 
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
@@ -62,7 +63,12 @@ StoragePolicy::StoragePolicy(
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
     {
-        auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME, std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)}, 0, false);
+        auto default_volume = std::make_shared<VolumeJBOD>(DEFAULT_VOLUME_NAME,
+            std::vector<DiskPtr>{disks->get(DEFAULT_DISK_NAME)},
+            /* max_data_part_size_= */ 0,
+            /* are_merges_avoided_= */ false,
+            /* perform_ttl_move_on_insert_= */ true,
+            VolumeLoadBalancing::ROUND_ROBIN);
         volumes.emplace_back(std::move(default_volume));
     }
 
@@ -157,17 +163,6 @@ Disks StoragePolicy::getDisks() const
 }
 
 
-Disks StoragePolicy::getDisksByType(DiskType::Type type) const
-{
-    Disks res;
-    for (const auto & volume : volumes)
-        for (const auto & disk : volume->getDisks())
-            if (disk->getType() == type)
-                res.push_back(disk);
-    return res;
-}
-
-
 DiskPtr StoragePolicy::getAnyDisk() const
 {
     /// StoragePolicy must contain at least one Volume
@@ -175,14 +170,22 @@ DiskPtr StoragePolicy::getAnyDisk() const
     if (volumes.empty())
         throw Exception("Storage policy " + backQuote(name) + " has no volumes. It's a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    if (volumes[0]->getDisks().empty())
-        throw Exception("Volume " + backQuote(name) + "." + backQuote(volumes[0]->getName()) + " has no disks. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+    for (const auto & volume : volumes)
+    {
+        if (volume->getDisks().empty())
+            throw Exception("Volume '" + volume->getName() + "' has no disks. It's a bug", ErrorCodes::LOGICAL_ERROR);
+        for (const auto & disk : volume->getDisks())
+        {
+            if (!disk->isBroken())
+                return disk;
+        }
+    }
 
-    return volumes[0]->getDisks()[0];
+    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "All disks in storage policy {} are broken", name);
 }
 
 
-DiskPtr StoragePolicy::getDiskByName(const String & disk_name) const
+DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 {
     for (auto && volume : volumes)
         for (auto && disk : volume->getDisks())
@@ -244,6 +247,10 @@ ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
             }
         }
     }
+    if (!max_disk)
+        throw Exception(
+            "There is no space on any disk in storage policy: " + name + ". It's likely all disks are broken",
+            ErrorCodes::NOT_ENOUGH_SPACE);
     auto reservation = max_disk->reserve(0);
     if (!reservation)
     {
@@ -264,11 +271,11 @@ VolumePtr StoragePolicy::getVolume(size_t index) const
 }
 
 
-VolumePtr StoragePolicy::getVolumeByName(const String & volume_name) const
+VolumePtr StoragePolicy::tryGetVolumeByName(const String & volume_name) const
 {
     auto it = volume_index_by_volume_name.find(volume_name);
     if (it == volume_index_by_volume_name.end())
-        throw Exception("No such volume " + backQuote(volume_name) + " in storage policy " + backQuote(name), ErrorCodes::UNKNOWN_VOLUME);
+        return nullptr;
     return getVolume(it->second);
 }
 
@@ -281,7 +288,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 
     for (const auto & volume : getVolumes())
     {
-        if (new_volume_names.count(volume->getName()) == 0)
+        if (!new_volume_names.contains(volume->getName()))
             throw Exception("New storage policy " + backQuote(name) + " shall contain volumes of old one", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_set<String> new_disk_names;
@@ -289,7 +296,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
             new_disk_names.insert(disk->getName());
 
         for (const auto & disk : volume->getDisks())
-            if (new_disk_names.count(disk->getName()) == 0)
+            if (!new_disk_names.contains(disk->getName()))
                 throw Exception("New storage policy " + backQuote(name) + " shall contain disks of old one", ErrorCodes::BAD_ARGUMENTS);
     }
 }
@@ -386,7 +393,7 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
-        if (result->policies.count(name) == 0)
+        if (!result->policies.contains(name))
             throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
 
         policy->checkCompatibleWith(result->policies[name]);

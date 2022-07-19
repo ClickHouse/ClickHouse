@@ -44,18 +44,21 @@ void SerializationDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precisio
 }
 
 template <typename T>
-void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, this->scale, ostr);
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
 }
 
 template <typename T>
-void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     T x;
     readText(x, istr);
     assert_cast<ColumnType &>(column).getData().push_back(x);
+
+    if (whole && !istr.eof())
+        ISerialization::throwUnexpectedDataAfterParsedValue(column, istr, settings, "Decimal");
 }
 
 template <typename T>

@@ -167,8 +167,8 @@ private:
     }
 
 public:
-    AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments)
-    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, nested_func_->getParameters())
+    AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
+    : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_)
     , nested_func(nested_func_)
     , arguments_num(arguments.size()) {}
 
@@ -182,12 +182,12 @@ public:
         this->data(place).merge(this->data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         this->data(place).deserialize(buf, arena);
     }
@@ -200,7 +200,7 @@ public:
             arguments_raw[i] = arguments[i].get();
 
         assert(!arguments.empty());
-        nested_func->addBatchSinglePlace(arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
+        nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
         nested_func->insertResultInto(getNestedPlace(place), to, arena);
     }
 

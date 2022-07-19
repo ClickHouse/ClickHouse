@@ -1,11 +1,11 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include "IMySQLReadPacket.h"
 #include "IMySQLWritePacket.h"
 #include "IO/MySQLPacketPayloadReadBuffer.h"
-#include <common/shared_ptr_helper.h>
 
 namespace DB
 {
@@ -16,12 +16,18 @@ namespace MySQLProtocol
 /* Writes and reads packets, keeping sequence-id.
  * Throws ProtocolError, if packet with incorrect sequence-id was received.
  */
-class PacketEndpoint : public shared_ptr_helper<PacketEndpoint>
+class PacketEndpoint : boost::noncopyable
 {
 public:
     uint8_t & sequence_id;
     ReadBuffer * in;
     WriteBuffer * out;
+
+    /// For writing.
+    PacketEndpoint(WriteBuffer & out_, uint8_t & sequence_id_);
+
+    /// For reading and writing.
+    PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_);
 
     MySQLPacketPayloadReadBuffer getPayload();
 
@@ -43,29 +49,10 @@ public:
 
     /// Converts packet to text. Is used for debug output.
     static String packetToText(const String & payload);
-
-protected:
-    /// For writing.
-    PacketEndpoint(WriteBuffer & out_, uint8_t & sequence_id_);
-
-    /// For reading and writing.
-    PacketEndpoint(ReadBuffer & in_, WriteBuffer & out_, uint8_t & sequence_id_);
-
-    friend struct shared_ptr_helper<PacketEndpoint>;
 };
 
 using PacketEndpointPtr = std::shared_ptr<PacketEndpoint>;
 
 }
-
-struct MySQLWireContext
-{
-    uint8_t sequence_id = 0;
-    uint32_t client_capabilities = 0;
-    size_t max_packet_size = 0;
-
-    MySQLProtocol::PacketEndpointPtr makeEndpoint(WriteBuffer & out);
-    MySQLProtocol::PacketEndpointPtr makeEndpoint(ReadBuffer & in, WriteBuffer & out);
-};
 
 }

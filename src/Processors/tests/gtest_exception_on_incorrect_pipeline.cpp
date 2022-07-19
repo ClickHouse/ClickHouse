@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/NullSink.h>
+#include <Processors/Sinks/NullSink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -27,7 +27,8 @@ TEST(Processors, PortsConnected)
     processors.emplace_back(std::move(source));
     processors.emplace_back(std::move(sink));
 
-    PipelineExecutor executor(processors);
+    QueryStatus * element = nullptr;
+    PipelineExecutor executor(processors, element);
     executor.execute(1);
 }
 
@@ -49,9 +50,11 @@ TEST(Processors, PortsNotConnected)
     processors.emplace_back(std::move(source));
     processors.emplace_back(std::move(sink));
 
+#ifndef ABORT_ON_LOGICAL_ERROR
     try
     {
-        PipelineExecutor executor(processors);
+        QueryStatus * element = nullptr;
+        PipelineExecutor executor(processors, element);
         executor.execute(1);
         ASSERT_TRUE(false) << "Should have thrown.";
     }
@@ -60,4 +63,5 @@ TEST(Processors, PortsNotConnected)
         std::cout << e.displayText() << std::endl;
         ASSERT_TRUE(e.displayText().find("pipeline") != std::string::npos) << "Expected 'pipeline', got: " << e.displayText();
     }
+#endif
 }

@@ -28,3 +28,7 @@ foo
 -- vector
 xx.blogspot.co.at
 
+-- no new line
+foo.bar
+a.foo.bar
+foo.baz

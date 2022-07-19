@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 
@@ -29,8 +30,10 @@ public:
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{});
 
     /// Return the number of rows has been read or zero if there is no columns to read.
-    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
-    virtual size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
+    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
+    /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
+    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
+                            bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -41,13 +44,13 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows);
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
     /// Evaluate defaulted columns if necessary.
-    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
+    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
     /// If part metadata is not equal to storage metadata, than
     /// try to perform conversions of columns.
-    void performRequiredConversions(Columns & res_columns);
+    void performRequiredConversions(Columns & res_columns) const;
 
     const NamesAndTypesList & getColumns() const { return columns; }
     size_t numColumnsInResult() const { return columns.size(); }
@@ -72,6 +75,7 @@ protected:
 
     /// Columns that are read.
     NamesAndTypesList columns;
+    NamesAndTypesList part_columns;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
@@ -85,14 +89,14 @@ protected:
     using ColumnPosition = std::optional<size_t>;
     ColumnPosition findColumnForOffsets(const String & column_name) const;
 
-    friend class MergeTreeRangeReader::DelayedStream;
-
 private:
     /// Alter conversions, which must be applied on fly if required
     MergeTreeData::AlterConversions alter_conversions;
 
     /// Actual data type of columns in part
-    std::unordered_map<String, DataTypePtr> columns_from_part;
+
+    using ColumnsFromPart = HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash>;
+    ColumnsFromPart columns_from_part;
 };
 
 }

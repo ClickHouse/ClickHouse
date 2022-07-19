@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 table="optimize_me_finally"
 name="$CLICKHOUSE_DATABASE.$table"
-res_rows=1500000 # >= vertical_merge_algorithm_min_rows_to_activate
+res_rows=150000 # >= vertical_merge_algorithm_min_rows_to_activate
 
 function get_num_parts {
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE active AND database='$CLICKHOUSE_DATABASE' AND table='$table'"
@@ -16,7 +16,7 @@ function get_num_parts {
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $name"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE $name (
+$CLICKHOUSE_CLIENT --allow_deprecated_syntax_for_merge_tree=1 -q "CREATE TABLE $name (
 date Date,
 Sign Int8,
 ki UInt64,

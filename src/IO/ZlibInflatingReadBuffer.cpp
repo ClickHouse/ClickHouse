@@ -14,9 +14,8 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
         size_t buf_size,
         char * existing_memory,
         size_t alignment)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
-    , in(std::move(in_))
-    , eof(false)
+    : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
+    , eof_flag(false)
 {
     zstr.zalloc = nullptr;
     zstr.zfree = nullptr;
@@ -38,7 +37,7 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
 #pragma GCC diagnostic pop
 
     if (rc != Z_OK)
-        throw Exception(std::string("inflateInit2 failed: ") + zError(rc) + "; zlib version: " + ZLIB_VERSION, ErrorCodes::ZLIB_INFLATE_FAILED);
+        throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateInit2 failed: {}; zlib version: {}.", zError(rc), ZLIB_VERSION);
 }
 
 ZlibInflatingReadBuffer::~ZlibInflatingReadBuffer()
@@ -48,41 +47,60 @@ ZlibInflatingReadBuffer::~ZlibInflatingReadBuffer()
 
 bool ZlibInflatingReadBuffer::nextImpl()
 {
-    if (eof)
-        return false;
-
-    if (!zstr.avail_in)
+    /// Need do-while loop to prevent situation, when
+    /// eof was not reached, but working buffer became empty (when nothing was decompressed in current iteration)
+    /// (this happens with compression algorithms, same idea is implemented in ZstdInflatingReadBuffer)
+    do
     {
-        in->nextIfAtEnd();
-        zstr.next_in = reinterpret_cast<unsigned char *>(in->position());
-        zstr.avail_in = in->buffer().end() - in->position();
-    }
-    zstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
-    zstr.avail_out = internal_buffer.size();
+        /// if we already found eof, we shouldn't do anything
+        if (eof_flag)
+            return false;
 
-    int rc = inflate(&zstr, Z_NO_FLUSH);
-
-    in->position() = in->buffer().end() - zstr.avail_in;
-    working_buffer.resize(internal_buffer.size() - zstr.avail_out);
-
-    if (rc == Z_STREAM_END)
-    {
-        if (in->eof())
+        /// if there is no available bytes in zstr, move ptr to next available data
+        if (!zstr.avail_in)
         {
-            eof = true;
-            return !working_buffer.empty();
+            in->nextIfAtEnd();
+            zstr.next_in = reinterpret_cast<unsigned char *>(in->position());
+            zstr.avail_in = in->buffer().end() - in->position();
         }
-        else
-        {
-            rc = inflateReset(&zstr);
-            if (rc != Z_OK)
-                throw Exception(std::string("inflateReset failed: ") + zError(rc), ErrorCodes::ZLIB_INFLATE_FAILED);
-            return true;
-        }
-    }
-    if (rc != Z_OK)
-        throw Exception(std::string("inflate failed: ") + zError(rc), ErrorCodes::ZLIB_INFLATE_FAILED);
+        /// init output bytes (place, where decompressed data will be)
+        zstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
+        zstr.avail_out = internal_buffer.size();
 
+        int rc = inflate(&zstr, Z_NO_FLUSH);
+
+        /// move in stream on place, where reading stopped
+        in->position() = in->buffer().end() - zstr.avail_in;
+        /// change size of working buffer (it's size equal to internal_buffer size without unused uncompressed values)
+        working_buffer.resize(internal_buffer.size() - zstr.avail_out);
+
+        /// If end was reached, it can be end of file or end of part (for example, chunk)
+        if (rc == Z_STREAM_END)
+        {
+            /// if it is end of file, remember this and return
+            /// * true if we can work with working buffer (we still have something to read, so next must return true)
+            /// * false if there is no data in working buffer
+            if (in->eof())
+            {
+                eof_flag = true;
+                return !working_buffer.empty();
+            }
+            /// If it is not end of file, we need to reset zstr and return true, because we still have some data to read
+            else
+            {
+                rc = inflateReset(&zstr);
+                if (rc != Z_OK)
+                    throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
+                return true;
+            }
+        }
+        /// If it is not end and not OK, something went wrong, throw exception
+        if (rc != Z_OK)
+            throw Exception(ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}", zError(rc));
+    }
+    while (working_buffer.empty());
+
+    /// if code reach this section, working buffer is not empty, so we have some data to process
     return true;
 }
 

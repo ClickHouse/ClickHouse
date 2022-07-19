@@ -46,6 +46,8 @@ public:
 
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
@@ -76,7 +78,7 @@ public:
 
         // check that default value column has supertype with first argument
         if (number_of_arguments == 3)
-            return getLeastSupertype({arguments[0], arguments[2]});
+            return getLeastSupertype(DataTypes{arguments[0], arguments[2]});
 
         return arguments[0];
     }
@@ -133,7 +135,7 @@ public:
                 }
                 if (size <= 0)
                     return;
-                if (size > Int64(input_rows_count))
+                if (size > static_cast<Int64>(input_rows_count))
                     size = input_rows_count;
 
                 if (!src)
@@ -161,14 +163,14 @@ public:
             }
             else if (offset > 0)
             {
-                insert_range_from(source_is_constant, source_column_casted, offset, Int64(input_rows_count) - offset);
-                insert_range_from(default_is_constant, default_column_casted, Int64(input_rows_count) - offset, offset);
+                insert_range_from(source_is_constant, source_column_casted, offset, static_cast<Int64>(input_rows_count) - offset);
+                insert_range_from(default_is_constant, default_column_casted, static_cast<Int64>(input_rows_count) - offset, offset);
                 return result_column;
             }
             else
             {
                 insert_range_from(default_is_constant, default_column_casted, 0, -offset);
-                insert_range_from(source_is_constant, source_column_casted, 0, Int64(input_rows_count) + offset);
+                insert_range_from(source_is_constant, source_column_casted, 0, static_cast<Int64>(input_rows_count) + offset);
                 return result_column;
             }
         }
@@ -186,7 +188,7 @@ public:
 
                 Int64 src_idx = row + offset;
 
-                if (src_idx >= 0 && src_idx < Int64(input_rows_count))
+                if (src_idx >= 0 && src_idx < static_cast<Int64>(input_rows_count))
                     result_column->insertFrom(*source_column_casted, source_is_constant ? 0 : src_idx);
                 else if (has_defaults)
                     result_column->insertFrom(*default_column_casted, default_is_constant ? 0 : row);

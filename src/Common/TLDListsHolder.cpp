@@ -1,7 +1,8 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <string_view>
 #include <unordered_set>
 
@@ -11,29 +12,26 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TLD_LIST_NOT_FOUND;
+    extern const int LOGICAL_ERROR;
 }
 
-///
 /// TLDList
-///
 TLDList::TLDList(size_t size)
     : tld_container(size)
     , pool(std::make_unique<Arena>(10 << 20))
 {}
-bool TLDList::insert(const StringRef & host)
+bool TLDList::insert(StringRef host)
 {
     bool inserted;
     tld_container.emplace(DB::ArenaKeyHolder{host, *pool}, inserted);
     return inserted;
 }
-bool TLDList::has(const StringRef & host) const
+bool TLDList::has(StringRef host) const
 {
     return tld_container.has(host);
 }
 
-///
 /// TLDListsHolder
-///
 TLDListsHolder & TLDListsHolder::getInstance()
 {
     static TLDListsHolder instance;
@@ -62,24 +60,23 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
     std::unordered_set<std::string> tld_list_tmp;
 
     ReadBufferFromFile in(path);
+    String line;
     while (!in.eof())
     {
-        char * newline = find_first_symbols<'\n'>(in.position(), in.buffer().end());
-        if (newline >= in.buffer().end())
-            break;
-
-        std::string_view line(in.position(), newline - in.position());
-        in.position() = newline + 1;
-
+        readEscapedStringUntilEOL(line, in);
+        if (!in.eof())
+            ++in.position();
         /// Skip comments
         if (line.size() > 2 && line[0] == '/' && line[1] == '/')
             continue;
-        trim(line);
+        line = trim(line, [](char c) { return std::isspace(c); });
         /// Skip empty line
         if (line.empty())
             continue;
         tld_list_tmp.emplace(line);
     }
+    if (!in.eof())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not all list had been read", name);
 
     TLDList tld_list(tld_list_tmp.size());
     for (const auto & host : tld_list_tmp)

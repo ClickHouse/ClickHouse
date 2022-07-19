@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/intExp.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 #include <limits>
 #include <type_traits>
@@ -156,7 +156,7 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
     using T = typename DecimalType::NativeType;
     const auto whole = decimal.value / scale_multiplier;
     auto fractional = decimal.value % scale_multiplier;
-    if (fractional < T(0))
+    if (whole && fractional < T(0))
         fractional *= T(-1);
 
     return {whole, fractional};
@@ -199,7 +199,7 @@ inline typename DecimalType::NativeType getFractionalPartWithScaleMultiplier(
     /// Anycase we make modulo before compare to make scale_multiplier > 1 unaffected.
     T result = decimal.value % scale_multiplier;
     if constexpr (!keep_sign)
-        if (result < T(0))
+        if (decimal.value / scale_multiplier && result < T(0))
             result = -result;
 
     return result;
@@ -223,16 +223,16 @@ inline typename DecimalType::NativeType getFractionalPart(const DecimalType & de
 template <typename To, typename DecimalType, typename ReturnType>
 ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 {
-    using NativeT = typename DecimalType::NativeType;
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+    using DecimalNativeType = typename DecimalType::NativeType;
+    static constexpr bool throw_exception = std::is_void_v<ReturnType>;
 
     if constexpr (std::is_floating_point_v<To>)
     {
-        result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<NativeT>(scale));
+        result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<DecimalNativeType>(scale));
     }
-    else if constexpr (is_integer_v<To> && (sizeof(To) >= sizeof(NativeT)))
+    else if constexpr (is_integer<To> && (sizeof(To) >= sizeof(DecimalNativeType)))
     {
-        NativeT whole = getWholePart(decimal, scale);
+        DecimalNativeType whole = getWholePart(decimal, scale);
 
         if constexpr (is_unsigned_v<To>)
         {
@@ -247,15 +247,14 @@ ReturnType convertToImpl(const DecimalType & decimal, size_t scale, To & result)
 
         result = static_cast<To>(whole);
     }
-    else if constexpr (is_integer_v<To>)
+    else if constexpr (is_integer<To>)
     {
-        using ToNativeT = typename NativeType<To>::Type;
-        using CastTo = std::conditional_t<(is_big_int_v<NativeT> && std::is_same_v<ToNativeT, UInt8>), uint8_t, ToNativeT>;
+        using CastTo = std::conditional_t<(is_big_int_v<DecimalNativeType> && std::is_same_v<To, UInt8>), uint8_t, To>;
 
-        const NativeT whole = getWholePart(decimal, scale);
+        const DecimalNativeType whole = getWholePart(decimal, scale);
 
-        static const constexpr CastTo min_to = std::numeric_limits<ToNativeT>::min();
-        static const constexpr CastTo max_to = std::numeric_limits<ToNativeT>::max();
+        static const constexpr CastTo min_to = std::numeric_limits<To>::min();
+        static const constexpr CastTo max_to = std::numeric_limits<To>::max();
 
         if (whole < min_to || whole > max_to)
         {
@@ -304,13 +303,13 @@ inline auto binaryOpResult(const DecimalType<T> & tx, const DecimalType<U> & ty)
 }
 
 template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
-inline const DataTypeDecimalTrait<T> binaryOpResult(const DecimalType<T> & tx, const DataTypeNumber<U> &)
+inline DataTypeDecimalTrait<T> binaryOpResult(const DecimalType<T> & tx, const DataTypeNumber<U> &)
 {
     return DataTypeDecimalTrait<T>(DecimalUtils::max_precision<T>, tx.getScale());
 }
 
 template <bool, bool, typename T, typename U, template <typename> typename DecimalType>
-inline const DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const DecimalType<U> & ty)
+inline DataTypeDecimalTrait<U> binaryOpResult(const DataTypeNumber<T> &, const DecimalType<U> & ty)
 {
     return DataTypeDecimalTrait<U>(DecimalUtils::max_precision<U>, ty.getScale());
 }

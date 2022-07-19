@@ -1,4 +1,8 @@
+#include <cstddef>
 #include <Core/NamesAndTypes.h>
+
+#include <base/sort.h>
+#include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -6,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -40,6 +45,17 @@ String NameAndTypePair::getSubcolumnName() const
         return "";
 
     return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
+}
+
+String NameAndTypePair::dump() const
+{
+    WriteBufferFromOwnString out;
+    out << "name: " << name << "\n"
+        << "type: " << type->getName() << "\n"
+        << "name in storage: " << getNameInStorage() << "\n"
+        << "type in storage: " << getTypeInStorage()->getName();
+
+    return out.str();
 }
 
 void NamesAndTypesList::readText(ReadBuffer & buf)
@@ -100,7 +116,7 @@ bool NamesAndTypesList::isSubsetOf(const NamesAndTypesList & rhs) const
 {
     NamesAndTypes vector(rhs.begin(), rhs.end());
     vector.insert(vector.end(), begin(), end());
-    std::sort(vector.begin(), vector.end());
+    ::sort(vector.begin(), vector.end());
     return std::unique(vector.begin(), vector.end()) == vector.begin() + rhs.size();
 }
 
@@ -108,16 +124,16 @@ size_t NamesAndTypesList::sizeOfDifference(const NamesAndTypesList & rhs) const
 {
     NamesAndTypes vector(rhs.begin(), rhs.end());
     vector.insert(vector.end(), begin(), end());
-    std::sort(vector.begin(), vector.end());
+    ::sort(vector.begin(), vector.end());
     return (std::unique(vector.begin(), vector.end()) - vector.begin()) * 2 - size() - rhs.size();
 }
 
 void NamesAndTypesList::getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const
 {
     NamesAndTypes lhs_vector(begin(), end());
-    std::sort(lhs_vector.begin(), lhs_vector.end());
+    ::sort(lhs_vector.begin(), lhs_vector.end());
     NamesAndTypes rhs_vector(rhs.begin(), rhs.end());
-    std::sort(rhs_vector.begin(), rhs_vector.end());
+    ::sort(rhs_vector.begin(), rhs_vector.end());
 
     std::set_difference(lhs_vector.begin(), lhs_vector.end(), rhs_vector.begin(), rhs_vector.end(),
         std::back_inserter(deleted));
@@ -148,7 +164,7 @@ NamesAndTypesList NamesAndTypesList::filter(const NameSet & names) const
     NamesAndTypesList res;
     for (const NameAndTypePair & column : *this)
     {
-        if (names.count(column.name))
+        if (names.contains(column.name))
             res.push_back(column);
     }
     return res;
@@ -161,18 +177,20 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    std::unordered_map<std::string_view, const NameAndTypePair *> self_columns;
+    /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
+    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> types;
 
     for (const auto & column : *this)
-        self_columns[column.name] = &column;
+        types[column.name] = &column.type;
 
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        auto it = self_columns.find(name);
-        if (it == self_columns.end())
-            throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
-        res.emplace_back(*it->second);
+        const auto * it = types.find(name);
+        if (it == types.end())
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "No column {}", name);
+
+        res.emplace_back(name, *it->getMapped());
     }
 
     return res;
@@ -197,4 +215,17 @@ std::optional<NameAndTypePair> NamesAndTypesList::tryGetByName(const std::string
     }
     return {};
 }
+
+size_t NamesAndTypesList::getPosByName(const std::string &name) const noexcept
+{
+    size_t pos = 0;
+    for (const NameAndTypePair & column : *this)
+    {
+        if (column.name == name)
+            break;
+        ++pos;
+    }
+    return pos;
+}
+
 }

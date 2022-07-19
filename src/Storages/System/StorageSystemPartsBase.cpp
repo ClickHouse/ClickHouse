@@ -7,13 +7,14 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMaterializeMySQL.h>
+#include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
 
 
@@ -26,7 +27,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
+bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
 {
     bool has_state_column = false;
     Names real_column_names;
@@ -41,15 +42,31 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const St
 
     /// Do not check if only _state column is requested
     if (!(has_state_column && real_column_names.empty()))
-        metadata_snapshot->check(real_column_names, {}, getStorageID());
+        storage_snapshot->check(real_column_names);
 
     return has_state_column;
 }
 
 MergeTreeData::DataPartsVector
-StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts) const
+StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
-    if (require_projection_parts && data->getInMemoryMetadataPtr()->projections.empty())
+    using State = MergeTreeData::DataPartState;
+    if (need_inactive_parts)
+    {
+        /// If has_state_column is requested, return all states.
+        if (!has_state_column)
+            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, &state);
+
+        return data->getAllDataPartsVector(&state);
+    }
+
+    return data->getDataPartsVectorForInternalUsage({State::Active}, &state);
+}
+
+MergeTreeData::ProjectionPartsVector
+StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
+{
+    if (data->getInMemoryMetadataPtr()->projections.empty())
         return {};
 
     using State = MergeTreeData::DataPartState;
@@ -57,16 +74,16 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVector({State::Committed, State::Outdated}, &state, require_projection_parts);
+            return data->getProjectionPartsVectorForInternalUsage({State::Active, State::Outdated}, &state);
 
-        return data->getAllDataPartsVector(&state, require_projection_parts);
+        return data->getAllProjectionPartsVector(&state);
     }
 
-    return data->getDataPartsVector({State::Committed}, &state, require_projection_parts);
+    return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state);
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
-    : query_id(context->getCurrentQueryId()), settings(context->getSettings())
+    : query_id(context->getCurrentQueryId()), settings(context->getSettingsRef())
 {
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -124,7 +141,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
                     String engine_name = storage->getName();
 
 #if USE_MYSQL
-                    if (auto * proxy = dynamic_cast<StorageMaterializeMySQL *>(storage.get()))
+                    if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
                     {
                         auto nested = proxy->getNested();
                         storage.swap(nested);
@@ -235,14 +252,14 @@ StoragesInfo StoragesInfoStream::next()
 
 Pipe StorageSystemPartsBase::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    bool has_state_column = hasStateColumn(column_names, metadata_snapshot);
+    bool has_state_column = hasStateColumn(column_names, storage_snapshot);
 
     StoragesInfoStream stream(query_info, context);
 
@@ -250,13 +267,13 @@ Pipe StorageSystemPartsBase::read(
 
     NameSet names_set(column_names.begin(), column_names.end());
 
-    Block sample = metadata_snapshot->getSampleBlock();
+    Block sample = storage_snapshot->metadata->getSampleBlock();
     Block header;
 
     std::vector<UInt8> columns_mask(sample.columns());
     for (size_t i = 0; i < sample.columns(); ++i)
     {
-        if (names_set.count(sample.getByPosition(i).name))
+        if (names_set.contains(sample.getByPosition(i).name))
         {
             columns_mask[i] = 1;
             header.insert(sample.getByPosition(i));
@@ -268,7 +285,7 @@ Pipe StorageSystemPartsBase::read(
 
     while (StoragesInfo info = stream.next())
     {
-        processNextStorage(res_columns, columns_mask, info, has_state_column);
+        processNextStorage(context, res_columns, columns_mask, info, has_state_column);
     }
 
     if (has_state_column)

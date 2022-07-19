@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -9,6 +10,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
+#include "Storages/MergeTree/DataPartStorageOnDisk.h"
 #include <sys/time.h>
 
 namespace DB
@@ -31,6 +33,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
     , pool(storage.getContext()->getSchedulePool())
+    , log(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"))
 {
     init();
     sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
@@ -44,18 +47,23 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
 
 MergeTreeWriteAheadLog::~MergeTreeWriteAheadLog()
 {
-    std::unique_lock lock(write_mutex);
-    if (sync_scheduled)
-        sync_cv.wait(lock, [this] { return !sync_scheduled; });
+    try
+    {
+        shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void MergeTreeWriteAheadLog::init()
 {
     out = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
 
-    /// Small hack: in NativeBlockOutputStream header is used only in `getHeader` method.
+    /// Small hack: in NativeWriter header is used only in `getHeader` method.
     /// To avoid complex logic of changing it during ALTERs we leave it empty.
-    block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, Block{});
+    block_out = std::make_unique<NativeWriter>(*out, 0, Block{});
     min_block_number = std::numeric_limits<Int64>::max();
     max_block_number = -1;
     bytes_at_last_sync = 0;
@@ -107,6 +115,8 @@ void MergeTreeWriteAheadLog::rotate(const std::unique_lock<std::mutex> &)
         + toString(min_block_number) + "_"
         + toString(max_block_number) + WAL_FILE_EXTENSION;
 
+    /// Finalize stream before file rename
+    out->finalize();
     disk->replaceFile(path, storage.getRelativeDataPath() + new_name);
     init();
 }
@@ -116,13 +126,14 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
-    auto in = disk->readFile(path, DBMS_DEFAULT_BUFFER_SIZE);
-    NativeBlockInputStream block_in(*in, 0);
+    auto in = disk->readFile(path);
+    NativeReader block_in(*in, 0);
     NameSet dropped_parts;
 
     while (!in->eof())
     {
         MergeTreeData::MutableDataPartPtr part;
+        DataPartStorageBuilderPtr data_part_storage_builder;
         UInt8 version;
         String part_name;
         Block block;
@@ -148,13 +159,14 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
             else if (action_type == ActionType::ADD_PART)
             {
                 auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk, 0);
+                auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
+                data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(single_disk_volume, storage.getRelativeDataPath(), part_name);
 
                 part = storage.createPart(
                     part_name,
-                    MergeTreeDataPartType::IN_MEMORY,
+                    MergeTreeDataPartType::InMemory,
                     MergeTreePartInfo::fromPartName(part_name, storage.format_version),
-                    single_disk_volume,
-                    part_name);
+                    data_part_storage);
 
                 part->uuid = metadata.part_uuid;
 
@@ -172,8 +184,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 || e.code() == ErrorCodes::BAD_DATA_PART_NAME
                 || e.code() == ErrorCodes::CORRUPTED_DATA)
             {
-                LOG_WARNING(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"),
-                    "WAL file '{}' is broken. {}", path, e.displayText());
+                LOG_WARNING(log, "WAL file '{}' is broken. {}", path, e.displayText());
 
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
@@ -191,19 +202,30 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
         {
             MergedBlockOutputStream part_out(
                 part,
+                data_part_storage_builder,
                 metadata_snapshot,
                 block.getNamesAndTypesList(),
                 {},
-                CompressionCodecFactory::instance().get("NONE", {}));
+                CompressionCodecFactory::instance().get("NONE", {}),
+                NO_TRANSACTION_PTR);
 
-            part->minmax_idx.update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+            part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
+            part->setColumns(block.getNamesAndTypesList());
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 
-            part_out.writePrefix();
             part_out.write(block);
-            part_out.writeSuffixAndFinalizePart(part);
+
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                auto projection_block = projection.calculate(block, context);
+                auto temp_part = MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, data_part_storage_builder, part.get());
+                temp_part.finalize();
+                if (projection_block.rows())
+                    part->addProjectionPart(projection.name, std::move(temp_part.part));
+            }
+            part_out.finalizePart(part, false);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
             max_block_number = std::max(max_block_number, part->info.max_block);
@@ -237,6 +259,25 @@ void MergeTreeWriteAheadLog::sync(std::unique_lock<std::mutex> & lock)
 
     if (storage.getSettings()->in_memory_parts_insert_sync)
         sync_cv.wait(lock, [this] { return !sync_scheduled; });
+}
+
+void MergeTreeWriteAheadLog::shutdown()
+{
+    {
+        std::unique_lock lock(write_mutex);
+        if (shutdown_called)
+             return;
+
+        if (sync_scheduled)
+            sync_cv.wait(lock, [this] { return !sync_scheduled; });
+
+        shutdown_called = true;
+        out->finalize();
+        out.reset();
+    }
+
+    /// Do it without lock, otherwise inversion between pool lock and write_mutex is possible
+    sync_task->deactivate();
 }
 
 std::optional<MergeTreeWriteAheadLog::MinMaxBlockNumber>

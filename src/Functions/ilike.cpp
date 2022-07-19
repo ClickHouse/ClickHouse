@@ -12,8 +12,8 @@ struct NameILike
     static constexpr auto name = "ilike";
 };
 
-using ILikeImpl = MatchImpl<true, false, /*case-insensitive*/true>;
-using FunctionILike = FunctionsStringSearch<ILikeImpl, NameILike>;
+using ILikeImpl = MatchImpl<NameILike, MatchTraits::Syntax::Like, MatchTraits::Case::Insensitive, MatchTraits::Result::DontNegate>;
+using FunctionILike = FunctionsStringSearch<ILikeImpl>;
 
 }
 

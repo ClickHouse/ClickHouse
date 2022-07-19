@@ -6,7 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>
-#include <DataStreams/MarkInCompressedFile.h>
+#include <Formats/MarkInCompressedFile.h>
 
 
 namespace ProfileEvents
@@ -40,7 +40,7 @@ private:
     using Base = LRUCache<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
-    MarkCache(size_t max_size_in_bytes)
+    explicit MarkCache(size_t max_size_in_bytes)
         : Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.

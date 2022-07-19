@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Access/AccessRightsElement.h>
+#include <Core/SettingsEnums.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
@@ -15,6 +16,7 @@ namespace DB
 class ASTCreateQuery;
 class ASTExpressionList;
 class ASTConstraintDeclaration;
+class ASTStorage;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 
@@ -52,6 +54,11 @@ public:
         force_attach = force_attach_;
     }
 
+    void setLoadDatabaseWithoutTables(bool load_database_without_tables_)
+    {
+        load_database_without_tables = load_database_without_tables_;
+    }
+
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
@@ -74,8 +81,10 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
-    TableProperties setProperties(ASTCreateQuery & create) const;
+    TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create) const;
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
+    static String getTableEngineName(DefaultTableEngine default_table_engine);
+    static void setDefaultTableEngine(ASTStorage & storage, ContextPtr local_context);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
@@ -87,6 +96,10 @@ private:
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
+    /// Update create query with columns description from storage if query doesn't have it.
+    /// It's used to prevent automatic schema inference while table creation on each server startup.
+    void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
+
     ASTPtr query_ptr;
 
     /// Skip safety threshold when loading tables.
@@ -94,6 +107,7 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
+    bool load_database_without_tables = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

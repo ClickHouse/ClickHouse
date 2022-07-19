@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -40,6 +38,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -84,8 +83,8 @@ private:
         {
             auto h3index = h3index_source.getWhole();
 
-            // covert to std::string and get the c_str to have the delimiting \0 at the end.
-            auto h3index_str = StringRef(h3index.data, h3index.size).toString();
+            // convert to std::string and get the c_str to have the delimiting \0 at the end.
+            auto h3index_str = std::string(reinterpret_cast<const char *>(h3index.data), h3index.size);
             res_data[row_num] = stringToH3(h3index_str.c_str());
 
             if (res_data[row_num] == 0)

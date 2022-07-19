@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 set insert_distributed_sync = 1;
 
 DROP TABLE IF EXISTS visits;

@@ -1,7 +1,7 @@
 #include "divide.h"
 #include <Common/CpuId.h>
 
-#if defined(__x86_64__) && !defined(ARCADIA_BUILD)
+#if defined(__x86_64__)
 namespace SSE2
 {
     template <typename A, typename B, typename ResultType>
@@ -25,7 +25,7 @@ namespace Generic
 template <typename A, typename B, typename ResultType>
 void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
 {
-#if defined(__x86_64__) && !defined(ARCADIA_BUILD)
+#if defined(__x86_64__)
     if (DB::Cpu::CpuFlagsCache::have_AVX2)
         AVX2::divideImpl(a_pos, b, c_pos, size);
     else if (DB::Cpu::CpuFlagsCache::have_SSE2)

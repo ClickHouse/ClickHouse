@@ -1,22 +1,21 @@
-#include <common/map.h>
-#include <common/range.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
-#include <DataTypes/Serializations/SerializationTupleElement.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -30,9 +29,10 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int EMPTY_DATA_PASSED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
+    extern const int ILLEGAL_INDEX;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -54,9 +54,6 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
         if (name.empty())
             return Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-        if (isNumericASCII(name[0]))
-            return Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
-
         if (!names_set.insert(name).second)
             return Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
     }
@@ -64,8 +61,8 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     return {};
 }
 
-DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_, bool serialize_names_)
-    : elems(elems_), names(names_), have_explicit_names(true), serialize_names(serialize_names_)
+DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
+    : elems(elems_), names(names_), have_explicit_names(true)
 {
     size_t size = elems.size();
     if (names.size() != size)
@@ -73,11 +70,6 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_, b
 
     if (auto exception = checkTupleNames(names))
         throw std::move(*exception);
-}
-
-bool DataTypeTuple::canBeCreatedWithNames(const Strings & names)
-{
-    return checkTupleNames(names) == std::nullopt;
 }
 
 std::string DataTypeTuple::doGetName() const
@@ -91,7 +83,7 @@ std::string DataTypeTuple::doGetName() const
         if (i != 0)
             s << ", ";
 
-        if (have_explicit_names && serialize_names)
+        if (have_explicit_names)
             s << backQuoteIfNeed(names[i]) << ' ';
 
         s << elems[i]->getName();
@@ -105,11 +97,6 @@ std::string DataTypeTuple::doGetName() const
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
     return assert_cast<ColumnTuple &>(column).getColumn(idx);
-}
-
-static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
-{
-    return assert_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
 template <typename F>
@@ -160,6 +147,31 @@ MutableColumnPtr DataTypeTuple::createColumn() const
     return ColumnTuple::create(std::move(tuple_columns));
 }
 
+MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
+{
+    /// If we read subcolumn of nested Tuple, it may be wrapped to SerializationNamed
+    /// several times to allow to reconstruct the substream path name.
+    /// Here we don't need substream path name, so we drop first several wrapper serializations.
+
+    const auto * current_serialization = &serialization;
+    while (const auto * serialization_named = typeid_cast<const SerializationNamed *>(current_serialization))
+        current_serialization = serialization_named->getNested().get();
+
+    const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
+    if (!serialization_tuple)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
+
+    const auto & element_serializations = serialization_tuple->getElementsSerializations();
+
+    size_t size = elems.size();
+    assert(element_serializations.size() == size);
+    MutableColumns tuple_columns(size);
+    for (size_t i = 0; i < size; ++i)
+        tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]->getNested());
+
+    return ColumnTuple::create(std::move(tuple_columns));
+}
+
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(collections::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
@@ -186,7 +198,7 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
         return false;
 
     for (size_t i = 0; i < size; ++i)
-        if (!elems[i]->equals(*rhs_tuple.elems[i]))
+        if (!elems[i]->equals(*rhs_tuple.elems[i]) || names[i] != rhs_tuple.names[i])
             return false;
 
     return true;
@@ -200,6 +212,14 @@ size_t DataTypeTuple::getPositionByName(const String & name) const
         if (names[i] == name)
             return i;
     throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+}
+
+String DataTypeTuple::getNameByPosition(size_t i) const
+{
+    if (i == 0 || i > names.size())
+        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of tuple element ({}) if out range ([1, {}])", i, names.size());
+
+    return names[i - 1];
 }
 
 
@@ -234,102 +254,44 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
     return res;
 }
 
-template <typename OnSuccess, typename OnContinue>
-auto DataTypeTuple::getSubcolumnEntity(const String & subcolumn_name,
-    const OnSuccess & on_success, const OnContinue & on_continue) const
-{
-    using ReturnType = decltype(on_success(0));
-    for (size_t i = 0; i < names.size(); ++i)
-    {
-        if (startsWith(subcolumn_name, names[i]))
-        {
-            size_t name_length = names[i].size();
-
-            if (subcolumn_name.size() == name_length)
-                return on_success(i);
-
-            if (subcolumn_name[name_length] == '.')
-                return on_continue(i, subcolumn_name.substr(name_length + 1));
-        }
-    }
-
-    return ReturnType{};
-}
-
-DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) const
-{
-    if (subcolumn_name == MAIN_SUBCOLUMN_NAME)
-        return shared_from_this();
-
-    auto on_success = [&](size_t pos) { return elems[pos]; };
-    auto on_continue = [&](size_t pos, const String & next_subcolumn) { return elems[pos]->tryGetSubcolumnType(next_subcolumn); };
-
-    return getSubcolumnEntity(subcolumn_name, on_success, on_continue);
-}
-
-ColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
-{
-    auto on_success = [&](size_t pos) { return extractElementColumn(column, pos).getPtr(); };
-    auto on_continue = [&](size_t pos, const String & next_subcolumn)
-    {
-        return elems[pos]->getSubcolumn(next_subcolumn, extractElementColumn(column, pos));
-    };
-
-    if (auto subcolumn = getSubcolumnEntity(subcolumn_name, on_success, on_continue))
-        return subcolumn;
-
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
-}
-
-SerializationPtr DataTypeTuple::getSubcolumnSerialization(
-    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
-{
-    auto on_success = [&](size_t pos)
-    {
-        return std::make_shared<SerializationTupleElement>(base_serialization_getter(*elems[pos]), names[pos]);
-    };
-
-    auto on_continue = [&](size_t pos, const String & next_subcolumn)
-    {
-        auto next_serialization = elems[pos]->getSubcolumnSerialization(next_subcolumn, base_serialization_getter);
-        return std::make_shared<SerializationTupleElement>(next_serialization, names[pos]);
-    };
-
-    if (auto serialization = getSubcolumnEntity(subcolumn_name, on_success, on_continue))
-        return serialization;
-
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
-}
-
-
 SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
-    bool use_explicit_names = have_explicit_names && serialize_names;
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        String elem_name = use_explicit_names ? names[i] : toString(i + 1);
+        String elem_name = have_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getDefaultSerialization();
-        serializations[i] = std::make_shared<SerializationTupleElement>(serialization, elem_name);
+        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name);
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
+    return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
 }
 
-SerializationPtr DataTypeTuple::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const
+SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
-    bool use_explicit_names = have_explicit_names && serialize_names;
+    const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
+
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        String elem_name = use_explicit_names ? names[i] : toString(i + 1);
-        auto subcolumn_name = Nested::concatenateName(column_name, elem_name);
-        auto serializaion = elems[i]->getSerialization(subcolumn_name, callback);
-        serializations[i] = std::make_shared<SerializationTupleElement>(serializaion, elem_name);
+        String elem_name = have_explicit_names ? names[i] : toString(i + 1);
+        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
+        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name);
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
+    return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
 }
+
+MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfo::Settings & settings) const
+{
+    MutableSerializationInfos infos;
+    infos.reserve(elems.size());
+    for (const auto & elem : elems)
+        infos.push_back(elem->createSerializationInfo(settings));
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), settings);
+}
+
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

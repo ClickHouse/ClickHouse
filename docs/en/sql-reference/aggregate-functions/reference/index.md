@@ -1,10 +1,10 @@
 ---
 toc_folder_title: Reference
-toc_priority: 36
+sidebar_position: 36
 toc_hidden: true
 ---
 
-# List of Aggregate Functions {#aggregate-functions-reference}
+# List of Aggregate Functions
 
 Standard aggregate functions:
 
@@ -66,9 +66,11 @@ ClickHouse-specific aggregate functions:
 -   [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md)
 -   [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md)
 -   [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md)
+-   [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16)
+-   [quantileBFloat16Weighted](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->

@@ -3,7 +3,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
-#include <errno.h>
+#include <cerrno>
 
 
 namespace ProfileEvents
@@ -28,12 +28,13 @@ ReadBufferFromFile::ReadBufferFromFile(
     size_t buf_size,
     int flags,
     char * existing_memory,
-    size_t alignment)
-    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment), file_name(file_name_)
+    size_t alignment,
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment, file_size_), file_name(file_name_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
-#ifdef __APPLE__
+#ifdef OS_DARWIN
     bool o_direct = (flags != -1) && (flags & O_DIRECT);
     if (o_direct)
         flags = flags & ~O_DIRECT;
@@ -43,7 +44,7 @@ ReadBufferFromFile::ReadBufferFromFile(
     if (-1 == fd)
         throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
                                errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
-#ifdef __APPLE__
+#ifdef OS_DARWIN
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
@@ -58,10 +59,10 @@ ReadBufferFromFile::ReadBufferFromFile(
     const std::string & original_file_name,
     size_t buf_size,
     char * existing_memory,
-    size_t alignment)
-    :
-    ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment),
-    file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
+    size_t alignment,
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment, file_size_)
+    , file_name(original_file_name.empty() ? "(fd = " + toString(fd_) + ")" : original_file_name)
 {
     fd_ = -1;
 }

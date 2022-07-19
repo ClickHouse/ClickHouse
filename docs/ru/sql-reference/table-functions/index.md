@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Табличные функции"
-toc_priority: 34
-toc_title: "Введение"
+sidebar_label: "Табличные функции"
+sidebar_position: 34
 ---
 
 # Табличные функции {#table-functions}
@@ -18,7 +17,9 @@ toc_title: "Введение"
 
         Это один из методов создания таблицы.
 
-!!! warning "Предупреждение"
+-   Запросе [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function).
+
+:::danger "Предупреждение"
     Если настройка [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) выключена, то использовать табличные функции невозможно.
 
 | Функция               | Описание                                                                                                                              |
@@ -34,4 +35,4 @@ toc_title: "Введение"
 | [hdfs](hdfs.md)       | Создаёт таблицу с движком [HDFS](../../engines/table-engines/integrations/hdfs.md).                                                       |
 | [s3](s3.md)           | Создаёт таблицу с движком [S3](../../engines/table-engines/integrations/s3.md).                                                       |
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/table-functions/) <!--hide-->

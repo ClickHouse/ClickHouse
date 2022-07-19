@@ -1,12 +1,10 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -50,7 +48,8 @@ struct MaterializeMetadata
         mysqlxx::PoolWithFailover::Entry & connection,
         const String & database,
         bool & opened_transaction,
-        std::unordered_map<String, String> & need_dumping_tables);
+        std::unordered_map<String, String> & need_dumping_tables,
+        std::unordered_set<String> & materialized_tables_list);
 
     MaterializeMetadata(const String & path_, const Settings & settings_);
 };

@@ -6,36 +6,31 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Quota.h>
-#include <Access/AccessFlags.h>
-#include <common/range.h>
+#include <Access/Common/AccessFlags.h>
+#include <base/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 
 namespace DB
 {
-using ResourceAmount = Quota::ResourceAmount;
-using ResourceType = Quota::ResourceType;
-using ResourceTypeInfo = Quota::ResourceTypeInfo;
-constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
-
 
 namespace
 {
-    void addValue(IColumn & out_column, NullMap & out_column_null_map, ResourceAmount amount, const ResourceTypeInfo & type_info)
+    void addValue(IColumn & out_column, NullMap & out_column_null_map, QuotaValue value, const QuotaTypeInfo & type_info)
     {
         out_column_null_map.push_back(false);
         if (type_info.output_as_float)
-            static_cast<ColumnFloat64 &>(out_column).getData().push_back(double(amount) / type_info.output_denominator);
+            static_cast<ColumnFloat64 &>(out_column).getData().push_back(double(value) / type_info.output_denominator);
         else
-            static_cast<ColumnUInt64 &>(out_column).getData().push_back(amount / type_info.output_denominator);
+            static_cast<ColumnUInt64 &>(out_column).getData().push_back(value / type_info.output_denominator);
     }
 
-    void addValue(IColumn & out_column, NullMap & out_column_null_map, std::optional<ResourceAmount> amount, const ResourceTypeInfo & type_info)
+    void addValue(IColumn & out_column, NullMap & out_column_null_map, std::optional<QuotaValue> value, const QuotaTypeInfo & type_info)
     {
-        if (amount)
-            addValue(out_column, out_column_null_map, *amount, type_info);
+        if (value)
+            addValue(out_column, out_column_null_map, *value, type_info);
         else
         {
             out_column_null_map.push_back(true);
@@ -53,9 +48,9 @@ NamesAndTypesList StorageSystemQuotaLimits::getNamesAndTypes()
         {"is_randomized_interval", std::make_shared<DataTypeUInt8>()},
     };
 
-    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
+    for (auto quota_type : collections::range(QuotaType::MAX))
     {
-        const auto & type_info = ResourceTypeInfo::get(resource_type);
+        const auto & type_info = QuotaTypeInfo::get(quota_type);
         String column_name = "max_" + type_info.name;
         DataTypePtr data_type;
         if (type_info.output_as_float)
@@ -71,8 +66,11 @@ NamesAndTypesList StorageSystemQuotaLimits::getNamesAndTypes()
 
 void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_QUOTAS);
-    const auto & access_control = context->getAccessControlManager();
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
+    const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_QUOTAS);
+
     std::vector<UUID> ids = access_control.findAll<Quota>();
 
     size_t column_index = 0;
@@ -80,12 +78,13 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
     auto & column_duration = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]).getData();
     auto & column_is_randomized_interval = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
 
-    IColumn * column_max[MAX_RESOURCE_TYPE];
-    NullMap * column_max_null_map[MAX_RESOURCE_TYPE];
-    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
+    IColumn * column_max[static_cast<size_t>(QuotaType::MAX)];
+    NullMap * column_max_null_map[static_cast<size_t>(QuotaType::MAX)];
+    for (auto quota_type : collections::range(QuotaType::MAX))
     {
-        column_max[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn();
-        column_max_null_map[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
+        auto quota_type_i = static_cast<size_t>(quota_type);
+        column_max[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn();
+        column_max_null_map[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     }
 
     auto add_row = [&](const String & quota_name, const Quota::Limits & limits)
@@ -94,10 +93,11 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
         column_duration.push_back(limits.duration.count());
         column_is_randomized_interval.push_back(limits.randomize_interval);
 
-        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
+        for (auto quota_type : collections::range(QuotaType::MAX))
         {
-            const auto & type_info = ResourceTypeInfo::get(resource_type);
-            addValue(*column_max[resource_type], *column_max_null_map[resource_type], limits.max[resource_type], type_info);
+            auto quota_type_i = static_cast<size_t>(quota_type);
+            const auto & type_info = QuotaTypeInfo::get(quota_type);
+            addValue(*column_max[quota_type_i], *column_max_null_map[quota_type_i], limits.max[quota_type_i], type_info);
         }
     };
 

@@ -30,8 +30,8 @@ SELECT reinterpret(a, 'String'), reinterpretAsString(a), reinterpretAsUInt8('11'
 SELECT reinterpret(a, 'String'), reinterpretAsString(a), reinterpretAsUInt16('11') as a;
 SELECT 'Dates';
 SELECT reinterpret(0, 'Date'), reinterpret('', 'Date');
-SELECT reinterpret(0, 'DateTime'), reinterpret('', 'DateTime');
-SELECT reinterpret(0, 'DateTime64'), reinterpret('', 'DateTime64');
+SELECT reinterpret(0, 'DateTime(''Asia/Istanbul'')'), reinterpret('', 'DateTime(''Asia/Istanbul'')');
+SELECT reinterpret(0, 'DateTime64(3, ''Asia/Istanbul'')'), reinterpret('', 'DateTime64(3, ''Asia/Istanbul'')');
 SELECT 'Decimals';
 SELECT reinterpret(toDecimal32(5, 2), 'Decimal32(2)'), reinterpret('1', 'Decimal32(2)');
 SELECT reinterpret(toDecimal64(5, 2), 'Decimal64(2)'), reinterpret('1', 'Decimal64(2)');;

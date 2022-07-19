@@ -1,6 +1,6 @@
 ---
-toc_priority: 17
-toc_title: 命令行客户端
+sidebar_position: 17
+sidebar_label: 命令行客户端
 ---
 
 # 命令行客户端 {#command-line-client}
@@ -147,4 +147,4 @@ $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM 
 </config>
 ```
 
-[来源文章](https://clickhouse.tech/docs/zh/interfaces/cli/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/zh/interfaces/cli/) <!--hide-->

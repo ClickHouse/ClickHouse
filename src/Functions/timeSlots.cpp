@@ -29,7 +29,7 @@ namespace
   *  For example, timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')].
   *  This is necessary to search for hits that are part of the corresponding visit.
   *
-  * This is obsolete function. It was developed for Yandex.Metrica, but no longer used in Yandex.
+  * This is obsolete function. It was developed for Metrica web analytics system, but the art of its usage has been forgotten.
   * But this function was adopted by wider audience.
   */
 
@@ -117,6 +117,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }

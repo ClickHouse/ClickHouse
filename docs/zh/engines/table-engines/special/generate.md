@@ -1,11 +1,11 @@
 ---
-toc_priority: 46
-toc_title: 随机数生成
+sidebar_position: 46
+sidebar_label: 随机数生成
 ---
 
 # 随机数生成表引擎 {#table_engines-generate}
 
-随机数生成表引擎为指定的表模式生成随机数 
+随机数生成表引擎为指定的表模式生成随机数
 
 使用示例:
 - 测试时生成可复写的大表
@@ -54,4 +54,4 @@ SELECT * FROM generate_engine_table LIMIT 3
     -   Indices
     -   Replication
 
-[原始文档](https://clickhouse.tech/docs/en/operations/table_engines/generate/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/en/operations/table_engines/generate/) <!--hide-->

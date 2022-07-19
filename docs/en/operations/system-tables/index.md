@@ -1,9 +1,9 @@
 ---
-toc_priority: 52
-toc_title: System Tables
+sidebar_position: 52
+sidebar_label: System Tables
 ---
 
-# System Tables {#system-tables}
+# System Tables
 
 ## Introduction {#system-tables-introduction}
 
@@ -34,7 +34,7 @@ System log tables can be customized by creating a config file with the same name
 An example:
 
 ```xml
-<yandex>
+<clickhouse>
     <query_log>
         <database>system</database>
         <table>query_log</table>
@@ -45,7 +45,7 @@ An example:
         -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
-</yandex>
+</clickhouse>
 ```
 
 By default, table growth is unlimited. To control a size of a table, you can use [TTL](../../sql-reference/statements/alter/ttl.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
@@ -71,4 +71,4 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 -   `OSReadBytes`
 -   `OSWriteBytes`
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/) <!--hide-->

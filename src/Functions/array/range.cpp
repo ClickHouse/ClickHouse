@@ -7,6 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 #include <numeric>
 
 
@@ -31,8 +32,10 @@ class FunctionRange : public IFunction
 {
 public:
     static constexpr auto name = "range";
-    static constexpr size_t max_elements = 100'000'000;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRange>(); }
+
+    const size_t max_elements;
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionRange>(std::move(context_)); }
+    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef().function_range_max_elements_in_block) {}
 
 private:
     String getName() const override { return name; }
@@ -40,6 +43,7 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

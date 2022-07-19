@@ -28,7 +28,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -   `ver` — 版本列。类型为 `UInt*`, `Date` 或 `DateTime`。可选参数。
 
     在数据合并的时候，`ReplacingMergeTree` 从所有具有相同排序键的行中选择一行留下：
-    
+
      - 如果 `ver` 列未指定，保留最后一条。
      - 如果 `ver` 列已指定，保留 `ver` 值最大的版本。
 
@@ -40,7 +40,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>已弃用的建表方法</summary>
 
-!!! attention "注意"
+    :::info "注意"
     不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
 ``` sql
@@ -58,4 +58,4 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

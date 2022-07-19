@@ -90,7 +90,7 @@ private:
                 throw;
             }
 
-            for (i = 0; i < old_size; i++)
+            for (i = 0; i < old_size; ++i)
             {
                 nested_func->merge(&new_state[i * nested_size_of_data],
                         &old_state[i * nested_size_of_data],
@@ -105,8 +105,8 @@ private:
     }
 
 public:
-    AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, {})
+    AggregateFunctionForEach(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionForEachData, AggregateFunctionForEach>(arguments, params_)
         , nested_func(nested_), num_arguments(arguments.size())
     {
         nested_size_of_data = nested_func->sizeOfData();
@@ -127,6 +127,16 @@ public:
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeArray>(nested_func->getReturnType());
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
@@ -196,7 +206,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         const AggregateFunctionForEachData & state = data(place);
         writeBinary(state.dynamic_array_size, buf);
@@ -209,7 +219,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         AggregateFunctionForEachData & state = data(place);
 
@@ -221,7 +231,7 @@ public:
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < new_size; ++i)
         {
-            nested_func->deserialize(nested_state, buf, arena);
+            nested_func->deserialize(nested_state, buf, version, arena);
             nested_state += nested_size_of_data;
         }
     }

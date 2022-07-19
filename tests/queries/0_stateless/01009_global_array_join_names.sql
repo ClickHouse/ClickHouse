@@ -1,3 +1,5 @@
+-- Tags: global
+
 DROP TABLE IF EXISTS test1;
 DROP TABLE IF EXISTS test2;
 

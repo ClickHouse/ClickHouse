@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 DROP TABLE IF EXISTS d_one;
 CREATE TABLE d_one (dummy UInt8) ENGINE = Distributed(test_cluster_two_shards, system, one, rand());
 

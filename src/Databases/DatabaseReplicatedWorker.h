@@ -29,12 +29,16 @@ public:
 
     void shutdown() override;
 
-    static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
-                                   DatabaseReplicated * const database, bool committed = false);
+    bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 
+    static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
+                                   DatabaseReplicated * const database, bool committed = false); /// NOLINT
+
+    UInt32 getLogPointer() const;
 private:
     bool initializeMainThread() override;
     void initializeReplication();
+    void initializeLogPointer(const String & processed_entry_name);
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
@@ -42,8 +46,9 @@ private:
     DatabaseReplicated * const database;
     mutable std::mutex mutex;
     std::condition_variable wait_current_task_change;
+
     String current_task;
-    UInt32 logs_to_keep = std::numeric_limits<UInt32>::max();
+    std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
 };
 
 }

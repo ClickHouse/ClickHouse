@@ -1,6 +1,6 @@
 ---
-toc_priority: 52
-toc_title: "Системные таблицы"
+sidebar_position: 52
+sidebar_label: "Системные таблицы"
 ---
 
 # Системные таблицы {#system-tables}
@@ -34,7 +34,7 @@ toc_title: "Системные таблицы"
 Пример:
 
 ```xml
-<yandex>
+<clickhouse>
     <query_log>
         <database>system</database>
         <table>query_log</table>
@@ -45,12 +45,12 @@ toc_title: "Системные таблицы"
         -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
-</yandex>
+</clickhouse>
 ```
 
 По умолчанию размер таблицы не ограничен. Управлять размером таблицы можно используя [TTL](../../sql-reference/statements/alter/ttl.md#manipuliatsii-s-ttl-tablitsy) для удаления устаревших записей журнала. Также вы можете использовать функцию партиционирования для таблиц `MergeTree`.
 
-### Источники системных показателей 
+### Источники системных показателей
 
 Для сбора системных показателей сервер ClickHouse использует:
 

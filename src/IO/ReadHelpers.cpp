@@ -4,15 +4,22 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <common/find_symbols.h>
-#include <stdlib.h>
+#include <base/find_symbols.h>
+#include <cstdlib>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
+#endif
+
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
+#    ifdef HAS_RESERVED_IDENTIFIER
+#        pragma clang diagnostic ignored "-Wreserved-identifier"
+#    endif
 #endif
 
 namespace DB
@@ -26,6 +33,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -137,6 +145,12 @@ void assertEOF(ReadBuffer & buf)
         throwAtAssertionFailed("eof", buf);
 }
 
+void assertNotEOF(ReadBuffer & buf)
+{
+    if (buf.eof())
+        throw Exception("Attempt to read after EOF", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+}
+
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
@@ -217,6 +231,15 @@ void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf)
 }
 
 template <typename Vector>
+void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<'\n'>(s, buf);
+}
+
+template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
+
+template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf)
 {
     readStringUntilCharsInto<'\0'>(s, buf);
@@ -239,7 +262,8 @@ void readString(String & s, ReadBuffer & buf)
 }
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-
+template void readStringInto<String>(String & s, ReadBuffer & buf);
+template void readStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 
 template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
@@ -327,6 +351,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
+            && decoded_char != '='  /// TSKV format invented somewhere
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -351,8 +376,11 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     };
 
     ++buf.position();
+
     if (buf.eof())
         return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+
+    assert(buf.hasPendingData());
 
     switch (*buf.position())
     {
@@ -567,7 +595,11 @@ void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readQuotedStringInto<true>(String & s, ReadBuffer & buf);
+template void readQuotedStringInto<false>(String & s, ReadBuffer & buf);
 template void readDoubleQuotedStringInto<false>(NullOutput & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(String & s, ReadBuffer & buf);
+template void readBackQuotedStringInto<false>(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
@@ -593,6 +625,12 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
     readBackQuotedStringInto<true>(s, buf);
 }
 
+template<typename T>
+concept WithResize = requires (T value)
+{
+    { value.resize(1) };
+    { value.size() } -> std::integral<>;
+};
 
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
@@ -664,6 +702,24 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                         return;
                     }
                 }
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+                auto rc = vdupq_n_u8('\r');
+                auto nc = vdupq_n_u8('\n');
+                auto dc = vdupq_n_u8(delimiter);
+                /// Returns a 64 bit mask of nibbles (4 bits for each byte).
+                auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
+                { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
+                for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
+                {
+                    uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(next_pos));
+                    auto eq = vorrq_u8(vorrq_u8(vceqq_u8(bytes, rc), vceqq_u8(bytes, nc)), vceqq_u8(bytes, dc));
+                    uint64_t bit_mask = get_nibble_mask(eq);
+                    if (bit_mask)
+                    {
+                        next_pos += __builtin_ctzll(bit_mask) >> 2;
+                        return;
+                    }
+                }
 #endif
                 while (next_pos < buf.buffer().end()
                     && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
@@ -676,16 +732,18 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if (!buf.hasPendingData())
                 continue;
 
-            /** CSV format can contain insignificant spaces and tabs.
-              * Usually the task of skipping them is for the calling code.
-              * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
-              */
-            size_t size = s.size();
-            while (size > 0
-                && (s[size - 1] == ' ' || s[size - 1] == '\t'))
-                --size;
+            if constexpr (WithResize<Vector>)
+            {
+                /** CSV format can contain insignificant spaces and tabs.
+                * Usually the task of skipping them is for the calling code.
+                * But in this case, it will be difficult to do this, so remove the trailing whitespace by ourself.
+                */
+                size_t size = s.size();
+                while (size > 0 && (s[size - 1] == ' ' || s[size - 1] == '\t'))
+                    --size;
 
-            s.resize(size);
+                s.resize(size);
+            }
             return;
         }
     }
@@ -697,7 +755,27 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
     readCSVStringInto(s, buf, settings);
 }
 
+void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
+{
+    s.clear();
+    bool add_quote = false;
+    char quote = '\'';
+
+    if (!buf.eof() && (*buf.position() == '\'' || *buf.position() == '"'))
+    {
+        quote = *buf.position();
+        s.push_back(quote);
+        add_quote = true;
+    }
+
+    readCSVStringInto(s, buf, settings);
+
+    if (add_quote)
+        s.push_back(quote);
+}
+
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
+template void readCSVStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>
@@ -750,6 +828,68 @@ template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UIn
 template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
+template <typename Vector, typename ReturnType>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
+    {
+        if constexpr (throw_exception)
+            throw ParsingException(message, code);
+        return ReturnType(false);
+    };
+
+    if (buf.eof() || *buf.position() != '{')
+        return error("JSON should start from opening curly bracket", ErrorCodes::INCORRECT_DATA);
+
+    s.push_back(*buf.position());
+    ++buf.position();
+
+    Int64 balance = 1;
+    bool quotes = false;
+
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        s.push_back(*buf.position());
+
+        if (*buf.position() == '\\')
+        {
+            ++buf.position();
+            if (!buf.eof())
+            {
+                s.push_back(*buf.position());
+                ++buf.position();
+            }
+
+            continue;
+        }
+
+        if (*buf.position() == '"')
+            quotes = !quotes;
+        else if (!quotes) // can be only '{' or '}'
+            balance += *buf.position() == '{' ? 1 : -1;
+
+        ++buf.position();
+
+        if (balance == 0)
+            return ReturnType(true);
+
+        if (balance <    0)
+            break;
+    }
+
+    return error("JSON should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
+}
+
+template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
@@ -761,17 +901,6 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
         if constexpr (throw_exception)
             throw Exception("Cannot parse date: value is too short", ErrorCodes::CANNOT_PARSE_DATE);
         return ReturnType(false);
-    };
-
-    auto ignore_delimiter = [&]
-    {
-        if (!buf.eof() && !isNumericASCII(*buf.position()))
-        {
-            ++buf.position();
-            return true;
-        }
-        else
-            return false;
     };
 
     auto append_digit = [&](auto & x)
@@ -787,27 +916,44 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     };
 
     UInt16 year = 0;
+    UInt8 month = 0;
+    UInt8 day = 0;
+
     if (!append_digit(year)
         || !append_digit(year) // NOLINT
         || !append_digit(year) // NOLINT
         || !append_digit(year)) // NOLINT
         return error();
 
-    if (!ignore_delimiter())
+    if (buf.eof())
         return error();
 
-    UInt8 month = 0;
-    if (!append_digit(month))
-        return error();
-    append_digit(month);
+    if (isNumericASCII(*buf.position()))
+    {
+        /// YYYYMMDD
+        if (!append_digit(month)
+            || !append_digit(month) // NOLINT
+            || !append_digit(day)
+            || !append_digit(day)) // NOLINT
+            return error();
+    }
+    else
+    {
+        ++buf.position();
 
-    if (!ignore_delimiter())
-        return error();
+        if (!append_digit(month))
+            return error();
+        append_digit(month);
 
-    UInt8 day = 0;
-    if (!append_digit(day))
-        return error();
-    append_digit(day);
+        if (!buf.eof() && !isNumericASCII(*buf.position()))
+            ++buf.position();
+        else
+            return error();
+
+        if (!append_digit(day))
+            return error();
+        append_digit(day);
+    }
 
     date = LocalDate(year, month, day);
     return ReturnType(true);
@@ -907,7 +1053,7 @@ template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateL
 template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
-void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
 {
     if (buf.eof())
         throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
@@ -1116,7 +1262,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
+void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {
     assert(current >= in.position());
     assert(current <= in.buffer().end());
@@ -1124,16 +1270,19 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     const size_t old_bytes = memory.size();
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
+
     /// There are no new bytes to add to memory.
     /// No need to do extra stuff.
     if (new_bytes == 0)
         return;
+
+    assert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }
 
-bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
+bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
 {
     assert(current <= in.buffer().end());
 
@@ -1150,6 +1299,181 @@ bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
     current = in.position();
 
     return loaded_more;
+}
+
+/// Searches for delimiter in input stream and sets buffer position after delimiter (if found) or EOF (if not)
+static void findAndSkipNextDelimiter(PeekableReadBuffer & buf, const String & delimiter)
+{
+    if (delimiter.empty())
+        return;
+
+    while (!buf.eof())
+    {
+        void * pos = memchr(buf.position(), delimiter[0], buf.available());
+        if (!pos)
+        {
+            buf.position() += buf.available();
+            continue;
+        }
+
+        buf.position() = static_cast<ReadBuffer::Position>(pos);
+
+        PeekableReadBufferCheckpoint checkpoint{buf};
+        if (checkString(delimiter, buf))
+            return;
+
+        buf.rollbackToCheckpoint();
+        ++buf.position();
+    }
+}
+
+void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces)
+{
+    if (row_after_delimiter.empty())
+    {
+        findAndSkipNextDelimiter(buf, row_between_delimiter);
+        return;
+    }
+
+    while (true)
+    {
+        findAndSkipNextDelimiter(buf, row_after_delimiter);
+
+        if (skip_spaces)
+            skipWhitespaceIfAny(buf);
+
+        if (checkString(row_between_delimiter, buf))
+            break;
+    }
+}
+
+// Use PeekableReadBuffer to copy field to string after parsing.
+template <typename Vector, typename ParseFunc>
+static void readParsedValueInto(Vector & s, ReadBuffer & buf, ParseFunc parse_func)
+{
+    PeekableReadBuffer peekable_buf(buf);
+    peekable_buf.setCheckpoint();
+    parse_func(peekable_buf);
+    peekable_buf.makeContinuousMemoryFromCheckpointToPos();
+    auto * end = peekable_buf.position();
+    peekable_buf.rollbackToCheckpoint();
+    s.append(peekable_buf.position(), end);
+    peekable_buf.position() = end;
+}
+
+template <char opening_bracket, char closing_bracket, typename Vector>
+static void readQuotedFieldInBracketsInto(Vector & s, ReadBuffer & buf)
+{
+    assertChar(opening_bracket, buf);
+    s.push_back(opening_bracket);
+
+    size_t balance = 1;
+
+    while (!buf.eof() && balance)
+    {
+        char * next_pos = find_first_symbols<'\'', opening_bracket, closing_bracket>(buf.position(), buf.buffer().end());
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        s.push_back(*buf.position());
+
+        if (*buf.position() == '\'')
+        {
+            readQuotedStringInto<false>(s, buf);
+            s.push_back('\'');
+        }
+        else if (*buf.position() == opening_bracket)
+        {
+            ++balance;
+            ++buf.position();
+        }
+        else if (*buf.position() == closing_bracket)
+        {
+            --balance;
+            ++buf.position();
+        }
+    }
+}
+
+template <typename Vector>
+void readQuotedFieldInto(Vector & s, ReadBuffer & buf)
+{
+    if (buf.eof())
+        return;
+
+    /// Possible values in 'Quoted' field:
+    /// - Strings: '...'
+    /// - Arrays: [...]
+    /// - Tuples: (...)
+    /// - Maps: {...}
+    /// - NULL
+    /// - Bool: true/false
+    /// - Number: integer, float, decimal.
+
+    if (*buf.position() == '\'')
+    {
+        s.push_back('\'');
+        readQuotedStringInto<false>(s, buf);
+        s.push_back('\'');
+    }
+    else if (*buf.position() == '[')
+        readQuotedFieldInBracketsInto<'[', ']'>(s, buf);
+    else if (*buf.position() == '(')
+        readQuotedFieldInBracketsInto<'(', ')'>(s, buf);
+    else if (*buf.position() == '{')
+        readQuotedFieldInBracketsInto<'{', '}'>(s, buf);
+    else if (checkCharCaseInsensitive('n', buf))
+    {
+        /// NULL or NaN
+        if (checkCharCaseInsensitive('u', buf))
+        {
+            assertStringCaseInsensitive("ll", buf);
+            s.append("NULL");
+        }
+        else
+        {
+            assertStringCaseInsensitive("an", buf);
+            s.append("NaN");
+        }
+    }
+    else if (checkCharCaseInsensitive('t', buf))
+    {
+        assertStringCaseInsensitive("rue", buf);
+        s.append("true");
+    }
+    else if (checkCharCaseInsensitive('f', buf))
+    {
+        assertStringCaseInsensitive("alse", buf);
+        s.append("false");
+    }
+    else
+    {
+        /// It's an integer, float or decimal. They all can be parsed as float.
+        auto parse_func = [](ReadBuffer & in)
+        {
+            Float64 tmp;
+            readFloatText(tmp, in);
+        };
+        readParsedValueInto(s, buf, parse_func);
+    }
+}
+
+template void readQuotedFieldInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
+
+void readQuotedField(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readQuotedFieldInto(s, buf);
+}
+
+void readJSONField(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
+    readParsedValueInto(s, buf, parse_func);
 }
 
 }

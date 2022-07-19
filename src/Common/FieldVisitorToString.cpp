@@ -26,7 +26,7 @@ template <typename T>
 static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
-    writeText(x.getValue(), x.getScale(), buf);
+    writeText(x.getValue(), x.getScale(), buf, {});
     writeChar('\'', buf);
 }
 
@@ -51,8 +51,7 @@ static String formatFloat(const Float64 x)
     return { buffer, buffer + builder.position() };
 }
 
-
-String FieldVisitorToString::operator() (const Null &) const { return "NULL"; }
+String FieldVisitorToString::operator() (const Null & x) const { return x.isNegativeInfinity() ? "-Inf" : (x.isPositiveInfinity() ? "+Inf" : "NULL"); }
 String FieldVisitorToString::operator() (const UInt64 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Int64 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Float64 & x) const { return formatFloat(x); }
@@ -67,6 +66,7 @@ String FieldVisitorToString::operator() (const UInt256 & x) const { return forma
 String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UUID & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
+String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -124,6 +124,25 @@ String FieldVisitorToString::operator() (const Map & x) const
     wb << ')';
 
     return wb.str();
+}
+
+String FieldVisitorToString::operator() (const Object & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << '{';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+
+        writeDoubleQuoted(it->first, wb);
+        wb << ": " << applyVisitor(*this, it->second);
+    }
+    wb << '}';
+
+    return wb.str();
+
 }
 
 }

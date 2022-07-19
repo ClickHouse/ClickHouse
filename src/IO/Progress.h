@@ -2,11 +2,10 @@
 
 #include <atomic>
 #include <cstddef>
-#include <common/types.h>
+#include <functional>
+#include <base/types.h>
 
 #include <Core/Defines.h>
-#include <Common/Stopwatch.h>
-
 
 namespace DB
 {
@@ -19,10 +18,9 @@ struct ProgressValues
 {
     size_t read_rows;
     size_t read_bytes;
-    size_t read_raw_bytes;
 
     size_t total_rows_to_read;
-    size_t total_raw_bytes_to_read;
+    size_t total_bytes_to_read;
 
     size_t written_rows;
     size_t written_bytes;
@@ -57,7 +55,7 @@ struct FileProgress
     size_t read_bytes;
     size_t total_bytes_to_read;
 
-    FileProgress(size_t read_bytes_, size_t total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
+    explicit FileProgress(size_t read_bytes_, size_t total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
 };
 
 
@@ -69,15 +67,12 @@ struct Progress
 {
     std::atomic<size_t> read_rows {0};        /// Rows (source) processed.
     std::atomic<size_t> read_bytes {0};       /// Bytes (uncompressed, source) processed.
-    std::atomic<size_t> read_raw_bytes {0};   /// Raw bytes processed.
 
     /** How much rows/bytes must be processed, in total, approximately. Non-zero value is sent when there is information about
       * some new part of job. Received values must be summed to get estimate of total rows to process.
-      * `total_raw_bytes_to_process` is used for file table engine or when reading from file descriptor.
-      * Used for rendering progress bar on client.
       */
     std::atomic<size_t> total_rows_to_read {0};
-    std::atomic<size_t> total_raw_bytes_to_read {0};
+    std::atomic<size_t> total_bytes_to_read {0};
 
     std::atomic<size_t> written_rows {0};
     std::atomic<size_t> written_bytes {0};
@@ -94,7 +89,7 @@ struct Progress
         : written_rows(write_progress.written_rows), written_bytes(write_progress.written_bytes)  {}
 
     explicit Progress(FileProgress file_progress)
-        : read_raw_bytes(file_progress.read_bytes), total_raw_bytes_to_read(file_progress.total_bytes_to_read) {}
+        : read_bytes(file_progress.read_bytes), total_bytes_to_read(file_progress.total_bytes_to_read) {}
 
     void read(ReadBuffer & in, UInt64 server_revision);
 
@@ -110,14 +105,24 @@ struct Progress
 
     ProgressValues getValues() const;
 
-    ProgressValues fetchAndResetPiecewiseAtomically();
+    ProgressValues fetchValuesAndResetPiecewiseAtomically();
 
-    Progress & operator=(Progress && other);
+    Progress fetchAndResetPiecewiseAtomically();
 
-    Progress(Progress && other)
+    Progress & operator=(Progress && other) noexcept;
+
+    Progress(Progress && other) noexcept
     {
         *this = std::move(other);
     }
 };
+
+
+/** Callback to track the progress of the query.
+  * Used in QueryPipeline and Context.
+  * The function takes the number of rows in the last block, the number of bytes in the last block.
+  * Note that the callback can be called from different threads.
+  */
+using ProgressCallback = std::function<void(const Progress & progress)>;
 
 }

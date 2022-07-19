@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <IO/Operators.h>
 
@@ -46,7 +47,15 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     primary_key = formattedAST(metadata_snapshot->getPrimaryKey().expression_list_ast);
     if (metadata_snapshot->isPrimaryKeyDefined())
-        sorting_key = formattedAST(metadata_snapshot->getSortingKey().expression_list_ast);
+    {
+        /// We don't use preparsed AST `sorting_key.expression_list_ast` because
+        /// it contain version column for VersionedCollapsingMergeTree, which
+        /// is not stored in ZooKeeper for compatibility reasons. So the best
+        /// compatible way is just to convert definition_ast to list and
+        /// serialize it. In all other places key.expression_list_ast should be
+        /// used.
+        sorting_key = formattedAST(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
+    }
 
     data_format_version = data.format_version;
 
@@ -160,7 +169,7 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const S
 }
 
 
-void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const
+void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
     if (data_format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -195,9 +204,12 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
 
     /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
     ///    in formatAST code.
-    if (primary_key != from_zk.primary_key)
+    String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, context).expression_list_ast);
+    if (primary_key != parsed_zk_primary_key)
         throw Exception("Existing table metadata in ZooKeeper differs in primary key."
-            " Stored in ZooKeeper: " + from_zk.primary_key + ", local: " + primary_key,
+            " Stored in ZooKeeper: " + from_zk.primary_key +
+            ", parsed from ZooKeeper: " +  parsed_zk_primary_key +
+            ", local: " + primary_key,
             ErrorCodes::METADATA_MISMATCH);
 
     if (data_format_version != from_zk.data_format_version)
@@ -206,39 +218,53 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const Replicat
             ", local: " + DB::toString(data_format_version.toUnderType()),
             ErrorCodes::METADATA_MISMATCH);
 
-    if (partition_key != from_zk.partition_key)
+    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, context).expression_list_ast);
+    if (partition_key != parsed_zk_partition_key)
         throw Exception(
             "Existing table metadata in ZooKeeper differs in partition key expression."
-            " Stored in ZooKeeper: " + from_zk.partition_key + ", local: " + partition_key,
+            " Stored in ZooKeeper: " + from_zk.partition_key +
+            ", parsed from ZooKeeper: " +  parsed_zk_partition_key +
+            ", local: " + partition_key,
             ErrorCodes::METADATA_MISMATCH);
-
 }
 
 void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
 
-    checkImmutableFieldsEquals(from_zk);
+    checkImmutableFieldsEquals(from_zk, columns, context);
 
-    if (sampling_expression != from_zk.sampling_expression)
-        throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
-            " Stored in ZooKeeper: " + from_zk.sampling_expression + ", local: " + sampling_expression,
-            ErrorCodes::METADATA_MISMATCH);
-
-    if (sorting_key != from_zk.sorting_key)
+    String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, context).definition_ast);
+    if (sampling_expression != parsed_zk_sampling_expression)
     {
         throw Exception(
-            "Existing table metadata in ZooKeeper differs in sorting key expression."
-            " Stored in ZooKeeper: " + from_zk.sorting_key + ", local: " + sorting_key,
+            "Existing table metadata in ZooKeeper differs in sample expression."
+            " Stored in ZooKeeper: " + from_zk.sampling_expression +
+            ", parsed from ZooKeeper: " + parsed_zk_sampling_expression +
+            ", local: " + sampling_expression,
             ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (ttl_table != from_zk.ttl_table)
+    String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, context).definition_ast));
+    if (sorting_key != parsed_zk_sorting_key)
     {
         throw Exception(
-                "Existing table metadata in ZooKeeper differs in TTL."
-                " Stored in ZooKeeper: " + from_zk.ttl_table +
-                ", local: " + ttl_table,
-                ErrorCodes::METADATA_MISMATCH);
+            "Existing table metadata in ZooKeeper differs in sorting key expression."
+            " Stored in ZooKeeper: " + from_zk.sorting_key +
+            ", parsed from ZooKeeper: " + parsed_zk_sorting_key +
+            ", local: " + sorting_key,
+            ErrorCodes::METADATA_MISMATCH);
+    }
+
+    auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context);
+    String parsed_zk_ttl_table = formattedAST(TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key).definition_ast);
+    if (ttl_table != parsed_zk_ttl_table)
+    {
+        throw Exception(
+            "Existing table metadata in ZooKeeper differs in TTL."
+            " Stored in ZooKeeper: " + from_zk.ttl_table +
+            ", parsed from ZooKeeper: " + parsed_zk_ttl_table +
+            ", local: " + ttl_table,
+            ErrorCodes::METADATA_MISMATCH);
     }
 
     String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, context).toString();
@@ -282,10 +308,10 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
 }
 
 ReplicatedMergeTreeTableMetadata::Diff
-ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const
+ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const
 {
 
-    checkImmutableFieldsEquals(from_zk);
+    checkImmutableFieldsEquals(from_zk, columns, context);
 
     Diff diff;
 
@@ -326,6 +352,125 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     }
 
     return diff;
+}
+
+StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const
+{
+    StorageInMemoryMetadata new_metadata = old_metadata;
+    new_metadata.columns = new_columns;
+
+    if (!empty())
+    {
+        auto parse_key_expr = [] (const String & key_expr)
+        {
+            ParserNotEmptyExpressionList parser(false);
+            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+
+            ASTPtr order_by_ast;
+            if (new_sorting_key_expr_list->children.size() == 1)
+                order_by_ast = new_sorting_key_expr_list->children[0];
+            else
+            {
+                auto tuple = makeASTFunction("tuple");
+                tuple->arguments->children = new_sorting_key_expr_list->children;
+                order_by_ast = tuple;
+            }
+            return order_by_ast;
+        };
+
+        if (sorting_key_changed)
+        {
+            auto order_by_ast = parse_key_expr(new_sorting_key);
+
+            new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, context);
+
+            if (new_metadata.primary_key.definition_ast == nullptr)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                auto old_sorting_key_ast = old_metadata.getSortingKey().definition_ast;
+                new_metadata.primary_key = KeyDescription::getKeyFromAST(
+                    old_sorting_key_ast, new_metadata.columns, context);
+            }
+        }
+
+        if (sampling_expression_changed)
+        {
+            if (!new_sampling_expression.empty())
+            {
+                auto sample_by_ast = parse_key_expr(new_sampling_expression);
+                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, context);
+            }
+            else /// SAMPLE BY was removed
+            {
+                new_metadata.sampling_key = {};
+            }
+        }
+
+        if (skip_indices_changed)
+            new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, context);
+
+        if (constraints_changed)
+            new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
+
+        if (projections_changed)
+            new_metadata.projections = ProjectionsDescription::parse(new_projections, new_columns, context);
+
+        if (ttl_table_changed)
+        {
+            if (!new_ttl_table.empty())
+            {
+                ParserTTLExpressionList parser;
+                auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                    ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key);
+            }
+            else /// TTL was removed
+            {
+                new_metadata.table_ttl = TTLTableDescription{};
+            }
+        }
+    }
+
+    /// Changes in columns may affect following metadata fields
+    new_metadata.column_ttls_by_name.clear();
+    for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
+    {
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key);
+        new_metadata.column_ttls_by_name[name] = new_ttl_entry;
+    }
+
+    if (new_metadata.partition_key.definition_ast != nullptr)
+        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    if (!sorting_key_changed) /// otherwise already updated
+        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    /// Primary key is special, it exists even if not defined
+    if (new_metadata.primary_key.definition_ast != nullptr)
+    {
+        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, context);
+    }
+    else
+    {
+        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, context);
+        new_metadata.primary_key.definition_ast = nullptr;
+    }
+
+    if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
+        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, context);
+
+    if (!skip_indices_changed) /// otherwise already updated
+    {
+        for (auto & index : new_metadata.secondary_indices)
+            index.recalculateWithNewColumns(new_metadata.columns, context);
+    }
+
+    if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
+        new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key);
+
+    return new_metadata;
 }
 
 }

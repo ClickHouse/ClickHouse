@@ -1,9 +1,9 @@
 ---
-toc_priority: 310
-toc_title: mannWhitneyUTest
+sidebar_position: 310
+sidebar_label: mannWhitneyUTest
 ---
 
-# mannWhitneyUTest {#mannwhitneyutest}
+# mannWhitneyUTest
 
 Applies the Mann-Whitney rank test to samples from two populations.
 
@@ -13,7 +13,7 @@ Applies the Mann-Whitney rank test to samples from two populations.
 mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_index)
 ```
 
-Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population. 
+Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population.
 The null hypothesis is that two populations are stochastically equal. Also one-sided hypothesises can be tested. This test does not assume that data have normal distribution.
 
 **Arguments**
@@ -71,4 +71,4 @@ Result:
 -   [Mann–Whitney U test](https://en.wikipedia.org/wiki/Mann%E2%80%93Whitney_U_test)
 -   [Stochastic ordering](https://en.wikipedia.org/wiki/Stochastic_ordering)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->

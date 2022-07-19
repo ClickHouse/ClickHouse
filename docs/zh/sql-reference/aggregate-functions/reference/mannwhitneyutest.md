@@ -1,6 +1,6 @@
 ---
-toc_priority: 310
-toc_title: mannWhitneyUTest
+sidebar_position: 310
+sidebar_label: mannWhitneyUTest
 ---
 
 # mannWhitneyUTest {#mannwhitneyutest}

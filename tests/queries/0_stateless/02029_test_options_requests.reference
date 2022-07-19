@@ -1,0 +1,5 @@
+< HTTP/1.1 204 No Content
+< Access-Control-Allow-Origin: *
+< Access-Control-Allow-Headers: origin, x-requested-with
+< Access-Control-Allow-Methods: POST, GET, OPTIONS
+< Access-Control-Max-Age: 86400

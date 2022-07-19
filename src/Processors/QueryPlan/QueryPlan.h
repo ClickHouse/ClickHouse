@@ -2,6 +2,8 @@
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
+#include <Columns/IColumn.h>
+#include <QueryPipeline/PipelineResourcesHolder.h>
 
 #include <list>
 #include <memory>
@@ -16,8 +18,8 @@ class DataStream;
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 class WriteBuffer;
 
@@ -43,8 +45,8 @@ class QueryPlan
 public:
     QueryPlan();
     ~QueryPlan();
-    QueryPlan(QueryPlan &&);
-    QueryPlan & operator=(QueryPlan &&);
+    QueryPlan(QueryPlan &&) noexcept;
+    QueryPlan & operator=(QueryPlan &&) noexcept;
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);
@@ -55,12 +57,7 @@ public:
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
-    QueryPipelinePtr buildQueryPipeline(
-        const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
-
-    /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
-    Pipe convertToPipe(
+    QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings);
 
@@ -85,13 +82,19 @@ public:
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
+    void explainEstimate(MutableColumns & columns);
+
+    /// Do not allow to change the table while the pipeline alive.
+    void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
+    void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
+    void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
+
+    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
-
-    void addInterpreterContext(std::shared_ptr<Context> context);
 
     /// Tree node. Step and it's children.
     struct Node
@@ -103,6 +106,7 @@ public:
     using Nodes = std::list<Node>;
 
 private:
+    QueryPlanResourceHolder resources;
     Nodes nodes;
     Node * root = nullptr;
 
@@ -111,7 +115,6 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
-    std::vector<std::shared_ptr<Context>> interpreter_context;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

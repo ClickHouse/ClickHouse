@@ -1,8 +1,8 @@
 ---
-toc_title: UNION
+sidebar_label: UNION
 ---
 
-# UNION Clause {#union-clause}
+# UNION Clause
 
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
 
@@ -84,4 +84,4 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 -   [union_default_mode](../../../operations/settings/settings.md#union-default-mode) setting.
 
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/union/) <!-- hide -->
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/union/) <!-- hide -->

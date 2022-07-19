@@ -1,6 +1,6 @@
 ---
-toc_priority: 37
-toc_title: 聚合函数组合器
+sidebar_position: 37
+sidebar_label: 聚合函数组合器
 ---
 
 # 聚合函数组合器 {#aggregate_functions_combinators}
@@ -240,4 +240,4 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/agg_functions/combinators/) <!--hide-->

@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "\u65E5\u5FD7\u7CFB\u5217"
-toc_title: 日志引擎系列
-toc_priority: 29
+sidebar_label: 日志引擎系列
+sidebar_position: 29
 ---
 
 # 日志引擎系列 {#table_engines-log-engine-family}
@@ -48,4 +47,4 @@ toc_priority: 29
 
 `TinyLog` 引擎是该系列中最简单的引擎并且提供了最少的功能和最低的性能。`TinyLog` 引擎不支持并行读取和并发数据访问，并将每一列存储在不同的文件中。它比其余两种支持并行读取的引擎的读取速度更慢，并且使用了和 `Log` 引擎同样多的描述符。你可以在简单的低负载的情景下使用它。
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/log_family/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/log_family/) <!--hide-->

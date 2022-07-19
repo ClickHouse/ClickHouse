@@ -1,16 +1,17 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/SelectQueryInfo.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -19,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace ClusterProxy
@@ -101,22 +103,23 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
 
 void executeQuery(
     QueryPlan & query_plan,
-    IStreamFactory & stream_factory, Poco::Logger * log,
+    const Block & header,
+    QueryProcessingStage::Enum processed_stage,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    SelectStreamFactory & stream_factory, Poco::Logger * log,
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const ClusterPtr & not_optimized_cluster)
 {
-    assert(log);
-
     const Settings & settings = context->getSettingsRef();
 
-    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth > settings.max_distributed_depth)
+    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
         throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
 
     std::vector<QueryPlanPtr> plans;
-    Pipes remote_pipes;
-    Pipes delayed_pipes;
+    SelectStreamFactory::Shards remote_shards;
 
     auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, log);
 
@@ -161,26 +164,35 @@ void executeQuery(
             query_ast_for_shard = query_ast;
 
         stream_factory.createForShard(shard_info,
-            query_ast_for_shard,
-            new_context, throttler, query_info, plans,
-            remote_pipes, delayed_pipes, log);
+            query_ast_for_shard, main_table, table_func_ptr,
+            new_context, plans, remote_shards, shards);
     }
 
-    if (!remote_pipes.empty())
+    if (!remote_shards.empty())
     {
+        Scalars scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+        scalars.emplace(
+            "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
+        auto external_tables = context->getExternalTables();
+
         auto plan = std::make_unique<QueryPlan>();
-        auto read_from_remote = std::make_unique<ReadFromPreparedSource>(Pipe::unitePipes(std::move(remote_pipes)));
+        auto read_from_remote = std::make_unique<ReadFromRemote>(
+            std::move(remote_shards),
+            header,
+            processed_stage,
+            main_table,
+            table_func_ptr,
+            new_context,
+            throttler,
+            std::move(scalars),
+            std::move(external_tables),
+            log,
+            shards,
+            query_info.storage_limits);
+
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
-        plans.emplace_back(std::move(plan));
-    }
-
-    if (!delayed_pipes.empty())
-    {
-        auto plan = std::make_unique<QueryPlan>();
-        auto read_from_remote = std::make_unique<ReadFromPreparedSource>(Pipe::unitePipes(std::move(delayed_pipes)));
-        read_from_remote->setStepDescription("Read from delayed local replica");
-        plan->addStep(std::move(read_from_remote));
+        plan->addInterpreterContext(new_context);
         plans.emplace_back(std::move(plan));
     }
 
@@ -196,6 +208,91 @@ void executeQuery(
     DataStreams input_streams;
     input_streams.reserve(plans.size());
     for (auto & plan : plans)
+        input_streams.emplace_back(plan->getCurrentDataStream());
+
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    query_plan.unitePlans(std::move(union_step), std::move(plans));
+}
+
+
+void executeQueryWithParallelReplicas(
+    QueryPlan & query_plan,
+    const StorageID & main_table,
+    const ASTPtr & table_func_ptr,
+    SelectStreamFactory & stream_factory,
+    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
+    const ExpressionActionsPtr & sharding_key_expr,
+    const std::string & sharding_key_column_name,
+    const ClusterPtr & not_optimized_cluster)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    ThrottlerPtr user_level_throttler;
+    if (auto * process_list_element = context->getProcessListElement())
+        user_level_throttler = process_list_element->getUserNetworkThrottler();
+
+    /// Network bandwidth limit, if needed.
+    ThrottlerPtr throttler;
+    if (settings.max_network_bandwidth || settings.max_network_bytes)
+    {
+        throttler = std::make_shared<Throttler>(
+                settings.max_network_bandwidth,
+                settings.max_network_bytes,
+                "Limit for bytes to send or receive over network exceeded.",
+                user_level_throttler);
+    }
+    else
+        throttler = user_level_throttler;
+
+
+    std::vector<QueryPlanPtr> plans;
+    size_t shards = query_info.getCluster()->getShardCount();
+
+    for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
+    {
+        ASTPtr query_ast_for_shard;
+        if (query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
+        {
+            query_ast_for_shard = query_ast->clone();
+
+            OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
+                sharding_key_expr,
+                sharding_key_expr->getSampleBlock().getByPosition(0).type,
+                sharding_key_column_name,
+                shard_info,
+                not_optimized_cluster->getSlotToShard(),
+            };
+            OptimizeShardingKeyRewriteInVisitor visitor(visitor_data);
+            visitor.visit(query_ast_for_shard);
+        }
+        else
+            query_ast_for_shard = query_ast;
+
+        auto shard_plans = stream_factory.createForShardWithParallelReplicas(shard_info,
+            query_ast_for_shard, main_table, table_func_ptr, throttler, context, shards, query_info.storage_limits);
+
+        if (!shard_plans.local_plan && !shard_plans.remote_plan)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from shard. This is a bug");
+
+        if (shard_plans.local_plan)
+            plans.emplace_back(std::move(shard_plans.local_plan));
+
+        if (shard_plans.remote_plan)
+            plans.emplace_back(std::move(shard_plans.remote_plan));
+    }
+
+    if (plans.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No plans were generated for reading from Distributed. This is a bug");
+
+    if (plans.size() == 1)
+    {
+        query_plan = std::move(*plans.front());
+        return;
+    }
+
+    DataStreams input_streams;
+    input_streams.reserve(plans.size());
+    for (const auto & plan : plans)
         input_streams.emplace_back(plan->getCurrentDataStream());
 
     auto union_step = std::make_unique<UnionStep>(std::move(input_streams));

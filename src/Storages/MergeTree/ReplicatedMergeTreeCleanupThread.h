@@ -1,9 +1,9 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <thread>
@@ -24,7 +24,7 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeCleanupThread
 {
 public:
-    ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
+    explicit ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
     void start() { task->activateAndSchedule(); }
 

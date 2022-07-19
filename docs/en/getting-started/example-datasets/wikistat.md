@@ -1,11 +1,10 @@
 ---
-toc_priority: 17
-toc_title: WikiStat
+sidebar_label: WikiStat
 ---
 
-# WikiStat {#wikistat}
+# WikiStat
 
-See: http://dumps.wikimedia.org/other/pagecounts-raw/
+See http://dumps.wikimedia.org/other/pagecounts-raw/ for details.
 
 Creating a table:
 
@@ -30,4 +29,4 @@ $ cat links.txt | while read link; do wget http://dumps.wikimedia.org/other/page
 $ ls -1 /opt/wikistat/ | grep gz | while read i; do echo $i; gzip -cd /opt/wikistat/$i | ./wikistat-loader --time="$(echo -n $i | sed -r 's/pagecounts-([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})\.gz/\1-\2-\3 \4-00-00/')" | clickhouse-client --query="INSERT INTO wikistat FORMAT TabSeparated"; done
 ```
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/wikistat/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/wikistat/) <!--hide-->

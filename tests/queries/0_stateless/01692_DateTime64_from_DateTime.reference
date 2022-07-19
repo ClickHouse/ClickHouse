@@ -1,9 +1,5 @@
--- { echo }
-select toDateTime64(toDateTime(1), 2);
-1970-01-01 03:00:01.00
-select toDateTime64(toDate(1), 2);
+1970-01-01 02:00:01.00
+1970-01-01 02:00:01.00
 1970-01-02 00:00:00.00
-select toDateTime64(toDateTime(1), 2, 'GMT');
 1970-01-01 00:00:01.00
-select toDateTime64(toDate(1), 2, 'GMT');
 1970-01-02 00:00:00.00

@@ -2,7 +2,7 @@
 #include <string>
 #include <exception>
 #include <string_view>
-#include <common/JSON.h>
+#include <base/JSON.h>
 
 #include <boost/range/irange.hpp>
 #include <gtest/gtest.h>

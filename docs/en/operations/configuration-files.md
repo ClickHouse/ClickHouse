@@ -1,13 +1,13 @@
 ---
-toc_priority: 50
-toc_title: Configuration Files
+sidebar_position: 50
+sidebar_label: Configuration Files
 ---
 
-# Configuration Files {#configuration_files}
+# Configuration Files
 
 ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml` or `/etc/clickhouse-server/config.yaml`. Other files must be in the `/etc/clickhouse-server/config.d` directory. Note, that any configuration file can be written either in XML or YAML, but mixing formats in one file is not supported. For example, you can have main configs as `config.xml` and `users.xml` and write additional files in `config.d` and `users.d` directories in `.yaml`.
 
-All the configuration files should be in XML or YAML formats. All XML files should have the same root element, usually `<yandex>`. As for YAML, `yandex:` should not be present, the parser will insert it automatically.
+All XML files should have the same root element, usually `<clickhouse>`. As for YAML, `clickhouse:` should not be present, the parser will insert it automatically.
 
 ## Override {#override}
 
@@ -18,16 +18,28 @@ Some settings specified in the main configuration file can be overridden in othe
 -   If `replace` is specified, it replaces the entire element with the specified one.
 -   If `remove` is specified, it deletes the element.
 
+You can also declare attributes as coming from environment variables by using `from_env="VARIABLE_NAME"`:
+
+```xml
+<clickhouse>
+    <macros>
+        <replica from_env="REPLICA" />
+        <layer from_env="LAYER" />
+        <shard from_env="SHARD" />
+    </macros>
+</clickhouse>
+```
+
 ## Substitution {#substitution}
 
-The config can also define “substitutions”. If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-include_from) element in the server config. The substitution values are specified in `/yandex/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](../operations/server-configuration-parameters/settings.md)).
+The config can also define “substitutions”. If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include_from](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-include_from) element in the server config. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](../operations/server-configuration-parameters/settings.md#macros)).
 
-If you want to replace an entire element with a substitution use `include` as element name.
+If you want to replace an entire element with a substitution use `include` as the element name.
 
 XML substitution example:
 
 ```xml
-<yandex>
+<clickhouse>
     <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
@@ -36,7 +48,7 @@ XML substitution example:
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
-</yandex>
+</clickhouse>
 ```
 
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
@@ -45,7 +57,7 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
 
-Users configuration can be splitted into separate files similar to `config.xml` and `config.d/`.
+Users configuration can be split into separate files similar to `config.xml` and `config.d/`.
 Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
 
@@ -60,7 +72,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
 ``` xml
-<yandex>
+<clickhouse>
     <users>
       <alice>
           <profile>analytics</profile>
@@ -71,7 +83,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
           <quota>analytics</quota>
       </alice>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 ## YAML examples {#example}
@@ -144,4 +156,4 @@ For each config file, the server also generates `file-preprocessed.xml` files wh
 
 The server tracks changes in config files, as well as files and ZooKeeper nodes that were used when performing substitutions and overrides, and reloads the settings for users and clusters on the fly. This means that you can modify the cluster, users, and their settings without restarting the server.
 
-[Original article](https://clickhouse.tech/docs/en/operations/configuration-files/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/configuration-files/) <!--hide-->

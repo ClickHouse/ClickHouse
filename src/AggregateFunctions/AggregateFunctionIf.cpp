@@ -1,7 +1,6 @@
-#include <AggregateFunctions/AggregateFunctionIf.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/AggregateFunctionIf.h>
 #include "AggregateFunctionNull.h"
-
 
 namespace DB
 {
@@ -35,11 +34,12 @@ public:
         const AggregateFunctionPtr & nested_function,
         const AggregateFunctionProperties &,
         const DataTypes & arguments,
-        const Array &) const override
+        const Array & params) const override
     {
-        return std::make_shared<AggregateFunctionIf>(nested_function, arguments);
+        return std::make_shared<AggregateFunctionIf>(nested_function, arguments, params);
     }
 };
+
 
 /** There are two cases: for single argument and variadic.
   * Code for single argument is much more efficient.
@@ -51,11 +51,12 @@ class AggregateFunctionIfNullUnary final
 {
 private:
     size_t num_arguments;
+    bool filter_is_nullable = false;
 
     /// The name of the nested function, including combinators (i.e. *If)
     ///
     /// getName() from the nested_function cannot be used because in case of *If combinator
-    /// with Nullable argument nested_function will point to the function w/o combinator.
+    /// with Nullable argument nested_function will point to the function without combinator.
     /// (I.e. sumIf(Nullable, 1) -> sum()), and distributed query processing will fail.
     ///
     /// And nested_function cannot point to the function with *If since
@@ -70,8 +71,26 @@ private:
 
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>;
-public:
 
+    inline bool singleFilter(const IColumn ** columns, size_t row_num) const
+    {
+        const IColumn * filter_column = columns[num_arguments - 1];
+
+        if (filter_is_nullable)
+        {
+            const ColumnNullable * nullable_column = assert_cast<const ColumnNullable *>(filter_column);
+            filter_column = nullable_column->getNestedColumnPtr().get();
+            const UInt8 * filter_null_map = nullable_column->getNullMapData().data();
+
+            return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num] && !filter_null_map[row_num];
+        }
+        else
+        {
+            return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num];
+        }
+    }
+
+public:
     String getName() const override
     {
         return name;
@@ -83,28 +102,77 @@ public:
         , name(name_)
     {
         if (num_arguments == 0)
-            throw Exception("Aggregate function " + getName() + " require at least one argument",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Aggregate function {} require at least one argument", getName());
 
-    static inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
-    {
-        const IColumn * filter_column = columns[num_arguments - 1];
-        if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(filter_column))
-            filter_column = nullable_column->getNestedColumnPtr().get();
-
-        return assert_cast<const ColumnUInt8 &>(*filter_column).getData()[row_num];
+        filter_is_nullable = arguments[num_arguments - 1]->isNullable();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
-        if (!column->isNullAt(row_num) && singleFilter(columns, row_num, num_arguments))
+        if (!column->isNullAt(row_num) && singleFilter(columns, row_num))
         {
             this->setFlag(place);
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t) const override
+    {
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const UInt8 * null_map = column->getNullMapData().data();
+        const IColumn * columns_param[] = {&column->getNestedColumn()};
+
+        const IColumn * filter_column = columns[num_arguments - 1];
+
+        const UInt8 * filter_values = nullptr;
+        const UInt8 * filter_null_map = nullptr;
+
+        if (filter_is_nullable)
+        {
+            const ColumnNullable * nullable_column = assert_cast<const ColumnNullable *>(filter_column);
+            filter_column = nullable_column->getNestedColumnPtr().get();
+            filter_null_map = nullable_column->getNullMapData().data();
+        }
+
+        filter_values = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
+
+        /// Combine the 2 flag arrays so we can call a simplified version (one check vs 2)
+        /// Note that now the null map will contain 0 if not null and not filtered, or 1 for null or filtered (or both)
+
+        auto final_nulls = std::make_unique<UInt8[]>(row_end);
+
+        if (filter_null_map)
+            for (size_t i = row_begin; i < row_end; ++i)
+                final_nulls[i] = (!!null_map[i]) | (!filter_values[i]) | (!!filter_null_map[i]);
+        else
+            for (size_t i = row_begin; i < row_end; ++i)
+                final_nulls[i] = (!!null_map[i]) | (!filter_values[i]);
+
+        if constexpr (result_is_nullable)
+        {
+            if (!memoryIsByte(final_nulls.get(), row_begin, row_end, 1))
+                this->setFlag(place);
+            else
+                return; /// No work to do.
+        }
+
+        this->nested_function->addBatchSinglePlaceNotNull(
+            row_begin,
+            row_end,
+            this->nestedPlace(place),
+            columns_param,
+            final_nulls.get(),
+            arena,
+            -1);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -169,7 +237,7 @@ public:
             throw Exception("Logical error: single argument is passed to AggregateFunctionIfNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
         if (number_of_arguments > MAX_ARGS)
-            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
+            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(MAX_ARGS),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
@@ -303,7 +371,7 @@ private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>;
 
-    enum { MAX_ARGS = 8 };
+    static constexpr size_t MAX_ARGS = 8;
     size_t number_of_arguments = 0;
     std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
 };
@@ -313,10 +381,14 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
     const Array & params, const AggregateFunctionProperties & properties) const
 {
-    bool return_type_is_nullable = !properties.returns_default_when_only_null && getReturnType()->canBeInsideNullable();
-    size_t nullable_size = std::count_if(arguments.begin(), arguments.end(), [](const auto & element) { return element->isNullable(); });
-    return_type_is_nullable &= nullable_size != 1 || !arguments.back()->isNullable();   /// If only condition is nullable. we should non-nullable type.
-    bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
+    assert(!arguments.empty());
+
+    /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
+    /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
+    bool return_type_is_nullable = !properties.returns_default_when_only_null && getReturnType()->canBeInsideNullable()
+        && std::any_of(arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
+
+    bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
     if (arguments.size() <= 2 && arguments.front()->isNullable())
     {
@@ -326,7 +398,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
         }
         else
         {
-            if (serialize_flag)
+            if (need_to_serialize_flag)
                 return std::make_shared<AggregateFunctionIfNullUnary<false, true>>(nested_function->getName(), nested_func, arguments, params);
             else
                 return std::make_shared<AggregateFunctionIfNullUnary<false, false>>(nested_function->getName(), nested_func, arguments, params);
@@ -340,7 +412,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
         }
         else
         {
-            if (serialize_flag)
+            if (need_to_serialize_flag)
                 return std::make_shared<AggregateFunctionIfNullVariadic<false, true, true>>(nested_function, arguments, params);
             else
                 return std::make_shared<AggregateFunctionIfNullVariadic<false, false, true>>(nested_function, arguments, params);

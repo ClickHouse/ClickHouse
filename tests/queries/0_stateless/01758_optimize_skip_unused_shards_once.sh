@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: shard
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=trace
 

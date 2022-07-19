@@ -1,4 +1,4 @@
-#include <common/strong_typedef.h>
+#include <base/strong_typedef.h>
 #include <set>
 #include <unordered_set>
 #include <memory>
@@ -13,7 +13,7 @@ TEST(StrongTypedefSuite, TypedefsOfTheSameType)
     STRONG_TYPEDEF(int, Int)
     STRONG_TYPEDEF(int, AnotherInt)
 
-    EXPECT_TRUE(!(std::is_same<Int, AnotherInt>::value));
+    EXPECT_TRUE(!(std::is_same_v<Int, AnotherInt>));
 }
 
 TEST(StrongTypedefSuite, Map)

@@ -29,10 +29,11 @@ private:
     size_t num_arguments;
 
 public:
-    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, {})
+    AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments, const Array & params_)
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, params_)
         , nested_func(nested_), num_arguments(arguments.size())
     {
+        assert(parameters == nested_func->getParameters());
         for (const auto & type : arguments)
             if (!isArray(type))
                 throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -46,6 +47,16 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
+    }
+
+    bool isVersioned() const override
+    {
+        return nested_func->isVersioned();
+    }
+
+    size_t getDefaultVersion() const override
+    {
+        return nested_func->getDefaultVersion();
     }
 
     void create(AggregateDataPtr __restrict place) const override
@@ -110,14 +121,14 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        nested_func->serialize(place, buf);
+        nested_func->serialize(place, buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        nested_func->deserialize(place, buf, arena);
+        nested_func->deserialize(place, buf, version, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override

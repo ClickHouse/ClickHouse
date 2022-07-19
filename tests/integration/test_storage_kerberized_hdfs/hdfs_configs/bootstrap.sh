@@ -207,7 +207,7 @@ EOF
 
 useradd -u 1098 hdfs
 
-# keytool -genkey -alias kerberized_hdfs1.test.clickhouse.tech -keyalg rsa -keysize 1024 -dname "CN=kerberized_hdfs1.test.clickhouse.tech" -keypass masterkey -keystore /usr/local/hadoop/etc/hadoop/conf/hdfs.jks -storepass masterkey
+# keytool -genkey -alias kerberized_hdfs1.test.clickhouse.com -keyalg rsa -keysize 1024 -dname "CN=kerberized_hdfs1.test.clickhouse.com" -keypass masterkey -keystore /usr/local/hadoop/etc/hadoop/conf/hdfs.jks -storepass masterkey
 keytool -genkey -alias kerberizedhdfs1 -keyalg rsa -keysize 1024 -dname "CN=kerberizedhdfs1" -keypass masterkey -keystore /usr/local/hadoop/etc/hadoop/conf/hdfs.jks -storepass masterkey
 
 chmod g+r /usr/local/hadoop/etc/hadoop/conf/hdfs.jks

@@ -4,7 +4,6 @@
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST.h>
-#include <Parsers/IParser.h>
 
 #include <memory>
 #include <optional>
@@ -23,25 +22,25 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * Throws exception if it's not a constant expression.
   * Quite suboptimal.
   */
-std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context);
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context);
 
 
 /** Evaluate constant expression and returns ASTLiteral with its value.
   */
-ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr context);
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context);
 
 
 /** Evaluate constant expression and returns ASTLiteral with its value.
   * Also, if AST is identifier, then return string literal with its name.
   * Useful in places where some name may be specified as identifier, or as result of a constant expression.
   */
-ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, ContextPtr context);
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context);
 
 /** The same as evaluateConstantExpressionOrIdentifierAsLiteral(...),
  *  but if result is an empty string, replace it with current database name
  *  or default database name.
  */
-ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr context);
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const ContextPtr & context);
 
 /** Try to fold condition to countable set of constant values.
   * @param node a condition that we try to fold.
@@ -53,6 +52,4 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr
   */
 std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr, size_t & limit);
 
-// Evaluate database name or regexp for StorageMerge and TableFunction merge
-std::tuple<bool, ASTPtr> evaluateDatabaseNameForMergeEngine(const ASTPtr & node, ContextPtr context);
 }

@@ -1,8 +1,12 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <BridgeHelper/XDBCBridgeHelper.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -17,7 +21,7 @@ class StorageXDBC : public IStorageURLBase
 public:
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -33,11 +37,10 @@ public:
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     std::string getName() const override;
 private:
-
     BridgeHelperPtr bridge_helper;
     std::string remote_database_name;
     std::string remote_table_name;
@@ -48,7 +51,7 @@ private:
 
     std::vector<std::pair<std::string, std::string>> getReadURIParams(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
@@ -56,13 +59,15 @@ private:
 
     std::function<void(std::ostream &)> getReadPOSTDataCallback(
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
+        const ColumnsDescription & columns_description,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
 
-    Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const override;
+    Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
+
+    bool supportsSubsetOfColumns() const override;
 };
 
 }

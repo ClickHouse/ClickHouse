@@ -1,18 +1,22 @@
 #include "StorageSQLite.h"
 
 #if USE_SQLITE
-#include <common/range.h>
-#include <DataStreams/SQLiteBlockInputStream.h>
+#include <Common/logger_useful.h>
+#include <Processors/Sources/SQLiteSource.h>
+#include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <QueryPipeline/Pipe.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace DB
@@ -27,6 +31,7 @@ namespace ErrorCodes
 StorageSQLite::StorageSQLite(
     const StorageID & table_id_,
     SQLitePtr sqlite_db_,
+    const String & database_path_,
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -34,8 +39,9 @@ StorageSQLite::StorageSQLite(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
-    , global_context(context_)
+    , database_path(database_path_)
     , sqlite_db(sqlite_db_)
+    , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -46,54 +52,59 @@ StorageSQLite::StorageSQLite(
 
 Pipe StorageSQLite::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum,
     size_t max_block_size,
     unsigned int)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    if (!sqlite_db)
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+
+    storage_snapshot->check(column_names);
 
     String query = transformQueryForExternalDatabase(
         query_info,
-        metadata_snapshot->getColumns().getOrdinary(),
+        storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
         "",
         remote_table_name,
         context_);
+    LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<SourceFromInputStream>(
-                std::make_shared<SQLiteBlockInputStream>(sqlite_db, query, sample_block, max_block_size)));
+    return Pipe(std::make_shared<SQLiteSource>(sqlite_db, query, sample_block, max_block_size));
 }
 
 
-class SQLiteBlockOutputStream : public IBlockOutputStream
+class SQLiteSink : public SinkToStorage
 {
 public:
-    explicit SQLiteBlockOutputStream(
+    explicit SQLiteSink(
         const StorageSQLite & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         StorageSQLite::SQLitePtr sqlite_db_,
         const String & remote_table_name_)
-        : storage{storage_}
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
         , remote_table_name(remote_table_name_)
     {
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    String getName() const override { return "SQLiteSink"; }
 
-    void write(const Block & block) override
+    void consume(Chunk chunk) override
     {
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
         WriteBufferFromOwnString sqlbuf;
 
         sqlbuf << "INSERT INTO ";
@@ -109,7 +120,7 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
         writer->write(block);
 
         sqlbuf << ";";
@@ -135,9 +146,11 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
+SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr)
 {
-    return std::make_shared<SQLiteBlockOutputStream>(*this, metadata_snapshot, sqlite_db, remote_table_name);
+    if (!sqlite_db)
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_name);
 }
 
 
@@ -154,17 +167,12 @@ void registerStorageSQLite(StorageFactory & factory)
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-        const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
+        const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
 
-        sqlite3 * tmp_sqlite_db = nullptr;
-        int status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
-        if (status != SQLITE_OK)
-            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                            "Failed to open sqlite database. Status: {}. Message: {}",
-                            status, sqlite3_errstr(status));
+        auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
 
-        return StorageSQLite::create(args.table_id, std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close),
+        return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
                                      table_name, args.columns, args.constraints, args.getContext());
     },
     {

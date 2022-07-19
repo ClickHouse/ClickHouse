@@ -1,76 +1,35 @@
 #pragma once
-#include <DataStreams/IBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+
 
 namespace DB
 {
 
-
 /// Used to read data from single part with select query
+/// in reverse order of primary key.
 /// Cares about PREWHERE, virtual columns, indexes etc.
 /// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
-class MergeTreeReverseSelectProcessor : public MergeTreeBaseSelectProcessor
+class MergeTreeReverseSelectProcessor final : public MergeTreeSelectProcessor
 {
 public:
-    MergeTreeReverseSelectProcessor(
-        const MergeTreeData & storage,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeData::DataPartPtr & owned_data_part,
-        UInt64 max_block_size_rows,
-        size_t preferred_block_size_bytes,
-        size_t preferred_max_column_in_block_size_bytes,
-        Names required_columns_,
-        MarkRanges mark_ranges,
-        bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
-        ExpressionActionsSettings actions_settings,
-        bool check_columns,
-        const MergeTreeReaderSettings & reader_settings,
-        const Names & virt_column_names = {},
-        size_t part_index_in_query = 0,
-        bool quiet = false);
-
-    ~MergeTreeReverseSelectProcessor() override;
+    template <typename... Args>
+    explicit MergeTreeReverseSelectProcessor(Args &&... args)
+        : MergeTreeSelectProcessor{std::forward<Args>(args)...}
+    {
+        LOG_TRACE(log, "Reading {} ranges in reverse order from part {}, approx. {} rows starting from {}",
+            all_mark_ranges.size(), data_part->name, total_rows,
+            data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
+    }
 
     String getName() const override { return "MergeTreeReverse"; }
 
-    /// Closes readers and unlock part locks
-    void finish();
+private:
+    bool getNewTaskImpl() override;
+    void finalizeNewTask() override {}
 
-protected:
-
-    bool getNewTask() override;
     Chunk readFromPart() override;
 
-private:
-    Block header;
-
-    /// Used by Task
-    Names required_columns;
-    /// Names from header. Used in order to order columns in read blocks.
-    Names ordered_names;
-    NameSet column_name_set;
-
-    MergeTreeReadTaskColumns task_columns;
-
-    /// Data part will not be removed if the pointer owns it
-    MergeTreeData::DataPartPtr data_part;
-
-    /// Mark ranges we should read (in ascending order)
-    MarkRanges all_mark_ranges;
-    /// Total number of marks we should read
-    size_t total_marks_count = 0;
-    /// Value of _part_index virtual column (used only in SelectExecutor)
-    size_t part_index_in_query = 0;
-
-    String path;
-
     Chunks chunks;
-
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
 };
 

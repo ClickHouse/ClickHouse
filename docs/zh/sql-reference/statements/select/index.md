@@ -1,8 +1,6 @@
 ---
-title: SELECT Query
-toc_folder_title: SELECT
-toc_priority: 33
-toc_title: 综述
+sidebar_label: SELECT
+sidebar_position: 33
 ---
 
 # 选择查询 {#select-queries-syntax}
@@ -22,7 +20,7 @@ SELECT [DISTINCT] expr_list
 [WHERE expr]
 [GROUP BY expr_list] [WITH TOTALS]
 [HAVING expr]
-[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] 
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
 [UNION ALL ...]
@@ -42,7 +40,7 @@ SELECT [DISTINCT] expr_list
 -   [WHERE 子句](../../../sql-reference/statements/select/where.md)
 -   [GROUP BY 子句](../../../sql-reference/statements/select/group-by.md)
 -   [LIMIT BY 子句](../../../sql-reference/statements/select/limit-by.md)
--   [HAVING 子句](../../../sql-reference/statements/select/having.md)
+-   [HAVING 子句](../../../sql-reference/statements/select/having)
 -   [SELECT 子句](#select-clause)
 -   [DISTINCT 子句](../../../sql-reference/statements/select/distinct.md)
 -   [LIMIT 子句](../../../sql-reference/statements/select/limit.md)
@@ -159,4 +157,4 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 有关详细信息，请参阅部分 “Settings”. 可以使用外部排序（将临时表保存到磁盘）和外部聚合。
 
-{## [原始文章](https://clickhouse.tech/docs/en/sql-reference/statements/select/) ##}
+{## [原始文章](https://clickhouse.com/docs/en/sql-reference/statements/select/) ##}

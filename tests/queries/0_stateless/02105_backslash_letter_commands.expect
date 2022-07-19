@@ -1,0 +1,49 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
+log_user 0
+set timeout 02
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
+expect ":) "
+
+# Send a command
+send -- "\\ld;\r"
+expect "Syntax error: *"
+expect ":) "
+
+send -- "\\c;\r"
+expect "Syntax error: *"
+expect ":) "
+
+send -- "  \\l ;  \\d;  \r"
+expect "Syntax error (Multi-statements are not allowed): *"
+expect ":) "
+
+send -- "  \\l  ;\r"
+expect "SHOW DATABASES"
+expect "system"
+expect ":) "
+
+send -- "\\c system;\r"
+#expect "USE system"
+expect ":) "
+
+send -- "  \\d like 'one'\\G\r"
+expect "SHOW TABLES"
+expect "Row 1:"
+expect "name: one"
+expect ":) "
+
+send -- "\4"
+expect eof

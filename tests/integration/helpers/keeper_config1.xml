@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <listen_try>true</listen_try>
     <listen_host>::</listen_host>
     <listen_host>0.0.0.0</listen_host>
@@ -15,7 +15,7 @@
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
-            <session_timeout_ms>30000</session_timeout_ms>
+            <session_timeout_ms>15000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
             <force_sync>false</force_sync>
         </coordination_settings>
@@ -38,4 +38,4 @@
             </server>
         </raft_configuration>
     </keeper_server>
-</yandex>
+</clickhouse>

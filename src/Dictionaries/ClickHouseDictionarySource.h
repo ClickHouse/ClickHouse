@@ -25,6 +25,7 @@ public:
         const std::string password;
         const std::string db;
         const std::string table;
+        const std::string query;
         const std::string where;
         const std::string invalidate_query;
         const std::string update_field;
@@ -38,28 +39,28 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         const Block & sample_block_,
-        ContextPtr context);
+        ContextMutablePtr context_);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    BlockInputStreamPtr loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
+    QueryPipeline loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
 
-    BlockInputStreamPtr loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockInputStreamPtr loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
 
     bool hasUpdateField() const override;
 
-    DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;
 
@@ -70,7 +71,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    BlockInputStreamPtr createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
+    QueryPipeline createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
 
     std::string doInvalidateQuery(const std::string & request) const;
 

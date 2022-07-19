@@ -1,6 +1,7 @@
 #pragma once
+#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
@@ -12,14 +13,18 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class RollupStep : public ITransformingStep
 {
 public:
-    RollupStep(const DataStream & input_stream_, AggregatingTransformParamsPtr params_);
+    RollupStep(const DataStream & input_stream_, Aggregator::Params params_, bool final_);
 
     String getName() const override { return "Rollup"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
-    AggregatingTransformParamsPtr params;
+    void updateOutputStream() override;
+
+    Aggregator::Params params;
+    size_t keys_size;
+    bool final;
 };
 
 }

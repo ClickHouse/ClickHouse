@@ -1,6 +1,6 @@
 ---
-toc_priority: 40
-toc_title: 关联表引擎
+sidebar_position: 40
+sidebar_label: 关联表引擎
 ---
 
 # 关联表引擎 {#join}
@@ -112,4 +112,4 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 如果服务器非正常重启，保存在硬盘上的数据块会丢失或被损坏。这种情况下，需要手动删除被损坏的数据文件。
 
 
-[原始文档](https://clickhouse.tech/docs/en/operations/table_engines/join/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/en/operations/table_engines/join/) <!--hide-->

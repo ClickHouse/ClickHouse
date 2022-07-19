@@ -1,7 +1,12 @@
+-- Tags: long
+
 drop table if exists stack;
 
-set allow_experimental_window_functions = 1;
 set max_insert_threads = 4;
+
+-- Temporary disable aggregation in order,
+-- because it may fail with UBSan.
+set optimize_aggregation_in_order = 0;
 
 create table stack(item_id Int64, brand_id Int64, rack_id Int64, dt DateTime, expiration_dt DateTime, quantity UInt64)
 Engine = MergeTree 

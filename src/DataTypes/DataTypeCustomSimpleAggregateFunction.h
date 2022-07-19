@@ -34,7 +34,7 @@ public:
     DataTypeCustomSimpleAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
             : function(function_), argument_types(argument_types_), parameters(parameters_) {}
 
-    const AggregateFunctionPtr getFunction() const { return function; }
+    AggregateFunctionPtr getFunction() const { return function; }
     String getName() const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };

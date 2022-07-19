@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <users>
         <default>
             <!-- For testing the table filters -->
@@ -13,4 +13,4 @@
             </databases>
         </default>
     </users>
-</yandex>
+</clickhouse>

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
-
+#include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
-#include <Storages/JoinSettings.h>
+#include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/join_common.h>
 
 
 namespace DB
@@ -21,10 +21,24 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin final : public shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
+class StorageJoin final : public StorageSetOrJoinBase
 {
-    friend struct shared_ptr_helper<StorageJoin>;
 public:
+    StorageJoin(
+        DiskPtr disk_,
+        const String & relative_path_,
+        const StorageID & table_id_,
+        const Names & key_names_,
+        bool use_nulls_,
+        SizeLimits limits_,
+        ASTTableJoin::Kind kind_,
+        ASTTableJoin::Strictness strictness_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool overwrite,
+        bool persistent_);
+
     String getName() const override { return "Join"; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
@@ -35,7 +49,7 @@ public:
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
-    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const;
+    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const;
 
     /// Get result type for function "joinGet(OrNull)"
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -43,13 +57,13 @@ public:
     /// Execute function "joinGet(OrNull)" on data block.
     /// Takes rwlock for read to prevent parallel StorageJoin updates during processing data block
     /// (but not during processing whole query, it's safe for joinGet that doesn't involve `used_flags` from HashJoin)
-    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add, ContextPtr context) const;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -58,6 +72,22 @@ public:
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
+    Block getRightSampleBlock() const
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr();
+        Block block = metadata_snapshot->getSampleBlock().sortColumns();
+        if (use_nulls && isLeftOrFull(kind))
+        {
+            for (auto & col : block)
+            {
+                JoinCommon::convertColumnToNullable(col);
+            }
+        }
+        return block;
+    }
+
+    bool useNulls() const { return use_nulls; }
 
 private:
     Block sample_block;
@@ -73,28 +103,13 @@ private:
 
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
     /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
-    mutable std::shared_mutex rwlock;
+    mutable RWLock rwlock = RWLockImpl::create();
     mutable std::mutex mutate_mutex;
 
-    void insertBlock(const Block & block) override;
+    void insertBlock(const Block & block, ContextPtr context) override;
     void finishInsert() override {}
-    size_t getSize() const override;
-
-protected:
-    StorageJoin(
-        DiskPtr disk_,
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const Names & key_names_,
-        bool use_nulls_,
-        SizeLimits limits_,
-        ASTTableJoin::Kind kind_,
-        ASTTableJoin::Strictness strictness_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool overwrite,
-        bool persistent_);
+    size_t getSize(ContextPtr context) const override;
+    RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
 };
 
 }

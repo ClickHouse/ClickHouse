@@ -1,8 +1,9 @@
-<yandex>
+<clickhouse>
     <profiles>
         <!-- Default profile settings. -->
         <default>
             <log_queries>1</log_queries>
+            <allow_deprecated_syntax_for_merge_tree>1</allow_deprecated_syntax_for_merge_tree>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

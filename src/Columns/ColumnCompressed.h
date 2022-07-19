@@ -57,9 +57,13 @@ public:
       */
     static ColumnPtr wrap(ColumnPtr column)
     {
+        /// The order of evaluation of function arguments is unspecified
+        /// and could cause interacting with object in moved-from state
+        const auto size = column->size();
+        const auto bytes = column->allocatedBytes();
         return ColumnCompressed::create(
-            column->size(),
-            column->allocatedBytes(),
+            size,
+            bytes,
             [column = std::move(column)]{ return column; });
     }
 
@@ -78,6 +82,7 @@ public:
     Field operator[](size_t) const override { throwMustBeDecompressed(); }
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
     StringRef getDataAt(size_t) const override { throwMustBeDecompressed(); }
+    bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
     void insertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
@@ -90,6 +95,7 @@ public:
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
+    void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }
     int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
@@ -101,13 +107,17 @@ public:
     {
         throwMustBeDecompressed();
     }
-    void getPermutation(bool, size_t, int, Permutation &) const override { throwMustBeDecompressed(); }
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
+    void getPermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
+                        size_t, int, Permutation &) const override { throwMustBeDecompressed(); }
+    void updatePermutation(IColumn::PermutationSortDirection, IColumn::PermutationSortStability,
+                        size_t, int, Permutation &, EqualRanges &) const override { throwMustBeDecompressed(); }
     ColumnPtr replicate(const Offsets &) const override { throwMustBeDecompressed(); }
     MutableColumns scatter(ColumnIndex, const Selector &) const override { throwMustBeDecompressed(); }
     void gather(ColumnGathererStream &) override { throwMustBeDecompressed(); }
     void getExtremes(Field &, Field &) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
+    double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
 protected:
     size_t rows;
@@ -116,11 +126,10 @@ protected:
     Lazy lazy;
 
 private:
-    [[noreturn]] void throwMustBeDecompressed() const
+    [[noreturn]] static void throwMustBeDecompressed()
     {
         throw Exception("ColumnCompressed must be decompressed before use", ErrorCodes::LOGICAL_ERROR);
     }
 };
 
 }
-

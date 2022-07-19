@@ -125,9 +125,9 @@ void JSONEachRowRowOutputFormat::writeSuffix()
 }
 
 
-void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
+void registerOutputFormatJSONEachRow(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("JSONEachRow", [](
+    factory.registerOutputFormat("JSONEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -140,7 +140,33 @@ void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONEachRow");
 
-    factory.registerOutputFormatProcessor("JSONStringsEachRow", [](
+    factory.registerOutputFormat("JSONLines", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const RowOutputFormatParams & params,
+        const FormatSettings & _format_settings)
+    {
+        FormatSettings settings = _format_settings;
+        settings.json.serialize_as_strings = false;
+        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
+            settings);
+    });
+    factory.markOutputFormatSupportsParallelFormatting("JSONLines");
+
+    factory.registerOutputFormat("NDJSON", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const RowOutputFormatParams & params,
+        const FormatSettings & _format_settings)
+    {
+        FormatSettings settings = _format_settings;
+        settings.json.serialize_as_strings = false;
+        return std::make_shared<JSONEachRowRowOutputFormat>(buf, sample, params,
+            settings);
+    });
+    factory.markOutputFormatSupportsParallelFormatting("NDJSON");
+
+    factory.registerOutputFormat("JSONStringsEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

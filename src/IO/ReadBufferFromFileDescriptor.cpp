@@ -1,18 +1,20 @@
-#include <errno.h>
-#include <time.h>
+#include <cerrno>
+#include <ctime>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Progress.h>
+#include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
-#include <Common/UnicodeBar.h>
-#include <Common/TerminalSize.h>
-#include <IO/Operators.h>
 
+
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
 
 namespace ProfileEvents
 {
@@ -37,7 +39,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
-    extern const int CANNOT_FSTAT;
+    extern const int CANNOT_ADVISE;
 }
 
 
@@ -49,6 +51,13 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 
 bool ReadBufferFromFileDescriptor::nextImpl()
 {
+    /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
+    assert(!internal_buffer.empty());
+
+    /// This is a workaround of a read pass EOF bug in linux kernel with pread()
+    if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
+        return false;
+
     size_t bytes_read = 0;
     while (!bytes_read)
     {
@@ -110,6 +119,20 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 }
 
 
+void ReadBufferFromFileDescriptor::prefetch()
+{
+#if defined(POSIX_FADV_WILLNEED)
+    /// For direct IO, loading data into page cache is pointless.
+    if (required_alignment)
+        return;
+
+    /// Ask OS to prefetch data into page cache.
+    if (0 != posix_fadvise(fd, file_offset_of_buffer_end, internal_buffer.size(), POSIX_FADV_WILLNEED))
+        throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
+#endif
+}
+
+
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
@@ -132,16 +155,15 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    /// file_offset_of_buffer_end corresponds to working_buffer.end(); it's a past-the-end pos,
-    /// so the second inequality is strict.
     if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
-        && new_pos < file_offset_of_buffer_end)
+        && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.
+        /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
 
         pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
         assert(pos >= working_buffer.begin());
-        assert(pos < working_buffer.end());
+        assert(pos <= working_buffer.end());
 
         return new_pos;
     }
@@ -154,8 +176,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         off_t offset_after_seek_pos = new_pos - seek_pos;
 
-        /// First put position at the end of the buffer so the next read will fetch new data to the buffer.
-        pos = working_buffer.end();
+        /// First reset the buffer so the next read will fetch new data to the buffer.
+        resetWorkingBuffer();
 
         /// In case of using 'pread' we just update the info about the next position in file.
         /// In case of using 'read' we call 'lseek'.
@@ -169,7 +191,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             off_t res = ::lseek(fd, seek_pos, SEEK_SET);
             if (-1 == res)
-                throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+                throwFromErrnoWithPath(fmt::format("Cannot seek through file {} at offset {}", getFileName(), seek_pos), getFileName(),
                     ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             /// Also note that seeking past the file size is not allowed.
@@ -227,13 +249,9 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 }
 
 
-off_t ReadBufferFromFileDescriptor::size()
+size_t ReadBufferFromFileDescriptor::getFileSize()
 {
-    struct stat buf;
-    int res = fstat(fd, &buf);
-    if (-1 == res)
-        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
-    return buf.st_size;
+    return getSizeFromFileDescriptor(fd, getFileName());
 }
 
 

@@ -1,22 +1,11 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
 
 #include <cstring>
 #include <cassert>
-
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined (__ANDROID__)
-#   include <sys/endian.h>
-#elif defined(__sun)
-#   include <endian.h>
-#elif defined(__APPLE__)
-#   include <libkern/OSByteOrder.h>
-
-#   define htobe64(x) OSSwapHostToBigInt64(x)
-#   define be64toh(x) OSSwapBigToHostInt64(x)
-#endif
 
 
 namespace DB
@@ -63,11 +52,10 @@ public:
           bits_count(0)
     {}
 
-    ~BitReader()
-    {}
+    ~BitReader() = default;
 
     // reads bits_to_read high-bits from bits_buffer
-    inline UInt64 readBits(UInt8 bits_to_read)
+    ALWAYS_INLINE inline UInt64 readBits(UInt8 bits_to_read)
     {
         if (bits_to_read > bits_count)
             fillBitBuffer();
@@ -83,7 +71,7 @@ public:
         return getBitsFromBitBuffer<PEEK>(8);
     }
 
-    inline UInt8 readBit()
+    ALWAYS_INLINE inline UInt8 readBit()
     {
         return static_cast<UInt8>(readBits(1));
     }
@@ -134,7 +122,7 @@ private:
 
 
     // Fills internal bits_buffer with data from source, reads at most 64 bits
-    size_t fillBitBuffer()
+    ALWAYS_INLINE size_t fillBitBuffer()
     {
         const size_t available = source_end - source_current;
         const auto bytes_to_read = std::min<size_t>(64 / 8, available);
@@ -152,7 +140,7 @@ private:
         memcpy(&tmp_buffer, source_current, bytes_to_read);
         source_current += bytes_to_read;
 
-        tmp_buffer = be64toh(tmp_buffer);
+        tmp_buffer = __builtin_bswap64(tmp_buffer);
 
         bits_buffer |= BufferType(tmp_buffer) << ((sizeof(BufferType) - sizeof(tmp_buffer)) * 8 - bits_count);
         bits_count += static_cast<UInt8>(bytes_to_read) * 8;
@@ -200,7 +188,7 @@ public:
             capacity = BIT_BUFFER_SIZE - bits_count;
         }
 
-//      write low bits of value as high bits of bits_buffer
+        // write low bits of value as high bits of bits_buffer
         const UInt64 mask = maskLowBits<UInt64>(bits_to_write);
         BufferType v = value & mask;
         v <<= capacity - bits_to_write;
@@ -212,7 +200,7 @@ public:
     // flush contents of bits_buffer to the dest_current, partial bytes are completed with zeroes.
     inline void flush()
     {
-        bits_count = (bits_count + 8 - 1) & ~(8 - 1); // align UP to 8-bytes, so doFlush will write ALL data from bits_buffer
+        bits_count = (bits_count + 8 - 1) & ~(8 - 1); // align up to 8-bytes, so doFlush will write all data from bits_buffer
         while (bits_count != 0)
             doFlush();
     }
@@ -231,13 +219,12 @@ private:
 
         if (available < to_write)
         {
-            throw Exception("Can not write past end of buffer. Space available "
-                            + std::to_string(available) + " bytes, required to write: "
-                            + std::to_string(to_write) + ".",
-                            ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+            throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER,
+                "Can not write past end of buffer. Space available {} bytes, required to write {} bytes.",
+                available, to_write);
         }
 
-        const auto tmp_buffer = htobe64(static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8));
+        const auto tmp_buffer = __builtin_bswap64(static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) - sizeof(UInt64)) * 8));
         memcpy(dest_current, &tmp_buffer, to_write);
         dest_current += to_write;
 

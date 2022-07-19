@@ -1,13 +1,13 @@
 ---
-toc_priority: 50
-toc_title: Enum
+sidebar_position: 50
+sidebar_label: Enum
 ---
 
-# Enum {#enum}
+# Enum
 
 Enumerated type consisting of named values.
 
-Named values must be declared as `'string' = integer` pairs. ClickHouse stores only numbers, but supports operations with the values through their names.
+Named values can be declared as `'string' = integer` pairs or `'string'` names . ClickHouse stores only numbers, but supports operations with the values through their names.
 
 ClickHouse supports:
 
@@ -16,7 +16,7 @@ ClickHouse supports:
 
 ClickHouse automatically chooses the type of `Enum` when data is inserted. You can also use `Enum8` or `Enum16` types to be sure in the size of storage.
 
-## Usage Examples {#usage-examples}
+## Usage Examples
 
 Here we create a table with an `Enum8('hello' = 1, 'world' = 2)` type column:
 
@@ -26,6 +26,39 @@ CREATE TABLE t_enum
     x Enum('hello' = 1, 'world' = 2)
 )
 ENGINE = TinyLog
+```
+
+Similarly, you could omit numbers. ClickHouse will assign consecutive numbers automatically. Numbers are assigned starting from 1 by default.
+
+``` sql
+CREATE TABLE t_enum
+(
+    x Enum('hello', 'world')
+)
+ENGINE = TinyLog
+```
+
+You can also specify legal starting number for the first name.
+
+``` sql
+CREATE TABLE t_enum
+(
+    x Enum('hello' = 1, 'world')
+)
+ENGINE = TinyLog
+```
+
+``` sql
+CREATE TABLE t_enum
+(
+    x Enum8('hello' = -129, 'world')
+)
+ENGINE = TinyLog
+```
+
+``` text
+Exception on server:
+Code: 69. DB::Exception: Value -129 for element 'hello' exceeds range of Enum8.
 ```
 
 Column `x` can only store values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will raise an exception. 8-bit size for this `Enum` is chosen automatically.
@@ -87,7 +120,7 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 └─────────────────────────────────────────────────────┘
 ```
 
-## General Rules and Usage {#general-rules-and-usage}
+## General Rules and Usage
 
 Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` or in the range `-32768 ... 32767` for `Enum16`. All the strings and numbers must be different. An empty string is allowed. If this type is specified (in a table definition), numbers can be in an arbitrary order. However, the order does not matter.
 
@@ -127,4 +160,4 @@ The Enum type can be changed without cost using ALTER, if only the set of values
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
 
-[Original article](https://clickhouse.tech/docs/en/data_types/enum/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/enum/) <!--hide-->

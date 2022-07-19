@@ -44,9 +44,9 @@
 
 `a > b` – 对应函数 `greater(a, b)`
 
-`a LIKE s` – 对应函数 `like(a, b)`
+`a LIKE b` – 对应函数 `like(a, b)`
 
-`a NOT LIKE s` – 对应函数 `notLike(a, b)`
+`a NOT LIKE b` – 对应函数 `notLike(a, b)`
 
 `a BETWEEN b AND c` – 等价于 `a >= b AND a <= c`
 
@@ -260,4 +260,4 @@ WHERE isNotNull(y)
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/operators/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/operators/) <!--hide-->

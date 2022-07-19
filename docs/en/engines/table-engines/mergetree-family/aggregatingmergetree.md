@@ -1,9 +1,9 @@
 ---
-toc_priority: 35
-toc_title: AggregatingMergeTree
+sidebar_position: 60
+sidebar_label:  AggregatingMergeTree
 ---
 
-# AggregatingMergeTree {#aggregatingmergetree}
+# AggregatingMergeTree
 
 The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a one data part) that stores a combination of states of aggregate functions.
 
@@ -11,8 +11,8 @@ You can use `AggregatingMergeTree` tables for incremental data aggregation, incl
 
 The engine processes all columns with the following types:
 
--   [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
--   [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
+## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
+## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
@@ -36,14 +36,15 @@ For a description of request parameters, see [request description](../../../sql-
 
 **Query clauses**
 
-When creating a `AggregatingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
+When creating an `AggregatingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+:::warning
+Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+:::
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -100,4 +101,4 @@ GROUP BY StartDate
 ORDER BY StartDate;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->

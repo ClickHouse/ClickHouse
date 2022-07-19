@@ -32,7 +32,7 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         info.started = true;
     }
 
-    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode))
+    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch, limits.timeout_overflow_mode))
     {
         stopReading();
         return;
@@ -58,16 +58,16 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
     switch (limits.mode)
     {
         case LimitsMode::LIMITS_TOTAL:
-            /// Checked in SourceWithProgress::progress method.
+            /// Checked in ISource::progress method.
             break;
 
         case LimitsMode::LIMITS_CURRENT:
         {
             UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
             quota->used(
-                {Quota::RESULT_ROWS, chunk.getNumRows()},
-                {Quota::RESULT_BYTES, chunk.bytes()},
-                {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
+                {QuotaType::RESULT_ROWS, chunk.getNumRows()},
+                {QuotaType::RESULT_BYTES, chunk.bytes()},
+                {QuotaType::EXECUTION_TIME, total_elapsed - prev_elapsed});
             prev_elapsed = total_elapsed;
             break;
         }

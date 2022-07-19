@@ -1,4 +1,4 @@
-# system.parts {#system_tables-parts}
+# parts {#system_tables-parts}
 
 Contains information about parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -19,10 +19,10 @@ Columns:
 
     Possible Values:
 
-    -   `Wide` — Each column is stored in a separate file in a filesystem. 
-    -   `Compact` — All columns are stored in one file in a filesystem. 
+    -   `Wide` — Each column is stored in a separate file in a filesystem.
+    -   `Compact` — All columns are stored in one file in a filesystem.
 
-    Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table. 
+    Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table.
 
    -   `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
 
@@ -37,6 +37,12 @@ Columns:
 -   `data_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
 
 -   `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The size of the file with marks.
+
+-   `secondary_indices_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of compressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
+
+-   `secondary_indices_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Total size of uncompressed data for secondary indices in the data part. All the auxiliary files (for example, files with marks) are not included.
+
+-   `secondary_indices_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The size of the file with marks for secondary indices.
 
 -   `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.
 
@@ -76,7 +82,7 @@ Columns:
 
 -   `path` ([String](../../sql-reference/data-types/string.md)) – Absolute path to the folder with data part files.
 
--   `disk` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
+-   `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
 -   `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md#hash_functions-siphash128) of compressed files.
 
@@ -88,10 +94,11 @@ Columns:
 
 -   `delete_ttl_info_max` ([DateTime](../../sql-reference/data-types/datetime.md)) — The maximum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
--   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of expressions. Each expression defines a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl). 
+-   `move_ttl_info.expression` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of expressions. Each expression defines a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
-    !!! note "Warning"
-        The `move_ttl_info.expression` array is kept mostly for backward compatibility, now the simpliest way to check `TTL MOVE` rule is to use the `move_ttl_info.min` and `move_ttl_info.max` fields.
+:::warning
+The `move_ttl_info.expression` array is kept mostly for backward compatibility, now the simpliest way to check `TTL MOVE` rule is to use the `move_ttl_info.min` and `move_ttl_info.max` fields.
+:::
 
 -   `move_ttl_info.min` ([Array](../../sql-reference/data-types/array.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Array of date and time values. Each element describes the minimum key value for a [TTL MOVE rule](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl).
 
@@ -119,6 +126,9 @@ rows:                                  6
 bytes_on_disk:                         310
 data_compressed_bytes:                 157
 data_uncompressed_bytes:               91
+secondary_indices_compressed_bytes:    58
+secondary_indices_uncompressed_bytes:  6
+secondary_indices_marks_bytes:         48
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
 remove_time:                           1970-01-01 00:00:00
@@ -155,4 +165,4 @@ move_ttl_info.max:                     []
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [TTL for Columns and Tables](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/parts) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/parts) <!--hide-->

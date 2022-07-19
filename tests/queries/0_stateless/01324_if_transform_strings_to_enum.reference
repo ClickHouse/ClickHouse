@@ -2,13 +2,13 @@ other
 other
 google
 other
-yandex
+censor.net
 other
 yahoo
 other
 other
 other
-SELECT transform(number, [2, 4, 6], CAST([\'google\', \'yandex\', \'yahoo\'], \'Array(Enum8(\\\'google\\\' = 1, \\\'other\\\' = 2, \\\'yahoo\\\' = 3, \\\'yandex\\\' = 4))\'), CAST(\'other\', \'Enum8(\\\'google\\\' = 1, \\\'other\\\' = 2, \\\'yahoo\\\' = 3, \\\'yandex\\\' = 4)\'))
+SELECT transform(number, [2, 4, 6], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\'))
 FROM system.numbers
 LIMIT 10
 google
@@ -17,24 +17,24 @@ google
 google
 google
 google
-yandex
-yandex
-yandex
-yandex
-SELECT if(number > 5, \'yandex\', \'google\')
+censor.net
+censor.net
+censor.net
+censor.net
+SELECT if(number > 5, \'censor.net\', \'google\')
 FROM system.numbers
 LIMIT 10
 other
 other
 google
 other
-yandex
+censor.net
 other
 yahoo
 other
 other
 other
-SELECT transform(number, [2, 4, 6], [\'google\', \'yandex\', \'yahoo\'], \'other\')
+SELECT transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\')
 FROM system.numbers
 LIMIT 10
 google
@@ -43,10 +43,10 @@ google
 google
 google
 google
-yandex
-yandex
-yandex
-yandex
-SELECT if(number > 5, \'yandex\', \'google\')
+censor.net
+censor.net
+censor.net
+censor.net
+SELECT if(number > 5, \'censor.net\', \'google\')
 FROM system.numbers
 LIMIT 10

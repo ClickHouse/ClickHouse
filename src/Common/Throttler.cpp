@@ -23,7 +23,7 @@ static constexpr auto NS = 1000000000UL;
 
 /// Tracking window. Actually the size is not really important. We just want to avoid
 /// throttles when there are no actions for a long period time.
-static const double window_ns = 7UL * NS;
+static const double window_ns = 1ULL * NS;
 
 void Throttler::add(size_t amount)
 {
@@ -35,7 +35,7 @@ void Throttler::add(size_t amount)
     {
         std::lock_guard lock(mutex);
 
-        auto now = clock_gettime_ns();
+        auto now = clock_gettime_ns_adjusted(prev_ns);
         /// If prev_ns is equal to zero (first `add` call) we known nothing about speed
         /// and don't track anything.
         if (max_speed && prev_ns != 0)

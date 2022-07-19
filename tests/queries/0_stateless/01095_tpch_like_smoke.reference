@@ -4,22 +4,22 @@
 4	fail: exists
 5
 6
-0.0000
+0
 7
 8
 9
 10
 11
 12
-13	fail: join predicates
+13
 14
-0.000000
+0
 15	fail: correlated subquery
 16
 17	fail: correlated subquery
 18
 19
-0.0000
+0
 20	fail: correlated subquery
 21	fail: exists, not exists
 22	fail: not exists

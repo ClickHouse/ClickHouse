@@ -1,21 +1,23 @@
 ---
-toc_priority: 43
-toc_title: "Условные функции"
+sidebar_position: 43
+sidebar_label: "Условные функции"
 ---
 
 # Условные функции {#uslovnye-funktsii}
 
 ## if {#if}
 
-Условное выражение. В отличии от большинства систем, ClickHouse всегда считает оба выражения `then` и `else`.
+Условное выражение. В отличие от большинства систем, ClickHouse всегда считает оба выражения `then` и `else`.
 
 **Синтаксис**
 
 ``` sql
-SELECT if(cond, then, else)
+if(cond, then, else)
 ```
 
 Если условие `cond` не равно нулю, то возвращается результат выражения `then`. Если условие `cond` равно нулю или является NULL, то результат выражения `then` пропускается и возвращается результат выражения `else`.
+
+Чтобы вычислять функцию `if` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `then` вычисляется только для строк, где условие `cond` верно, а выражение `else` – для строк, где условие `cond` неверно. Например, при выполнении запроса `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль, так как `intDiv(42, number)` будет вычислено только для чисел, которые не удовлетворяют условию `number = 0`.
 
 **Аргументы**
 
@@ -77,7 +79,13 @@ SELECT if(0, plus(2, 2), plus(2, 6));
 
 Позволяет более компактно записать оператор [CASE](../operators/index.md#operator_case) в запросе.
 
-    multiIf(cond_1, then_1, cond_2, then_2...else)
+**Синтаксис**
+
+``` sql
+multiIf(cond_1, then_1, cond_2, then_2, ..., else)
+```
+
+Чтобы вычислять функцию `multiIf` по короткой схеме, используйте настройку [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation). Если настройка включена, то выражение `then_i` вычисляется только для строк, где условие `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` верно, `cond_i` вычисляется только для строк, где условие `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` верно. Например, при выполнении запроса `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)` не будет сгенерировано исключение из-за деления на ноль.
 
 **Аргументы**
 
@@ -110,4 +118,3 @@ SELECT if(0, plus(2, 2), plus(2, 6));
 │                                       ᴺᵁᴸᴸ │
 └────────────────────────────────────────────┘
 ```
-

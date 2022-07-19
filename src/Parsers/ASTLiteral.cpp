@@ -17,6 +17,13 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
     applyVisitor(FieldVisitorHash(hash_state), value);
 }
 
+ASTPtr ASTLiteral::clone() const
+{
+    auto res = std::make_shared<ASTLiteral>(*this);
+    res->unique_column_name = {};
+    return res;
+}
+
 namespace
 {
 
@@ -50,16 +57,14 @@ String FieldVisitorToColumnName::operator() (const Tuple & x) const
 
 }
 
-void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const
-{
-    if (settings.legacy_column_name_of_tuple_literal)
-        appendColumnNameImplLegacy(ostr);
-    else
-        appendColumnNameImpl(ostr);
-}
-
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
+    if (use_legacy_column_name_of_tuple)
+    {
+        appendColumnNameImplLegacy(ostr);
+        return;
+    }
+
     /// 100 - just arbitrary value.
     constexpr auto min_elements_for_hashing = 100;
 

@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Справочник"
-toc_priority: 36
-toc_hidden: true
+sidebar_label: "Справочник"
+sidebar_position: 36
 ---
 
 # Перечень агрегатных функций {#aggregate-functions-list}
@@ -61,6 +60,8 @@ toc_hidden: true
 -   [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md)
 -   [quantileTDigest](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md)
 -   [quantileTDigestWeighted](../../../sql-reference/aggregate-functions/reference/quantiletdigestweighted.md)
+-   [quantileBFloat16](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16)
+-   [quantileBFloat16Weighted](../../../sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)

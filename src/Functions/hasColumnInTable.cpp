@@ -56,6 +56,8 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 };
 
@@ -127,13 +129,16 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
 
+        bool treat_local_as_remote = false;
+        bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
         auto cluster = std::make_shared<Cluster>(
             getContext()->getSettings(),
             host_names,
             !user_name.empty() ? user_name : "default",
             password,
             getContext()->getTCPPort(),
-            false);
+            treat_local_as_remote,
+            treat_local_port_as_remote);
 
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required
@@ -145,7 +150,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    return DataTypeUInt8().createColumnConst(input_rows_count, Field{UInt64(has_column)});
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field{static_cast<UInt64>(has_column)});
 }
 
 }

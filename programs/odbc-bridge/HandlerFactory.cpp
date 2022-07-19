@@ -1,9 +1,10 @@
 #include "HandlerFactory.h"
 #include "PingHandler.h"
 #include "ColumnInfoHandler.h"
+#include <Common/config.h>
 #include <Poco/URI.h>
 #include <Poco/Net/HTTPServerRequest.h>
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

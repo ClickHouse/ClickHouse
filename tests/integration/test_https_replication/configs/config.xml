@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
         <level>trace</level>
@@ -94,13 +94,6 @@
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
-    <!-- Approximate size of mark cache, used in tables of MergeTree family.
-         In bytes. Cache is single for server. Memory is allocated only on demand.
-         You should not lower this value.
-      -->
-    <mark_cache_size>5368709120</mark_cache_size>
-
-
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
@@ -122,27 +115,13 @@
     <!-- Default database. -->
     <default_database>default</default_database>
 
-    <!-- Server time zone could be set here.
-
-         Time zone is used when converting between String and DateTime types,
-          when printing DateTime in text formats and parsing DateTime from text,
-          it is used in date and time related functions, if specific time zone was not passed as an argument.
-
-         Time zone is specified as identifier from IANA time zone database, like UTC or Africa/Abidjan.
-         If not specified, system time zone at server startup is used.
-
-         Please note, that server could display time zone alias instead of specified name.
-         Example: W-SU is an alias for Europe/Moscow and Zulu is an alias for UTC.
-    -->
-    <!-- <timezone>Europe/Moscow</timezone> -->
-
     <!-- You can specify umask here (see "man umask"). Server will apply it on startup.
          Number is always parsed as octal. Default umask is 027 (other users cannot read logs, data files, etc; group can only read).
     -->
     <!-- <umask>022</umask> -->
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.yandex/docs/en/table_engines/distributed/
+         https://clickhouse.com/docs/en/table_engines/distributed/
       -->
     <remote_servers incl="clickhouse_remote_servers" >
         <!-- Test only shard config for testing distributed storage -->
@@ -168,20 +147,20 @@
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
-         Values for substitutions are specified in /yandex/name_of_substitution elements in that file.
+         Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
       -->
 
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/
+         See https://clickhouse.com/docs/en/table_engines/replication/
       -->
     <zookeeper incl="zookeeper-servers" optional="true" />
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/#creating-replicated-tables
+         See https://clickhouse.com/docs/en/table_engines/replication/#creating-replicated-tables
       -->
     <macros incl="macros" optional="true" />
 
@@ -241,7 +220,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr https://clickhouse.com/docs/en/table_engines/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -265,7 +244,7 @@
 
 
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
-         See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
+         See https://clickhouse.com/docs/en/dicts/internal_dicts/
     -->
 
     <!-- Path to file with region hierarchy. -->
@@ -276,7 +255,7 @@
 
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.yandex/docs/en/dicts/external_dicts/
+         https://clickhouse.com/docs/en/dicts/external_dicts/
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 
@@ -361,4 +340,4 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
-</yandex>
+</clickhouse>

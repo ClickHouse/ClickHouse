@@ -9,7 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <bitset>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -75,12 +75,12 @@ public:
         return "retention";
     }
 
-    AggregateFunctionRetention(const DataTypes & arguments)
+    explicit AggregateFunctionRetention(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {})
     {
         for (const auto i : collections::range(0, arguments.size()))
         {
-            auto cond_arg = arguments[i].get();
+            const auto * cond_arg = arguments[i].get();
             if (!isUInt8(cond_arg))
                 throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i) + " of aggregate function "
                         + getName() + ", must be UInt8",
@@ -115,12 +115,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

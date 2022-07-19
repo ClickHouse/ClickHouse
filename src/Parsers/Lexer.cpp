@@ -1,7 +1,6 @@
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/find_symbols.h>
-
+#include <base/find_symbols.h>
 
 namespace DB
 {
@@ -73,11 +72,11 @@ Token Lexer::nextTokenImpl()
 
     switch (*pos)
     {
-        case ' ': [[fallthrough]];
-        case '\t': [[fallthrough]];
-        case '\n': [[fallthrough]];
-        case '\r': [[fallthrough]];
-        case '\f': [[fallthrough]];
+        case ' ':
+        case '\t':
+        case '\n':
+        case '\r':
+        case '\f':
         case '\v':
         {
             ++pos;
@@ -86,15 +85,15 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::Whitespace, token_begin, pos);
         }
 
-        case '0': [[fallthrough]];
-        case '1': [[fallthrough]];
-        case '2': [[fallthrough]];
-        case '3': [[fallthrough]];
-        case '4': [[fallthrough]];
-        case '5': [[fallthrough]];
-        case '6': [[fallthrough]];
-        case '7': [[fallthrough]];
-        case '8': [[fallthrough]];
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
         case '9':
         {
             /// The task is not to parse a number or check correctness, but only to skip it.
@@ -281,6 +280,18 @@ Token Lexer::nextTokenImpl()
             }
             return Token(TokenType::Slash, token_begin, pos);
         }
+        case '#':   /// start of single line comment, MySQL style
+        {           /// PostgreSQL has some operators using '#' character.
+                    /// For less ambiguity, we will recognize a comment only if # is followed by whitespace.
+                    /// or #! as a special case for "shebang".
+                    /// #hello - not a comment
+                    /// # hello - a comment
+                    /// #!/usr/bin/clickhouse-local --queries-file - a comment
+            ++pos;
+            if (pos < end && (*pos == ' ' || *pos == '!'))
+                return comment_until_end_of_line();
+            return Token(TokenType::Error, token_begin, pos);
+        }
         case '%':
             return Token(TokenType::Percent, token_begin, ++pos);
         case '=':   /// =, ==
@@ -336,12 +347,42 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::DoubleAt, token_begin, ++pos);
             return Token(TokenType::At, token_begin, pos);
         }
+        case '\\':
+        {
+            ++pos;
+            if (pos < end && *pos == 'G')
+                return Token(TokenType::VerticalDelimiter, token_begin, ++pos);
+            return Token(TokenType::Error, token_begin, pos);
+        }
 
         default:
-            if (*pos == '$' && ((pos + 1 < end && !isWordCharASCII(pos[1])) || pos + 1 == end))
+            if (*pos == '$')
             {
-                /// Capture standalone dollar sign
-                return Token(TokenType::DollarSign, token_begin, ++pos);
+                /// Try to capture dollar sign as start of here doc
+
+                std::string_view token_stream(pos, end - pos);
+                auto heredoc_name_end_position = token_stream.find('$', 1);
+                if (heredoc_name_end_position != std::string::npos)
+                {
+                    size_t heredoc_size = heredoc_name_end_position + 1;
+                    std::string_view heredoc = {token_stream.data(), heredoc_size};
+
+                    size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
+                    if (heredoc_end_position != std::string::npos)
+                    {
+
+                        pos += heredoc_end_position;
+                        pos += heredoc_size;
+
+                        return Token(TokenType::HereDoc, token_begin, pos);
+                    }
+                }
+
+                if (((pos + 1 < end && !isWordCharASCII(pos[1])) || pos + 1 == end))
+                {
+                    /// Capture standalone dollar sign
+                    return Token(TokenType::DollarSign, token_begin, ++pos);
+                }
             }
             if (isWordCharASCII(*pos) || *pos == '$')
             {

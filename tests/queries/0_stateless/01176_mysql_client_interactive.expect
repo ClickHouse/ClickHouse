@@ -1,18 +1,24 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
+# Tag no-fasttest: requires mysql client
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
 
 log_user 0
 set timeout 60
 match_max 100000
-# A default timeout action is to do nothing, change it to fail
+
 expect_after {
-    timeout {
-        exit 1
-    }
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
 }
 
-set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$MYSQL_CLIENT_BINARY \$MYSQL_CLIENT_OPT"
-expect "mysql> "
+expect -nocase -re "mysql.*> "
 
 send -- "USE system;\r"
 expect "Database changed"
@@ -34,6 +40,14 @@ expect "ERROR 395 (00000): Code: 395"
 send -- "select * from system.one format TSV;\r"
 expect "ERROR 1 (00000): Code: 1"
 
+send -- "select * from system.one format JSON;\r"
+expect "ERROR 1 (00000): Code: 1"
+
+send -- "select * from system.one format MySQLWire;\r"
+expect "| dummy |"
+expect "|     0 |"
+expect "1 row in set"
+
 send -- "select count(number), sum(number) from numbers(10);\r"
 expect "+---------------+-------------+"
 expect "| count(number) | sum(number) |"
@@ -41,8 +55,7 @@ expect "+---------------+-------------+"
 expect "|            10 |          45 |"
 expect "+---------------+-------------+"
 expect "1 row in set"
-expect "Read 10 rows, 80.00 B"
-expect "mysql> "
+expect -nocase -re "mysql.*> "
 
 send -- "quit;\r"
 expect eof

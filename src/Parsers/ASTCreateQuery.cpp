@@ -32,9 +32,6 @@ ASTPtr ASTStorage::clone() const
     if (settings)
         res->set(res->settings, settings->clone());
 
-    if (comment)
-        res->set(res->comment, comment->clone());
-
     return res;
 }
 
@@ -75,12 +72,6 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings->formatImpl(s, state, frame);
     }
-    if (comment)
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "COMMENT " << (s.hilite ? hilite_none : "");
-        comment->formatImpl(s, state, frame);
-    }
-
 }
 
 
@@ -207,8 +198,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->storage, storage->clone());
     if (select)
         res->set(res->select, select->clone());
-    if (tables)
-        res->set(res->tables, tables->clone());
+    if (table_overrides)
+        res->set(res->table_overrides, table_overrides->clone());
 
     if (dictionary)
     {
@@ -217,7 +208,11 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
+    if (comment)
+        res->set(res->comment, comment->clone());
+
     cloneOutputOptions(*res);
+    cloneTableOptions(*res);
 
     return res;
 }
@@ -226,13 +221,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 {
     frame.need_parens = false;
 
-    if (!database.empty() && table.empty())
+    if (database && !table)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
             << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
-            << backQuoteIfNeed(database);
+            << backQuoteIfNeed(getDatabase());
 
         if (uuid != UUIDHelpers::Nil)
         {
@@ -244,6 +239,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
         if (storage)
             storage->formatImpl(settings, state, frame);
+
+        if (table_overrides)
+        {
+            settings.ostr << settings.nl_or_ws;
+            table_overrides->formatImpl(settings, state, frame);
+        }
+
+        if (comment)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
+            comment->formatImpl(settings, state, frame);
+        }
 
         return;
     }
@@ -267,6 +274,8 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             what = "MATERIALIZED VIEW";
         else if (is_live_view)
             what = "LIVE VIEW";
+        else if (is_window_view)
+            what = "WINDOW VIEW";
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
@@ -275,7 +284,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+            << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
@@ -316,7 +325,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         /// Always DICTIONARY
         settings.ostr << (settings.hilite ? hilite_keyword : "") << action << " DICTIONARY "
                       << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
-                      << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
@@ -325,7 +334,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (to_table_id)
     {
-        assert(is_materialized_view && to_inner_uuid == UUIDHelpers::Nil);
+        assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
             << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
@@ -348,7 +357,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (as_table_function)
     {
-        if (columns_list)
+        if (columns_list && !columns_list->empty())
         {
             frame.expression_list_always_start_on_new_line = true;
             settings.ostr << (settings.one_line ? " (" : "\n(");
@@ -364,7 +373,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (columns_list && !as_table_function)
+    if (columns_list && !columns_list->empty() && !as_table_function)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
@@ -385,25 +394,56 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     frame.expression_list_always_start_on_new_line = false; //-V519
 
+    if (inner_storage)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " INNER" << (settings.hilite ? hilite_none : "");
+        inner_storage->formatImpl(settings, state, frame);
+    }
+
     if (storage)
         storage->formatImpl(settings, state, frame);
 
     if (dictionary)
         dictionary->formatImpl(settings, state, frame);
 
+    if (is_watermark_strictly_ascending)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK STRICTLY_ASCENDING" << (settings.hilite ? hilite_none : "");
+    }
+    else if (is_watermark_ascending)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK ASCENDING" << (settings.hilite ? hilite_none : "");
+    }
+    else if (is_watermark_bounded)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK " << (settings.hilite ? hilite_none : "");
+        watermark_function->formatImpl(settings, state, frame);
+    }
+
+    if (allowed_lateness)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ALLOWED_LATENESS " << (settings.hilite ? hilite_none : "");
+        lateness_function->formatImpl(settings, state, frame);
+    }
+
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
+    else if (is_create_empty)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " EMPTY" << (settings.hilite ? hilite_none : "");
 
     if (select)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
+                      << (comment ? "(" : "")
+                      << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
+        settings.ostr << (comment ? ")" : "");
     }
 
-    if (tables)
+    if (comment)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
-        tables->formatImpl(settings, state, frame);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
+        comment->formatImpl(settings, state, frame);
     }
 }
 

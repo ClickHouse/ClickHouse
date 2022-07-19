@@ -7,6 +7,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include <memory>
 #include <string>
@@ -47,15 +49,23 @@ enum class ExtractAllGroupsResultKind
 template <typename Impl>
 class FunctionExtractAllGroups : public IFunction
 {
+    ContextPtr context;
+
 public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractAllGroups>(); }
+    explicit FunctionExtractAllGroups(ContextPtr context_)
+        : context(context_)
+    {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionExtractAllGroups>(context); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -63,8 +73,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", isStringOrFixedString, nullptr, "const String or const FixedString"},
-            {"needle", isStringOrFixedString, isColumnConst, "const String or const FixedString"},
+            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
+            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -85,8 +95,8 @@ public:
             throw Exception("Length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
         using StringPiece = typename Regexps::Regexp::StringPieceType;
-        auto holder = Regexps::get<false, false>(needle);
-        const auto & regexp = holder->getRE2();
+        const Regexps::Regexp holder = Regexps::createRegexp<false, false, false>(needle);
+        const auto & regexp = holder.getRE2();
 
         if (!regexp)
             throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
@@ -147,6 +157,9 @@ public:
         }
         else
         {
+            /// Additional limit to fail fast on supposedly incorrect usage.
+            const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
+
             PODArray<StringPiece, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
             PODArray<size_t, 0> number_of_matches_per_row;
@@ -172,16 +185,13 @@ public:
                     for (size_t group = 1; group <= groups_count; ++group)
                         all_matches.push_back(matched_groups[group]);
 
-                    /// Additional limit to fail fast on supposedly incorrect usage, arbitrary value.
-                    static constexpr size_t MAX_MATCHES_PER_ROW = 1000;
-                    if (matches_per_row > MAX_MATCHES_PER_ROW)
+                    ++matches_per_row;
+                    if (matches_per_row > max_matches_per_row)
                         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                                 "Too many matches per row (> {}) in the result of function {}",
-                                MAX_MATCHES_PER_ROW, getName());
+                                max_matches_per_row, getName());
 
                     pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
-
-                    ++matches_per_row;
                 }
 
                 number_of_matches_per_row.push_back(matches_per_row);

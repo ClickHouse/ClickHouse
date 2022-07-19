@@ -1,6 +1,6 @@
 ---
-toc_priority: 5
-toc_title: MongoDB
+sidebar_position: 5
+sidebar_label: MongoDB
 ---
 
 # MongoDB {#mongodb}
@@ -15,7 +15,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name1 [type1],
     name2 [type2],
     ...
-) ENGINE = MongoDB(host:port, database, collection, user, password);
+) ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
 ```
 
 **Параметры движка**
@@ -30,17 +30,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 -   `password` — пароль пользователя.
 
+-   `options` — MongoDB connection string options (optional parameter).
+
 ## Примеры использования {#usage-example}
 
-Таблица в ClickHouse для чтения данных из колекции MongoDB:
+Создание таблицы в ClickHouse для чтения данных из коллекции MongoDB:
 
-``` text
+``` sql
 CREATE TABLE mongo_table
 (
-    key UInt64, 
+    key UInt64,
     data String
 ) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'testuser', 'clickhouse');
 ```
+
+Чтение с сервера MongoDB, защищенного SSL:
+
+``` sql
+CREATE TABLE mongo_table_ssl
+(
+    key UInt64,
+    data String
+) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'ssl=true');
+```
+
+
 
 Запрос к таблице:
 
@@ -54,4 +68,4 @@ SELECT COUNT() FROM mongo_table;
 └─────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/ru/engines/table-engines/integrations/mongodb/) <!--hide-->
+[Original article](https://clickhouse.com/docs/ru/engines/table-engines/integrations/mongodb/) <!--hide-->

@@ -1,44 +1,43 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
+#include <Common/assert_cast.h>
 
 #if USE_SSL
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/FileEncryptionCommon.h>
+#include <IO/WriteBufferDecorator.h>
 
 
 namespace DB
 {
 
-class WriteBufferFromEncryptedFile : public WriteBufferFromFileBase
+/// Encrypts data and writes the encrypted data to the underlying write buffer.
+class WriteBufferFromEncryptedFile : public WriteBufferDecorator<WriteBufferFromFileBase>
 {
 public:
+    /// `old_file_size` should be set to non-zero if we're going to append an existing file.
     WriteBufferFromEncryptedFile(
-        size_t buf_size_,
+        size_t buffer_size_,
         std::unique_ptr<WriteBufferFromFileBase> out_,
-        const String & init_vector_,
-        const FileEncryption::EncryptionKey & key_,
-        const size_t & file_size);
+        const String & key_,
+        const FileEncryption::Header & header_,
+        size_t old_file_size = 0);
+
     ~WriteBufferFromEncryptedFile() override;
 
     void sync() override;
-    void finalize() override { finish(); }
 
-    std::string getFileName() const override { return out->getFileName(); }
+    std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out.get())->getFileName(); }
 
 private:
     void nextImpl() override;
 
-    void finish();
-    void finishImpl();
+    void finalizeBefore() override;
 
-    bool finished = false;
-    std::unique_ptr<WriteBufferFromFileBase> out;
+    FileEncryption::Header header;
+    bool flush_header = false;
 
-    bool flush_iv;
-    String iv;
     FileEncryption::Encryptor encryptor;
 };
 

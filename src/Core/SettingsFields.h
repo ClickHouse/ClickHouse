@@ -2,7 +2,7 @@
 
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <boost/range/adaptor/map.hpp>
@@ -43,7 +43,7 @@ struct SettingFieldNumber
     SettingFieldNumber & operator=(Type x) { value = x; changed = true; return *this; }
     SettingFieldNumber & operator=(const Field & f);
 
-    operator Type() const { return value; }
+    operator Type() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
     String toString() const;
@@ -75,7 +75,7 @@ struct SettingFieldMaxThreads
     SettingFieldMaxThreads & operator=(UInt64 x) { is_auto = !x; value = is_auto ? getAuto() : x; changed = true; return *this; }
     SettingFieldMaxThreads & operator=(const Field & f);
 
-    operator UInt64() const { return value; }
+    operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
     /// Writes "auto(<number>)" instead of simple "<number>" if `is_auto==true`.
@@ -118,13 +118,13 @@ struct SettingFieldTimespan
     SettingFieldTimespan & operator =(UInt64 x) { *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(x * microseconds_per_unit)}; return *this; }
     SettingFieldTimespan & operator =(const Field & f);
 
-    operator Poco::Timespan() const { return value; }
+    operator Poco::Timespan() const { return value; } /// NOLINT
 
     template <class Rep, class Period = std::ratio<1>>
-    operator std::chrono::duration<Rep, Period>() const { return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::microseconds(value.totalMicroseconds())); }
+    operator std::chrono::duration<Rep, Period>() const { return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::microseconds(value.totalMicroseconds())); } /// NOLINT
 
     explicit operator UInt64() const { return value.totalMicroseconds() / microseconds_per_unit; }
-    explicit operator Field() const { return operator UInt64(); }
+    explicit operator Field() const;
 
     Poco::Timespan::TimeDiff totalMicroseconds() const { return value.totalMicroseconds(); }
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
@@ -146,19 +146,19 @@ struct SettingFieldString
     String value;
     bool changed = false;
 
-    explicit SettingFieldString(const std::string_view & str = {}) : value(str) {}
+    explicit SettingFieldString(std::string_view str = {}) : value(str) {}
     explicit SettingFieldString(const String & str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(String && str) : value(std::move(str)) {}
     explicit SettingFieldString(const char * str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(const Field & f) : SettingFieldString(f.safeGet<const String &>()) {}
 
-    SettingFieldString & operator =(const std::string_view & str) { value = str; changed = true; return *this; }
+    SettingFieldString & operator =(std::string_view str) { value = str; changed = true; return *this; }
     SettingFieldString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
     SettingFieldString & operator =(String && str) { value = std::move(str); changed = true; return *this; }
     SettingFieldString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
     SettingFieldString & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
 
-    operator const String &() const { return value; }
+    operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
     const String & toString() const { return value; }
@@ -181,7 +181,7 @@ public:
     SettingFieldChar & operator =(char c) { value = c; changed = true; return *this; }
     SettingFieldChar & operator =(const Field & f);
 
-    operator char() const { return value; }
+    operator char() const { return value; } /// NOLINT
     explicit operator Field() const { return toString(); }
 
     String toString() const { return String(&value, 1); }
@@ -207,7 +207,7 @@ struct SettingFieldURI
     SettingFieldURI & operator =(const char * str) { *this = Poco::URI{str}; return *this; }
     SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
 
-    operator const Poco::URI &() const { return value; }
+    operator const Poco::URI &() const { return value; } /// NOLINT
     explicit operator String() const { return toString(); }
     explicit operator Field() const { return toString(); }
 
@@ -244,7 +244,7 @@ struct SettingFieldEnum
     SettingFieldEnum & operator =(EnumType x) { value = x; changed = true; return *this; }
     SettingFieldEnum & operator =(const Field & f) { *this = Traits::fromString(f.safeGet<const String &>()); return *this; }
 
-    operator EnumType() const { return value; }
+    operator EnumType() const { return value; } /// NOLINT
     explicit operator Field() const { return toString(); }
 
     String toString() const { return Traits::toString(value); }
@@ -256,7 +256,7 @@ struct SettingFieldEnum
 
 struct SettingFieldEnumHelpers
 {
-    static void writeBinary(const std::string_view & str, WriteBuffer & out);
+    static void writeBinary(std::string_view str, WriteBuffer & out);
     static String readBinary(ReadBuffer & in);
 };
 
@@ -272,22 +272,26 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     *this = Traits::fromString(SettingFieldEnumHelpers::readBinary(in));
 }
 
+/// NOLINTNEXTLINE
 #define DECLARE_SETTING_ENUM(ENUM_TYPE) \
     DECLARE_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
 
+/// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
     IMPLEMENT_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)
 
+/// NOLINTNEXTLINE
 #define DECLARE_SETTING_ENUM_WITH_RENAME(NEW_NAME, ENUM_TYPE) \
     struct SettingField##NEW_NAME##Traits \
     { \
         using EnumType = ENUM_TYPE; \
         static const String & toString(EnumType value); \
-        static EnumType fromString(const std::string_view & str); \
+        static EnumType fromString(std::string_view str); \
     }; \
     \
     using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
 
+/// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
     const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
     { \
@@ -306,7 +310,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
             ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
     \
-    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(const std::string_view & str) \
+    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
     { \
         static const std::unordered_map<std::string_view, EnumType> map = [] { \
             std::unordered_map<std::string_view, EnumType> res; \
@@ -346,7 +350,7 @@ struct SettingFieldMultiEnum
     explicit SettingFieldMultiEnum(StorageType s) : value(s) {}
     explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<const String &>())) {}
 
-    operator ValueType() const { return value; }
+    operator ValueType() const { return value; } /// NOLINT
     explicit operator StorageType() const { return value.getValue(); }
     explicit operator Field() const { return toString(); }
 
@@ -368,7 +372,7 @@ struct SettingFieldMultiEnum
             }
         }
 
-        if (result.size() > 0)
+        if (!result.empty())
             result.erase(result.size() - separator.size());
 
         return result;
@@ -415,23 +419,27 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     parseFromString(SettingFieldEnumHelpers::readBinary(in));
 }
 
+/// NOLINTNEXTLINE
 #define DECLARE_SETTING_MULTI_ENUM(ENUM_TYPE) \
     DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
 
+/// NOLINTNEXTLINE
 #define DECLARE_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, NEW_NAME) \
     struct SettingField##NEW_NAME##Traits \
     { \
         using EnumType = ENUM_TYPE; \
         static size_t getEnumSize(); \
         static const String & toString(EnumType value); \
-        static EnumType fromString(const std::string_view & str); \
+        static EnumType fromString(std::string_view str); \
     }; \
     \
     using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
 
+/// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_MULTI_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
     IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)
 
+/// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
     IMPLEMENT_SETTING_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
     size_t SettingField##NEW_NAME##Traits::getEnumSize() {\

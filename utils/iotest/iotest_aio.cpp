@@ -4,8 +4,8 @@ int main(int, char **) { return 0; }
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <time.h>
+#include <cstdlib>
+#include <ctime>
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -14,11 +14,11 @@ int main(int, char **) { return 0; }
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
-#include <common/getPageSize.h>
+#include <base/getPageSize.h>
 #include <pcg_random.hpp>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
-#include <stdio.h>
+#include <cstdio>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <IO/AIO.h>

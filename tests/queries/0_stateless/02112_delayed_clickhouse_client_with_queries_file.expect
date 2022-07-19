@@ -1,0 +1,30 @@
+#!/usr/bin/expect -f
+# Tags: no-parallel
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+
+log_user 0
+set timeout 20
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
+}
+
+system "$basedir/helpers/02112_prepare.sh"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --disable_suggestion --interactive --queries-file $basedir/file_02112"
+expect ":) "
+
+send -- "select * from t format TSV\r"
+expect "1"
+expect ":) "
+
+send ""
+expect eof
+
+system "$basedir/helpers/02112_clean.sh"

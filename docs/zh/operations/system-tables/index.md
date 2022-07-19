@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
-toc_priority: 52
-toc_title: "\u7CFB\u7EDF\u8868"
+sidebar_position: 52
+sidebar_label: "\u7CFB\u7EDF\u8868"
 ---
 
 # 系统表 {#system-tables}
@@ -36,7 +36,7 @@ toc_title: "\u7CFB\u7EDF\u8868"
 配置定义的示例如下：
 
 ```
-<yandex>
+<clickhouse>
     <query_log>
         <database>system</database>
         <table>query_log</table>
@@ -47,7 +47,7 @@ toc_title: "\u7CFB\u7EDF\u8868"
         -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
-</yandex>
+</clickhouse>
 ```
 
 默认情况下，表增长是无限的。可以通过TTL 删除过期日志记录的设置来控制表的大小。 你也可以使用分区功能 `MergeTree`-引擎表。
@@ -73,4 +73,4 @@ toc_title: "\u7CFB\u7EDF\u8868"
 -   `OSReadBytes`
 -   `OSWriteBytes`
 
-[原始文章](https://clickhouse.tech/docs/en/operations/system-tables/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/system-tables/) <!--hide-->

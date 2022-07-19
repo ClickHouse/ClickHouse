@@ -5,7 +5,7 @@
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 
 
@@ -41,6 +41,7 @@ private:
 
         ObjectPtr object;
         bool in_use = false;
+        std::atomic<bool> is_expired = false;
         PoolBase & pool;
     };
 
@@ -54,7 +55,7 @@ private:
         explicit PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
         ~PoolEntryHelper()
         {
-            std::unique_lock lock(data.pool.mutex);
+            std::lock_guard lock(data.pool.mutex);
             data.in_use = false;
             data.pool.available.notify_one();
         }
@@ -87,6 +88,14 @@ public:
         Object & operator*() &              { return *data->data.object; }
         const Object & operator*() const &  { return *data->data.object; }
 
+        /**
+         * Expire an object to make it reallocated later.
+         */
+        void expire()
+        {
+            data->data.is_expired = true;
+        }
+
         bool isNull() const { return data == nullptr; }
 
         PoolBase * getPool() const
@@ -112,9 +121,22 @@ public:
         while (true)
         {
             for (auto & item : items)
+            {
                 if (!item->in_use)
-                    return Entry(*item);
-
+                {
+                    if (likely(!item->is_expired))
+                    {
+                        return Entry(*item);
+                    }
+                    else
+                    {
+                        expireObject(item->object);
+                        item->object = allocObject();
+                        item->is_expired = false;
+                        return Entry(*item);
+                    }
+                }
+            }
             if (items.size() < max_items)
             {
                 ObjectPtr object = allocObject();
@@ -137,6 +159,12 @@ public:
 
         while (items.size() < count)
             items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));
+    }
+
+    inline size_t size()
+    {
+        std::lock_guard lock(mutex);
+        return items.size();
     }
 
 private:
@@ -162,5 +190,5 @@ protected:
 
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
+    virtual void expireObject(ObjectPtr) {}
 };
-

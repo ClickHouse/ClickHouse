@@ -2,6 +2,9 @@
 
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 
 namespace DB
 {
@@ -92,9 +95,7 @@ private:
     {
         // Aggregate functions can also be calculated as window functions, but
         // here we are interested in aggregate functions calculated in GROUP BY.
-        return !node.is_window_function
-            && AggregateFunctionFactory::instance().isAggregateFunctionName(
-                node.name);
+        return !node.is_window_function && AggregateUtils::isAggregateFunction(node);
     }
 };
 
@@ -112,5 +113,7 @@ inline void assertNoAggregates(const ASTPtr & ast, const char * description)
     GetAggregatesVisitor::Data data{.assert_no_aggregates = description};
     GetAggregatesVisitor(data).visit(ast);
 }
+
+std::vector<const ASTFunction *> getExpressionsWithWindowFunctions(ASTPtr & ast);
 
 }

@@ -1,10 +1,10 @@
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/Elf.h>
 #include <Common/Exception.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
-#include <string.h>
+#include <cstring>
 
 
 namespace DB
@@ -119,6 +119,24 @@ std::optional<Elf::Section> Elf::findSectionByName(const char * name) const
 
 String Elf::getBuildID() const
 {
+    /// Section headers are the first choice for a debuginfo file
+    if (String build_id; iterateSections([&build_id](const Section & section, size_t)
+    {
+        if (section.header.sh_type == SHT_NOTE)
+        {
+            build_id = Elf::getBuildID(section.begin(), section.size());
+            if (!build_id.empty())
+            {
+                return true;
+            }
+        }
+        return false;
+    }))
+    {
+        return build_id;
+    }
+
+    /// fallback to PHDR
     for (size_t idx = 0; idx < header->e_phnum; ++idx)
     {
         const ElfPhdr & phdr = program_headers[idx];
@@ -126,6 +144,7 @@ String Elf::getBuildID() const
         if (phdr.p_type == PT_NOTE)
             return getBuildID(mapped + phdr.p_offset, phdr.p_filesz);
     }
+
     return {};
 }
 
@@ -157,9 +176,9 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
 #endif // OS_SUNOS
 
 
-String Elf::getBinaryHash() const
+String Elf::getStoredBinaryHash() const
 {
-    if (auto section = findSectionByName(".note.ClickHouse.hash"))
+    if (auto section = findSectionByName(".clickhouse.hash"))
         return {section->begin(), section->end()};
     else
         return {};

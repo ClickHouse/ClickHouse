@@ -5,7 +5,7 @@
             {% if page.meta.image %}
                 <img class="img-fluid mb-3" src="{{ page.meta.image }}" alt="{{ title }}" title="{{ title }}" />
             {% endif %}
-            <h1 class="display-4 mb-3">{{ title }}</h1>
+            <h1 class="display-2 mt-3 mb-5">{{ title }}</h1>
         </header>
 
         <div class="row">
@@ -32,6 +32,10 @@
                 </div>
             </section>
         </div>
+
+        {% if page.meta.author %}
+        <section class="col-md-10 offset-md-1 my-5">Author: <em>{{ page.meta.author|adjust_markdown_html }}</em></section>
+        {% endif %}
 
         <section class="col-md-10 offset-md-1 my-5">
             <span title="{{ _('Published date') }}" class="d-inline-block bg-dark text-white p-2 mr-2">{{ page.meta.date }}</span>
@@ -63,5 +67,3 @@
         {% endfor %}
     {% endif %}
 </div>
-
-{% include "templates/blog/footer.html" %}

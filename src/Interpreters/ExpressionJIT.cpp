@@ -1,13 +1,12 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 
 #include <optional>
 #include <stack>
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <base/sort.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
@@ -166,6 +165,15 @@ public:
         return dag.compile(builder, values);
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        for (const auto & f : nested_functions)
+            if (!f->isSuitableForShortCircuitArgumentsExecution(arguments))
+                return false;
+
+        return true;
+    }
+
     String getName() const override { return name; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -230,7 +238,9 @@ public:
         const IDataType * type_ptr = &type;
         Field left_mut = left;
         Field right_mut = right;
-        Monotonicity result(true, true, true);
+
+        Monotonicity result = { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+
         /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
         for (size_t i = 0; i < nested_functions.size(); ++i)
         {
@@ -313,12 +323,34 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
 }
 
-static bool isCompilableFunction(const ActionsDAG::Node & node)
+static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * node)
+{
+    const ActionsDAG::Node * node_no_alias = node;
+
+    while (node_no_alias->type == ActionsDAG::ActionType::ALIAS)
+        node_no_alias = node_no_alias->children[0];
+
+    return node_no_alias;
+}
+
+static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
     auto & function = *node.function_base;
+
+    IFunction::ShortCircuitSettings settings;
+    if (function.isShortCircuit(settings, node.children.size()))
+    {
+        for (const auto & child : node.children)
+        {
+            const ActionsDAG::Node * child_no_alias = removeAliasIfNecessary(child);
+
+            if (lazy_executed_nodes.contains(child_no_alias))
+                return false;
+        }
+    }
 
     if (!canBeNativeType(*function.getResultType()))
         return false;
@@ -334,7 +366,8 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
 
 static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
-    ActionsDAG::NodeRawConstPtrs & children)
+    ActionsDAG::NodeRawConstPtrs & children,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     /// Extract CompileDAG from root actions dag node.
 
@@ -357,29 +390,29 @@ static CompileDAG getCompilableDAG(
         const auto * node = frame.node;
 
         bool is_compilable_constant = isCompilableConstant(*node);
-        bool is_compilable_function = isCompilableFunction(*node);
+        bool is_compilable_function = isCompilableFunction(*node, lazy_executed_nodes);
 
         if (!is_compilable_function || is_compilable_constant)
         {
-           CompileDAG::Node compile_node;
-           compile_node.function = node->function_base;
-           compile_node.result_type = node->result_type;
+            CompileDAG::Node compile_node;
+            compile_node.function = node->function_base;
+            compile_node.result_type = node->result_type;
 
-           if (is_compilable_constant)
-           {
-               compile_node.type = CompileDAG::CompileType::CONSTANT;
-               compile_node.column = node->column;
-           }
-           else
-           {
+            if (is_compilable_constant)
+            {
+                compile_node.type = CompileDAG::CompileType::CONSTANT;
+                compile_node.column = node->column;
+            }
+            else
+            {
                 compile_node.type = CompileDAG::CompileType::INPUT;
                 children.emplace_back(node);
-           }
+            }
 
-           visited_node_to_compile_dag_position[node] = dag.getNodesCount();
-           dag.addNode(std::move(compile_node));
-           stack.pop();
-           continue;
+            visited_node_to_compile_dag_position[node] = dag.getNodesCount();
+            dag.addNode(std::move(compile_node));
+            stack.pop();
+            continue;
         }
 
         while (frame.next_child_to_visit < node->children.size())
@@ -420,7 +453,7 @@ static CompileDAG getCompilableDAG(
     return dag;
 }
 
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
+void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     struct Data
     {
@@ -436,7 +469,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
     for (const auto & node : nodes)
     {
-        bool node_is_compilable_in_isolation = isCompilableFunction(node) && !isCompilableConstant(node);
+        bool node_is_compilable_in_isolation = isCompilableFunction(node, lazy_executed_nodes) && !isCompilableConstant(node);
         node_to_data[&node].is_compilable_in_isolation = node_is_compilable_in_isolation;
     }
 
@@ -544,12 +577,15 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     /** Sort nodes before compilation using their children size to avoid compiling subexpression before compile parent expression.
       * This is needed to avoid compiling expression more than once with different names because of compilation order.
       */
-    std::sort(nodes_to_compile.begin(), nodes_to_compile.end(), [&](const Node * lhs, const Node * rhs) { return node_to_data[lhs].children_size > node_to_data[rhs].children_size; });
+    ::sort(nodes_to_compile.begin(), nodes_to_compile.end(), [&](const Node * lhs, const Node * rhs)
+    {
+        return node_to_data[lhs].children_size > node_to_data[rhs].children_size;
+    });
 
     for (auto & node : nodes_to_compile)
     {
         NodeRawConstPtrs new_children;
-        auto dag = getCompilableDAG(node, new_children);
+        auto dag = getCompilableDAG(node, new_children, lazy_executed_nodes);
 
         if (dag.getInputNodesCount() == 0)
             continue;

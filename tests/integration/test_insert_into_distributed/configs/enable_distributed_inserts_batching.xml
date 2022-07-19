@@ -1,8 +1,8 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <distributed_directory_monitor_batch_inserts>1</distributed_directory_monitor_batch_inserts>
             <min_insert_block_size_rows>3</min_insert_block_size_rows>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

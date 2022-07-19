@@ -9,9 +9,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 namespace DB
 {
@@ -32,6 +30,7 @@ public:
     static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     String getName() const override { return name; }
@@ -214,7 +213,7 @@ private:
 
 
 template <typename Name, Float64(Function)(Float64, Float64)>
-struct BinaryFunctionPlain
+struct BinaryFunctionVectorized
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 1;
@@ -225,7 +224,5 @@ struct BinaryFunctionPlain
         dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0])));
     }
 };
-
-#define BinaryFunctionVectorized BinaryFunctionPlain
 
 }

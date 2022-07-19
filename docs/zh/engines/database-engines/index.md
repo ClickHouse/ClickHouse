@@ -1,11 +1,30 @@
-# 数据库引擎 {#shu-ju-ku-yin-qing}
+---
+sidebar_label: 数据库引擎
+sidebar_position: 27
+---
 
-您使用的所有表都是由数据库引擎所提供的
+# 数据库引擎 {#database-engines}
 
-默认情况下，ClickHouse使用自己的数据库引擎，该引擎提供可配置的[表引擎](../../engines/database-engines/index.md)和[所有支持的SQL语法](../../engines/database-engines/index.md).
+数据库引擎允许您处理数据表。
 
-除此之外，您还可以选择使用以下的数据库引擎：
+默认情况下，ClickHouse使用[Atomic](../../engines/database-engines/atomic.md)数据库引擎。它提供了可配置的[table engines](../../engines/table-engines/index.md)和[SQL dialect](../../sql-reference/syntax.md)。
 
--   [MySQL](mysql.md)
+您还可以使用以下数据库引擎：
 
-[来源文章](https://clickhouse.tech/docs/en/database_engines/) <!--hide-->
+-   [MySQL](../../engines/database-engines/mysql.md)
+
+-   [MaterializeMySQL](../../engines/database-engines/materialized-mysql.md)
+
+-   [Lazy](../../engines/database-engines/lazy)
+
+-   [Atomic](../../engines/database-engines/atomic.md)
+
+-   [PostgreSQL](../../engines/database-engines/postgresql.md)
+
+-   [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md)
+
+-   [Replicated](../../engines/database-engines/replicated.md)
+
+-   [SQLite](../../engines/database-engines/sqlite.md)
+
+[来源文章](https://clickhouse.com/docs/en/database_engines/) <!--hide-->

@@ -1,9 +1,9 @@
 ---
-toc_priority: 48
-toc_title: DateTime
+sidebar_position: 48
+sidebar_label: DateTime
 ---
 
-# Datetime {#data_type-datetime}
+# Datetime
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day.
 
@@ -13,11 +13,11 @@ Syntax:
 DateTime([timezone])
 ```
 
-Supported range of values: \[1970-01-01 00:00:00, 2105-12-31 23:59:59\].
+Supported range of values: \[1970-01-01 00:00:00, 2106-02-07 06:28:15\].
 
 Resolution: 1 second.
 
-## Usage Remarks {#usage-remarks}
+## Usage Remarks
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time. The time zone affects how the values of the `DateTime` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01’).
 
@@ -33,14 +33,14 @@ ClickHouse outputs values depending on the value of the [date_time_output_format
 
 When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format) setting.
 
-## Examples {#examples}
+## Examples
 
 **1.** Creating a table with a `DateTime`-type column and inserting data into it:
 
 ``` sql
 CREATE TABLE dt
 (
-    `timestamp` DateTime('Europe/Moscow'),
+    `timestamp` DateTime('Asia/Istanbul'),
     `event_id` UInt8
 )
 ENGINE = TinyLog;
@@ -61,13 +61,13 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
--   When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
--   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and saved as `1546290000`.
+-   When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
+-   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values
 
 ``` sql
-SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Europe/Moscow')
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
 ```
 
 ``` text
@@ -91,12 +91,12 @@ SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
 **3.** Getting a time zone for a `DateTime`-type column:
 
 ``` sql
-SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
+SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
 ```
 
 ``` text
 ┌──────────────column─┬─x─────────────────────────┐
-│ 2019-10-16 04:12:04 │ DateTime('Europe/Moscow') │
+│ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
 └─────────────────────┴───────────────────────────┘
 ```
 
@@ -105,7 +105,7 @@ SELECT toDateTime(now(), 'Europe/Moscow') AS column, toTypeName(column) AS x
 ``` sql
 SELECT
 toDateTime(timestamp, 'Europe/London') as lon_time,
-toDateTime(timestamp, 'Europe/Moscow') as mos_time
+toDateTime(timestamp, 'Asia/Istanbul') as mos_time
 FROM dt
 ```
 
@@ -134,7 +134,7 @@ Similar issue exists for Casey Antarctic station in year 2010. They changed time
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
 
-## See Also {#see-also}
+## See Also
 
 -   [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 -   [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
@@ -145,4 +145,4 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 -   [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 -   [The `Date` data type](../../sql-reference/data-types/date.md)
 
-[Original article](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/datetime/) <!--hide-->

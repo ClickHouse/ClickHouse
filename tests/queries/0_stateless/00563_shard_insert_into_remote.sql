@@ -1,3 +1,5 @@
+-- Tags: shard
+
 drop table if exists tab;
 create table tab (val UInt8) engine = MergeTree order by val;
 insert into function remote('127.0.0.2', currentDatabase(), tab) values (1);

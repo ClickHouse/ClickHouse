@@ -1,20 +1,21 @@
 ---
-toc_priority: 59
-toc_title: clickhouse-copier
+sidebar_position: 59
+sidebar_label: clickhouse-copier
 ---
 
-# clickhouse-copier {#clickhouse-copier}
+# clickhouse-copier 
 
 Copies data from the tables in one cluster to tables in another (or the same) cluster.
 
-!!! warning "Warning"
-    To get a consistent copy, the data in the source tables and partitions should not change during the entire process.
+:::warning    
+To get a consistent copy, the data in the source tables and partitions should not change during the entire process.
+:::
 
-You can run multiple `clickhouse-copier` instances on different servers to perform the same job. ZooKeeper is used for syncing the processes.
+You can run multiple `clickhouse-copier` instances on different servers to perform the same job. ClickHouse Keeper, or ZooKeeper, is used for syncing the processes.
 
 After starting, `clickhouse-copier`:
 
--   Connects to ZooKeeper and receives:
+-   Connects to ClickHouse Keeper and receives:
 
     -   Copying jobs.
     -   The state of the copying jobs.
@@ -23,7 +24,7 @@ After starting, `clickhouse-copier`:
 
     Each running process chooses the “closest” shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
 
-`clickhouse-copier` tracks the changes in ZooKeeper and applies them on the fly.
+`clickhouse-copier` tracks the changes in ClickHouse Keeper and applies them on the fly.
 
 To reduce network traffic, we recommend running `clickhouse-copier` on the same server where the source data is located.
 
@@ -32,22 +33,22 @@ To reduce network traffic, we recommend running `clickhouse-copier` on the same 
 The utility should be run manually:
 
 ``` bash
-$ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
+$ clickhouse-copier --daemon --config keeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
 Parameters:
 
 -   `daemon` — Starts `clickhouse-copier` in daemon mode.
--   `config` — The path to the `zookeeper.xml` file with the parameters for the connection to ZooKeeper.
--   `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
--   `task-file` — Optional path to file with task configuration for initial upload to ZooKeeper.
+-   `config` — The path to the `keeper.xml` file with the parameters for the connection to ClickHouse Keeper.
+-   `task-path` — The path to the ClickHouse Keeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
+-   `task-file` — Optional path to file with task configuration for initial upload to ClickHouse Keeper.
 -   `task-upload-force` — Force upload `task-file` even if node already exists.
 -   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
 
-## Format of Zookeeper.xml {#format-of-zookeeper-xml}
+## Format of keeper.xml {#format-of-zookeeper-xml}
 
 ``` xml
-<yandex>
+<clickhouse>
     <logger>
         <level>trace</level>
         <size>100M</size>
@@ -60,21 +61,21 @@ Parameters:
             <port>2181</port>
         </node>
     </zookeeper>
-</yandex>
+</clickhouse>
 ```
 
 ## Configuration of Copying Tasks {#configuration-of-copying-tasks}
 
 ``` xml
-<yandex>
+<clickhouse>
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
         <source_cluster>
             <!--
                 source cluster & destination clusters accept exactly the same
                 parameters as parameters for the usual Distributed table
-                see https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/
-            --> 
+                see https://clickhouse.com/docs/en/engines/table-engines/special/distributed/
+            -->
             <shard>
                 <internal_replication>false</internal_replication>
                     <replica>
@@ -174,14 +175,14 @@ Parameters:
         </table_hits>
 
         <!-- Next table to copy. It is not copied until previous table is copying. -->
-        </table_visits>
+        <table_visits>
         ...
         </table_visits>
         ...
     </tables>
-</yandex>
+</clickhouse>
 ```
 
 `clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
 
-[Original article](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

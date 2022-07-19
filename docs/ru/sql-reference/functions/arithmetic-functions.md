@@ -1,6 +1,6 @@
 ---
-toc_priority: 34
-toc_title: "Арифметические функции"
+sidebar_position: 34
+sidebar_label: "Арифметические функции"
 ---
 
 # Арифметические функции {#arifmeticheskie-funktsii}
@@ -82,4 +82,79 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 
 Вычисляет наименьшее общее кратное чисел.
 При делении на ноль или при делении минимального отрицательного числа на минус единицу, кидается исключение.
+
+
+## max2 {#max2}
+
+Сравнивает два числа и возвращает максимум. Возвращаемое значение приводится к типу [Float64](../../sql-reference/data-types/float.md).
+
+**Синтаксис**
+
+```sql
+max2(value1, value2)
+```
+
+**Аргументы**
+
+-   `value1` — первое число. [Int/UInt](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+-   `value2` — второе число. [Int/UInt](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+
+**Возвращаемое значение**
+
+-   Максимальное значение среди двух чисел.
+
+Тип: [Float](../../sql-reference/data-types/float.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT max2(-1, 2);
+```
+
+Результат:
+
+```text
+┌─max2(-1, 2)─┐
+│           2 │
+└─────────────┘
+```
+
+## min2 {#min2}
+
+Сравнивает два числа и возвращает минимум. Возвращаемое значение приводится к типу [Float64](../../sql-reference/data-types/float.md).
+
+**Синтаксис**
+
+```sql
+min2(value1, value2)
+```
+
+**Аргументы**
+
+-   `value1` — первое число. [Int/UInt](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+-   `value2` — второе число. [Int/UInt](../../sql-reference/data-types/int-uint.md) или [Float](../../sql-reference/data-types/float.md).
+
+**Возвращаемое значение**
+
+-   Минимальное значение среди двух чисел.
+
+Тип: [Float](../../sql-reference/data-types/float.md).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT min2(-1, 2);
+```
+
+Результат:
+
+```text
+┌─min2(-1, 2)─┐
+│          -1 │
+└─────────────┘
+```
 

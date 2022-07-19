@@ -6,7 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
@@ -16,8 +16,6 @@
 
 namespace DB
 {
-using EntityType = IAccessEntity::Type;
-
 
 NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
 {
@@ -39,8 +37,11 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
 
 void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
-    const auto & access_control = context->getAccessControlManager();
+    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
+    const auto & access_control = context->getAccessControl();
+    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
+        context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
+
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
     boost::range::push_back(ids, access_control.findAll<SettingsProfile>());
@@ -66,7 +67,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
     auto & column_inherit_profile = assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[i]).getNestedColumn());
     auto & column_inherit_profile_null_map = assert_cast<ColumnNullable &>(*res_columns[i++]).getNullMapData();
 
-    auto add_rows_for_single_element = [&](const String & owner_name, EntityType owner_type, const SettingsProfileElement & element, size_t & index)
+    auto add_rows_for_single_element = [&](const String & owner_name, AccessEntityType owner_type, const SettingsProfileElement & element, size_t & index)
     {
         size_t old_num_rows = column_profile_name.size();
         size_t new_num_rows = old_num_rows + 1;
@@ -133,19 +134,19 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         {
             switch (owner_type)
             {
-                case EntityType::SETTINGS_PROFILE:
+                case AccessEntityType::SETTINGS_PROFILE:
                 {
                     column_profile_name.insertData(owner_name.data(), owner_name.length());
                     column_profile_name_null_map.push_back(false);
                     break;
                 }
-                case EntityType::USER:
+                case AccessEntityType::USER:
                 {
                     column_user_name.insertData(owner_name.data(), owner_name.length());
                     column_user_name_null_map.push_back(false);
                     break;
                 }
-                case EntityType::ROLE:
+                case AccessEntityType::ROLE:
                 {
                     column_role_name.insertData(owner_name.data(), owner_name.length());
                     column_role_name_null_map.push_back(false);
@@ -162,7 +163,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
         }
     };
 
-    auto add_rows = [&](const String & owner_name, IAccessEntity::Type owner_type, const SettingsProfileElements & elements)
+    auto add_rows = [&](const String & owner_name, AccessEntityType owner_type, const SettingsProfileElements & elements)
     {
         size_t index = 0;
         for (const auto & element : elements)

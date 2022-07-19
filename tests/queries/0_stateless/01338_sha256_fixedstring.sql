@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SELECT hex(SHA256(''));
 SELECT hex(SHA256('abc'));
 

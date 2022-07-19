@@ -1,6 +1,9 @@
 #include "CassandraDictionarySource.h"
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
+#include <Interpreters/Context.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -17,13 +20,17 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
-                                                    ContextPtr /* context */,
+                                   [[maybe_unused]] ContextPtr global_context,
                                                     const std::string & /* default_database */,
                                                     bool /*created_from_ddl*/) -> DictionarySourcePtr
     {
 #if USE_CASSANDRA
     setupCassandraDriverLibraryLogging(CASS_LOG_INFO);
-    return std::make_unique<CassandraDictionarySource>(dict_struct, config, config_prefix + ".cassandra", sample_block);
+
+    auto source_config_prefix = config_prefix + ".cassandra";
+    global_context->getRemoteHostFilter().checkHostAndPort(config.getString(source_config_prefix + ".host"), toString(config.getUInt(source_config_prefix + ".port", 0)));
+
+    return std::make_unique<CassandraDictionarySource>(dict_struct, config, source_config_prefix, sample_block);
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "Dictionary source of type `cassandra` is disabled because ClickHouse was built without cassandra support.");
@@ -36,11 +43,10 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #if USE_CASSANDRA
 
-#include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
-#include "CassandraBlockInputStream.h"
-#include <common/logger_useful.h>
-#include <DataStreams/UnionBlockInputStream.h>
+#include <IO/WriteHelpers.h>
+#include <Dictionaries/CassandraSource.h>
 
 namespace DB
 {
@@ -50,7 +56,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-CassandraSettings::CassandraSettings(
+CassandraDictionarySource::Configuration::Configuration(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : host(config.getString(config_prefix + ".host"))
@@ -67,7 +73,7 @@ CassandraSettings::CassandraSettings(
     setConsistency(config.getString(config_prefix + ".consistency", "One"));
 }
 
-void CassandraSettings::setConsistency(const String & config_str)
+void CassandraDictionarySource::Configuration::setConsistency(const String & config_str)
 {
     if (config_str == "One")
         consistency = CASS_CONSISTENCY_ONE;
@@ -97,19 +103,19 @@ static const size_t max_block_size = 8192;
 
 CassandraDictionarySource::CassandraDictionarySource(
     const DictionaryStructure & dict_struct_,
-    const CassandraSettings & settings_,
+    const Configuration & configuration_,
     const Block & sample_block_)
     : log(&Poco::Logger::get("CassandraDictionarySource"))
     , dict_struct(dict_struct_)
-    , settings(settings_)
+    , configuration(configuration_)
     , sample_block(sample_block_)
-    , query_builder(dict_struct, settings.db, "", settings.table, settings.where, IdentifierQuotingStyle::DoubleQuotes)
+    , query_builder(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::DoubleQuotes)
 {
-    cassandraCheck(cass_cluster_set_contact_points(cluster, settings.host.c_str()));
-    if (settings.port)
-        cassandraCheck(cass_cluster_set_port(cluster, settings.port));
-    cass_cluster_set_credentials(cluster, settings.user.c_str(), settings.password.c_str());
-    cassandraCheck(cass_cluster_set_consistency(cluster, settings.consistency));
+    cassandraCheck(cass_cluster_set_contact_points(cluster, configuration.host.c_str()));
+    if (configuration.port)
+        cassandraCheck(cass_cluster_set_port(cluster, configuration.port));
+    cass_cluster_set_credentials(cluster, configuration.user.c_str(), configuration.password.c_str());
+    cassandraCheck(cass_cluster_set_consistency(cluster, configuration.consistency));
 }
 
 CassandraDictionarySource::CassandraDictionarySource(
@@ -119,41 +125,41 @@ CassandraDictionarySource::CassandraDictionarySource(
     Block & sample_block_)
     : CassandraDictionarySource(
         dict_struct_,
-        CassandraSettings(config, config_prefix),
+        Configuration(config, config_prefix),
         sample_block_)
 {
 }
 
 void CassandraDictionarySource::maybeAllowFiltering(String & query) const
 {
-    if (!settings.allow_filtering)
+    if (!configuration.allow_filtering)
         return;
     query.pop_back();   /// remove semicolon
     query += " ALLOW FILTERING;";
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadAll()
+QueryPipeline CassandraDictionarySource::loadAll()
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading all using query: {}", query);
-    return std::make_shared<CassandraBlockInputStream>(getSession(), query, sample_block, max_block_size);
+    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
 }
 
 std::string CassandraDictionarySource::toString() const
 {
-    return "Cassandra: " + settings.db + '.' + settings.table;
+    return "Cassandra: " + configuration.db + '.' + configuration.table;
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     String query = query_builder.composeLoadIdsQuery(ids);
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading ids using query: {}", query);
-    return std::make_shared<CassandraBlockInputStream>(getSession(), query, sample_block, max_block_size);
+    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
@@ -163,27 +169,24 @@ BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_colu
     for (const auto & row : requested_rows)
     {
         SipHash partition_key;
-        for (size_t i = 0; i < settings.partition_key_prefix; ++i)
+        for (size_t i = 0; i < configuration.partition_key_prefix; ++i)
             key_columns[i]->updateHashWithValue(row, partition_key);
         partitions[partition_key.get64()].push_back(row);
     }
 
-    BlockInputStreams streams;
+    Pipes pipes;
     for (const auto & partition : partitions)
     {
-        String query = query_builder.composeLoadKeysQuery(key_columns, partition.second, ExternalQueryBuilder::CASSANDRA_SEPARATE_PARTITION_KEY, settings.partition_key_prefix);
+        String query = query_builder.composeLoadKeysQuery(key_columns, partition.second, ExternalQueryBuilder::CASSANDRA_SEPARATE_PARTITION_KEY, configuration.partition_key_prefix);
         maybeAllowFiltering(query);
         LOG_INFO(log, "Loading keys for partition hash {} using query: {}", partition.first, query);
-        streams.push_back(std::make_shared<CassandraBlockInputStream>(getSession(), query, sample_block, max_block_size));
+        pipes.push_back(Pipe(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size)));
     }
 
-    if (streams.size() == 1)
-        return streams.front();
-
-    return std::make_shared<UnionBlockInputStream>(streams, nullptr, settings.max_threads);
+    return QueryPipeline(Pipe::unitePipes(std::move(pipes)));
 }
 
-BlockInputStreamPtr CassandraDictionarySource::loadUpdatedAll()
+QueryPipeline CassandraDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }
@@ -191,12 +194,8 @@ BlockInputStreamPtr CassandraDictionarySource::loadUpdatedAll()
 CassSessionShared CassandraDictionarySource::getSession()
 {
     /// Reuse connection if exists, create new one if not
-    auto session = maybe_session.lock();
-    if (session)
-        return session;
-
     std::lock_guard lock(connect_mutex);
-    session = maybe_session.lock();
+    auto session = maybe_session.lock();
     if (session)
         return session;
 

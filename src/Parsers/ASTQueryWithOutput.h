@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <IO/Operators.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB
@@ -16,6 +17,8 @@ public:
     ASTPtr out_file;
     ASTPtr format;
     ASTPtr settings_ast;
+    ASTPtr compression;
+    ASTPtr compression_level;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 

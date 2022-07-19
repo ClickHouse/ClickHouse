@@ -33,13 +33,14 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() == 1)
         {
-            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -47,7 +48,7 @@ public:
         }
         else if (arguments.size() == 2)
         {
-            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
@@ -87,6 +88,20 @@ public:
             Int64 scale = DataTypeDateTime64::default_scale;
             if (const auto * dt64 =  checkAndGetDataType<DataTypeDateTime64>(arguments[0].type.get()))
                 scale = dt64->getScale();
+            auto source_scale = scale;
+
+            if constexpr (std::is_same_v<ToStartOfMillisecondImpl, Transform>)
+            {
+                scale = std::max(source_scale, static_cast<Int64>(3));
+            }
+            else if constexpr (std::is_same_v<ToStartOfMicrosecondImpl, Transform>)
+            {
+                scale = std::max(source_scale, static_cast<Int64>(6));
+            }
+            else if constexpr (std::is_same_v<ToStartOfNanosecondImpl, Transform>)
+            {
+                scale = std::max(source_scale, static_cast<Int64>(9));
+            }
 
             return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         }
@@ -127,17 +142,16 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        IFunction::Monotonicity is_monotonic { true };
-        IFunction::Monotonicity is_not_monotonic;
+        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
-        if (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
-        {
-            is_monotonic.is_always_monotonic = true;
-            return is_monotonic;
-        }
+        const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
+        const IFunction::Monotonicity is_not_monotonic;
 
-        /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
-        const DateLUTImpl & date_lut = DateLUT::instance();
+        const DateLUTImpl * date_lut = &DateLUT::instance();
+        if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(&type))
+            date_lut = &timezone->getTimeZone();
+
         if (left.isNull() || right.isNull())
             return is_not_monotonic;
 
@@ -145,24 +159,23 @@ public:
 
         if (checkAndGetDataType<DataTypeDate>(&type))
         {
-            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
-                == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), *date_lut)
+                == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), *date_lut)
                 ? is_monotonic : is_not_monotonic;
         }
         else if (checkAndGetDataType<DataTypeDate32>(&type))
         {
-            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), date_lut)
-                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), *date_lut)
+                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), *date_lut)
                    ? is_monotonic : is_not_monotonic;
         }
         else
         {
-            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), date_lut)
-                == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), date_lut)
+            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), *date_lut)
+                == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), *date_lut)
                 ? is_monotonic : is_not_monotonic;
         }
     }
 };
 
 }
-

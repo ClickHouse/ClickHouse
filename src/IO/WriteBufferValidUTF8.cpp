@@ -1,12 +1,17 @@
 #include <Poco/UTF8Encoding.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <Common/MemoryTracker.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
+#    ifdef HAS_RESERVED_IDENTIFIER
+#        pragma clang diagnostic ignored "-Wreserved-identifier"
+#    endif
+#endif
 
 namespace DB
 {
@@ -68,11 +73,29 @@ void WriteBufferValidUTF8::nextImpl()
     while (p < pos)
     {
 #ifdef __SSE2__
-        /// Fast skip of ASCII
+        /// Fast skip of ASCII for x86.
         static constexpr size_t SIMD_BYTES = 16;
         const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
 
         while (p < simd_end && !_mm_movemask_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i*>(p))))
+            p += SIMD_BYTES;
+
+        if (!(p < pos))
+            break;
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+        /// Fast skip of ASCII for aarch64.
+        static constexpr size_t SIMD_BYTES = 16;
+        const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
+        /// Returns a 64 bit mask of nibbles (4 bits for each byte).
+        auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
+        { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
+        /// Other options include
+        /// vmaxvq_u8(input) < 0b10000000;
+        /// Used by SIMDJSON, has latency 3 for M1, 6 for everything else
+        /// SIMDJSON uses it for 64 byte masks, so it's a little different.
+        /// vmaxvq_u32(vandq_u32(input, vdupq_n_u32(0x80808080))) // u32 version has latency 3
+        /// shrn version has universally <=3 cycles, on servers 2 cycles.
+        while (p < simd_end && get_nibble_mask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80))) == 0)
             p += SIMD_BYTES;
 
         if (!(p < pos))
@@ -118,13 +141,14 @@ void WriteBufferValidUTF8::nextImpl()
         memory[i] = p[i];
 
     working_buffer = Buffer(&memory[cnt], memory.data() + memory.size());
-
-    /// Propagate next() to the output buffer
-    output_buffer.next();
 }
 
+WriteBufferValidUTF8::~WriteBufferValidUTF8()
+{
+    finalize();
+}
 
-void WriteBufferValidUTF8::finish()
+void WriteBufferValidUTF8::finalizeImpl()
 {
     /// Write all complete sequences from buffer.
     nextImpl();
@@ -132,14 +156,6 @@ void WriteBufferValidUTF8::finish()
     /// If unfinished sequence at end, then write replacement.
     if (working_buffer.begin() != memory.data())
         putReplacement();
-}
-
-
-WriteBufferValidUTF8::~WriteBufferValidUTF8()
-{
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finish();
 }
 
 }

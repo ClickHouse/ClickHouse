@@ -1,5 +1,5 @@
-<yandex>
+<clickhouse>
     <merge_tree>
         <assign_part_uuids>1</assign_part_uuids>
     </merge_tree>
-</yandex>
+</clickhouse>

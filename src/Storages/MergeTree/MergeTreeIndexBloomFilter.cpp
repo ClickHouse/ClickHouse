@@ -2,18 +2,13 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <common/types.h>
-#include <common/bit_cast.h>
-#include <Parsers/ASTLiteral.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <DataTypes/DataTypeArray.h>
+#include <base/types.h>
+#include <base/bit_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
-#include <Parsers/queryToString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -46,17 +41,26 @@ MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
 
 bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
-    const String & column_name = node->getColumnName();
+    Names required_columns = index.expression->getRequiredColumns();
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
-    for (const auto & cname : index.column_names)
-        if (column_name == cname)
+    std::vector<ASTPtr> nodes_to_check;
+    nodes_to_check.emplace_back(node);
+
+    while (!nodes_to_check.empty())
+    {
+        auto node_to_check = nodes_to_check.back();
+        nodes_to_check.pop_back();
+
+        const auto & column_name = node_to_check->getColumnName();
+        if (required_columns_set.find(column_name) != required_columns_set.end())
             return true;
 
-    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
-    {
-        for (const auto & children : func->arguments->children)
-            if (mayBenefitFromIndexForIn(children))
-                return true;
+        if (const auto * function = typeid_cast<const ASTFunction *>(node_to_check.get()))
+        {
+            auto & function_arguments_children = function->arguments->children;
+            nodes_to_check.insert(nodes_to_check.end(), function_arguments_children.begin(), function_arguments_children.end());
+        }
     }
 
     return false;
@@ -99,7 +103,7 @@ MergeTreeIndexPtr bloomFilterIndexCreatorNew(
     if (!index.arguments.empty())
     {
         const auto & argument = index.arguments[0];
-        max_conflict_probability = std::min(Float64(1), std::max(argument.safeGet<Float64>(), Float64(0)));
+        max_conflict_probability = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
     }
 
     const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(max_conflict_probability);

@@ -1,23 +1,30 @@
-<yandex>
+<clickhouse>
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
-            <session_timeout_ms>30000</session_timeout_ms>
+            <session_timeout_ms>100000</session_timeout_ms>
+            <min_session_timeout_ms>10000</min_session_timeout_ms>
             <force_sync>false</force_sync>
-            <startup_timeout>60000</startup_timeout>
+            <startup_timeout>240000</startup_timeout>
             <!-- we want all logs for complex problems investigation -->
             <reserved_log_items>1000000000000000</reserved_log_items>
+            <snapshot_distance>100000</snapshot_distance>
+
+            <!-- For instant start in single node configuration -->
+            <heart_beat_interval_ms>0</heart_beat_interval_ms>
+            <election_timeout_lower_bound_ms>0</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>0</election_timeout_upper_bound_ms>
         </coordination_settings>
 
         <raft_configuration>
             <server>
                 <id>1</id>
                 <hostname>localhost</hostname>
-                <port>44444</port>
+                <port>9234</port>
             </server>
         </raft_configuration>
     </keeper_server>
-</yandex>
+</clickhouse>

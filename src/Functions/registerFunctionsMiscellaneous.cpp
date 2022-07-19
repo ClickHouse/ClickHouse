@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <config_core.h>
-#endif
+#include <config_core.h>
 
 namespace DB
 {
@@ -9,6 +7,8 @@ class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionCurrentUser(FunctionFactory &);
+void registerFunctionCurrentProfiles(FunctionFactory &);
+void registerFunctionCurrentRoles(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
 void registerFunctionFQDN(FunctionFactory &);
 void registerFunctionVisibleWidth(FunctionFactory &);
@@ -40,6 +40,7 @@ void registerFunctionIsNaN(FunctionFactory &);
 void registerFunctionIfNotFinite(FunctionFactory &);
 void registerFunctionThrowIf(FunctionFactory &);
 void registerFunctionVersion(FunctionFactory &);
+void registerFunctionRevision(FunctionFactory &);
 void registerFunctionBuildId(FunctionFactory &);
 void registerFunctionUptime(FunctionFactory &);
 void registerFunctionTimezone(FunctionFactory &);
@@ -69,20 +70,35 @@ void registerFunctionHasThreadFuzzer(FunctionFactory &);
 void registerFunctionInitializeAggregation(FunctionFactory &);
 void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
+void registerFunctionGetServerPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
-void registerFunctionFile(FunctionFactory & factory);
-void registerFunctionConnectionId(FunctionFactory & factory);
-void registerFunctionPartitionId(FunctionFactory & factory);
+void registerFunctionFile(FunctionFactory &);
+void registerFunctionConnectionId(FunctionFactory &);
+void registerFunctionPartitionId(FunctionFactory &);
 void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
+void registerFunctionsTransactionCounters(FunctionFactory & factory);
+void registerFunctionQueryID(FunctionFactory &);
+void registerFunctionInitialQueryID(FunctionFactory &);
+void registerFunctionServerUUID(FunctionFactory &);
+void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
+void registerFunctionGetOSKernelVersion(FunctionFactory &);
+void registerFunctionGetTypeSerializationStreams(FunctionFactory &);
+void registerFunctionFlattenTuple(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
+#endif
+
+#ifdef FUZZING_MODE
+void registerFunctionGetFuzzerData(FunctionFactory & factory);
 #endif
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
     registerFunctionCurrentUser(factory);
+    registerFunctionCurrentProfiles(factory);
+    registerFunctionCurrentRoles(factory);
     registerFunctionHostName(factory);
     registerFunctionFQDN(factory);
     registerFunctionVisibleWidth(factory);
@@ -114,6 +130,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionIfNotFinite(factory);
     registerFunctionThrowIf(factory);
     registerFunctionVersion(factory);
+    registerFunctionRevision(factory);
     registerFunctionBuildId(factory);
     registerFunctionUptime(factory);
     registerFunctionTimezone(factory);
@@ -143,14 +160,27 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionInitializeAggregation(factory);
     registerFunctionErrorCodeToName(factory);
     registerFunctionTcpPort(factory);
+    registerFunctionGetServerPort(factory);
     registerFunctionByteSize(factory);
     registerFunctionFile(factory);
     registerFunctionConnectionId(factory);
     registerFunctionPartitionId(factory);
     registerFunctionIsIPAddressContainedIn(factory);
+    registerFunctionsTransactionCounters(factory);
+    registerFunctionQueryID(factory);
+    registerFunctionInitialQueryID(factory);
+    registerFunctionServerUUID(factory);
+    registerFunctionZooKeeperSessionUptime(factory);
+    registerFunctionGetOSKernelVersion(factory);
+    registerFunctionGetTypeSerializationStreams(factory);
+    registerFunctionFlattenTuple(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
+#endif
+
+#ifdef FUZZING_MODE
+    registerFunctionGetFuzzerData(factory);
 #endif
 }
 

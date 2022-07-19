@@ -2,6 +2,8 @@
 
 #include <Parsers/IParserBase.h>
 
+#include <cassert>
+
 namespace DB
 {
 
@@ -13,14 +15,15 @@ namespace DB
 class ParserKeyword : public IParserBase
 {
 private:
-    const char * s;
+    std::string_view s;
 
 public:
-    ParserKeyword(const char * s_);
+    //NOLINTNEXTLINE Want to be able to init ParserKeyword("literal")
+    constexpr ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
+
+    constexpr const char * getName() const override { return s.data(); }
 
 protected:
-    const char * getName() const override;
-
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -30,7 +33,8 @@ class ParserToken : public IParserBase
 private:
     TokenType token_type;
 public:
-    ParserToken(TokenType token_type_) : token_type(token_type_) {}
+    ParserToken(TokenType token_type_) : token_type(token_type_) {} /// NOLINT
+
 protected:
     const char * getName() const override { return "token"; }
 

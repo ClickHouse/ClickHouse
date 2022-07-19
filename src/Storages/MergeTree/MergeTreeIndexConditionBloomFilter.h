@@ -25,6 +25,7 @@ public:
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_HAS_ANY,
+            FUNCTION_HAS_ALL,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
@@ -37,7 +38,7 @@ public:
             ALWAYS_TRUE,
         };
 
-        RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {}
+        RPNElement(Function function_ = FUNCTION_UNKNOWN) : function(function_) {} /// NOLINT
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
@@ -69,13 +70,27 @@ private:
 
     bool traverseFunction(const ASTPtr & node, Block & block_with_constants, RPNElement & out, const ASTPtr & parent);
 
-    bool traverseASTIn(const String & function_name, const ASTPtr & key_ast, const SetPtr & prepared_set, RPNElement & out);
+    bool traverseASTIn(
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const SetPtr & prepared_set,
+        RPNElement & out);
 
     bool traverseASTIn(
-        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & type, const ColumnPtr & column, RPNElement & out);
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const SetPtr & prepared_set,
+        const DataTypePtr & type,
+        const ColumnPtr & column,
+        RPNElement & out);
 
     bool traverseASTEquals(
-        const String & function_name, const ASTPtr & key_ast, const DataTypePtr & value_type, const Field & value_field, RPNElement & out, const ASTPtr & parent);
+        const String & function_name,
+        const ASTPtr & key_ast,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out,
+        const ASTPtr & parent);
 };
 
 }

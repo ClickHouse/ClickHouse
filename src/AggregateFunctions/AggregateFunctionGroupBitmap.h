@@ -18,7 +18,7 @@ template <typename T, typename Data>
 class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>
 {
 public:
-    AggregateFunctionBitmap(const DataTypePtr & type)
+    explicit AggregateFunctionBitmap(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {})
     {
     }
@@ -39,9 +39,9 @@ public:
         this->data(place).rbs.merge(this->data(rhs).rbs);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override { this->data(place).rbs.write(buf); }
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).rbs.write(buf); }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override { this->data(place).rbs.read(buf); }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).rbs.read(buf); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -54,13 +54,15 @@ public:
 template <typename T, typename Data, typename Policy>
 class AggregateFunctionBitmapL2 final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>
 {
+private:
+    static constexpr size_t STATE_VERSION_1_MIN_REVISION = 54455;
 public:
-    AggregateFunctionBitmapL2(const DataTypePtr & type)
+    explicit AggregateFunctionBitmapL2(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {})
     {
     }
 
-    String getName() const override { return Data::name(); }
+    String getName() const override { return Policy::name; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
@@ -105,9 +107,38 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override { this->data(place).rbs.write(buf); }
+    bool isVersioned() const override { return true; }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override { this->data(place).rbs.read(buf); }
+    size_t getDefaultVersion() const override { return 1; }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (revision >= STATE_VERSION_1_MIN_REVISION)
+            return 1;
+        else
+            return 0;
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    {
+        if (!version)
+            version = getDefaultVersion();
+
+        if (*version >= 1)
+            DB::writeBoolText(this->data(place).init, buf);
+
+        this->data(place).rbs.write(buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
+    {
+        if (!version)
+            version = getDefaultVersion();
+
+        if (*version >= 1)
+            DB::readBoolText(this->data(place).init, buf);
+        this->data(place).rbs.read(buf);
+    }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -120,6 +151,7 @@ template <typename Data>
 class BitmapAndPolicy
 {
 public:
+    static constexpr auto name = "groupBitmapAnd";
     static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_and(rhs.rbs); }
 };
 
@@ -127,6 +159,7 @@ template <typename Data>
 class BitmapOrPolicy
 {
 public:
+    static constexpr auto name = "groupBitmapOr";
     static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_or(rhs.rbs); }
 };
 
@@ -134,6 +167,7 @@ template <typename Data>
 class BitmapXorPolicy
 {
 public:
+    static constexpr auto name = "groupBitmapXor";
     static void apply(Data & lhs, const Data & rhs) { lhs.rbs.rb_xor(rhs.rbs); }
 };
 

@@ -57,6 +57,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
 
         {"current_database", std::make_shared<DataTypeString>()},
         {"query", std::make_shared<DataTypeString>()},
+        {"formatted_query", std::make_shared<DataTypeString>()},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>()},
         {"query_kind", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"databases", std::make_shared<DataTypeArray>(
@@ -66,6 +67,8 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"columns", std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
         {"projections", std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"views", std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
         {"exception_code", std::make_shared<DataTypeInt32>()},
         {"exception", std::make_shared<DataTypeString>()},
@@ -83,6 +86,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>()},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
         {"interface", std::make_shared<DataTypeUInt8>()},
+        {"is_secure", std::make_shared<DataTypeUInt8>()},
         {"os_user", std::make_shared<DataTypeString>()},
         {"client_hostname", std::make_shared<DataTypeString>()},
         {"client_name", std::make_shared<DataTypeString>()},
@@ -95,6 +99,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"http_referer", std::make_shared<DataTypeString>()},
         {"forwarded_for", std::make_shared<DataTypeString>()},
         {"quota_key", std::make_shared<DataTypeString>()},
+        {"distributed_depth", std::make_shared<DataTypeUInt64>()},
 
         {"revision", std::make_shared<DataTypeUInt32>()},
 
@@ -112,7 +117,9 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_formats", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
+        {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+
+        {"transaction_id", getTransactionIDDataType()},
     };
 
 }
@@ -151,6 +158,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insertData(current_database.data(), current_database.size());
     columns[i++]->insertData(query.data(), query.size());
+    columns[i++]->insertData(formatted_query.data(), formatted_query.size());
     columns[i++]->insert(normalized_query_hash);
     columns[i++]->insertData(query_kind.data(), query_kind.size());
 
@@ -159,6 +167,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_tables = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_columns = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
@@ -176,6 +185,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_tables, column_tables);
         fill_column(query_columns, column_columns);
         fill_column(query_projections, column_projections);
+        fill_column(query_views, column_views);
     }
 
     columns[i++]->insert(exception_code);
@@ -249,6 +259,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
     }
+
+    columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
@@ -267,7 +279,8 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.initial_query_start_time);
     columns[i++]->insert(client_info.initial_query_start_time_microseconds);
 
-    columns[i++]->insert(UInt64(client_info.interface));
+    columns[i++]->insert(static_cast<UInt64>(client_info.interface));
+    columns[i++]->insert(static_cast<UInt64>(client_info.is_secure));
 
     columns[i++]->insert(client_info.os_user);
     columns[i++]->insert(client_info.client_hostname);
@@ -277,11 +290,12 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.client_version_minor);
     columns[i++]->insert(client_info.client_version_patch);
 
-    columns[i++]->insert(UInt64(client_info.http_method));
+    columns[i++]->insert(static_cast<UInt64>(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);
     columns[i++]->insert(client_info.http_referer);
     columns[i++]->insert(client_info.forwarded_for);
 
     columns[i++]->insert(client_info.quota_key);
+    columns[i++]->insert(client_info.distributed_depth);
 }
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
 
 #include <chrono>
 
@@ -11,17 +11,26 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-#include <common/unaligned.h>
-#include <Common/Stopwatch.h>
+#include <base/unaligned.h>
+#include <base/sort.h>
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/ArenaUtils.h>
 #include <Common/MemorySanitizer.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/HashTable/HashMap.h>
 #include <IO/AIO.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 #include <Dictionaries/DictionaryHelpers.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric Write;
+}
 
 namespace ProfileEvents
 {
@@ -498,7 +507,7 @@ public:
         iocb write_request{};
         iocb * write_request_ptr{&write_request};
 
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
         write_request.aio.aio_fildes = file.fd;
         write_request.aio.aio_buf = reinterpret_cast<volatile void *>(const_cast<char *>(buffer));
@@ -542,8 +551,13 @@ public:
                 file_path,
                 std::to_string(bytes_written));
 
+        #if defined(OS_DARWIN)
         if (::fsync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
+        #else
+        if (::fdatasync(file.fd) < 0)
+            throwFromErrnoWithPath("Cannot fdatasync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
+        #endif
 
         current_block_index += buffer_size_in_blocks;
 
@@ -562,7 +576,7 @@ public:
         iocb request{};
         iocb * request_ptr = &request;
 
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
         request.aio.aio_lio_opcode = LIO_READ;
         request.aio.aio_fildes = file.fd;
         request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(read_buffer_memory.data()));
@@ -642,7 +656,7 @@ public:
 
             char * buffer_place = read_buffer.data() + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
 
-            #if defined(__FreeBSD__)
+            #if defined(OS_FREEBSD)
             request.aio.aio_lio_opcode = LIO_READ;
             request.aio.aio_fildes = file.fd;
             request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(buffer_place));
@@ -747,9 +761,9 @@ private:
 
         FileDescriptor() = default;
 
-        FileDescriptor(FileDescriptor && rhs) : fd(rhs.fd) { rhs.fd = -1; }
+        FileDescriptor(FileDescriptor && rhs) noexcept : fd(rhs.fd) { rhs.fd = -1; }
 
-        FileDescriptor & operator=(FileDescriptor && rhs)
+        FileDescriptor & operator=(FileDescriptor && rhs) noexcept
         {
             if (this == &rhs)
                 return *this;
@@ -771,7 +785,7 @@ private:
 
     inline static int preallocateDiskSpace(int fd, size_t offset, size_t len)
     {
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
             return posix_fallocate(fd, offset, len);
         #else
             return fallocate(fd, 0, offset, len);
@@ -782,7 +796,7 @@ private:
     {
         char * result = nullptr;
 
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
             result = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
         #else
             result = reinterpret_cast<char *>(request.aio_buf);
@@ -795,7 +809,7 @@ private:
     {
         ssize_t  bytes_written;
 
-        #if defined(__FreeBSD__)
+        #if defined(OS_FREEBSD)
             bytes_written = aio_return(reinterpret_cast<struct aiocb *>(event.udata));
         #else
             bytes_written = event.res;
@@ -824,8 +838,8 @@ template <DictionaryKeyType dictionary_key_type>
 class SSDCacheDictionaryStorage final : public ICacheDictionaryStorage
 {
 public:
-    using SSDCacheKeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SSDCacheSimpleKey, SSDCacheComplexKey>;
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
+    using SSDCacheKeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, SSDCacheSimpleKey, SSDCacheComplexKey>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     explicit SSDCacheDictionaryStorage(const SSDCacheDictionaryStorageConfiguration & configuration_)
         : configuration(configuration_)
@@ -839,19 +853,19 @@ public:
 
     String getName() const override
     {
-        if (dictionary_key_type == DictionaryKeyType::simple)
+        if (dictionary_key_type == DictionaryKeyType::Simple)
             return "SSDCache";
         else
             return "SSDComplexKeyCache";
     }
 
-    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
+    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
         const DictionaryStorageFetchRequest & fetch_request) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
@@ -859,7 +873,7 @@ public:
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
@@ -867,7 +881,7 @@ public:
 
     void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertDefaultKeysImpl(keys);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
@@ -875,19 +889,19 @@ public:
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return getCachedKeysImpl();
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
-    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
+    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
         const DictionaryStorageFetchRequest & fetch_request) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, fetch_request);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
@@ -895,7 +909,7 @@ public:
 
     void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
@@ -903,7 +917,7 @@ public:
 
     void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
@@ -911,7 +925,7 @@ public:
 
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for simple key storage");
@@ -1081,7 +1095,7 @@ private:
         }
 
         /// Sort blocks by offset before start async io requests
-        std::sort(blocks_to_request.begin(), blocks_to_request.end());
+        ::sort(blocks_to_request.begin(), blocks_to_request.end());
 
         file_buffer.fetchBlocks(configuration.read_buffer_blocks_size, blocks_to_request, [&](size_t block_index, char * block_data)
         {
@@ -1135,13 +1149,10 @@ private:
             Cell cell;
             setCellDeadline(cell, now);
 
-            if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+            if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             {
                 /// Copy complex key into arena and put in cache
-                size_t key_size = key.size;
-                char * place_for_key = complex_key_arena.alloc(key_size);
-                memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
-                KeyType updated_key{place_for_key, key_size};
+                KeyType updated_key = copyStringInArena(complex_key_arena, key);
                 ssd_cache_key.key = updated_key;
             }
 
@@ -1167,7 +1178,7 @@ private:
             cell.state = Cell::default_value;
 
 
-            if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+            if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             {
                 /// Copy complex key into arena and put in cache
                 size_t key_size = key.size;
@@ -1383,7 +1394,7 @@ private:
     using ComplexKeyHashMap = HashMapWithSavedHash<StringRef, Cell>;
 
     using CacheMap = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::simple,
+        dictionary_key_type == DictionaryKeyType::Simple,
         SimpleKeyHashMap,
         ComplexKeyHashMap>;
 

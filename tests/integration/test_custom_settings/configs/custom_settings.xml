@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <custom_a>Int64_-5</custom_a>
@@ -7,4 +7,4 @@
             <custom_d>'some text'</custom_d>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

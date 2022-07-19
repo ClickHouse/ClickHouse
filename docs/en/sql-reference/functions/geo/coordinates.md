@@ -1,12 +1,12 @@
 ---
-toc_title: Geographical Coordinates
-toc_priority: 62
+sidebar_label: Geographical Coordinates
+sidebar_position: 62
 ---
 
 
-# Functions for Working with Geographical Coordinates {#geographical-coordinates}
+# Functions for Working with Geographical Coordinates
 
-## greatCircleDistance {#greatcircledistance}
+## greatCircleDistance
 
 Calculates the distance between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -41,7 +41,14 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## greatCircleAngle {#greatcircleangle}
+## geoDistance
+
+Similar to `greatCircleDistance` but calculates the distance on WGS-84 ellipsoid instead of sphere. This is more precise approximation of the Earth Geoid.
+The performance is the same as for `greatCircleDistance` (no performance drawback). It is recommended to use `geoDistance` to calculate the distances on Earth.
+
+Technical note: for close enough points we calculate the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
+
+## greatCircleAngle
 
 Calculates the central angle between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -72,7 +79,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-## pointInEllipses {#pointinellipses}
+## pointInEllipses
 
 Checks whether the point belongs to at least one of the ellipses.
 Coordinates are geometric in the Cartesian coordinate system.
@@ -105,7 +112,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-## pointInPolygon {#pointinpolygon}
+## pointInPolygon
 
 Checks whether the point belongs to the polygon on the plane.
 
@@ -137,4 +144,4 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/geo/coordinates) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/coordinates) <!--hide-->

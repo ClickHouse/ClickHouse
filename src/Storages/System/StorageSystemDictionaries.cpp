@@ -15,7 +15,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
 
-#include <common/map.h>
+#include <base/map.h>
 #include <mutex>
 
 namespace DB
@@ -35,6 +35,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"attribute.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"bytes_allocated", std::make_shared<DataTypeUInt64>()},
+        {"hierarchical_index_bytes_allocated", std::make_shared<DataTypeUInt64>()},
         {"query_count", std::make_shared<DataTypeUInt64>()},
         {"hit_rate", std::make_shared<DataTypeFloat64>()},
         {"found_rate", std::make_shared<DataTypeFloat64>()},
@@ -47,7 +48,8 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         {"last_successful_update_time", std::make_shared<DataTypeDateTime>()},
         {"loading_duration", std::make_shared<DataTypeFloat32>()},
         //{ "creation_time", std::make_shared<DataTypeDateTime>() },
-        {"last_exception", std::make_shared<DataTypeString>()}
+        {"last_exception", std::make_shared<DataTypeString>()},
+        {"comment", std::make_shared<DataTypeString>()}
     };
 }
 
@@ -112,6 +114,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         if (dict_ptr)
         {
             res_columns[i++]->insert(dict_ptr->getBytesAllocated());
+            res_columns[i++]->insert(dict_ptr->getHierarchicalIndexBytesAllocated());
             res_columns[i++]->insert(dict_ptr->getQueryCount());
             res_columns[i++]->insert(dict_ptr->getHitRate());
             res_columns[i++]->insert(dict_ptr->getFoundRate());
@@ -127,7 +130,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         }
         else
         {
-            for (size_t j = 0; j != 9; ++j) // Number of empty fields if dict_ptr is null
+            for (size_t j = 0; j != 10; ++j) // Number of empty fields if dict_ptr is null
                 res_columns[i++]->insertDefault();
         }
 
@@ -139,6 +142,18 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
             res_columns[i++]->insert(getExceptionMessage(last_exception, false));
         else
             res_columns[i++]->insertDefault();
+
+        if (dict_ptr)
+        {
+            res_columns[i++]->insert(dict_ptr->getDictionaryComment());
+        }
+        else
+        {
+            if (load_result.config && load_result.config->config->has("dictionary.comment"))
+                res_columns[i++]->insert(load_result.config->config->getString("dictionary.comment"));
+            else
+                res_columns[i++]->insertDefault();
+        }
 
         /// Start fill virtual columns
 

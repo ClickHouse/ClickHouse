@@ -1,14 +1,11 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
+# system.detached_parts {#system_tables-detached_parts}
 
-# 系统。detached_parts {#system_tables-detached_parts}
+包含关于 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 表的分离分区的信息。`reason` 列详细说明了该分区被分离的原因。
 
-包含有关分离部分的信息 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) 桌子 该 `reason` 列指定分离部件的原因。
+对于用户分离的分区，原因是空的。你可以通过 [ALTER TABLE ATTACH PARTITION\|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) 命令添加这些分区。
 
-对于用户分离的部件，原因是空的。 这些部件可以附加 [ALTER TABLE ATTACH PARTITION\|PART](../../sql-reference/statements/alter.md#alter_attach-partition) 指挥部
+关于其他列的描述，请参见 [system.parts](../../operations/system-tables/parts.md#system_tables-parts)。
 
-有关其他列的说明，请参阅 [系统。零件](../../operations/system-tables/parts.md#system_tables-parts).
+如果分区名称无效，一些列的值可能是`NULL`。你可以通过[ALTER TABLE DROP DETACHED PART](../../sql-reference/statements/alter/partition.md#alter_drop-detached)来删除这些分区。
 
-如果部件名称无效，某些列的值可能为 `NULL`. 这些部分可以删除 [ALTER TABLE DROP DETACHED PART](../../sql-reference/statements/alter.md#alter_drop-detached).
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/detached_parts) <!--hide-->

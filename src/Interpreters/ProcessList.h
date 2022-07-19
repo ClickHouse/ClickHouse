@@ -1,19 +1,22 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <DataStreams/BlockIO.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
+#include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/Condition.h>
+#include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
+#include <Common/OvercommitTracker.h>
 
 #include <condition_variable>
 #include <list>
@@ -22,18 +25,15 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
+#include <vector>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric Query;
-}
 
 namespace DB
 {
 
 struct Settings;
 class IAST;
+class PipelineExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -61,10 +61,11 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
+    bool is_all_data_sent;
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
-    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
     std::shared_ptr<Settings> query_settings;
     std::string current_database;
 };
@@ -77,6 +78,7 @@ protected:
     friend class ThreadStatus;
     friend class CurrentThread;
     friend class ProcessListEntry;
+    friend struct ::GlobalOvercommitTracker;
 
     String query;
     ClientInfo client_info;
@@ -91,23 +93,27 @@ protected:
     /// Progress of output stream
     Progress progress_out;
 
-    QueryPriorities::Handle priority_handle;
+    /// Used to externally check for the query time limits
+    /// They are saved in the constructor to limit the overhead of each call to checkTimeLimit()
+    ExecutionSpeedLimits limits;
+    OverflowMode overflow_mode;
 
-    CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
+    QueryPriorities::Handle priority_handle = nullptr;
 
     std::atomic<bool> is_killed { false };
+
+    /// All data to the client already had been sent.
+    /// Including EndOfStream or Exception.
+    std::atomic<bool> is_all_data_sent { false };
 
     void setUserProcessList(ProcessListForUser * user_process_list_);
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
     const ProcessListForUser * getUserProcessList() const { return user_process_list; }
 
-    mutable std::mutex query_streams_mutex;
+    mutable std::mutex executors_mutex;
 
-    /// Streams with query results, point to BlockIO from executeQuery()
-    /// This declaration is compatible with notes about BlockIO::process_list_entry:
-    ///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
-    BlockInputStreamPtr query_stream_in;
-    BlockOutputStreamPtr query_stream_out;
+    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
+    std::vector<PipelineExecutor *> executors;
 
     enum QueryStreamsStatus
     {
@@ -120,13 +126,22 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
+    IAST::QueryKind query_kind;
+
+    /// This field is unused in this class, but it
+    /// increments/decrements metric in constructor/destructor.
+    CurrentMetrics::Increment num_queries_increment;
+
 public:
 
     QueryStatus(
         ContextPtr context_,
         const String & query_,
         const ClientInfo & client_info_,
-        QueryPriorities::Handle && priority_handle_);
+        QueryPriorities::Handle && priority_handle_,
+        ThreadGroupStatusPtr && thread_group_,
+        IAST::QueryKind query_kind_
+        );
 
     ~QueryStatus();
 
@@ -146,6 +161,18 @@ public:
     }
 
     ThrottlerPtr getUserNetworkThrottler();
+
+    MemoryTracker * getMemoryTracker() const
+    {
+        if (!thread_group)
+            return nullptr;
+        return &thread_group->memory_tracker;
+    }
+
+    IAST::QueryKind getQueryKind() const
+    {
+        return query_kind;
+    }
 
     bool updateProgressIn(const Progress & value)
     {
@@ -168,21 +195,23 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    /// Copies pointers to in/out streams
-    void setQueryStreams(const BlockIO & io);
-
-    /// Frees in/out streams
-    void releaseQueryStreams();
-
-    /// It means that ProcessListEntry still exists, but stream was already destroyed
-    bool streamsAreReleased();
-
-    /// Get query in/out pointers from BlockIO
-    bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
-
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
+
+    bool isAllDataSent() const { return is_all_data_sent; }
+    void setAllDataSent() { is_all_data_sent = true; }
+
+    /// Adds a pipeline to the QueryStatus
+    void addPipelineExecutor(PipelineExecutor * e);
+
+    /// Removes a pipeline to the QueryStatus
+    void removePipelineExecutor(PipelineExecutor * e);
+
+    /// Checks the query time limits (cancelled or timeout)
+    bool checkTimeLimit();
+    /// Same as checkTimeLimit but it never throws
+    [[nodiscard]] bool checkTimeLimitSoft();
 };
 
 
@@ -193,14 +222,14 @@ struct ProcessListForUserInfo
     Int64 peak_memory_usage;
 
     // Optional field, filled by request.
-    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 };
 
 
 /// Data about queries for one user.
 struct ProcessListForUser
 {
-    ProcessListForUser();
+    explicit ProcessListForUser(ProcessList * global_process_list);
 
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
     using QueryToElement = std::unordered_map<String, QueryStatus *>;
@@ -209,6 +238,8 @@ struct ProcessListForUser
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
+
+    UserOvercommitTracker user_overcommit_tracker;
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
@@ -259,6 +290,7 @@ class ProcessList
 public:
     using Element = QueryStatus;
     using Entry = ProcessListEntry;
+    using QueryAmount = UInt64;
 
     /// list, for iterators not to invalidate. NOTE: could replace with cyclic buffer, but not worth.
     using Container = std::list<Element>;
@@ -268,8 +300,12 @@ public:
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
+    using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
+
 protected:
     friend class ProcessListEntry;
+    friend struct ::UserOvercommitTracker;
+    friend struct ::GlobalOvercommitTracker;
 
     mutable std::mutex mutex;
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
@@ -289,6 +325,19 @@ protected:
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
     QueryStatus * tryGetProcessListElement(const String & current_query_id, const String & current_user);
+
+    /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    size_t max_insert_queries_amount = 0;
+
+    /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    size_t max_select_queries_amount = 0;
+
+    /// amount of queries by query kind.
+    QueryKindAmounts query_kind_amounts;
+
+    void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
+    void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
+    QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -313,6 +362,18 @@ public:
     {
         std::lock_guard lock(mutex);
         max_size = max_size_;
+    }
+
+    void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
+    {
+        std::lock_guard lock(mutex);
+        max_insert_queries_amount = max_insert_queries_amount_;
+    }
+
+    void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
+    {
+        std::lock_guard lock(mutex);
+        max_select_queries_amount = max_select_queries_amount_;
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user

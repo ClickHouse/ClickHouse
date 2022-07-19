@@ -2,20 +2,16 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Parsers/queryToString.h>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -73,6 +69,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.partition = command->partition;
         res.predicate = nullptr;
         res.projection_name = command->projection->as<ASTIdentifier &>().name();
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::MATERIALIZE_COLUMN)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE_COLUMN;
+        res.partition = command->partition;
+        res.column_name = getIdentifierName(command->column);
         return res;
     }
     else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)

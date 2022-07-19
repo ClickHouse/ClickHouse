@@ -7,6 +7,7 @@
 
 #include <Common/Exception.h>
 #include <IO/BufferBase.h>
+#include <IO/AsynchronousReader.h>
 
 
 namespace DB
@@ -16,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** A simple abstract class for buffered data reading (char sequences) from somewhere.
@@ -63,7 +65,10 @@ public:
         if (!res)
             working_buffer = Buffer(pos, pos);
         else
+        {
             pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            assert(position() != working_buffer.end());
+        }
         nextimpl_working_buffer_offset = 0;
 
         assert(position() <= working_buffer.end());
@@ -197,6 +202,27 @@ public:
         return read(to, n);
     }
 
+    /** Do something to allow faster subsequent call to 'nextImpl' if possible.
+      * It's used for asynchronous readers with double-buffering.
+      */
+    virtual void prefetch() {}
+
+    /**
+     * Set upper bound for read range [..., position).
+     * Required for reading from remote filesystem, when it matters how much we read.
+     */
+    virtual void setReadUntilPosition(size_t /* position */) {}
+
+    virtual void setReadUntilEnd() {}
+
+    /// Read at most `size` bytes into data at specified offset `offset`. First ignore `ignore` bytes if `ignore` > 0.
+    /// Notice: this function only need to be implemented in synchronous read buffers to be wrapped in asynchronous read.
+    /// Such as ReadBufferFromRemoteFSGather and AsynchronousReadIndirectBufferFromRemoteFS.
+    virtual IAsynchronousReader::Result readInto(char * /*data*/, size_t /*size*/, size_t /*offset*/, size_t /*ignore*/)
+    {
+        throw Exception("readInto not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),
@@ -253,5 +279,33 @@ inline std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & buf)
     return std::make_unique<ReadBufferWrapper>(buf);
 }
 
+inline std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr)
+{
+    class ReadBufferWrapper : public ReadBuffer
+    {
+        public:
+            explicit ReadBufferWrapper(ReadBufferPtr ptr_) : ReadBuffer(ptr_->position(), 0), ptr(ptr_)
+            {
+                working_buffer = Buffer(ptr->position(), ptr->buffer().end());
+            }
+
+        private:
+            ReadBufferPtr ptr;
+
+            bool nextImpl() override
+            {
+                ptr->position() = position();
+
+                if (!ptr->next())
+                    return false;
+
+                working_buffer = ptr->buffer();
+
+                return true;
+            }
+    };
+
+    return std::make_unique<ReadBufferWrapper>(ptr);
+}
 
 }

@@ -1,6 +1,6 @@
 ---
-toc_priority: 20
-toc_title: "MySQL-интерфейс"
+sidebar_position: 20
+sidebar_label: "MySQL-интерфейс"
 ---
 
 # MySQL-интерфейс {#mysql-interface}
@@ -43,3 +43,9 @@ mysql>
 -   не поддерживаются подготовленные запросы
 
 -   некоторые типы данных отправляются как строки
+
+Чтобы прервать долго выполняемый запрос, используйте запрос `KILL QUERY connection_id` (во время выполнения он будет заменен на `KILL QUERY WHERE query_id = connection_id`). Например:
+
+``` bash
+$ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
+```

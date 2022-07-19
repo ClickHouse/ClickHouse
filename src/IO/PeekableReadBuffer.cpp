@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/)
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/)
         : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_)
 {
     padded &= sub_buf.isPadded();
@@ -27,6 +27,7 @@ void PeekableReadBuffer::reset()
     peeked_size = 0;
     checkpoint = std::nullopt;
     checkpoint_in_own_memory = false;
+    use_stack_memory = true;
 
     if (!currentlyReadFromOwnMemory())
         sub_buf.position() = pos;
@@ -72,21 +73,23 @@ bool PeekableReadBuffer::peekNext()
         sub_buf.position() = copy_from;
     }
 
+    char * memory_data = getMemoryData();
+
     /// Save unread data from sub-buffer to own memory
-    memcpy(memory.data() + peeked_size, sub_buf.position(), bytes_to_copy);
+    memcpy(memory_data + peeked_size, sub_buf.position(), bytes_to_copy);
 
     /// If useSubbufferOnly() is false, then checkpoint is in own memory and it was updated in resizeOwnMemoryIfNecessary
     /// Otherwise, checkpoint now at the beginning of own memory
     if (checkpoint && useSubbufferOnly())
     {
-        checkpoint.emplace(memory.data());
+        checkpoint.emplace(memory_data);
         checkpoint_in_own_memory = true;
     }
 
     if (currentlyReadFromOwnMemory())
     {
         /// Update buffer size
-        BufferBase::set(memory.data(), peeked_size + bytes_to_copy, offset());
+        BufferBase::set(memory_data, peeked_size + bytes_to_copy, offset());
     }
     else
     {
@@ -99,7 +102,7 @@ bool PeekableReadBuffer::peekNext()
             else
                 pos_offset = 0;
         }
-        BufferBase::set(memory.data(), peeked_size + bytes_to_copy, pos_offset);
+        BufferBase::set(memory_data, peeked_size + bytes_to_copy, pos_offset);
     }
 
     peeked_size += bytes_to_copy;
@@ -125,8 +128,9 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         /// Checkpoint is in own memory and position is not.
         assert(checkpointInOwnMemory());
 
+        char * memory_data = getMemoryData();
         /// Switch to reading from own memory.
-        BufferBase::set(memory.data(), peeked_size, *checkpoint - memory.data());
+        BufferBase::set(memory_data, peeked_size, *checkpoint - memory_data);
     }
 
     if (drop)
@@ -224,12 +228,31 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
     bool need_update_pos = currentlyReadFromOwnMemory();
     size_t offset = 0;
     if (need_update_checkpoint)
-        offset = *checkpoint - memory.data();
+    {
+        char * memory_data = getMemoryData();
+        offset = *checkpoint - memory_data;
+    }
     else if (need_update_pos)
         offset = this->offset();
 
     size_t new_size = peeked_size + bytes_to_append;
-    if (memory.size() < new_size)
+
+    if (use_stack_memory)
+    {
+        /// If stack memory is still enough, do nothing.
+        if (sizeof(stack_memory) >= new_size)
+            return;
+
+        /// Stack memory is not enough, allocate larger buffer.
+        use_stack_memory = false;
+        memory.resize(std::max(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), new_size));
+        memcpy(memory.data(), stack_memory, sizeof(stack_memory));
+        if (need_update_checkpoint)
+            checkpoint.emplace(memory.data() + offset);
+        if (need_update_pos)
+            BufferBase::set(memory.data(), peeked_size, pos - stack_memory);
+    }
+    else if (memory.size() < new_size)
     {
         if (bytes_to_append < offset && 2 * (peeked_size - offset) <= memory.size())
         {
@@ -273,10 +296,11 @@ void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
 
     size_t bytes_to_append = pos - sub_buf.position();
     resizeOwnMemoryIfNecessary(bytes_to_append);
-    memcpy(memory.data() + peeked_size, sub_buf.position(), bytes_to_append);
+    char * memory_data = getMemoryData();
+    memcpy(memory_data + peeked_size, sub_buf.position(), bytes_to_append);
     sub_buf.position() = pos;
     peeked_size += bytes_to_append;
-    BufferBase::set(memory.data(), peeked_size, peeked_size);
+    BufferBase::set(memory_data, peeked_size, peeked_size);
 }
 
 PeekableReadBuffer::~PeekableReadBuffer()
@@ -287,7 +311,7 @@ PeekableReadBuffer::~PeekableReadBuffer()
 
 bool PeekableReadBuffer::hasUnreadData() const
 {
-    return peeked_size && pos != memory.data() + peeked_size;
+    return peeked_size && pos != getMemoryData() + peeked_size;
 }
 
 }

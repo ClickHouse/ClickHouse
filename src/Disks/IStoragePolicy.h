@@ -4,7 +4,7 @@
 
 #include <memory>
 #include <vector>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -17,6 +17,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
 class IReservation;
+using ReservationSharedPtr = std::shared_ptr<IReservation>;
 using ReservationPtr = std::unique_ptr<IReservation>;
 using Reservations = std::vector<ReservationPtr>;
 
@@ -38,8 +39,8 @@ public:
     /// Used when it's not important, for example for
     /// mutations files
     virtual DiskPtr getAnyDisk() const = 0;
-    virtual DiskPtr getDiskByName(const String & disk_name) const = 0;
-    virtual Disks getDisksByType(DiskType::Type type) const = 0;
+    virtual DiskPtr tryGetDiskByName(const String & disk_name) const = 0;
+    DiskPtr getDiskByName(const String & disk_name) const;
     /// Get free space from most free disk
     virtual UInt64 getMaxUnreservedFreeSpace() const = 0;
     /// Reserves space on any volume with index > min_volume_index or returns nullptr
@@ -53,7 +54,8 @@ public:
     virtual ReservationPtr makeEmptyReservationOnLargestDisk() const = 0;
     /// Get volume by index.
     virtual VolumePtr getVolume(size_t index) const = 0;
-    virtual VolumePtr getVolumeByName(const String & volume_name) const = 0;
+    virtual VolumePtr tryGetVolumeByName(const String & volume_name) const = 0;
+    VolumePtr getVolumeByName(const String & volume_name) const;
     /// Checks if storage policy can be replaced by another one.
     virtual void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const = 0;
     /// Find volume index, which contains disk

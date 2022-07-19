@@ -44,18 +44,17 @@ struct ClearableHashTableCell : public BaseCell
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = false;
 
-    ClearableHashTableCell() {} //-V730
+    ClearableHashTableCell() {} //-V730 /// NOLINT
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
-template
-<
+template <
     typename Key,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
-class ClearableHashSet : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
+class ClearableHashSet
+    : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
 public:
     using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
@@ -68,14 +67,17 @@ public:
     }
 };
 
-template
-<
+template <
     typename Key,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrower<>,
-    typename Allocator = HashTableAllocator
->
-class ClearableHashSetWithSavedHash: public HashTable<Key, ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
+    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Allocator = HashTableAllocator>
+class ClearableHashSetWithSavedHash : public HashTable<
+                                          Key,
+                                          ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>,
+                                          Hash,
+                                          Grower,
+                                          Allocator>
 {
 public:
     void clear()
@@ -91,8 +93,4 @@ using ClearableHashSetWithStackMemory = ClearableHashSet<
     Hash,
     HashTableGrower<initial_size_degree>,
     HashTableAllocatorWithStackMemory<
-        (1ULL << initial_size_degree)
-        * sizeof(
-            ClearableHashTableCell<
-                Key,
-                HashTableCell<Key, Hash, ClearableHashSetState>>)>>;
+        (1ULL << initial_size_degree) * sizeof(ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>)>>;

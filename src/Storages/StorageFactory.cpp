@@ -66,6 +66,7 @@ StoragePtr StorageFactory::get(
     bool has_force_restore_data_flag) const
 {
     String name, comment;
+
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
@@ -101,9 +102,16 @@ StoragePtr StorageFactory::get(
         {
             name = "MaterializedView";
         }
+        else if (query.is_window_view)
+        {
+            name = "WindowView";
+        }
         else
         {
-            if (!storage_def)
+            if (!query.storage)
+                throw Exception("Incorrect CREATE query: storage required", ErrorCodes::INCORRECT_QUERY);
+
+            if (!storage_def->engine)
                 throw Exception("Incorrect CREATE query: ENGINE required", ErrorCodes::ENGINE_REQUIRED);
 
             const ASTFunction & engine_def = *storage_def->engine;
@@ -135,6 +143,12 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
+            else if (name == "WindowView")
+            {
+                throw Exception(
+                    "Direct creation of tables with ENGINE WindowView is not supported, use CREATE WINDOW VIEW statement",
+                    ErrorCodes::INCORRECT_QUERY);
+            }
 
             auto it = storages.find(name);
             if (it == storages.end())
@@ -145,9 +159,6 @@ StoragePtr StorageFactory::get(
                 else
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
-
-            if (storage_def->comment)
-                comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
@@ -194,6 +205,9 @@ StoragePtr StorageFactory::get(
         }
     }
 
+    if (query.comment)
+        comment = query.comment->as<ASTLiteral &>().value.get<String>();
+
     ASTs empty_engine_args;
     Arguments arguments{
         .engine_name = name,
@@ -201,7 +215,7 @@ StoragePtr StorageFactory::get(
         .storage_def = storage_def,
         .query = query,
         .relative_data_path = relative_data_path,
-        .table_id = StorageID(query.database, query.table, query.uuid),
+        .table_id = StorageID(query.getDatabase(), query.getTable(), query.uuid),
         .local_context = local_context,
         .context = context,
         .columns = columns,
@@ -222,7 +236,7 @@ StoragePtr StorageFactory::get(
         storage_def->engine->arguments->children = empty_engine_args;
     }
 
-    if (local_context->hasQueryContext() && context->getSettingsRef().log_queries)
+    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;

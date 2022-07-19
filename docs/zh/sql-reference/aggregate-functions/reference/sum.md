@@ -1,5 +1,5 @@
 ---
-toc_priority: 4
+sidebar_position: 4
 ---
 
 # sum {#agg_function-sum}

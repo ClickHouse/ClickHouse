@@ -1,16 +1,19 @@
 {% if not no_footer %}
-<div id="footer" class="{{ footer_class or 'bg-dark text-muted' }}">
-    <div class="container {{ footer_container_class or 'py-3' }}">
-        <div class="row">
-            <div class="col-lg-8 text-left">
-                <a href="https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE"
-                           rel="external nofollow noreferrer" target="_blank" class="text-reset">
-        {{ _('ClickHouse source code is published under the Apache 2.0 License.') }}</a> {{ _('Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.') }}
-            </div>
-            <div class="col-lg-4 text-right">
-                &copy; 2016–2021 <a href="https://yandex.com/company/" rel="external nofollow noreferrer" target="_blank" class="text-muted">{{ _('Yandex LLC') }}</a>
-            </div>
+<div class="footer font-xs {{ footer_class or 'bg-light text-muted' }}">
+    <div class="container d-flex align-items-center {{ footer_container_class or 'py-2' }}">
+
+        <div class="footer-copy font-weight-bold">
+            &copy; 2016–2022 {{ _('ClickHouse, Inc.') }}
         </div>
+
+        <div class="footer-license ml-4">
+            {{ _('ClickHouse source code is published under the Apache 2.0 License.') }}</a> {{ _('Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.') }}
+        </div>
+
+        <div class="footer-links ml-4">
+            <a href="/legal/trademark-policy/" class="text-muted">Trademark Policy</a>
+        </div>
+
     </div>
 </div>
 {% endif %}

@@ -1,4 +1,4 @@
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -63,6 +63,13 @@ void BlockMissingValues::setBit(size_t column_idx, size_t row_idx)
     RowsBitMask & mask = rows_mask_by_column_id[column_idx];
     mask.resize(row_idx + 1);
     mask[row_idx] = true;
+}
+
+void BlockMissingValues::setBits(size_t column_idx, size_t rows)
+{
+    RowsBitMask & mask = rows_mask_by_column_id[column_idx];
+    mask.resize(rows);
+    std::fill(mask.begin(), mask.end(), true);
 }
 
 const BlockMissingValues::RowsBitMask & BlockMissingValues::getDefaultsBitmask(size_t column_idx) const

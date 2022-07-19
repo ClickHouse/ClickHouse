@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
@@ -66,15 +66,17 @@ struct ReplicatedMergeTreeTableMetadata
             return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
                 && !ttl_table_changed && !constraints_changed;
         }
+
+        StorageInMemoryMetadata getNewMetadata(const ColumnsDescription & new_columns, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const;
     };
 
     void checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
 
-    Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const;
+    Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
 
 private:
 
-    void checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const;
+    void checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk, const ColumnsDescription & columns, ContextPtr context) const;
 
     bool index_granularity_bytes_found_in_zk = false;
 };

@@ -9,6 +9,8 @@
 
 #include <deque>
 
+#include <base/sort.h>
+
 
 namespace DB
 {
@@ -39,7 +41,7 @@ void LogicalExpressionsOptimizer::perform()
 {
     if (select_query == nullptr)
         return;
-    if (visited_nodes.count(select_query))
+    if (visited_nodes.contains(select_query))
         return;
 
     size_t position = 0;
@@ -94,7 +96,7 @@ void LogicalExpressionsOptimizer::reorderColumns()
 
 void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 {
-    if (visited_nodes.count(select_query))
+    if (visited_nodes.contains(select_query))
         return;
 
     using Edge = std::pair<IAST *, IAST *>;
@@ -159,7 +161,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
             {
                 if (!child->as<ASTSelectQuery>())
                 {
-                    if (!visited_nodes.count(child.get()))
+                    if (!visited_nodes.contains(child.get()))
                         to_visit.push_back(Edge(to_node, &*child));
                     else
                     {
@@ -180,7 +182,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
     {
         auto & equalities = chain.second;
         auto & equality_functions = equalities.functions;
-        std::sort(equality_functions.begin(), equality_functions.end());
+        ::sort(equality_functions.begin(), equality_functions.end());
     }
 }
 
@@ -225,22 +227,19 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     /// 1. Create a new IN expression based on information from the OR-chain.
 
-    /// Construct a list of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
-    ASTPtr value_list = std::make_shared<ASTExpressionList>();
+    /// Construct a tuple of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
+
+    Tuple tuple;
+    tuple.reserve(equality_functions.size());
+
     for (const auto * function : equality_functions)
     {
         const auto & operands = getFunctionOperands(function);
-        value_list->children.push_back(operands[1]);
+        tuple.push_back(operands[1]->as<ASTLiteral>()->value);
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
-    /// Otherwise, they would be specified in the order of the ASTLiteral addresses, which is nondeterministic.
-    std::sort(value_list->children.begin(), value_list->children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
-    {
-        const auto * val_lhs = lhs->as<ASTLiteral>();
-        const auto * val_rhs = rhs->as<ASTLiteral>();
-        return val_lhs->value < val_rhs->value;
-    });
+    ::sort(tuple.begin(), tuple.end());
 
     /// Get the expression `expr` from the chain `expr = x1 OR ... OR expr = xN`
     ASTPtr equals_expr_lhs;
@@ -250,14 +249,11 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
         equals_expr_lhs = operands[0];
     }
 
-    auto tuple_function = std::make_shared<ASTFunction>();
-    tuple_function->name = "tuple";
-    tuple_function->arguments = value_list;
-    tuple_function->children.push_back(tuple_function->arguments);
+    auto tuple_literal = std::make_shared<ASTLiteral>(std::move(tuple));
 
     ASTPtr expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.push_back(equals_expr_lhs);
-    expression_list->children.push_back(tuple_function);
+    expression_list->children.push_back(tuple_literal);
 
     /// Construct the expression `expr IN (x1, ..., xN)`
     auto in_function = std::make_shared<ASTFunction>();

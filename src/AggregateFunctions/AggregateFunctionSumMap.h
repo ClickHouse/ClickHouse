@@ -17,6 +17,8 @@
 #include <Common/assert_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <map>
+#include <Common/logger_useful.h>
+#include <Common/ClickHouseRevision.h>
 
 
 namespace DB
@@ -38,7 +40,7 @@ struct AggregateFunctionMapData
     std::map<T, Array> merged_maps;
 };
 
-/** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of of at least 2 arrays -
+/** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of at least 2 arrays -
   * ordered keys and variable number of argument values aggregated by corresponding keys.
   *
   * sumMap function is the most useful when using SummingMergeTree to sum Nested columns, which name ends in "Map".
@@ -64,10 +66,13 @@ class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionMapData<NearestFieldType<T>>, Derived>
 {
 private:
+    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
+
     DataTypePtr keys_type;
     SerializationPtr keys_serialization;
     DataTypes values_types;
     Serializations values_serializations;
+    Serializations promoted_values_serializations;
 
 public:
     using Base = IAggregateFunctionDataHelper<
@@ -81,8 +86,35 @@ public:
         , values_types(values_types_)
     {
         values_serializations.reserve(values_types.size());
+        promoted_values_serializations.reserve(values_types.size());
         for (const auto & type : values_types)
+        {
             values_serializations.emplace_back(type->getDefaultSerialization());
+            if (type->canBePromoted())
+            {
+                if (type->isNullable())
+                    promoted_values_serializations.emplace_back(
+                         makeNullable(removeNullable(type)->promoteNumericType())->getDefaultSerialization());
+                else
+                    promoted_values_serializations.emplace_back(type->promoteNumericType()->getDefaultSerialization());
+            }
+            else
+            {
+                promoted_values_serializations.emplace_back(type->getDefaultSerialization());
+            }
+        }
+    }
+
+    bool isVersioned() const override { return true; }
+
+    size_t getDefaultVersion() const override { return 1; }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (revision >= STATE_VERSION_1_MIN_REVISION)
+            return 1;
+        else
+            return 0;
     }
 
     DataTypePtr getReturnType() const override
@@ -190,11 +222,11 @@ public:
                     continue;
 
                 decltype(merged_maps.begin()) it;
-                if constexpr (IsDecimalNumber<T>)
+                if constexpr (is_decimal<T>)
                 {
                     // FIXME why is storing NearestFieldType not enough, and we
                     // have to check for decimals again here?
-                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
+                    UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
                     it = merged_maps.find(DecimalField<T>(key, scale));
                 }
                 else
@@ -217,9 +249,9 @@ public:
                     new_values.resize(size);
                     new_values[col] = value;
 
-                    if constexpr (IsDecimalNumber<T>)
+                    if constexpr (is_decimal<T>)
                     {
-                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
+                        UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
                     }
                     else
@@ -250,25 +282,61 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
+        if (!version)
+            version = getDefaultVersion();
+
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
         writeVarUInt(size, buf);
+
+        std::function<void(size_t, const Array &)> serialize;
+        switch (*version)
+        {
+            case 0:
+            {
+                serialize = [&](size_t col_idx, const Array & values){ values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                break;
+            }
+            case 1:
+            {
+                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
+                break;
+            }
+        }
 
         for (const auto & elem : merged_maps)
         {
             keys_serialization->serializeBinary(elem.first, buf);
             for (size_t col = 0; col < values_types.size(); ++col)
-                values_serializations[col]->serializeBinary(elem.second[col], buf);
+                serialize(col, elem.second);
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
+        if (!version)
+            version = getDefaultVersion();
+
         auto & merged_maps = this->data(place).merged_maps;
         size_t size = 0;
         readVarUInt(size, buf);
+
+        std::function<void(size_t, Array &)> deserialize;
+        switch (*version)
+        {
+            case 0:
+            {
+                deserialize = [&](size_t col_idx, Array & values){ values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                break;
+            }
+            case 1:
+            {
+                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
+                break;
+            }
+        }
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -277,10 +345,11 @@ public:
 
             Array values;
             values.resize(values_types.size());
-            for (size_t col = 0; col < values_types.size(); ++col)
-                values_serializations[col]->deserializeBinary(values[col], buf);
 
-            if constexpr (IsDecimalNumber<T>)
+            for (size_t col = 0; col < values_types.size(); ++col)
+                deserialize(col, values);
+
+            if constexpr (is_decimal<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;
             else
                 merged_maps[key.get<T>()] = values;
@@ -377,7 +446,17 @@ public:
         assertNoParameters(getName(), params_);
     }
 
-    String getName() const override { return "sumMap"; }
+    String getName() const override
+    {
+        if constexpr (overflow)
+        {
+            return "sumMapWithOverflow";
+        }
+        else
+        {
+            return "sumMap";
+        }
+    }
 
     bool keepKey(const T &) const { return true; }
 };
@@ -395,9 +474,7 @@ private:
     using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
     using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
-    /// ARCADIA_BUILD disallow unordered_set for big ints for some reason
-    static constexpr const bool allow_hash = !OverBigInt<T>;
-    using ContainerT = std::conditional_t<allow_hash, std::unordered_set<T>, std::set<T>>;
+    using ContainerT = std::unordered_set<T>;
 
     ContainerT keys_to_keep;
 
@@ -412,19 +489,16 @@ public:
                 "Aggregate function '{}' requires exactly one parameter "
                 "of Array type", getName());
 
-        Array keys_to_keep_;
-        if (!params_.front().tryGet<Array>(keys_to_keep_))
+        Array keys_to_keep_values;
+        if (!params_.front().tryGet<Array>(keys_to_keep_values))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Aggregate function {} requires an Array as a parameter",
                 getName());
 
-        if constexpr (allow_hash)
-            keys_to_keep.reserve(keys_to_keep_.size());
+        keys_to_keep.reserve(keys_to_keep_values.size());
 
-        for (const Field & f : keys_to_keep_)
-        {
+        for (const Field & f : keys_to_keep_values)
             keys_to_keep.emplace(f.safeGet<T>());
-        }
     }
 
     String getName() const override

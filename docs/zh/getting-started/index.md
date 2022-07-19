@@ -1,6 +1,6 @@
 ---
-toc_folder_title: 快速上手
-toc_priority: 2
+sidebar_label: 快速上手
+sidebar_position: 2
 ---
 
 # 入门 {#ru-men}
@@ -15,4 +15,4 @@ toc_priority: 2
 -   [示例数据集-航班飞行数据](example-datasets/ontime.md) 示例数据，提供了常用的SQL查询场景
 
 
-[来源文章](https://clickhouse.tech/docs/zh/getting_started/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/zh/getting_started/) <!--hide-->

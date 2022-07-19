@@ -5,6 +5,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -13,6 +14,7 @@ namespace DB
 bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_id("ID");
+    ParserKeyword s_all("ALL");
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_expr;
 
@@ -28,6 +30,10 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         partition->id = partition_id->as<ASTLiteral &>().value.get<String>();
     }
+    else if (s_all.ignore(pos, expected))
+    {
+        partition->all = true;
+    }
     else
     {
         ASTPtr value;
@@ -35,7 +41,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         size_t fields_count;
-        String fields_str;
 
         const auto * tuple_ast = value->as<ASTFunction>();
         bool surrounded_by_parens = false;
@@ -58,7 +63,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             else
             {
                 fields_count = 1;
-                fields_str = String(begin->begin, pos->begin - begin->begin);
             }
         }
         else
@@ -78,13 +82,10 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 --right_paren;
             if (right_paren->type != TokenType::ClosingRoundBracket)
                 return false;
-
-            fields_str = String(left_paren->end, right_paren->begin - left_paren->end);
         }
 
         partition->value = value;
         partition->children.push_back(value);
-        partition->fields_str = std::move(fields_str);
         partition->fields_count = fields_count;
     }
 

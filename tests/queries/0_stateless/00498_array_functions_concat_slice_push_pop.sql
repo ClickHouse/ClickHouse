@@ -36,6 +36,7 @@ select arraySlice([1, 2, 3, 4, 5, 6], 10, 1);
 select arraySlice([1, 2, Null, 4, 5, 6], 2, 4);
 select arraySlice(['a', 'b', 'c', 'd', 'e'], 2, 3);
 select arraySlice([Null, 'b', Null, 'd', 'e'], 2, 3);
+select arraySlice([], materialize(NULL), NULL), 1 from numbers(2);
 
 select 'push back';
 select arrayPushBack(Null, 1);

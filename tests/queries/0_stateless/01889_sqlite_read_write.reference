@@ -3,14 +3,16 @@ show database tables:
 table1
 table2
 table3
+table4
+table5
+show creare table:
+CREATE TABLE SQLite.table1\n(\n    `col1` Nullable(String),\n    `col2` Nullable(Int16)\n)\nENGINE = SQLite
+CREATE TABLE SQLite.table2\n(\n    `col1` Nullable(Int32),\n    `col2` Nullable(String)\n)\nENGINE = SQLite
 describe table:
 col1	Nullable(String)					
 col2	Nullable(Int16)					
 col1	Nullable(Int32)					
 col2	Nullable(String)					
-describe table:
-CREATE TABLE SQLite.table1\n(\n    `col1` Nullable(String),\n    `col2` Nullable(Int16)\n)\nENGINE = SQLite
-CREATE TABLE SQLite.table2\n(\n    `col1` Nullable(Int32),\n    `col2` Nullable(String)\n)\nENGINE = SQLite
 select *:
 line1	1
 line2	2
@@ -18,28 +20,23 @@ line3	3
 1	text1
 2	text2
 3	text3
-test NULLs:
-\N	1
-not a null	2
-\N	3
-	4
-detach
-line1	1
-line2	2
-line3	3
-1	text1
-2	text2
-3	text3
+test types
+CREATE TABLE SQLite.table4\n(\n    `a` Nullable(Int32),\n    `b` Nullable(Int32),\n    `c` Nullable(Int8),\n    `d` Nullable(Int16),\n    `e` Nullable(Int32),\n    `bigint` Nullable(String),\n    `int2` Nullable(String),\n    `int8` Nullable(String)\n)\nENGINE = SQLite
+CREATE TABLE SQLite.table5\n(\n    `a` Nullable(String),\n    `b` Nullable(String),\n    `c` Nullable(Float64),\n    `d` Nullable(Float64),\n    `e` Nullable(Float64),\n    `f` Nullable(Float32)\n)\nENGINE = SQLite
 create table engine with table3
 CREATE TABLE default.sqlite_table3\n(\n    `col1` String,\n    `col2` Int32\n)\nENGINE = SQLite
 	1
 not a null	2
 	3
 	4
-test types
-CREATE TABLE SQLite.table4\n(\n    `a` Nullable(Int32),\n    `b` Nullable(Int32),\n    `c` Nullable(Int8),\n    `d` Nullable(Int16),\n    `e` Nullable(Int32),\n    `bigint` Nullable(String),\n    `int2` Nullable(String),\n    `int8` Nullable(String)\n)\nENGINE = SQLite
-CREATE TABLE SQLite.table5\n(\n    `a` Nullable(String),\n    `b` Nullable(String),\n    `c` Nullable(Float64),\n    `d` Nullable(Float64),\n    `e` Nullable(Float64),\n    `f` Nullable(Float32)\n)\nENGINE = SQLite
+line6	6
+	7
 test table function
+line1	1
+line2	2
+line3	3
+line4	4
+test path in clickhouse-local
 line1	1
 line2	2
 line3	3

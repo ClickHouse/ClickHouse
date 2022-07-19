@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -59,6 +59,8 @@ public:
         return DataTypeFactory::instance().get("MultiPolygon");
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         MultiPolygonSerializer<Point> serializer;
@@ -80,7 +82,7 @@ public:
 
                 /// We are not interested in some pitfalls in third-party libraries
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
-                for (size_t i = 0; i < input_rows_count; i++)
+                for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     /// Orient the polygons correctly.
                     boost::geometry::correct(first[i]);

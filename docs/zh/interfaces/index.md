@@ -1,7 +1,6 @@
 ---
-toc_folder_title: 接口
-toc_priority: 14
-toc_title: 客户端
+sidebar_label: 接口
+sidebar_position: 14
 ---
 
 # 客户端 {#interfaces}
@@ -24,4 +23,4 @@ ClickHouse提供了两个网络接口(两个都可以选择包装在TLS中以增
 -   [第三方集成库](../interfaces/third-party/integrations.md)
 -   [可视化UI](../interfaces/third-party/gui.md)
 
-[来源文章](https://clickhouse.tech/docs/en/interfaces/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/interfaces/) <!--hide-->

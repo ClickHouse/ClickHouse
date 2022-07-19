@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
 
 #ifdef NDEBUG
     #define ALLOCATOR_ASLR 0
@@ -11,7 +11,7 @@
 #include <pcg_random.hpp>
 #include <Common/thread_local_rng.h>
 
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
 #endif
 
@@ -25,8 +25,8 @@
     /// mremap will lead to false positives.
     #define DISABLE_MREMAP 1
 #endif
-#include <common/mremap.h>
-#include <common/getPageSize.h>
+#include <base/mremap.h>
+#include <base/getPageSize.h>
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>

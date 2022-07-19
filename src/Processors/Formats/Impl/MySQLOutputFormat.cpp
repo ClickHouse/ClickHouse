@@ -1,7 +1,11 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Interpreters/ProcessList.h>
+#include <Core/MySQL/PacketsGeneric.h>
+#include <Core/MySQL/PacketsProtocolText.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+
 
 namespace DB
 {
@@ -13,32 +17,14 @@ using namespace MySQLProtocol::ProtocolText;
 
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
-    , format_settings(settings_)
+    , client_capabilities(settings_.mysql_wire.client_capabilities)
 {
-}
-
-void MySQLOutputFormat::setContext(ContextPtr context_)
-{
-    context = context_;
     /// MySQlWire is a special format that is usually used as output format for MySQL protocol connections.
-    /// In this case we have to use the corresponding session context to set correct sequence_id.
-    mysql_context = getContext()->getMySQLProtocolContext();
-    if (!mysql_context)
-    {
-        /// But it's also possible to specify MySQLWire as output format for clickhouse-client or clickhouse-local.
-        /// There is no MySQL protocol context in this case, so we create dummy one.
-        own_mysql_context.emplace();
-        mysql_context = &own_mysql_context.value();
-    }
-    packet_endpoint = mysql_context->makeEndpoint(out);
-}
+    /// In this case we have a correct `sequence_id` stored in `settings_.mysql_wire`.
+    /// But it's also possible to specify MySQLWire as output format for clickhouse-client or clickhouse-local.
+    /// There is no `sequence_id` stored in `settings_.mysql_wire` in this case, so we create a dummy one.
+    sequence_id = settings_.mysql_wire.sequence_id ? settings_.mysql_wire.sequence_id : &dummy_sequence_id;
 
-void MySQLOutputFormat::initialize()
-{
-    if (initialized)
-        return;
-
-    initialized = true;
     const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
 
@@ -46,37 +32,45 @@ void MySQLOutputFormat::initialize()
     for (const auto & type : data_types)
         serializations.emplace_back(type->getDefaultSerialization());
 
+    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(out, *sequence_id);
+}
+
+void MySQLOutputFormat::setContext(ContextPtr context_)
+{
+    context = context_;
+}
+
+void MySQLOutputFormat::writePrefix()
+{
+    const auto & header = getPort(PortKind::Main).getHeader();
+
     if (header.columns())
     {
         packet_endpoint->sendPacket(LengthEncodedNumber(header.columns()));
 
-        for (size_t i = 0; i < header.columns(); i++)
+        for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
             packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]->getTypeId()));
         }
 
-        if (!(mysql_context->client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
+        if (!(client_capabilities & Capability::CLIENT_DEPRECATE_EOF))
         {
             packet_endpoint->sendPacket(EOFPacket(0, 0));
         }
     }
 }
 
-
 void MySQLOutputFormat::consume(Chunk chunk)
 {
-
-    initialize();
-
-    for (size_t i = 0; i < chunk.getNumRows(); i++)
+    for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
         ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
         packet_endpoint->sendPacket(row_packet);
     }
 }
 
-void MySQLOutputFormat::finalize()
+void MySQLOutputFormat::finalizeImpl()
 {
     size_t affected_rows = 0;
     std::string human_readable_info;
@@ -94,11 +88,9 @@ void MySQLOutputFormat::finalize()
 
     const auto & header = getPort(PortKind::Main).getHeader();
     if (header.columns() == 0)
-        packet_endpoint->sendPacket(
-            OKPacket(0x0, mysql_context->client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
-    else if (mysql_context->client_capabilities & CLIENT_DEPRECATE_EOF)
-        packet_endpoint->sendPacket(
-            OKPacket(0xfe, mysql_context->client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
+        packet_endpoint->sendPacket(OKPacket(0x0, client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
+    else if (client_capabilities & CLIENT_DEPRECATE_EOF)
+        packet_endpoint->sendPacket(OKPacket(0xfe, client_capabilities, affected_rows, 0, 0, "", human_readable_info), true);
     else
         packet_endpoint->sendPacket(EOFPacket(0, 0), true);
 }
@@ -108,9 +100,9 @@ void MySQLOutputFormat::flush()
     packet_endpoint->out->next();
 }
 
-void registerOutputFormatProcessorMySQLWire(FormatFactory & factory)
+void registerOutputFormatMySQLWire(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor(
+    factory.registerOutputFormat(
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,

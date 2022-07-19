@@ -1,3 +1,5 @@
+-- Tags: long, distributed, no-random-settings
+
 drop table if exists data_01730;
 
 -- does not use 127.1 due to prefer_localhost_replica

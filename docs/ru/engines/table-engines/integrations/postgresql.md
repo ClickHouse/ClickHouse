@@ -1,6 +1,6 @@
 ---
-toc_priority: 11
-toc_title: PostgreSQL
+sidebar_position: 11
+sidebar_label: PostgreSQL
 ---
 
 #PostgreSQL {#postgresql}
@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -   `table` — имя таблицы.
 -   `user` — имя пользователя PostgreSQL.
 -   `password` — пароль пользователя PostgreSQL.
--   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент. 
+-   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент.
 
 ## Особенности реализации {#implementation-details}
 
@@ -47,16 +47,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 PostgreSQL массивы конвертируются в массивы ClickHouse.
 
-!!! info "Внимание"
+:::info "Внимание"
     Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустимы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
-	
+
 Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
 
 ```sql
 CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
 ```
 
-При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.  
+При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.
 
 В примере ниже реплика `example01-1` имеет более высокий приоритет:
 
@@ -119,7 +119,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgre
 ```
 
 ``` sql
-SELECT * FROM postgresql_table WHERE str IN ('test'); 
+SELECT * FROM postgresql_table WHERE str IN ('test');
 ```
 
 ``` text
@@ -143,9 +143,9 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
-**См. также** 
+**См. также**
 
 -   [Табличная функция `postgresql`](../../../sql-reference/table-functions/postgresql.md)
 -   [Использование PostgreSQL в качестве источника для внешнего словаря](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/integrations/postgresql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/engines/table-engines/integrations/postgresql/) <!--hide-->

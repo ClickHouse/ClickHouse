@@ -1,6 +1,5 @@
 #include <Storages/StorageMaterializedView.h>
 
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -9,11 +8,8 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Access/AccessFlags.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Access/Common/AccessFlags.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -22,11 +18,14 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Sinks/SinkToStorage.h>
+
+#include <Backups/BackupEntriesCollector.h>
 
 namespace DB
 {
@@ -63,7 +62,8 @@ StorageMaterializedView::StorageMaterializedView(
     ContextPtr local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
-    bool attach_)
+    bool attach_,
+    const String & comment)
     : IStorage(table_id_), WithMutableContext(local_context->getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -84,6 +84,9 @@ StorageMaterializedView::StorageMaterializedView(
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), local_context);
     storage_metadata.setSelectQuery(select);
+    if (!comment.empty())
+        storage_metadata.setComment(comment);
+
     setInMemoryMetadata(storage_metadata);
 
     bool point_to_itself_by_uuid = has_inner_table && query.to_inner_uuid != UUIDHelpers::Nil
@@ -107,8 +110,8 @@ StorageMaterializedView::StorageMaterializedView(
         /// We will create a query to create an internal table.
         auto create_context = Context::createCopy(local_context);
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
-        manual_create_query->database = getStorageID().database_name;
-        manual_create_query->table = generateInnerTableName(getStorageID());
+        manual_create_query->setDatabase(getStorageID().database_name);
+        manual_create_query->setTable(generateInnerTableName(getStorageID()));
         manual_create_query->uuid = query.to_inner_uuid;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
@@ -121,42 +124,28 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, getContext())->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
     }
-
-    if (!select.select_table_id.empty())
-        DatabaseCatalog::instance().addDependency(select.select_table_id, getStorageID());
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageMetadataPtr &,
+    const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
-    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getInMemoryMetadataPtr(), query_info);
-}
-
-Pipe StorageMaterializedView::read(
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
-{
-    QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(local_context),
-        BuildQueryPipelineSettings::fromContext(local_context));
+    /// TODO: Find a way to support projections for StorageMaterializedView. Why do we use different
+    /// metadata for materialized view and target table? If they are the same, we can get rid of all
+    /// converting and use it just like a normal view.
+    query_info.ignore_projections = true;
+    const auto & target_metadata = getTargetTable()->getInMemoryMetadataPtr();
+    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
 void StorageMaterializedView::read(
     QueryPlan & query_plan,
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
@@ -166,15 +155,16 @@ void StorageMaterializedView::read(
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
 
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, local_context);
 
-    storage->read(query_plan, column_names, target_metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    storage->read(query_plan, column_names, target_storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 
     if (query_plan.isInitialized())
     {
-        auto mv_header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
+        auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
         auto target_header = query_plan.getCurrentDataStream().header;
 
         /// No need to convert columns that does not exists in MV
@@ -197,34 +187,21 @@ void StorageMaterializedView::read(
             query_plan.addStep(std::move(converting_step));
         }
 
-        StreamLocalLimits limits;
-        SizeLimits leaf_limits;
-
-        /// Add table lock for destination table.
-        auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
-                query_plan.getCurrentDataStream(),
-                storage,
-                std::move(lock),
-                limits,
-                leaf_limits,
-                nullptr,
-                nullptr);
-
-        adding_limits_and_quota->setStepDescription("Lock destination table for MaterializedView");
-        query_plan.addStep(std::move(adding_limits_and_quota));
+        query_plan.addStorageHolder(storage);
+        query_plan.addTableLock(std::move(lock));
     }
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context)
+SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto stream = storage->write(query, metadata_snapshot, local_context);
+    auto sink = storage->write(query, metadata_snapshot, local_context);
 
-    stream->addTableLock(lock);
-    return stream;
+    sink->addTableLock(lock);
+    return sink;
 }
 
 
@@ -238,10 +215,10 @@ void StorageMaterializedView::drop()
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageMaterializedView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
@@ -276,7 +253,7 @@ bool StorageMaterializedView::optimize(
 void StorageMaterializedView::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    TableLockHolder &)
+    AlterLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -308,9 +285,8 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-                throw Exception(
-                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                    ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getName());
         }
     }
     else
@@ -318,9 +294,8 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter())
-                throw Exception(
-                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                    ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getName());
         }
     }
 }
@@ -392,6 +367,14 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
 }
 
+void StorageMaterializedView::startup()
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    const auto & select_query = metadata_snapshot->getSelectQuery();
+    if (!select_query.select_table_id.empty())
+        DatabaseCatalog::instance().addDependency(select_query.select_table_id, getStorageID());
+}
+
 void StorageMaterializedView::shutdown()
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -413,10 +396,55 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
     return DatabaseCatalog::instance().tryGetTable(target_table_id, getContext());
 }
 
+NamesAndTypesList StorageMaterializedView::getVirtuals() const
+{
+    return getTargetTable()->getVirtuals();
+}
+
 Strings StorageMaterializedView::getDataPaths() const
 {
     if (auto table = tryGetTargetTable())
         return table->getDataPaths();
+    return {};
+}
+
+void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    /// We backup the target table's data only if it's inner.
+    if (hasInnerTable())
+        getTargetTable()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+}
+
+void StorageMaterializedView::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    if (hasInnerTable())
+        return getTargetTable()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+}
+
+bool StorageMaterializedView::supportsBackupPartition() const
+{
+    if (hasInnerTable())
+        return getTargetTable()->supportsBackupPartition();
+    return false;
+}
+
+std::optional<UInt64> StorageMaterializedView::totalRows(const Settings & settings) const
+{
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalRows(settings);
+    }
+    return {};
+}
+
+std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & settings) const
+{
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalBytes(settings);
+    }
     return {};
 }
 
@@ -435,9 +463,9 @@ void registerStorageMaterializedView(StorageFactory & factory)
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)
     {
         /// Pass local_context here to convey setting for inner table
-        return StorageMaterializedView::create(
+        return std::make_shared<StorageMaterializedView>(
             args.table_id, args.getLocalContext(), args.query,
-            args.columns, args.attach);
+            args.columns, args.attach, args.comment);
     });
 }
 

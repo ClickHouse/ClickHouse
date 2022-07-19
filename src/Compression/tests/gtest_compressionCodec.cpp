@@ -2,7 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -22,7 +22,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include <string.h>
+#include <cstring>
 
 /// For the expansion of gtest macros.
 #if defined(__clang__)
@@ -316,7 +316,7 @@ CodecTestSequence operator+(CodecTestSequence && left, const CodecTestSequence &
 
 std::vector<CodecTestSequence> operator+(const std::vector<CodecTestSequence> & left, const std::vector<CodecTestSequence> & right)
 {
-    std::vector<CodecTestSequence> result(std::move(left));
+    std::vector<CodecTestSequence> result(left);
     std::move(std::begin(right), std::end(right), std::back_inserter(result));
 
     return result;
@@ -685,7 +685,7 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
-        typename std::conditional_t<is_integer_v<T>, std::uniform_int_distribution<T>, void>>;
+        typename std::conditional_t<is_integer<T>, std::uniform_int_distribution<T>, void>>;
 
 
 template <typename T = Int32>
@@ -790,7 +790,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     }
 
     return sequences;
-};
+}
 
 // helper macro to produce human-friendly sequence name from generator
 #define G(generator) generator, #generator

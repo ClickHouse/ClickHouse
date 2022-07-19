@@ -1,13 +1,13 @@
 ---
-toc_priority: 65
-toc_title: "Функции интроспекции"
+sidebar_position: 65
+sidebar_label: "Функции интроспекции"
 ---
 
 # Функции интроспекции {#introspection-functions}
 
 Функции из этого раздела могут использоваться для интроспекции [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) и [DWARF](https://en.wikipedia.org/wiki/DWARF) в целях профилирования запросов.
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
     Эти функции выполняются медленно и могут приводить к нежелательным последствиям в плане безопасности.
 
 Для правильной работы функций интроспекции:
@@ -309,7 +309,7 @@ clone
 
 ## tid {#tid}
 
-Возвращает id потока, в котором обрабатывается текущий [Block](https://clickhouse.tech/docs/ru/development/architecture/#block).
+Возвращает id потока, в котором обрабатывается текущий [Block](https://clickhouse.com/docs/ru/development/architecture/#block).
 
 **Синтаксис**
 
@@ -339,7 +339,7 @@ SELECT tid();
 
 ## logTrace {#logtrace}
 
- Выводит сообщение в лог сервера для каждого [Block](https://clickhouse.tech/docs/ru/development/architecture/#block).
+ Выводит сообщение в лог сервера для каждого [Block](https://clickhouse.com/docs/ru/development/architecture/#block).
 
 **Синтаксис**
 
@@ -371,4 +371,4 @@ SELECT logTrace('logTrace message');
 └──────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/introspection/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/query_language/functions/introspection/) <!--hide-->

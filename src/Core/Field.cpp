@@ -23,65 +23,111 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (type)
     {
-        case Field::Types::Null: {
-            return DB::Field();
+        case Field::Types::Null:
+        {
+            return Field();
         }
-        case Field::Types::UInt64: {
+        case Field::Types::UInt64:
+        {
             UInt64 value;
-            DB::readVarUInt(value, buf);
+            readVarUInt(value, buf);
             return value;
         }
-        case Field::Types::UInt128: {
+        case Field::Types::UInt128:
+        {
             UInt128 value;
-            DB::readBinary(value, buf);
+            readBinary(value, buf);
             return value;
         }
-        case Field::Types::Int64: {
+        case Field::Types::UInt256:
+        {
+            UInt256 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::UUID:
+        {
+            UUID value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::Int64:
+        {
             Int64 value;
-            DB::readVarInt(value, buf);
+            readVarInt(value, buf);
             return value;
         }
-        case Field::Types::Float64: {
+        case Field::Types::Int128:
+        {
+            Int128 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::Int256:
+        {
+            Int256 value;
+            readBinary(value, buf);
+            return value;
+        }
+        case Field::Types::Float64:
+        {
             Float64 value;
-            DB::readFloatBinary(value, buf);
+            readFloatBinary(value, buf);
             return value;
         }
-        case Field::Types::String: {
+        case Field::Types::String:
+        {
             std::string value;
-            DB::readStringBinary(value, buf);
+            readStringBinary(value, buf);
             return value;
         }
-        case Field::Types::Array: {
+        case Field::Types::Array:
+        {
             Array value;
-            DB::readBinary(value, buf);
+            readBinary(value, buf);
             return value;
         }
-        case Field::Types::Tuple: {
+        case Field::Types::Tuple:
+        {
             Tuple value;
-            DB::readBinary(value, buf);
+            readBinary(value, buf);
             return value;
         }
-        case Field::Types::Map: {
+        case Field::Types::Map:
+        {
             Map value;
-            DB::readBinary(value, buf);
+            readBinary(value, buf);
             return value;
         }
-        case Field::Types::AggregateFunctionState: {
-            AggregateFunctionStateData value;
-            DB::readStringBinary(value.name, buf);
-            DB::readStringBinary(value.data, buf);
+        case Field::Types::Object:
+        {
+            Object value;
+            readBinary(value, buf);
             return value;
+        }
+        case Field::Types::AggregateFunctionState:
+        {
+            AggregateFunctionStateData value;
+            readStringBinary(value.name, buf);
+            readStringBinary(value.data, buf);
+            return value;
+        }
+        case Field::Types::Bool:
+        {
+            UInt8 value;
+            readBinary(value, buf);
+            return bool(value);
         }
     }
-    return DB::Field();
+    return Field();
 }
 
 void readBinary(Array & x, ReadBuffer & buf)
 {
     size_t size;
     UInt8 type;
-    DB::readBinary(type, buf);
-    DB::readBinary(size, buf);
+    readBinary(type, buf);
+    readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
         x.push_back(getBinaryValue(type, buf));
@@ -93,8 +139,8 @@ void writeBinary(const Array & x, WriteBuffer & buf)
     size_t size = x.size();
     if (size)
         type = x.front().getType();
-    DB::writeBinary(type, buf);
-    DB::writeBinary(size, buf);
+    writeBinary(type, buf);
+    writeBinary(size, buf);
 
     for (const auto & elem : x)
         Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
@@ -102,19 +148,19 @@ void writeBinary(const Array & x, WriteBuffer & buf)
 
 void writeText(const Array & x, WriteBuffer & buf)
 {
-    DB::String res = applyVisitor(FieldVisitorToString(), DB::Field(x));
+    String res = applyVisitor(FieldVisitorToString(), Field(x));
     buf.write(res.data(), res.size());
 }
 
 void readBinary(Tuple & x, ReadBuffer & buf)
 {
     size_t size;
-    DB::readBinary(size, buf);
+    readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
     {
         UInt8 type;
-        DB::readBinary(type, buf);
+        readBinary(type, buf);
         x.push_back(getBinaryValue(type, buf));
     }
 }
@@ -122,30 +168,30 @@ void readBinary(Tuple & x, ReadBuffer & buf)
 void writeBinary(const Tuple & x, WriteBuffer & buf)
 {
     const size_t size = x.size();
-    DB::writeBinary(size, buf);
+    writeBinary(size, buf);
 
     for (const auto & elem : x)
     {
         const UInt8 type = elem.getType();
-        DB::writeBinary(type, buf);
+        writeBinary(type, buf);
         Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
     }
 }
 
 void writeText(const Tuple & x, WriteBuffer & buf)
 {
-    writeFieldText(DB::Field(x), buf);
+    writeFieldText(Field(x), buf);
 }
 
 void readBinary(Map & x, ReadBuffer & buf)
 {
     size_t size;
-    DB::readBinary(size, buf);
+    readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
     {
         UInt8 type;
-        DB::readBinary(type, buf);
+        readBinary(type, buf);
         x.push_back(getBinaryValue(type, buf));
     }
 }
@@ -153,19 +199,53 @@ void readBinary(Map & x, ReadBuffer & buf)
 void writeBinary(const Map & x, WriteBuffer & buf)
 {
     const size_t size = x.size();
-    DB::writeBinary(size, buf);
+    writeBinary(size, buf);
 
     for (const auto & elem : x)
     {
         const UInt8 type = elem.getType();
-        DB::writeBinary(type, buf);
+        writeBinary(type, buf);
         Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, elem);
     }
 }
 
 void writeText(const Map & x, WriteBuffer & buf)
 {
-    writeFieldText(DB::Field(x), buf);
+    writeFieldText(Field(x), buf);
+}
+
+void readBinary(Object & x, ReadBuffer & buf)
+{
+    size_t size;
+    readBinary(size, buf);
+
+    for (size_t index = 0; index < size; ++index)
+    {
+        UInt8 type;
+        String key;
+        readBinary(type, buf);
+        readBinary(key, buf);
+        x[key] = getBinaryValue(type, buf);
+    }
+}
+
+void writeBinary(const Object & x, WriteBuffer & buf)
+{
+    const size_t size = x.size();
+    writeBinary(size, buf);
+
+    for (const auto & [key, value] : x)
+    {
+        const UInt8 type = value.getType();
+        writeBinary(type, buf);
+        writeBinary(key, buf);
+        Field::dispatch([&buf] (const auto & val) { FieldVisitorWriteBinary()(val, buf); }, value);
+    }
+}
+
+void writeText(const Object & x, WriteBuffer & buf)
+{
+    writeFieldText(Field(x), buf);
 }
 
 template <typename T>
@@ -206,7 +286,7 @@ String Field::dump() const
     return applyVisitor(FieldVisitorDump(), *this);
 }
 
-Field Field::restoreFromDump(const std::string_view & dump_)
+Field Field::restoreFromDump(std::string_view dump_)
 {
     auto show_error = [&dump_]
     {
@@ -310,6 +390,13 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         ReadBufferFromString buf{dump};
         readQuoted(str, buf);
         return str;
+    }
+
+    prefix = std::string_view{"Bool_"};
+    if (dump.starts_with(prefix))
+    {
+        bool value = parseFromString<bool>(dump.substr(prefix.length()));
+        return value;
     }
 
     prefix = std::string_view{"Array_["};
@@ -450,9 +537,14 @@ template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
 
 
-inline void writeText(const Null &, WriteBuffer & buf)
+inline void writeText(const Null & x, WriteBuffer & buf)
 {
-    writeText(std::string("NULL"), buf);
+    if (x.isNegativeInfinity())
+        writeText("-Inf", buf);
+    if (x.isPositiveInfinity())
+        writeText("+Inf", buf);
+    else
+        writeText("NULL", buf);
 }
 
 String toString(const Field & x)
@@ -465,6 +557,33 @@ String toString(const Field & x)
             return toString<decltype(value)>(value);
         },
         x);
+}
+
+String fieldTypeToString(Field::Types::Which type)
+{
+    switch (type)
+    {
+        case Field::Types::Which::Null: return "Null";
+        case Field::Types::Which::Array: return "Array";
+        case Field::Types::Which::Tuple: return "Tuple";
+        case Field::Types::Which::Map: return "Map";
+        case Field::Types::Which::Object: return "Object";
+        case Field::Types::Which::AggregateFunctionState: return "AggregateFunctionState";
+        case Field::Types::Which::Bool: return "Bool";
+        case Field::Types::Which::String: return "String";
+        case Field::Types::Which::Decimal32: return "Decimal32";
+        case Field::Types::Which::Decimal64: return "Decimal64";
+        case Field::Types::Which::Decimal128: return "Decimal128";
+        case Field::Types::Which::Decimal256: return "Decimal256";
+        case Field::Types::Which::Float64: return "Float64";
+        case Field::Types::Which::Int64: return "Int64";
+        case Field::Types::Which::Int128: return "Int128";
+        case Field::Types::Which::Int256: return "Int256";
+        case Field::Types::Which::UInt64: return "UInt64";
+        case Field::Types::Which::UInt128: return "UInt128";
+        case Field::Types::Which::UInt256: return "UInt256";
+        case Field::Types::Which::UUID: return "UUID";
+    }
 }
 
 }

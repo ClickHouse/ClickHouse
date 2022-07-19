@@ -1,6 +1,4 @@
 #include <boost/program_options.hpp>
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
@@ -11,15 +9,16 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 
-#include <Processors/Pipe.h>
-#include <Processors/Sources/SinkToOutputStream.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
-#include <Formats/FormatFactory.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -36,11 +35,11 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
     initReadBuffer();
     initSampleBlock();
     auto input = context->getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
-    auto stream = std::make_shared<AsynchronousBlockInputStream>(input);
 
     auto data = std::make_unique<ExternalTableData>();
+    data->pipe = std::make_unique<QueryPipelineBuilder>();
+    data->pipe->init(Pipe(std::move(input)));
     data->table_name = name;
-    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromInputStream>(std::move(stream)));
 
     return data;
 }
@@ -159,19 +158,15 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
-    BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
+    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
 
     /// Write data
-    data->pipe->resize(1);
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));
+    pipeline.complete(std::move(sink));
+    pipeline.setNumThreads(1);
 
-    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
-    connect(*data->pipe->getOutputPort(0), sink->getPort());
-
-    auto processors = Pipe::detachProcessors(std::move(*data->pipe));
-    processors.push_back(std::move(sink));
-
-    auto executor = std::make_shared<PipelineExecutor>(processors);
-    executor->execute(/*num_threads = */ 1);
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
 
     /// We are ready to receive the next file, for this we clear all the information received
     clear();
