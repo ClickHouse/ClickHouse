@@ -52,8 +52,9 @@ def started_cluster():
 
 def get_fake_zk(nodename, timeout=30.0):
     _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout,
-        command_retry=KazooRetry(max_tries=10)
+        hosts=cluster.get_instance_ip(nodename) + ":9181",
+        timeout=timeout,
+        command_retry=KazooRetry(max_tries=10),
     )
 
     _fake_zk_instance.start()
