@@ -844,7 +844,7 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
         throw Exception(
             REMOTE_FS_OBJECT_CACHE_ERROR, 
             "Cache initialization is partially made. "
-            "This can be a result of a first attempt to initialize cache. "
+            "This can be a result of a failed first attempt to initialize cache. "
             "Please, check log for error messages");
 
     fs::directory_iterator key_prefix_it{cache_base_path};
