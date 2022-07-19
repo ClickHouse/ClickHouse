@@ -276,3 +276,23 @@ Testing will commence as soon as ClickHouse employees label your PR with a tag �
 The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the “Details” link next to “ClickHouse build check” entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
 Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
+
+## Faster builds for development: Split build configuration {#split-build}
+
+ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
+```
+-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+```
+
+Note that the split build has several drawbacks:
+* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
+* Risk of segfault if you run any of the programs while rebuilding the project.
+* You cannot run the integration tests since they only work a single complete binary.
+* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
+
+If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
+```
+-DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
+```
+
+In case of problems with any of the development options, you are on your own!

@@ -36,23 +36,22 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
-    DatabaseTablesIteratorPtr getTablesIteratorForBackup(const BackupEntriesCollector & backup_entries_collector) const override;
-    void checkCreateTableQueryForBackup(const ASTPtr & create_table_query, const BackupEntriesCollector & backup_entries_collector) const override;
-    void createTableRestoredFromBackup(const ASTPtr & create_table_query, const RestorerFromBackup & restorer) override;
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
+    void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
 
     void shutdown() override;
 
     ~DatabaseWithOwnTablesBase() override;
 
 protected:
-    Tables tables;
+    Tables tables TSA_GUARDED_BY(mutex);
     Poco::Logger * log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 
-    void attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> & lock);
-    StoragePtr detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock);
-    StoragePtr getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock) const;
+    void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
+    StoragePtr detachTableUnlocked(const String & table_name)  TSA_REQUIRES(mutex);
+    StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
 };
 
 }

@@ -298,7 +298,7 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = thread_ptr->getQueryId().toString();
+            query_id = std::string(thread_ptr->getQueryId());
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
@@ -395,7 +395,12 @@ private:
 #if defined(SANITIZER)
 extern "C" void __sanitizer_set_death_callback(void (*)());
 
-static void sanitizerDeathCallback()
+/// Sanitizers may not expect some function calls from death callback.
+/// Let's try to disable instrumentation to avoid possible issues.
+/// However, this callback may call other functions that are still instrumented.
+/// We can try [[clang::always_inline]] attribute for statements in future (available in clang-15)
+/// See https://github.com/google/sanitizers/issues/1543 and https://github.com/google/sanitizers/issues/1549.
+static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     /// Also need to send data via pipe. Otherwise it may lead to deadlocks or failures in printing diagnostic info.
@@ -925,7 +930,7 @@ void BaseDaemon::handleSignal(int signal_id)
         signal_id == SIGQUIT ||
         signal_id == SIGTERM)
     {
-        std::unique_lock<std::mutex> lock(signal_handler_mutex);
+        std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
             sigint_signals_counter += signal_id == SIGINT;

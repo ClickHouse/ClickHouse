@@ -148,7 +148,7 @@ public:
     {
         String credentials_string;
         {
-            std::unique_lock<std::recursive_mutex> locker(token_mutex);
+            std::lock_guard locker(token_mutex);
 
             LOG_TRACE(logger, "Getting default credentials for EC2 instance.");
             auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
@@ -194,7 +194,7 @@ public:
         String new_token;
 
         {
-            std::unique_lock<std::recursive_mutex> locker(token_mutex);
+            std::lock_guard locker(token_mutex);
 
             Aws::StringStream ss;
             ss << endpoint << EC2_IMDS_TOKEN_RESOURCE;
