@@ -102,6 +102,11 @@ public:
         return global_ctx->promise.get_future();
     }
 
+    DataPartStorageBuilderPtr getBuilder()
+    {
+        return global_ctx->data_part_storage_builder;
+    }
+
     bool execute();
 
 private:

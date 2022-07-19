@@ -138,8 +138,14 @@ function wait_for_queries_to_finish()
         sleep 0.5;
         num_tries=$((num_tries+1))
         if [ $num_tries -eq 20 ]; then
-            $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%' FORMAT Vertical"
+            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%' FORMAT Vertical"
             break
         fi
     done
+}
+
+function random_str()
+{
+    local n=$1 && shift
+    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }

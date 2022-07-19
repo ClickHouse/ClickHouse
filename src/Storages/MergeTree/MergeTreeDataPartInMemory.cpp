@@ -144,7 +144,7 @@ void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const
     flushToDisk(detached_path, metadata_snapshot);
 }
 
-void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */) const
+void MergeTreeDataPartInMemory::renameTo(const String & new_relative_path, bool /* remove_new_dir_if_exists */, DataPartStorageBuilderPtr) const
 {
     data_part_storage->setRelativePath(new_relative_path);
 

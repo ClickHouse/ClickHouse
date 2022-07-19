@@ -1,6 +1,8 @@
 #include <Storages/StorageURL.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Storages/PartitionedSink.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -21,17 +23,15 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Storages/PartitionedSink.h>
-#include "Common/ThreadStatus.h"
-#include <Common/parseRemoteDescription.h>
-#include "IO/HTTPCommon.h"
-#include "IO/ReadWriteBufferFromHTTP.h"
-
-#include <algorithm>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
+
+#include <Common/ThreadStatus.h>
+#include <Common/parseRemoteDescription.h>
+#include <IO/HTTPCommon.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+
+#include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -960,11 +960,11 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
         if (header_it != args.end())
             args.erase(header_it);
 
-        configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
         if (args.size() > 1)
-            configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.format = checkAndGetLiteralArgument<String>(args[1], "format");
         if (args.size() == 3)
-            configuration.compression_method = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 
     if (configuration.format == "auto")

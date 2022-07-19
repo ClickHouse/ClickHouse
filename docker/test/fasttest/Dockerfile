@@ -71,6 +71,7 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         unixodbc \
+        file \
         nasm \
        --yes --no-install-recommends
 

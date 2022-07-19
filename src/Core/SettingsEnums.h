@@ -43,9 +43,11 @@ enum class JoinAlgorithm
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
     PARALLEL_HASH,
+    DIRECT,
+    FULL_SORTING_MERGE,
 };
 
-DECLARE_SETTING_ENUM(JoinAlgorithm)
+DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 
 
 /// Which rows should be included in TOTALS.

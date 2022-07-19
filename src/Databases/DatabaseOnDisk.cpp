@@ -202,8 +202,9 @@ void DatabaseOnDisk::createTable(
         if (create.uuid != create_detached.uuid)
             throw Exception(
                     ErrorCodes::TABLE_ALREADY_EXISTS,
-                    "Table {}.{} already exist (detached permanently). To attach it back "
-                    "you need to use short ATTACH syntax or a full statement with the same UUID",
+                    "Table {}.{} already exist (detached or detached permanently). To attach it back "
+                    "you need to use short ATTACH syntax (ATTACH TABLE {}.{};)",
+                    backQuote(getDatabaseName()), backQuote(table_name),
                     backQuote(getDatabaseName()), backQuote(table_name));
     }
 
@@ -281,7 +282,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
     }
 }
 
-void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
+void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*sync*/)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
@@ -321,11 +322,11 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
 {
-    std::unique_lock lock(mutex);
-    checkMetadataFilenameAvailabilityUnlocked(to_table_name, lock);
+    std::lock_guard lock(mutex);
+    checkMetadataFilenameAvailabilityUnlocked(to_table_name);
 }
 
-void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const
+void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const
 {
     String table_metadata_path = getObjectMetadataPath(to_table_name);
 
@@ -394,6 +395,18 @@ void DatabaseOnDisk::renameTable(
 
         if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
             target_db->checkMetadataFilenameAvailability(to_table_name);
+
+        /// This place is actually quite dangerous. Since data directory is moved to store/
+        /// DatabaseCatalog may try to clean it up as unused. We add UUID mapping to avoid this.
+        /// However, we may fail after data directory move, but before metadata file creation in the destination db.
+        /// In this case nothing will protect data directory (except 30-days timeout).
+        /// But this situation (when table in Ordinary database is partially renamed) require manual intervention anyway.
+        if (from_ordinary_to_atomic)
+        {
+            DatabaseCatalog::instance().addUUIDMapping(create.uuid);
+            if (table->storesDataOnDisk())
+                LOG_INFO(log, "Moving table from {} to {}", table_data_relative_path, to_database.getTableDataPath(create));
+        }
 
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
         table->rename(to_database.getTableDataPath(create), StorageID(create));
@@ -491,7 +504,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
-    assert(tables.empty());
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
     {
         fs::remove_all(local_context->getPath() + getDataPath());
@@ -713,8 +726,6 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
-    std::lock_guard lock(modify_settings_mutex);
-
     auto create_query = getCreateDatabaseQuery()->clone();
     auto * create = create_query->as<ASTCreateQuery>();
     auto * settings = create->storage->settings;
@@ -747,7 +758,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    String database_name_escaped = escapeForFileName(database_name);
+    String database_name_escaped = escapeForFileName(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
     fs::path metadata_root_path = fs::canonical(query_context->getGlobalContext()->getPath());
     fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
