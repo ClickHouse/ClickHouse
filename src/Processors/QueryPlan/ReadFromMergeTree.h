@@ -124,6 +124,9 @@ public:
 
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
+        const PrewhereInfoPtr & prewhere_info,
+        const ActionsDAGPtr & added_filter,
+        const std::string & added_filter_column_name,
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,

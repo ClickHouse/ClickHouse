@@ -1267,6 +1267,9 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
+        query_info.prewhere_info,
+        nullptr,
+        "",
         metadata_snapshot_base,
         metadata_snapshot,
         query_info,
