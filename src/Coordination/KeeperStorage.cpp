@@ -235,7 +235,7 @@ KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, 
     container.insert("/", root_node);
     addDigest(root_node, "/");
 
-    const auto insert_node = [&](const auto & path, auto data)
+    const auto create_system_node = [&](const auto & path, auto data)
     {
         // we update numChildren during preprocessing so and createNode is called during
         // commit so we need to update it manually here
@@ -249,11 +249,11 @@ KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, 
         createNode(path, std::move(data), {}, false, {});
     };
 
-    insert_node(keeper_system_path, "");
+    create_system_node(keeper_system_path, "");
 
-    assert(Coordination::keeper_api_version_path.starts_with(keeper_system_path));
-    auto api_version_data = toString(static_cast<uint8_t>(DB::current_keeper_api_version));
-    insert_node(keeper_api_version_path, std::move(api_version_data));
+    assert(keeper_api_version_path.starts_with(keeper_system_path));
+    auto api_version_data = toString(static_cast<uint8_t>(current_keeper_api_version));
+    create_system_node(keeper_api_version_path, std::move(api_version_data));
 }
 
 template <class... Ts>

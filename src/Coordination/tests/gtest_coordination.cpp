@@ -1099,7 +1099,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
-    EXPECT_EQ(snapshot.snapshot_container_size, 3);
+    EXPECT_EQ(snapshot.snapshot_container_size, 5);
     EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -1111,8 +1111,8 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
-    EXPECT_EQ(restored_storage->container.size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.size(), 5);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
     EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
     EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
 
@@ -1143,14 +1143,14 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
 
     DB::KeeperStorageSnapshot snapshot(&storage, 50);
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
-    EXPECT_EQ(snapshot.snapshot_container_size, 51);
+    EXPECT_EQ(snapshot.snapshot_container_size, 53);
 
     for (size_t i = 50; i < 100; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
 
-    EXPECT_EQ(storage.container.size(), 101);
+    EXPECT_EQ(storage.container.size(), 103);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 50);
@@ -1160,7 +1160,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
     auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
-    EXPECT_EQ(restored_storage->container.size(), 51);
+    EXPECT_EQ(restored_storage->container.size(), 53);
     for (size_t i = 0; i < 50; ++i)
     {
         EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).getData(), "world_" + std::to_string(i));
@@ -1199,7 +1199,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
 
     auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
 
-    EXPECT_EQ(restored_storage->container.size(), 251);
+    EXPECT_EQ(restored_storage->container.size(), 253);
 
     for (size_t i = 0; i < 250; ++i)
     {
@@ -1233,16 +1233,16 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
             if (i % 2 == 0)
                 storage.container.erase("/hello_" + std::to_string(i));
         }
-        EXPECT_EQ(storage.container.size(), 26);
-        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 102);
+        EXPECT_EQ(storage.container.size(), 28);
+        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 104);
         EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
-    EXPECT_EQ(storage.container.size(), 26);
+    EXPECT_EQ(storage.container.size(), 28);
     storage.clearGarbageAfterSnapshot();
-    EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 26);
+    EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 28);
     for (size_t i = 0; i < 50; ++i)
     {
         if (i % 2 != 0)
@@ -1658,8 +1658,8 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
     auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
-    EXPECT_EQ(restored_storage->container.size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 1);
+    EXPECT_EQ(restored_storage->container.size(), 5);
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 2);
     EXPECT_EQ(restored_storage->container.getValue("/hello").getChildren().size(), 1);
     EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").getChildren().size(), 0);
 
@@ -1980,28 +1980,31 @@ TEST_P(CoordinationTest, TestListRequestTypes)
 
     int64_t zxid = 0;
 
-    static constexpr std::string_view path = "/test";
+    static constexpr std::string_view test_path = "/list_request_type/node";
 
-    const auto create_path = [&](bool is_ephemeral)
+    const auto create_path = [&](const auto & path, bool is_ephemeral, bool is_sequential = true)
     {
         const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
         int new_zxid = ++zxid;
         create_request->path = path;
-        create_request->is_sequential = true;
+        create_request->is_sequential = is_sequential;
         create_request->is_ephemeral = is_ephemeral;
         storage.preprocessRequest(create_request, 1, 0, new_zxid);
         auto responses = storage.processRequest(create_request, 1, new_zxid);
 
         EXPECT_GE(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
         const auto & create_response = dynamic_cast<ZooKeeperCreateResponse &>(*responses[0].response);
         return create_response.path_created;
     };
+
+    create_path(parentPath(StringRef{test_path}).toString(), false, false);
 
     static constexpr size_t persistent_num = 5;
     std::unordered_set<std::string> expected_persistent_children;
     for (size_t i = 0; i < persistent_num; ++i)
     {
-        expected_persistent_children.insert(getBaseName(create_path(false)).toString());
+        expected_persistent_children.insert(getBaseName(create_path(test_path, false)).toString());
     }
     ASSERT_EQ(expected_persistent_children.size(), persistent_num);
 
@@ -2009,7 +2012,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     std::unordered_set<std::string> expected_ephemeral_children;
     for (size_t i = 0; i < ephemeral_num; ++i)
     {
-        expected_ephemeral_children.insert(getBaseName(create_path(true)).toString());
+        expected_ephemeral_children.insert(getBaseName(create_path(test_path, true)).toString());
     }
     ASSERT_EQ(expected_ephemeral_children.size(), ephemeral_num);
 
@@ -2017,7 +2020,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     {
         const auto list_request = std::make_shared<ZooKeeperFilteredListRequest>();
         int new_zxid = ++zxid;
-        list_request->path = parentPath(StringRef{path}).toString();
+        list_request->path = parentPath(StringRef{test_path}).toString();
         list_request->list_request_type = list_request_type;
         storage.preprocessRequest(list_request, 1, 0, new_zxid);
         auto responses = storage.processRequest(list_request, 1, new_zxid);
