@@ -106,7 +106,9 @@ void Client::processError(const String & query) const
 std::vector<String> Client::loadWarningMessages()
 {
     std::vector<String> messages;
-    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
+    connection->sendQuery(connection_parameters.timeouts,
+                          "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
+                          "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &global_context->getSettingsRef(),
                           &global_context->getClientInfo(), false, {});

@@ -16,6 +16,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/CompressionMethod.h>
+#include <IO/WriteSettings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -429,7 +430,13 @@ public:
         const CompressionMethod compression_method)
         : SinkToStorage(sample_block)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef(), context->getSettingsRef().hdfs_replication), compression_method, 3);
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            std::make_unique<WriteBufferFromHDFS>(
+                uri,
+                context->getGlobalContext()->getConfigRef(),
+                context->getSettingsRef().hdfs_replication,
+                context->getWriteSettings()),
+            compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
@@ -438,6 +445,13 @@ public:
     void consume(Chunk chunk) override
     {
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    }
+
+    void onCancel() override
+    {
+        if (!writer)
+            return;
+        onFinish();
     }
 
     void onException() override

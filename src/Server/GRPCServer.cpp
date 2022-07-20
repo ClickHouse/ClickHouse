@@ -1573,14 +1573,14 @@ namespace
                 auto & log_entry = *result.add_logs();
                 log_entry.set_time(column_time.getElement(row));
                 log_entry.set_time_microseconds(column_time_microseconds.getElement(row));
-                StringRef query_id = column_query_id.getDataAt(row);
-                log_entry.set_query_id(query_id.data, query_id.size);
+                std::string_view query_id = column_query_id.getDataAt(row).toView();
+                log_entry.set_query_id(query_id.data(), query_id.size());
                 log_entry.set_thread_id(column_thread_id.getElement(row));
                 log_entry.set_level(static_cast<::clickhouse::grpc::LogsLevel>(column_level.getElement(row)));
-                StringRef source = column_source.getDataAt(row);
-                log_entry.set_source(source.data, source.size);
-                StringRef text = column_text.getDataAt(row);
-                log_entry.set_text(text.data, text.size);
+                std::string_view source = column_source.getDataAt(row).toView();
+                log_entry.set_source(source.data(), source.size());
+                std::string_view text = column_text.getDataAt(row).toView();
+                log_entry.set_text(text.data(), text.size());
             }
         }
     }
