@@ -13,7 +13,7 @@ OwnJSONPatternFormatter::OwnJSONPatternFormatter() : Poco::PatternFormatter("")
 }
 
 
-void OwnJSONPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_ext, std::string & text) const
+void OwnJSONPatternFormatter::formatExtendedJSON(const DB::ExtendedLogMessage & msg_ext, std::string & text)
 {
     DB::WriteBufferFromString wb(text);
 
