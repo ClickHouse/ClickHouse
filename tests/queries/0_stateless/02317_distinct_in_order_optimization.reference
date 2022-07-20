@@ -77,3 +77,4 @@
 2	2
 1	1
 0	0
+-- check that distinct with and w/o optimization produce the same result
