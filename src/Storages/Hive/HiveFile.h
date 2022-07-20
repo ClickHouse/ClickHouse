@@ -149,6 +149,7 @@ protected:
     String path;
     UInt64 last_modify_time;
     size_t size;
+    std::atomic<bool> has_init_rows = false;
     std::optional<size_t> rows;
 
     NamesAndTypesList index_names_and_types;
@@ -162,6 +163,9 @@ protected:
     /// Skip splits for this file after applying minmax index (if any)
     std::unordered_set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
+
+    /// IHiveFile would be shared among multi threads, need lock's protection to update min/max indexes.
+    std::mutex mutex;
 };
 
 using HiveFilePtr = std::shared_ptr<IHiveFile>;
