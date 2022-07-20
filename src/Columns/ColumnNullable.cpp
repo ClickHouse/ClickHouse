@@ -793,4 +793,18 @@ ColumnPtr makeNullable(const ColumnPtr & column)
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
 }
 
+ColumnPtr makeNullableSafe(const ColumnPtr & column)
+{
+    if (isColumnNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->canBeInsideNullable())
+        return makeNullable(column);
+
+    return column;
+}
+
 }
