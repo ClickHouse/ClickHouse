@@ -45,6 +45,9 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Columns/ColumnNullable.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
@@ -345,6 +348,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 group_by_kind = GroupByKind::GROUPING_SETS;
             else
                 group_by_kind = GroupByKind::ORDINARY;
+            bool use_nulls = group_by_kind != GroupByKind::ORDINARY && getContext()->getSettingsRef().group_by_use_nulls;
 
             /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
             /// With set number, which is used as an additional key at the stage of merging aggregating data.
@@ -399,7 +403,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             }
                         }
 
-                        NameAndTypePair key{column_name, node->result_type};
+                        NameAndTypePair key{column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
 
                         grouping_set_list.push_back(key);
 
@@ -453,7 +457,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         }
                     }
 
-                    NameAndTypePair key{column_name, node->result_type};
+                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.contains(key.name))
@@ -1253,7 +1257,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeJoin(
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
-    ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns)
+    ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
     if (!select_query->prewhere())
@@ -1289,14 +1293,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto required_columns = tmp_actions_dag->getRequiredColumnsNames();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
         required_source_columns.insert(first_action_names.begin(), first_action_names.end());
-
-        /// Add required columns to required output in order not to remove them after prewhere execution.
-        /// TODO: add sampling and final execution to common chain.
-        for (const auto & column : additional_required_columns)
-        {
-            if (required_source_columns.contains(column))
-                step.addRequiredOutput(column);
-        }
 
         auto names = step.actions()->getNames();
         NameSet name_set(names.begin(), names.end());
@@ -1495,6 +1491,28 @@ void SelectQueryExpressionAnalyzer::appendExpressionsAfterWindowFunctions(Expres
     {
         getRootActionsForWindowFunctions(expression->clone(), true, step.actions());
     }
+}
+
+void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool /* only_types */)
+{
+    const auto * select_query = getAggregatingQuery();
+
+    if (!select_query->groupBy() || !(select_query->group_by_with_rollup || select_query->group_by_with_cube))
+        return;
+
+    auto source_columns = before_aggregation->getResultColumns();
+    ColumnsWithTypeAndName result_columns;
+
+    for (const auto & source_column : source_columns)
+    {
+        if (source_column.type->canBeInsideNullable())
+            result_columns.emplace_back(makeNullableSafe(source_column.type), source_column.name);
+        else
+            result_columns.push_back(source_column);
+    }
+    ExpressionActionsChain::Step & step = chain.lastStep(before_aggregation->getNamesAndTypesList());
+
+    step.actions() = ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position);
 }
 
 void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node)
@@ -1844,12 +1862,28 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const Settings & settings = context->getSettingsRef();
     const ConstStoragePtr & storage = query_analyzer.storage();
 
+    Names additional_required_columns_after_prewhere;
     ssize_t prewhere_step_num = -1;
     ssize_t where_step_num = -1;
     ssize_t having_step_num = -1;
 
     auto finalize_chain = [&](ExpressionActionsChain & chain)
     {
+        if (prewhere_step_num >= 0)
+        {
+            ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
+
+            auto required_columns = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+            NameSet required_source_columns(required_columns.begin(), required_columns.end());
+            /// Add required columns to required output in order not to remove them after prewhere execution.
+            /// TODO: add sampling and final execution to common chain.
+            for (const auto & column : additional_required_columns_after_prewhere)
+            {
+                if (required_source_columns.contains(column))
+                    step.addRequiredOutput(column);
+            }
+        }
+
         chain.finalize();
 
         finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
@@ -1859,7 +1893,6 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     {
         ExpressionActionsChain chain(context);
-        Names additional_required_columns_after_prewhere;
 
         if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
@@ -1881,7 +1914,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             filter_info->do_remove_column = true;
         }
 
-        if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
+        if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage))
         {
             /// Prewhere is always the first one.
             prewhere_step_num = 0;
@@ -1949,6 +1982,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
+            if (settings.group_by_use_nulls)
+                query_analyzer.appendGroupByModifiers(before_aggregation, chain, only_types);
+
             finalize_chain(chain);
 
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
@@ -1975,6 +2011,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             && !query_analyzer.hasWindow()
             && !query.final()
             && join_allow_read_in_order;
+
+        if (storage && optimize_read_in_order)
+        {
+            Names columns_for_sorting_key = metadata_snapshot->getColumnsRequiredForSortingKey();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_sorting_key.begin(), columns_for_sorting_key.end());
+        }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
         query_analyzer.appendSelect(chain, only_types || (need_aggregate ? !second_stage : !first_stage));
