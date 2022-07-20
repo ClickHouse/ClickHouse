@@ -21,6 +21,8 @@ TableNode::TableNode(StoragePtr storage_, ContextPtr context)
 {
 }
 
+TableNode::TableNode() : storage_id("system", "one") {}
+
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "TABLE id: " << format_state.getNodeId(this);

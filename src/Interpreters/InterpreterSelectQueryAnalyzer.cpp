@@ -16,8 +16,9 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/TableNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -424,8 +425,7 @@ public:
         if (!column_node)
             return;
 
-        auto * table_node = column_node->getColumnSource()->as<TableNode>();
-        if (!table_node)
+        if (column_node->getColumnSource()->getNodeType() == QueryTreeNodeType::LAMBDA)
             return;
 
         /// Replace ALIAS column with expression
@@ -606,31 +606,36 @@ void InterpreterSelectQueryAnalyzer::initializeQueryPlanIfNeeded()
     query_info.original_query = query;
     query_info.query = query;
 
-    if (auto * table_node = query_tree_typed.getFrom()->as<TableNode>())
+    auto * table_node = query_tree_typed.getFrom()->as<TableNode>();
+    auto * table_function_node = query_tree_typed.getFrom()->as<TableFunctionNode>();
+    auto * query_node = query_tree_typed.getFrom()->as<QueryNode>();
+
+    if (table_node || table_function_node)
     {
-        auto from_stage = table_node->getStorage()->getQueryProcessingStage(
-            current_context, select_query_options.to_stage, table_node->getStorageSnapshot(), query_info);
+        const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+
+        auto from_stage = storage->getQueryProcessingStage(current_context, select_query_options.to_stage, storage_snapshot, query_info);
 
         Names column_names(source_columns_set.begin(), source_columns_set.end());
 
-        if (column_names.empty() && table_node->getStorage()->getName() == "SystemOne")
+        if (column_names.empty() && storage->getName() == "SystemOne")
             column_names.push_back("dummy");
 
         if (!column_names.empty())
-            table_node->getStorage()->read(
-                query_plan, column_names, table_node->getStorageSnapshot(), query_info, getContext(), from_stage, max_block_size, max_streams);
+            storage->read(query_plan, column_names, storage_snapshot, query_info, getContext(), from_stage, max_block_size, max_streams);
 
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
-            auto source_header = table_node->getStorageSnapshot()->getSampleBlockForColumns(column_names);
+            auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
             Pipe pipe(std::make_shared<NullSource>(source_header));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
             read_from_pipe->setStepDescription("Read from NullSource");
             query_plan.addStep(std::move(read_from_pipe));
         }
     }
-    else if (auto * query_node = query_tree_typed.getFrom()->as<QueryNode>())
+    else if (query_node)
     {
         InterpreterSelectQueryAnalyzer interpeter(query_tree_typed.getFrom(), select_query_options, getContext());
         interpeter.initializeQueryPlanIfNeeded();

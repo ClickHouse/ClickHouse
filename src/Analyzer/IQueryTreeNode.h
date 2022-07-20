@@ -28,7 +28,7 @@ class WriteBuffer;
 enum class QueryTreeNodeType
 {
     IDENTIFIER,
-    ASTERISK,
+    MATCHER,
     TRANSFORMER,
     LIST,
     CONSTANT,
@@ -36,6 +36,7 @@ enum class QueryTreeNodeType
     COLUMN,
     LAMBDA,
     TABLE,
+    TABLE_FUNCTION,
     QUERY,
 };
 

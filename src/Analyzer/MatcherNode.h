@@ -138,7 +138,7 @@ public:
 
     QueryTreeNodeType getNodeType() const override
     {
-        return QueryTreeNodeType::ASTERISK;
+        return QueryTreeNodeType::MATCHER;
     }
 
     String getName() const override;

@@ -80,7 +80,7 @@ protected:
     QueryTreeNodePtr cloneImpl() const override;
 
 private:
-    TableNode() : storage_id("", "") {}
+    TableNode();
 
     StoragePtr storage;
     StorageID storage_id;
