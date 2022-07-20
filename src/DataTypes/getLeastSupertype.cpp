@@ -554,6 +554,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             UInt32 max_scale = 0;
             for (const auto & type : types)
             {
+                auto type_id = type->getTypeId();
+                if (type_id != TypeIndex::Decimal32 && type_id != TypeIndex::Decimal64 && type_id != TypeIndex::Decimal128)
+                    continue;
+
                 UInt32 scale = getDecimalScale(*type);
                 if (scale > max_scale)
                     max_scale = scale;
