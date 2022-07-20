@@ -92,7 +92,8 @@ void SubqueryForSet::setSource(InterpreterSelectWithUnionQuery & interpreter, St
 {
     source = std::make_unique<QueryPlan>();
     interpreter.buildQueryPlan(*source);
-    table = table_;
+    if (table_)
+        table = table_;
 }
 
 bool SubqueryForSet::hasSource() const
