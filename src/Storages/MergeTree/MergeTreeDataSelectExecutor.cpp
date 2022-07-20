@@ -1644,12 +1644,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 granule = reader.read();
             // Cast to Ann condition
-            auto ann_condition = std::dynamic_pointer_cast<ANNCondition::IMergeTreeIndexConditionAnn>(condition);
+            auto ann_condition = std::dynamic_pointer_cast<ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn>(condition);
             if (ann_condition != nullptr)
             {
                 // vector of indexes of useful ranges
                 auto result = ann_condition->getUsefulRanges(granule);
-                bool is_skipped = result.empty();
+                if (result.empty())
+                {
+                    ++granules_dropped;
+                }
 
                 for (auto range : result)
                 {
@@ -1663,9 +1666,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     else
                         res.back().end = data_range.end;
                 }
-
-                if (is_skipped)
-                    ++granules_dropped;
                 continue;
             }
 

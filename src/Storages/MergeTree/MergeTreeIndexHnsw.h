@@ -3,25 +3,10 @@
 #ifdef ENABLE_NMSLIB
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <method/hnsw.h>
-
-#include <algorithm>
-#include <cstddef>
-#include <iterator>
-#include <memory>
-#include <optional>
-#include <sstream>
-#include <vector>
-#include <index.h>
 #include <knnqueue.h>
-#include <methodfactory.h>
-#include <params.h>
-#include <space.h>
-#include <spacefactory.h>
-#include "object.h"
 
 namespace similarity
 {
@@ -39,21 +24,13 @@ struct IndexWrap
 {
     explicit IndexWrap(const std::string & space_type_, const AnyParams & space_params = AnyParams());
 
-
     void createIndex(const AnyParams & params = AnyParams());
 
     void loadIndex(DB::ReadBuffer & istr, bool load_data = true);
 
-
     void saveIndex(DB::WriteBuffer & ostr, bool save_data = true);
 
     KNNQueue<Dist> * knnQuery(const Object & obj, size_t k);
-
-    void addPoint(const Object & point);
-
-    void addPointUnsafe(const Object * obj);
-
-    void addBatch(const ObjectVector & new_data);
 
     void addBatchUnsafe(ObjectVector && new_data);
 
@@ -109,7 +86,7 @@ struct MergeTreeIndexAggregatorHnsw final : IMergeTreeIndexAggregator
     similarity::ObjectVector data;
 };
 
-class MergeTreeIndexConditionHnsw final : public ANNCondition::IMergeTreeIndexConditionAnn
+class MergeTreeIndexConditionHnsw final : public ApproximateNearestNeighbour::IMergeTreeIndexConditionAnn
 {
 public:
     MergeTreeIndexConditionHnsw(const IndexDescription & index, const SelectQueryInfo & query, ContextPtr context);
@@ -123,16 +100,14 @@ public:
     ~MergeTreeIndexConditionHnsw() override = default;
 
 private:
-    ANNCondition::ANNCondition condition;
+    ApproximateNearestNeighbour::ANNCondition condition;
 };
 
 class MergeTreeIndexHnsw : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexHnsw(const IndexDescription & index_, const similarity::AnyParams & index_params_)
-        : IMergeTreeIndex(index_), index_params(index_params_)
-    {
-    }
+        : IMergeTreeIndex(index_), index_params(index_params_) {}
 
     ~MergeTreeIndexHnsw() override = default;
 
@@ -141,10 +116,7 @@ public:
 
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
-
-    const char * getSerializedFileExtension() const override { return ".idx2"; }
-    MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & path_prefix) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
 
 private:
     similarity::AnyParams index_params;

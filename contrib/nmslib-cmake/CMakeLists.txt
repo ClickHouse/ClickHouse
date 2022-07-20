@@ -1,3 +1,10 @@
+option(ENABLE_NMSLIB "Enable NMSLIB index support" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_NMSLIB)
+    message (STATUS "Not using NMSLIB")
+    return()
+endif()
+
 set(NMSLIB_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/nmslib")
 set(NMSLIB_SOURCE_DIR "${NMSLIB_PROJECT_DIR}/similarity_search")
 

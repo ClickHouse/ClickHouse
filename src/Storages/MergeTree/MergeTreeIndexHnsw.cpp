@@ -1,28 +1,19 @@
 #ifdef ENABLE_NMSLIB
 
-#include <cstddef>
-#include <cstdlib>
-#include <cstring>
-#include <memory>
-#include <optional>
-#include <set>
+#include <Storages/MergeTree/MergeTreeIndexHnsw.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnArray.h>
+
 #include <sstream>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
-#include <vector>
 #include <knnquery.h>
 #include <methodfactory.h>
 #include <object.h>
 #include <params.h>
 #include <space.h>
 #include <spacefactory.h>
-#include <Storages/MergeTree/MergeTreeIndexHnsw.h>
 #include <space/space_lp.h>
 #include <space/space_scalar.h>
-#include "Storages/MergeTree/KeyCondition.h"
-#include "base/types.h"
+#include <base/types.h>
 
 namespace HnswWrapper
 {
@@ -63,7 +54,6 @@ void IndexWrap<Dist>::loadIndex(DB::ReadBuffer & istr, bool load_data)
     }
     index = std::make_unique<Hnsw<Dist>>(false, *space, data);
 
-    LOG(LIB_INFO) << "Loading optimized index.";
     istr.read(reinterpret_cast<char *>(&index->totalElementsStored_), sizeof(index->totalElementsStored_));
     istr.read(reinterpret_cast<char *>(&index->memoryPerObject_), sizeof(index->memoryPerObject_));
     istr.read(reinterpret_cast<char *>(&index->offsetLevel0_), sizeof(index->offsetLevel0_));
@@ -74,9 +64,6 @@ void IndexWrap<Dist>::loadIndex(DB::ReadBuffer & istr, bool load_data)
     istr.read(reinterpret_cast<char *>(&index->maxM0_), sizeof(index->maxM0_));
     istr.read(reinterpret_cast<char *>(&index->dist_func_type_), sizeof(index->dist_func_type_));
     istr.read(reinterpret_cast<char *>(&index->searchMethod_), sizeof(index->searchMethod_));
-
-
-    LOG(LIB_INFO) << "searchMethod: " << index->searchMethod_;
 
     index->fstdistfunc_ = getDistFunc(index->dist_func_type_);
     index->iscosine_ = (index->dist_func_type_ == kNormCosine);
@@ -157,29 +144,6 @@ KNNQueue<Dist> * IndexWrap<Dist>::knnQuery(const Object & obj, size_t k)
 }
 
 template <typename Dist>
-void IndexWrap<Dist>::addPoint(const Object & point)
-{
-    data.push_back(new Object(data.size(), -1, point.datalength(), point.data()));
-}
-
-
-template <typename Dist>
-void IndexWrap<Dist>::addPointUnsafe(const Object * obj)
-{
-    data.push_back(obj);
-}
-
-
-template <typename Dist>
-void IndexWrap<Dist>::addBatch(const ObjectVector & new_data)
-{
-    for (const auto & elem : new_data)
-    {
-        addPoint(*elem);
-    }
-}
-
-template <typename Dist>
 void IndexWrap<Dist>::addBatchUnsafe(ObjectVector && new_data)
 {
     data = std::move(new_data);
@@ -213,21 +177,19 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
 
 MergeTreeIndexGranuleHnsw::MergeTreeIndexGranuleHnsw(const String & index_name_, const Block & index_sample_block_)
-    : index_name(index_name_), index_sample_block(index_sample_block_)
-{
-}
+    : index_name(index_name_), index_sample_block(index_sample_block_) {}
 
 
 MergeTreeIndexGranuleHnsw::MergeTreeIndexGranuleHnsw(
     const String & index_name_, const Block & index_sample_block_, std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl_)
-    : index_name(index_name_), index_sample_block(index_sample_block_), index_impl(std::move(index_impl_))
-{
-}
+    : index_name(index_name_), index_sample_block(index_sample_block_), index_impl(std::move(index_impl_)) {}
 
 
 void MergeTreeIndexGranuleHnsw::serializeBinary(WriteBuffer & ostr) const
@@ -269,27 +231,55 @@ void MergeTreeIndexAggregatorHnsw::update(const Block & block, size_t * pos, siz
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
-    const auto & column = block.getByName(index_column_name).column->cut(*pos, rows_read);
-
-    for (size_t i = 0; i < rows_read; ++i)
+    const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
+    const auto & column_array = typeid_cast<const ColumnArray*>(column_cut.get());
+    if (column_array)
     {
-        Field field;
-        column->get(i, field);
+        const auto & column_data = column_array->getData();
+        const auto & array = typeid_cast<const ColumnFloat32&>(column_data).getData();
+        const auto & offsets = column_array->getOffsets();
+        size_t num_rows = column_array->size();
 
-        auto field_array = field.safeGet<Tuple>();
-
-        auto * obj = new similarity::Object(data.size(), -1, field_array.size() * sizeof(float), nullptr);
-
-        float * raw_vector = reinterpret_cast<float *>(obj->data());
-
-        // Store vectors in the flatten arrays
-        for (size_t j = 0; j < field_array.size(); ++j)
+        /// All sizes are the same
+        size_t size = offsets[1] - offsets[0];
+        for (size_t i = 0; i < num_rows - 1; ++ i)
         {
-            auto num = field_array.at(j).safeGet<Float32>();
-            raw_vector[j] = num;
+            if (offsets[i + 1] - offsets[i] != size)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays should have same length");
+            }
         }
-        // true here means that the element in vector is responsible for deleting
-        data.push_back(obj);
+
+        for (size_t current_row = 0; current_row < num_rows; ++current_row)
+        {
+            data.push_back(new similarity::Object(data.size(), -1, size * sizeof(float), &array[offsets[current_row]]));
+        }
+    }
+    else
+    {
+        /// Other possible type of column is Tuple
+        const auto & column_tuple = typeid_cast<const ColumnTuple*>(column_cut.get());
+
+        if (!column_tuple)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type was given to index.");
+
+        const auto & columns = column_tuple->getColumns();
+
+        std::vector<std::vector<Float32>> columns_data{column_tuple->size(), std::vector<Float32>()};
+        for (const auto& column : columns)
+        {
+            const auto& pod_array = typeid_cast<const ColumnFloat32*>(column.get())->getData();
+            for (size_t i = 0; i < pod_array.size(); ++i)
+            {
+                columns_data[i].push_back(pod_array[i]);
+            }
+        }
+        assert(!columns_data.empty());
+    
+        for (const auto& item : columns_data)
+        {
+            data.push_back(new similarity::Object(data.size(), -1, item.size() * sizeof(float), item.data()));
+        }
     }
 
     *pos += rows_read;
@@ -308,18 +298,23 @@ bool MergeTreeIndexConditionHnsw::alwaysUnknownOrTrue() const
 
 std::vector<size_t> MergeTreeIndexConditionHnsw::getUsefulRanges(MergeTreeIndexGranulePtr idx_granule) const
 {
-    UInt64 limit = condition.getLimitCount();
-    std::optional<float> comp_dist
-        = condition.queryHasWhereClause() ? std::optional<float>(condition.getComparisonDistance()) : std::nullopt;
+    UInt64 limit = condition.getLimit();
+    UInt64 index_granularity = condition.getIndexGranularity();
+    std::optional<float> comp_dist = condition.getQueryType() == ApproximateNearestNeighbour::ANNQueryInformation::Type::Where ?
+      std::optional<float>(condition.getComparisonDistanceForWhereQuery()) : std::nullopt;
+
+    if (comp_dist && comp_dist.value() < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to optimize query with where without distance");
+
     std::vector<float> target_vec = condition.getTargetVector();
     similarity::Object target(-1, -1, target_vec.size() * sizeof(float), target_vec.data());
 
-    std::shared_ptr<MergeTreeIndexGranuleHnsw> granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleHnsw>(idx_granule);
+    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleHnsw>(idx_granule);
     if (!granule)
         throw Exception("SimpleHnsw index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
     auto search_result = std::unique_ptr<similarity::KNNQueue<float>>(granule->index_impl->knnQuery(target, limit));
-    std::unordered_set<size_t> result;
+    std::unordered_set<size_t> granule_numbers;
     while (!search_result->Empty())
     {
         auto cur_dist = search_result->TopDistance();
@@ -328,14 +323,14 @@ std::vector<size_t> MergeTreeIndexConditionHnsw::getUsefulRanges(MergeTreeIndexG
         {
             continue;
         }
-        result.insert(obj->id() / 8192);
+        granule_numbers.insert(obj->id() / index_granularity);
     }
 
     std::vector<size_t> result_vector;
-    result_vector.reserve(result.size());
-    for (auto range : result)
+    result_vector.reserve(granule_numbers.size());
+    for (auto granule_number : granule_numbers)
     {
-        result_vector.push_back(range);
+        result_vector.push_back(granule_number);
     }
 
     return result_vector;
@@ -344,14 +339,13 @@ std::vector<size_t> MergeTreeIndexConditionHnsw::getUsefulRanges(MergeTreeIndexG
 
 bool MergeTreeIndexConditionHnsw::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /*idx_granule*/) const
 {
-    throw Exception("Hnsw index is Ann index, so this method is not implemented", ErrorCodes::LOGICAL_ERROR);
+    throw Exception("mayBeTrueOnGranule is not supported for ANN skip indexes", ErrorCodes::LOGICAL_ERROR);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexHnsw::createIndexGranule() const
 {
     return std::make_shared<MergeTreeIndexGranuleHnsw>(index.name, index.sample_block);
 }
-
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexHnsw::createIndexAggregator() const
 {
@@ -362,21 +356,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexHnsw::createIndexCondition(const Select
 {
     return std::make_shared<MergeTreeIndexConditionHnsw>(index, query, context);
 };
-
-bool MergeTreeIndexHnsw::mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const
-{
-    return false;
-}
-
-MergeTreeIndexFormat MergeTreeIndexHnsw::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
-{
-    if (disk->exists(relative_path_prefix + ".idx2"))
-        return {2, ".idx2"};
-    else if (disk->exists(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /* unknown */, ""};
-}
-
 
 MergeTreeIndexPtr hnswIndexCreator(const IndexDescription & index)
 {
@@ -398,14 +377,14 @@ void hnswIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     if (index.arguments.size() > 4)
     {
-        throw Exception("Hnsw index must have exactly one argument.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("HNSW accepts no more than 4 arguments", ErrorCodes::INCORRECT_QUERY);
     }
 
     for (const auto & arg : index.arguments)
     {
         if (arg.getType() != Field::Types::UInt64)
         {
-            throw Exception("Hnsw index must have exactly one argument.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Arguments must be UInt64", ErrorCodes::INCORRECT_QUERY);
         }
     }
 }

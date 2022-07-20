@@ -1,3 +1,6 @@
+#include <Storages/MergeTree/CommonANNIndexes.h>
+#include <Storages/MergeTree/KeyCondition.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -5,9 +8,9 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
-#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
-#include <Storages/MergeTree/CommonANNIndexes.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -18,23 +21,54 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-namespace ANNCondition
+namespace
+{
+
+namespace ANN = ApproximateNearestNeighbour;
+
+template <typename Literal>
+void extractTargetVectorFromLiteral(ANN::ANNQueryInformation::Embedding & target, Literal literal)
+{
+    Float64 float_element_of_target_vector;
+    Int64 int_element_of_target_vector;
+
+    for (const auto & value : literal.value())
+    {
+        if (value.tryGet(float_element_of_target_vector))
+        {
+            target.emplace_back(float_element_of_target_vector);
+        }
+        else if (value.tryGet(int_element_of_target_vector))
+        {
+            target.emplace_back(static_cast<float>(int_element_of_target_vector));
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Wrong type of elements in target vector. Only float or int are supported.");
+        }
+    }
+}
+
+ANN::ANNQueryInformation::Metric castMetricFromStringToType(String metric_name)
+{
+    if (metric_name == "L2Distance")
+        return ANN::ANNQueryInformation::Metric::L2;
+    if (metric_name == "LpDistance")
+        return ANN::ANNQueryInformation::Metric::Lp;
+    return ANN::ANNQueryInformation::Metric::Unknown;
+}
+
+}
+
+namespace ApproximateNearestNeighbour
 {
 
 ANNCondition::ANNCondition(const SelectQueryInfo & query_info,
-                                 ContextPtr context)
-{
-    // Initialize
-    block_with_constants = KeyCondition::
-    getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
-    // Build rpns for query sections
-    buildRPN(query_info);
-
-    // Match rpns with supported types
-    index_is_useful = matchAllRPNS();
-    // Get from settings ANNIndex parameters
-    ann_index_params = context->getSettings().get("ann_index_params").get<String>();
-}
+                                 ContextPtr context) :
+    block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
+    ann_index_select_query_params{context->getSettings().get("ann_index_select_query_params").get<String>()},
+    index_granularity{context->getMergeTreeSettings().get("index_granularity").get<UInt64>()},
+    index_is_useful{checkQueryStructure(query_info)} {}
 
 bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
 {
@@ -43,87 +77,113 @@ bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
         return true; // Query isn't supported
     }
     // If query is supported, check metrics for match
-    return !(metric_name == ann_expr->metric_name);
+    return !(castMetricFromStringToType(metric_name) == query_information->metric);
 }
 
-float ANNCondition::getComparisonDistance() const
+float ANNCondition::getComparisonDistanceForWhereQuery() const
 {
-    if (where_query_type)
+    if (index_is_useful && query_information.has_value()
+        && query_information->query_type == ANNQueryInformation::Type::Where)
     {
-        return ann_expr->distance;
+        return query_information->distance;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported method for this query type");
 }
 
-std::vector<float> ANNCondition::getTargetVector() const
+UInt64 ANNCondition::getLimit() const
 {
-    return ann_expr->target;
-}
-
-String ANNCondition::getColumnName() const
-{
-    return ann_expr->column_name;
-}
-
-String ANNCondition::getMetric() const
-{
-    return ann_expr->metric_name;
-}
-
-size_t ANNCondition::getSpaceDim() const
-{
-    return ann_expr->target.size();
-}
-
-float ANNCondition::getPForLpDistance() const
-{
-    return ann_expr->p_for_lp_dist;
-}
-
-bool ANNCondition::queryHasWhereClause() const
-{
-    return where_query_type;
-}
-
-bool ANNCondition::queryHasOrderByClause() const
-{
-    return order_by_query_type;
-}
-
-UInt64 ANNCondition::getLimitCount() const
-{
-    if (index_is_useful)
+    if (index_is_useful && query_information.has_value())
     {
-        return limit_count;
+        return query_information->limit;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "No LIMIT section in query, not supported");
 }
 
-String ANNCondition::getSettingsStr() const
+std::vector<float> ANNCondition::getTargetVector() const
 {
-    return ann_index_params;
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->target;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Target vector was requested for useless or uninitialized index.");
 }
 
-void ANNCondition::buildRPN(const SelectQueryInfo & query)
+size_t ANNCondition::getNumOfDimensions() const
 {
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->target.size();
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of dimensions was requested for useless or uninitialized index.");
+}
+
+String ANNCondition::getColumnName() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->column_name;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name was requested for useless or uninitialized index.");
+}
+
+ANNQueryInformation::Metric ANNCondition::getMetricType() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->metric;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Metric name was requested for useless or uninitialized index.");
+}
+
+float ANNCondition::getPValueForLpDistance() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->p_for_lp_dist;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "P from LPDistance was requested for useless or uninitialized index.");
+}
+
+ANNQueryInformation::Type ANNCondition::getQueryType() const
+{
+    if (index_is_useful && query_information.has_value())
+    {
+        return query_information->query_type;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Query type was requested for useless or uninitialized index.");
+}
+
+bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
+{
+    // RPN-s for different sections of the query
+    RPN rpn_prewhere_clause;
+    RPN rpn_where_clause;
+    RPN rpn_order_by_clause;
+    RPNElement rpn_limit;
+
+    ANNQueryInformation prewhere_info;
+    ANNQueryInformation where_info;
+    ANNQueryInformation order_by_info;
+
+    // Build rpns for query sections
     const auto & select = query.query->as<ASTSelectQuery &>();
 
-    if (select.prewhere()) // If query has PREWHERE section
+    if (select.prewhere()) // If query has PREWHERE clause
     {
         traverseAST(select.prewhere(), rpn_prewhere_clause);
     }
 
-    if (select.where()) // If query has WHERE section
+    if (select.where()) // If query has WHERE clause
     {
         traverseAST(select.where(), rpn_where_clause);
     }
 
-    if (select.limitLength()) // If query has LIMIT section
+    if (select.limitLength()) // If query has LIMIT clause
     {
-        traverseAST(select.limitLength(), rpn_limit_clause);
+        traverseAtomAST(select.limitLength(), rpn_limit);
     }
 
-    if (select.orderBy()) // If query has ORDERBY section
+    if (select.orderBy()) // If query has ORDERBY clause
     {
         traverseOrderByAST(select.orderBy(), rpn_order_by_clause);
     }
@@ -132,18 +192,55 @@ void ANNCondition::buildRPN(const SelectQueryInfo & query)
     std::reverse(rpn_prewhere_clause.begin(), rpn_prewhere_clause.end());
     std::reverse(rpn_where_clause.begin(), rpn_where_clause.end());
     std::reverse(rpn_order_by_clause.begin(), rpn_order_by_clause.end());
+
+    // Match rpns with supported types and extract information
+    const bool prewhere_is_valid = matchRPNWhere(rpn_prewhere_clause, prewhere_info);
+    const bool where_is_valid = matchRPNWhere(rpn_where_clause, where_info);
+    const bool limit_is_valid = matchRPNLimit(rpn_limit, prewhere_is_valid ? prewhere_info.limit : where_info.limit);
+    const bool order_by_is_valid = matchRPNOrderBy(rpn_order_by_clause, order_by_info);
+
+    // Query without LIMIT clause is not supported
+    if (!limit_is_valid)
+    {
+        return false;
+    }
+
+    // Search type query in both sections isn't supported
+    if (prewhere_is_valid && where_is_valid)
+    {
+        return false;
+    }
+
+    // Search type should be in WHERE or PREWHERE clause
+    if (prewhere_is_valid || where_is_valid)
+    {
+        query_information = std::move(prewhere_is_valid ? prewhere_info : where_info);
+    }
+
+    if (order_by_is_valid)
+    {
+        // Query with valid where and order by type is not supported
+        if (query_information.has_value())
+        {
+            return false;
+        }
+
+        query_information = std::move(order_by_info);
+    }
+
+    return query_information.has_value();
 }
 
 void ANNCondition::traverseAST(const ASTPtr & node, RPN & rpn)
 {
-    // If the node is ASTFUunction, it may have children nodes
+    // If the node is ASTFunction, it may have children nodes
     if (const auto * func = node->as<ASTFunction>())
     {
-        const ASTs & args = func->arguments->children;
+        const ASTs & children = func->arguments->children;
         // Traverse children nodes
-        for (const auto& arg : args)
+        for (const auto& child : children)
         {
-            traverseAST(arg, rpn);
+            traverseAST(child, rpn);
         }
     }
 
@@ -178,6 +275,10 @@ bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
         {
             out.function = RPNElement::FUNCTION_TUPLE;
         }
+        else if (function->name == "array")
+        {
+            out.function = RPNElement::FUNCTION_ARRAY;
+        }
         else if (function->name == "less" ||
                  function->name == "greater" ||
                  function->name == "lessOrEquals" ||
@@ -202,7 +303,7 @@ bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
         return true;
     }
 
-     // Check if we have constants behind the node
+    // Check if we have constants behind the node
     return tryCastToConstType(node, out);
 }
 
@@ -221,6 +322,7 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
             out.func_name = "Float literal";
             return true;
         }
+
         if (const_value.getType() == Field::Types::UInt64)
         {
             out.function = RPNElement::FUNCTION_INT_LITERAL;
@@ -228,6 +330,7 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
             out.func_name = "Int literal";
             return true;
         }
+
         if (const_value.getType() == Field::Types::Int64)
         {
             out.function = RPNElement::FUNCTION_INT_LITERAL;
@@ -235,11 +338,20 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
             out.func_name = "Int literal";
             return true;
         }
+
         if (const_value.getType() == Field::Types::Tuple)
         {
             out.function = RPNElement::FUNCTION_LITERAL_TUPLE;
             out.tuple_literal = const_value.get<Tuple>();
             out.func_name = "Tuple literal";
+            return true;
+        }
+
+        if (const_value.getType() == Field::Types::Array)
+        {
+            out.function = RPNElement::FUNCTION_LITERAL_ARRAY;
+            out.array_literal = const_value.get<Array>();
+            out.func_name = "Array literal";
             return true;
         }
     }
@@ -258,163 +370,17 @@ void ANNCondition::traverseOrderByAST(const ASTPtr & node, RPN & rpn)
     }
 }
 
-bool ANNCondition::matchAllRPNS()
-{
-    ANNExpression expr_prewhere;
-    ANNExpression expr_where;
-    ANNExpression expr_order_by;
-    LimitExpression expr_limit;
-    bool prewhere_is_valid = matchRPNWhere(rpn_prewhere_clause, expr_prewhere);
-    bool where_is_valid = matchRPNWhere(rpn_where_clause, expr_where);
-    bool limit_is_valid = matchRPNLimit(rpn_limit_clause, expr_limit);
-    bool order_by_is_valid = matchRPNOrderBy(rpn_order_by_clause, expr_order_by);
-
-    // Query without LIMIT section is not supported
-    if (!limit_is_valid)
-    {
-        return false;
-    }
-    // Set LIMIT count
-    limit_count = expr_limit.length;
-    // Search type query in both sections isn't supported
-    if (prewhere_is_valid && where_is_valid)
-    {
-        return false;
-    }
-    // Search type should be in WHERE or PREWHERE section
-    if (prewhere_is_valid || where_is_valid)
-    {
-        ann_expr = std::move(where_is_valid ? expr_where : expr_prewhere);
-        where_query_type = true;
-    }
-    if (order_by_is_valid)
-    {
-        ann_expr = std::move(expr_order_by);
-        order_by_query_type = true;
-    }
-    // Query with valid search and orderby type is not supported
-    if (where_query_type && order_by_query_type)
-    {
-        return false;
-    }
-
-    return where_query_type || order_by_query_type;
-}
-
-bool ANNCondition::matchRPNLimit(RPN & rpn, LimitExpression & expr)
-{
-    // LIMIT section must have least 1 expression
-    if (rpn.size() != 1)
-    {
-        return false;
-    }
-    if (rpn.front().function == RPNElement::FUNCTION_INT_LITERAL)
-    {
-        expr.length = rpn.front().int_literal.value();
-        return true;
-    }
-    return false;
-}
-
-bool ANNCondition::matchRPNOrderBy(RPN & rpn, ANNExpression & expr)
-{
-    // ORDERBY section must have at least 3 expressions
-    if (rpn.size() < 3)
-    {
-        return false;
-    }
-
-    auto iter = rpn.begin();
-    auto end = rpn.end();
-    bool identifier_found = false;
-
-    return ANNCondition::matchMainParts(iter, end, expr, identifier_found);
-}
-
-bool ANNCondition::matchMainParts(RPN::iterator & iter, RPN::iterator & end,
-     ANNExpression & expr, bool & identifier_found)
-     {
-    // Matches DistanceFunc->[Column]->[TupleFunc]->TargetVector(floats)->[Column]
-    if (iter->function != RPNElement::FUNCTION_DISTANCE)
-    {
-        return false;
-    }
-
-    expr.metric_name = iter->func_name;
-    ++iter;
-
-    if (expr.metric_name == "LpDistance")
-    {
-        if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
-            iter->function != RPNElement::FUNCTION_INT_LITERAL)
-        {
-            return false;
-        }
-        expr.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
-        ++iter;
-    }
-
-
-    if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
-    {
-        identifier_found = true;
-        expr.column_name = getIdentifierOrPanic(iter);
-        ++iter;
-    }
-
-    if (iter->function == RPNElement::FUNCTION_TUPLE)
-    {
-        ++iter;
-    }
-
-    if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
-    {
-        for (const auto & value : iter->tuple_literal.value())
-        {
-            expr.target.emplace_back(value.get<float>());
-        }
-        ++iter;
-    }
-
-
-    while (iter != end)
-    {
-        if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL ||
-            iter->function == RPNElement::FUNCTION_INT_LITERAL)
-        {
-            expr.target.emplace_back(getFloatOrIntLiteralOrPanic(iter));
-        }
-        else if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
-        {
-            if (identifier_found)
-            {
-                return false;
-            }
-            expr.column_name = getIdentifierOrPanic(iter);
-            identifier_found = true;
-        }
-        else
-        {
-            return false;
-        }
-
-        ++iter;
-    }
-
-    return true;
-}
-
-bool ANNCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr)
+// Returns true and stores ANNQueryInformation if the query has valid WHERE clause
+bool ANNCondition::matchRPNWhere(RPN & rpn, ANNQueryInformation & expr)
 {
     // WHERE section must have at least 5 expressions
-    // Operator->Distance(float)->DistanceFunc->Column->TupleFunc(TargetVector(floats))
+    // Operator->Distance(float)->DistanceFunc->Column->Tuple(Array)Func(TargetVector(floats))
     if (rpn.size() < 5)
     {
         return false;
     }
 
     auto iter = rpn.begin();
-    bool identifier_found = false;
 
     // Query starts from operator less
     if (iter->function != RPNElement::FUNCTION_COMPARISON)
@@ -444,13 +410,7 @@ bool ANNCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr)
     }
 
     auto end = rpn.end();
-    if (!matchMainParts(iter, end, expr, identifier_found))
-    {
-        return false;
-    }
-
-    // Final checks of correctness
-    if (!identifier_found || expr.target.empty())
+    if (!matchMainParts(iter, end, expr))
     {
         return false;
     }
@@ -465,25 +425,116 @@ bool ANNCondition::matchRPNWhere(RPN & rpn, ANNExpression & expr)
         expr.target.pop_back();
     }
 
-    // Querry is ok
+    // query is ok
     return true;
 }
 
-String ANNCondition::getIdentifierOrPanic(RPN::iterator& iter)
+// Returns true and stores ANNExpr if the query has valid ORDERBY clause
+bool ANNCondition::matchRPNOrderBy(RPN & rpn, ANNQueryInformation & expr)
 {
-    String identifier;
-    try
+    // ORDER BY clause must have at least 3 expressions
+    if (rpn.size() < 3)
     {
-        identifier = std::move(iter->identifier.value());
+        return false;
     }
-    catch (...)
-    {
-        ANNCondition::panicIfWrongBuiltRPN();
-    }
-    return identifier;
+
+    auto iter = rpn.begin();
+    auto end = rpn.end();
+
+    return ANNCondition::matchMainParts(iter, end, expr);
 }
 
-float ANNCondition::getFloatOrIntLiteralOrPanic(RPN::iterator& iter)
+// Returns true and stores Length if we have valid LIMIT clause in query
+bool ANNCondition::matchRPNLimit(RPNElement & rpn, UInt64 & limit)
+{
+    if (rpn.function == RPNElement::FUNCTION_INT_LITERAL)
+    {
+        limit = rpn.int_literal.value();
+        return true;
+    }
+
+    return false;
+}
+
+/* Matches dist function, target vector, column name */
+bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & end, ANNQueryInformation & expr)
+{
+    bool identifier_found = false;
+
+    // Matches DistanceFunc->[Column]->[Tuple(array)Func]->TargetVector(floats)->[Column]
+    if (iter->function != RPNElement::FUNCTION_DISTANCE)
+    {
+        return false;
+    }
+
+    expr.metric = castMetricFromStringToType(iter->func_name);
+    ++iter;
+
+    if (expr.metric == ANN::ANNQueryInformation::Metric::Lp)
+    {
+        if (iter->function != RPNElement::FUNCTION_FLOAT_LITERAL &&
+            iter->function != RPNElement::FUNCTION_INT_LITERAL)
+        {
+            return false;
+        }
+        expr.p_for_lp_dist = getFloatOrIntLiteralOrPanic(iter);
+        ++iter;
+    }
+
+    if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
+    {
+        identifier_found = true;
+        expr.column_name = std::move(iter->identifier.value());
+        ++iter;
+    }
+
+    if (iter->function == RPNElement::FUNCTION_TUPLE || iter->function == RPNElement::FUNCTION_ARRAY)
+    {
+        ++iter;
+    }
+
+    if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
+    {
+        extractTargetVectorFromLiteral(expr.target, iter->tuple_literal);
+        ++iter;
+    }
+
+    if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
+    {
+        extractTargetVectorFromLiteral(expr.target, iter->array_literal);
+        ++iter;
+    }
+
+    while (iter != end)
+    {
+        if (iter->function == RPNElement::FUNCTION_FLOAT_LITERAL ||
+            iter->function == RPNElement::FUNCTION_INT_LITERAL)
+        {
+            expr.target.emplace_back(getFloatOrIntLiteralOrPanic(iter));
+        }
+        else if (iter->function == RPNElement::FUNCTION_IDENTIFIER)
+        {
+            if (identifier_found)
+            {
+                return false;
+            }
+            expr.column_name = std::move(iter->identifier.value());
+            identifier_found = true;
+        }
+        else
+        {
+            return false;
+        }
+
+        ++iter;
+    }
+
+    // Final checks of correctness
+    return identifier_found && !expr.target.empty();
+}
+
+// Gets float or int from AST node
+float ANNCondition::getFloatOrIntLiteralOrPanic(const RPN::iterator& iter)
 {
     if (iter->float_literal.has_value())
     {
@@ -493,14 +544,7 @@ float ANNCondition::getFloatOrIntLiteralOrPanic(RPN::iterator& iter)
     {
         return static_cast<float>(iter->int_literal.value());
     }
-    ANNCondition::panicIfWrongBuiltRPN();
-}
-
-void ANNCondition::panicIfWrongBuiltRPN()
-{
-    LOG_DEBUG(&Poco::Logger::get("ANNCondition"), "Wrong parsing of AST");
-    throw Exception(
-                "Wrong parsed AST in buildRPN\n", DB::ErrorCodes::INCORRECT_QUERY);
+    throw Exception("Wrong parsed AST in buildRPN\n", ErrorCodes::INCORRECT_QUERY);
 }
 
 }
