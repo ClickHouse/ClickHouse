@@ -117,7 +117,7 @@ namespace ErrorCodes
   * Resolution starts with current scope.
   * 1. Try to resolve identifier from expression scope arguments. Lambda expression arguments are greatest priority.
   * 2. Try to resolve identifier from aliases.
-  * 3. Try to resolve identifier from tables if scope is query.
+  * 3. Try to resolve identifier from tables if scope is query, or if there are registered table columns in scope.
   * Steps 2 and 3 can be changed using prefer_column_name_to_alias setting.
   * If identifier could not be resolved in current scope, resolution must be continued in parent scopes.
   * 4. If it is table lookup, try to resolve identifier from CTE.
@@ -151,7 +151,6 @@ namespace ErrorCodes
   *
   * TODO: Add expression name into query tree node. Example: SELECT plus(1, 1). Result: SELECT 2. Expression name of constant node should be 2.
   * TODO: Table identifiers with optional UUID.
-  * TODO: Table ALIAS columns
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
@@ -237,12 +236,23 @@ struct IdentifierLookupHash
 
 struct TableExpressionColumns
 {
-    NamesAndTypesList column_names_and_types;
+    std::unordered_map<std::string, ColumnNodePtr> column_name_to_column_node;
     std::unordered_set<std::string> column_identifier_first_parts;
 
     bool canBindIdentifier(IdentifierView identifier)
     {
         return column_identifier_first_parts.find(std::string(identifier.at(0))) != column_identifier_first_parts.end();
+    }
+
+    void dump(WriteBuffer & buffer)
+    {
+        buffer << "Columns size " << column_name_to_column_node.size() << '\n';
+
+        for (auto & [column_name, column_node] : column_name_to_column_node)
+        {
+            buffer << "Column name " << column_name << " column node " << column_node->formatASTForErrorMessage();
+            buffer << " is alias " << column_node->hasAliasExpression() << '\n';
+        }
     }
 };
 
@@ -353,6 +363,9 @@ struct IdentifierResolveScope
     /// Alias name to table expression node
     std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_table_expression_node;
 
+    /// Table column name to column node. Valid only during table ALIAS columns resolve.
+    std::unordered_map<std::string, ColumnNodePtr> column_name_to_column_node;
+
     /// CTE name to query node
     std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
 
@@ -374,7 +387,12 @@ struct IdentifierResolveScope
         buffer << "Scope node " << scope_node->formatASTForErrorMessage() << '\n';
         buffer << "Identifier lookup to node " << identifier_lookup_to_node.size() << '\n';
         for (const auto & [identifier, node] : identifier_lookup_to_node)
-            buffer << "Identifier " << identifier.dump() << " node type " << node->getNodeTypeName() << " format " << node->formatASTForErrorMessage() << '\n';
+        {
+            if (!node)
+                buffer << "Identifier " << identifier.dump() << " in resolve process\n";
+            else
+                buffer << "Identifier " << identifier.dump() << " node type " << node->getNodeTypeName() << " format " << node->formatASTForErrorMessage() << '\n';
+        }
 
         buffer << "Expression argument name to node " << expression_argument_name_to_node.size() << '\n';
         for (const auto & [alias_name, node] : expression_argument_name_to_node)
@@ -462,6 +480,8 @@ private:
     QueryTreeNodePtr tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, bool allow_to_check_parent_scopes = true);
+
+    QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
     QueryTreeNodePtr tryResolveIdentifierFromTables(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
@@ -710,18 +730,25 @@ void QueryAnalyzer::evaluateScalarSubquery(QueryTreeNodePtr & node)
   */
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    const auto & identifier_bind_part = identifier_lookup.identifier.front();
+    auto it = scope.expression_argument_name_to_node.find(identifier_lookup.identifier.getFullName());
+    bool resolve_full_identifier = it != scope.expression_argument_name_to_node.end();
 
-    auto it = scope.expression_argument_name_to_node.find(identifier_bind_part);
-    if (it == scope.expression_argument_name_to_node.end())
+    if (!resolve_full_identifier)
+    {
+        const auto & identifier_bind_part = identifier_lookup.identifier.front();
+
+        it = scope.expression_argument_name_to_node.find(identifier_bind_part);
+        if (it == scope.expression_argument_name_to_node.end())
+            return {};
+    }
+
+    if (identifier_lookup.isExpressionLookup() && it->second->getNodeType() != QueryTreeNodeType::COLUMN && it->second->getNodeType() != QueryTreeNodeType::CONSTANT
+        && it->second->getNodeType() != QueryTreeNodeType::FUNCTION && it->second->getNodeType() != QueryTreeNodeType::QUERY)
+        return {};
+    else if (identifier_lookup.isTableLookup() && it->second->getNodeType() != QueryTreeNodeType::TABLE && it->second->getNodeType() != QueryTreeNodeType::QUERY)
         return {};
 
-    if (identifier_lookup.isExpressionLookup() && it->second->getNodeType() == QueryTreeNodeType::LAMBDA)
-        return {};
-    else if (identifier_lookup.isTableLookup() && it->second->getNodeType() != QueryTreeNodeType::TABLE)
-        return {};
-
-    if (identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
+    if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
     {
         auto nested_path = IdentifierView(identifier_lookup.identifier);
         nested_path.popFirst();
@@ -980,13 +1007,62 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromAliases(const Identifier
     return result;
 }
 
+/** Resolve identifier from table columns.
+  *
+  * 1. If table column nodes are empty or identifier is not expression lookup return nullptr.
+  * 2. If identifier full name match table column use column. Save information that we resolve identifier using full name.
+  * 3. Else if identifier binds to table column, use column.
+  * 4. Try to resolve column ALIAS expression if it exists.
+  * 5. If identifier was compound and was not resolved using full name during step 1 pop first part from identifier lookup and wrap column node
+  * using nested parts of identifier using `wrapExpressionNodeInTupleElement` function.
+  * This can be the case with compound ALIAS columns.
+  * Example:
+  * CREATE TABLE test_table (id UInt64, value Tuple(id UInt64, value String), alias_value ALIAS value.id) ENGINE=TinyLog;
+  */
+QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
+{
+    if (scope.column_name_to_column_node.empty() || !identifier_lookup.isExpressionLookup())
+        return {};
+
+    const auto & identifier = identifier_lookup.identifier;
+    auto it = scope.column_name_to_column_node.find(identifier.getFullName());
+    bool full_column_name_match = it != scope.column_name_to_column_node.end();
+
+    if (!full_column_name_match)
+    {
+        it = scope.column_name_to_column_node.find(identifier_lookup.identifier[0]);
+        if (it == scope.column_name_to_column_node.end())
+            return {};
+    }
+
+    if (it->second->hasAliasExpression())
+        resolveExpressionNode(it->second->getAliasExpression(), scope, false /*allow_lambda_node*/);
+
+    QueryTreeNodePtr result = it->second;
+
+    if (!full_column_name_match && identifier.isCompound())
+    {
+        auto nested_path = IdentifierView(identifier_lookup.identifier);
+        nested_path.popFirst();
+
+        auto tuple_element_result = wrapExpressionNodeInTupleElement(it->second, nested_path);
+        resolveFunction(tuple_element_result, scope);
+
+        result = tuple_element_result;
+    }
+
+    return result;
+}
+
 /** Resolve identifier from scope tables.
   *
-  * 1. If there is no table node in scope, or identifier is in function lookup context return nullptr.
-  * 2. If identifier is in table lookup context, check if it has 1 or 2 parts, otherwise throw exception.
+  * 1. If identifier is in function lookup context return nullptr.
+  * 2. Try to resolve identifier from table columns.
+  * 3. If there is no FROM section return nullptr.
+  * 4. If identifier is in table lookup context, check if it has 1 or 2 parts, otherwise throw exception.
   * If identifer has 2 parts try to match it with database_name and table_name.
   * If identifier has 1 part try to match it with table_name, then try to match it with table alias.
-  * 3. If identifier is in expression lookup context, we first need to bind identifier to some table column using identifier first part.
+  * 5. If identifier is in expression lookup context, we first need to bind identifier to some table column using identifier first part.
   * Start with identifier first part, if it match some column name in table try to get column with full identifier name.
   * TODO: Need to check if it is okay to throw exception if compound identifier first part bind to column but column is not valid.
   */
@@ -994,6 +1070,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
 {
     if (identifier_lookup.isFunctionLookup())
         return {};
+
+    /// Try to resolve identifier from table columns
+
+    if (auto resolved_identifier = tryResolveIdentifierFromTableColumns(identifier_lookup, scope))
+        return resolved_identifier;
 
     auto * query_scope_node = scope.scope_node->as<QueryNode>();
     if (!query_scope_node || !query_scope_node->getFrom())
@@ -1019,7 +1100,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
 
     std::string table_expression_name;
 
-    /// Valid only for table node
     std::string table_name;
     std::string database_name;
 
@@ -1061,13 +1141,76 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
         TableExpressionColumns storage_columns;
 
         if (table_node)
-            storage_columns.column_names_and_types = table_node->getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
-        else if (query_node)
-            storage_columns.column_names_and_types = getQueryNodeColumns(from_node);
-
-        for (auto & name_and_type_pair : storage_columns.column_names_and_types)
         {
-            Identifier column_name_identifier(name_and_type_pair.name);
+            const auto & storage_snapshot = table_node->getStorageSnapshot();
+
+            auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+            const auto & columns_description = storage_snapshot->metadata->getColumns();
+
+            std::vector<std::pair<std::string, ColumnNodePtr>> alias_columns_to_resolve;
+            std::unordered_map<std::string, ColumnNodePtr> column_name_to_column_node;
+            column_name_to_column_node.reserve(column_names_and_types.size());
+
+            for (const auto & column_name_and_type : column_names_and_types)
+            {
+                const auto & column_default = columns_description.getDefault(column_name_and_type.name);
+
+                if (column_default && column_default->kind == ColumnDefaultKind::Alias)
+                {
+                    auto argument_node = std::make_shared<ColumnNode>(column_name_and_type, buildQueryTree(column_default->expression, context), from_node);
+                    column_name_to_column_node.emplace(column_name_and_type.name, argument_node);
+                    alias_columns_to_resolve.emplace_back(column_name_and_type.name, argument_node);
+                }
+                else
+                {
+                    auto argument_node = std::make_shared<ColumnNode>(column_name_and_type, from_node);
+                    column_name_to_column_node.emplace(column_name_and_type.name, argument_node);
+                }
+            }
+
+            for (auto & [alias_column_to_resolve_name, alias_column_to_resolve] : alias_columns_to_resolve)
+            {
+                /** Alias column could be potentially resolved during resolve of other ALIAS column.
+                  * Example: CREATE TABLE test_table (id UInt64, alias_value_1 ALIAS id + alias_value_2, alias_value_2 ALIAS id + 5) ENGINE=TinyLog;
+                  *
+                  * During resolve of alias_value_1, alias_value_2 column will be resolved.
+                  */
+                alias_column_to_resolve = column_name_to_column_node[alias_column_to_resolve_name];
+
+                IdentifierResolveScope alias_column_resolve_scope(alias_column_to_resolve, nullptr /*parent_scope*/);
+                alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
+
+                /// Initialize aliases in alias column scope
+                ScopeAliasVisitorMatcher::Data data{alias_column_resolve_scope};
+                ScopeAliasVisitorMatcher::Visitor visitor(data);
+
+                visitor.visit(alias_column_to_resolve->getAliasExpression());
+
+                resolveExpressionNode(alias_column_resolve_scope.scope_node, alias_column_resolve_scope, false /*allow_lambda_expression*/);
+
+                column_name_to_column_node = std::move(alias_column_resolve_scope.column_name_to_column_node);
+                column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
+            }
+
+            storage_columns.column_name_to_column_node = std::move(column_name_to_column_node);
+        }
+        else if (query_node)
+        {
+            auto column_names_and_types = getQueryNodeColumns(from_node);
+            storage_columns.column_name_to_column_node.reserve(column_names_and_types.size());
+
+            for (const auto & column_name_and_type : column_names_and_types)
+            {
+                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, from_node);
+                storage_columns.column_name_to_column_node.emplace(column_name_and_type.name, column_node);
+            }
+        }
+
+        storage_columns.column_identifier_first_parts.reserve(storage_columns.column_name_to_column_node.size());
+
+        for (auto & [column_name, _] : storage_columns.column_name_to_column_node)
+        {
+            Identifier column_name_identifier(column_name);
             storage_columns.column_identifier_first_parts.insert(column_name_identifier.at(0));
         }
 
@@ -1091,13 +1234,23 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
           * Here there is no column with name test_subquery.compound_expression.value, and additional wrap in tuple element is required.
           */
 
-        std::optional<NameAndTypePair> result_column;
+        QueryTreeNodePtr result_column;
         bool compound_identifier = identifier_view.getPartsSize() > 1;
+        bool match_full_identifier = false;
 
-        if (!table_node && compound_identifier)
-            result_column = storage_columns.column_names_and_types.tryGetByName(std::string(identifier_view.at(0)));
+        auto it = storage_columns.column_name_to_column_node.find(std::string(identifier_view.getFullName()));
+        if (it != storage_columns.column_name_to_column_node.end())
+        {
+            match_full_identifier = true;
+            result_column = it->second;
+        }
         else
-            result_column = storage_columns.column_names_and_types.tryGetByName(std::string(identifier_view.getFullName()));
+        {
+            it = storage_columns.column_name_to_column_node.find(std::string(identifier_view.at(0)));
+
+            if (it != storage_columns.column_name_to_column_node.end())
+                result_column = it->second;
+        }
 
         if (!result_column)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1107,9 +1260,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
                 table_expression_name.empty() ? "" : " with name " + table_expression_name,
                 scope.scope_node->formatASTForErrorMessage());
 
-        QueryTreeNodePtr result_expression = std::make_shared<ColumnNode>(*result_column, from_node);
+        QueryTreeNodePtr result_expression = result_column;
 
-        if (!table_node && compound_identifier)
+        if (!match_full_identifier && compound_identifier)
         {
             IdentifierView nested_path(identifier_view);
             nested_path.popFirst();
@@ -2121,7 +2274,8 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
     }
     else if (auto * column_function_node = node->as<ColumnNode>())
     {
-        /// Already resolved
+        if (column_function_node->hasAliasExpression())
+            resolveExpressionNode(column_function_node->getAliasExpression(), scope, false /*allow_lambda_expression*/);
     }
     else if (auto * lambda_node = node->as<LambdaNode>())
     {

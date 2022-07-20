@@ -16,6 +16,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_)
+    : column(std::move(column_))
+    , column_source(std::move(column_source_))
+{
+    children.resize(1);
+}
+
+ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodePtr alias_expression_node_, QueryTreeNodeWeakPtr column_source_)
+    : column(std::move(column_))
+    , column_source(std::move(column_source_))
+{
+    children.resize(1);
+    children[0] = std::move(alias_expression_node_);
+}
+
 QueryTreeNodePtr ColumnNode::getColumnSource() const
 {
     auto lock = column_source.lock();
@@ -40,6 +55,14 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
     auto column_source_ptr = column_source.lock();
     if (column_source_ptr)
         buffer << ", source_id: " << state.getNodeId(column_source_ptr.get());
+
+    const auto & alias_expression = getAliasExpression();
+
+    if (alias_expression)
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "ALIAS EXPRESSION\n";
+        alias_expression->dumpTreeImpl(buffer, state, indent + 4);
+    }
 }
 
 bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const

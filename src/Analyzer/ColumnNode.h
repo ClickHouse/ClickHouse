@@ -12,6 +12,8 @@ namespace DB
   * Column can be table expression, lambda, subquery.
   * Column source must be valid during column node lifetime.
   *
+  * For table ALIAS columns. Column node must contain ALIAS expression.
+  *
   * During query analysis pass identifier node is resolved into column. See IdentifierNode.h.
   *
   * Examples:
@@ -19,6 +21,8 @@ namespace DB
   * SELECT lambda(x -> x + 1, [1,2,3]). x is identifier inside lambda that must be resolved to column node during query analysis pass.
   *
   * Column node is initialized with column name, type and column source weak pointer.
+  * In case of ALIAS column node is initialized with column name, type, alias expression and column source weak pointer.
+  *
   * Additional care must be taken during clone to repoint column source to another node if its necessary see IQueryTreeNode.h `clone` method.
   */
 class ColumnNode;
@@ -28,10 +32,10 @@ class ColumnNode final : public IQueryTreeNode
 {
 public:
     /// Construct column node with column name, type and column source weak pointer.
-    explicit ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_)
-        : column(std::move(column_))
-        , column_source(std::move(column_source_))
-    {}
+    ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
+
+    /// Construct ALIAS column node with column name, type, column expression and column source weak pointer.
+    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr alias_expression_node_, QueryTreeNodeWeakPtr column_source_);
 
     /// Get column
     const NameAndTypePair & getColumn() const
@@ -49,6 +53,21 @@ public:
     const DataTypePtr & getColumnType() const
     {
         return column.type;
+    }
+
+    bool hasAliasExpression() const
+    {
+        return children[alias_expression_child_index] != nullptr;
+    }
+
+    const QueryTreeNodePtr & getAliasExpression() const
+    {
+        return children[alias_expression_child_index];
+    }
+
+    QueryTreeNodePtr & getAliasExpression()
+    {
+        return children[alias_expression_child_index];
     }
 
     /** Get column source.
@@ -93,6 +112,8 @@ protected:
 private:
     NameAndTypePair column;
     QueryTreeNodeWeakPtr column_source;
+
+    static constexpr size_t alias_expression_child_index = 0;
 };
 
 }
