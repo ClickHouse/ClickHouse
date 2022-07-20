@@ -124,7 +124,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
     /// All operations with queues are considered no to do any allocations
 
-    auto erase_from_active = [this, item]
+    auto erase_from_active = [this, item]() TSA_REQUIRES(mutex)
     {
         active.erase(std::remove(active.begin(), active.end(), item), active.end());
     };
@@ -138,18 +138,20 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     }
     catch (const Exception & e)
     {
-        NOEXCEPT_SCOPE;
-        ALLOW_ALLOCATIONS_IN_SCOPE;
-        if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
-            LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
-        else
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+        NOEXCEPT_SCOPE({
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
+                LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
+            else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+        });
     }
     catch (...)
     {
-        NOEXCEPT_SCOPE;
-        ALLOW_ALLOCATIONS_IN_SCOPE;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        NOEXCEPT_SCOPE({
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        });
     }
 
     if (need_execute_again)
@@ -162,9 +164,10 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
             /// This is significant to order the destructors.
             {
-                NOEXCEPT_SCOPE;
-                ALLOW_ALLOCATIONS_IN_SCOPE;
-                item->task.reset();
+                NOEXCEPT_SCOPE({
+                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    item->task.reset();
+                });
             }
             item->is_done.set();
             item = nullptr;
@@ -197,18 +200,20 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         }
         catch (const Exception & e)
         {
-            NOEXCEPT_SCOPE;
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
-                LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
-            else
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
+                    LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
+                else
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+            });
         }
         catch (...)
         {
-            NOEXCEPT_SCOPE;
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            });
         }
 
 
@@ -218,9 +223,10 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
         {
-            NOEXCEPT_SCOPE;
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            item->task.reset();
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                item->task.reset();
+            });
         }
 
         item->is_done.set();
@@ -243,7 +249,7 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
             TaskRuntimeDataPtr item;
             {
                 std::unique_lock lock(mutex);
-                has_tasks.wait(lock, [this](){ return !pending.empty() || shutdown; });
+                has_tasks.wait(lock, [this]() TSA_REQUIRES(mutex) { return !pending.empty() || shutdown; });
 
                 if (shutdown)
                     break;
@@ -256,9 +262,10 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
         }
         catch (...)
         {
-            NOEXCEPT_SCOPE;
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            });
         }
     }
 }

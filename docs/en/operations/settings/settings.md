@@ -2626,7 +2626,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 1800.
+Default value: 180.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -2637,7 +2637,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 1800.
+Default value: 180.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
