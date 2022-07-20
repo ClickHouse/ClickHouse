@@ -47,14 +47,6 @@ std::pair<String, String> ParserKQLSummarize::removeLastWord(String input)
     {
         return std::make_pair(first_part, temp[temp.size() - 1]);
     }
-    if (!temp.empty())
-    {
-        return std::make_pair(first_part, temp[temp.size() - 1]);
-    }
-    if (!temp.empty())
-    {
-        return std::make_pair(first_part, temp[temp.size() - 1]);
-    }
 
     return std::make_pair("", "");
 }
