@@ -23,7 +23,7 @@ const char * toString(QueryTreeNodeType type)
     switch (type)
     {
         case QueryTreeNodeType::IDENTIFIER: return "IDENTIFIER";
-        case QueryTreeNodeType::ASTERISK: return "ASTERISK";
+        case QueryTreeNodeType::MATCHER: return "MATCHER";
         case QueryTreeNodeType::TRANSFORMER: return "TRANSFORMER";
         case QueryTreeNodeType::LIST: return "LIST";
         case QueryTreeNodeType::CONSTANT: return "CONSTANT";
@@ -31,6 +31,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::COLUMN: return "COLUMN";
         case QueryTreeNodeType::LAMBDA: return "LAMBDA";
         case QueryTreeNodeType::TABLE: return "TABLE";
+        case QueryTreeNodeType::TABLE_FUNCTION: return "TABLE_FUNCTION";
         case QueryTreeNodeType::QUERY: return "QUERY";
     }
 }
