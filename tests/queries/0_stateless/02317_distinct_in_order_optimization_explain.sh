@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DISABLE_OPTIMIZATION="set optimize_distinct_in_order=0"
 ENABLE_OPTIMIZATION="set optimize_distinct_in_order=1"
-GREP_OPTIMIZATIONS="grep 'DistinctSortedChunkTransform\|DistinctSortedTransform'"
+GREP_OPTIMIZATIONS="grep 'DistinctSortedChunkTransform\|DistinctSortedStreamTransform'"
 TRIM_LEADING_SPACES="sed -e 's/^[ \t]*//'"
 FIND_OPTIMIZATIONS="$GREP_OPTIMIZATIONS | $TRIM_LEADING_SPACES"
 
