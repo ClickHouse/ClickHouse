@@ -95,8 +95,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         if (!distinct_sort_desc.empty())
         {
             const bool sorted_stream = input_stream.sort_mode == DataStream::SortMode::Stream;
-            /// pre-distinct for sorted chunks or
-            /// final distinct for sorted stream (sorting inside and among chunks)
+            /// pre-distinct for sorted chunks or final distinct for sorted stream (sorting inside and among chunks)
             if (pre_distinct || sorted_stream)
             {
                 pipeline.addSimpleTransform(
