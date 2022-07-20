@@ -428,6 +428,15 @@ public:
         if (!table_node)
             return;
 
+        /// Replace ALIAS column with expression
+
+        if (column_node->hasAliasExpression())
+        {
+            node = column_node->getAliasExpression();
+            visit(node, data);
+            return;
+        }
+
         data.source_columns_set.insert(column_node->getColumnName());
     }
 
@@ -436,7 +445,6 @@ public:
         return true;
     }
 };
-
 
 using CollectSourceColumnsVisitor = CollectSourceColumnsMatcher::Visitor;
 
