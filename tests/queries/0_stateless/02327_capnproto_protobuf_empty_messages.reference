@@ -1,4 +1,8 @@
 OK
 OK
-OK
-OK
+FAIL
+FAIL
+str	String					
+text	String					
+str	String					
+text	String					
