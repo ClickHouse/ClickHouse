@@ -79,7 +79,7 @@ namespace SettingsChangesHistory
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
         {"22.7", {{"cross_to_inner_join_rewrite", 1, 2, "Force rewrite comma join to inner"},
-                  {"enable_positional_arguments", false, true, "Enable positional arguments feature by default"}
+                  {"enable_positional_arguments", false, true, "Enable positional arguments feature by default"},
                   {"format_csv_allow_single_quotes", true, false, "Most tools don't treat single quote in CSV specially, don't do it by default too"}}},
         {"22.6", {{"output_format_json_named_tuples_as_objects", false, true, "Allow to serialize named tuples as JSON objects in JSON formats by default"}}},
         {"22.5", {{"memory_overcommit_ratio_denominator", 0, 1073741824, "Enable memory overcommit feature by default"},
