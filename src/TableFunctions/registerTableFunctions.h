@@ -40,6 +40,7 @@ void registerTableFunctionODBC(TableFunctionFactory & factory);
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 void registerTableFunctionView(TableFunctionFactory & factory);
+void registerTableFunctionViewIfPermitted(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
