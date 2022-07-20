@@ -46,33 +46,32 @@ Select '-- Query has second Column selection with extra column --';
 set dialect='kusto';
 Customers| project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education;
 
--- set dialect='clickhouse';
--- Select '-- Query with desc sort --';
--- set dialect='kusto';
--- Customers | project FirstName,LastName,Occupation | take 5 | sort by FirstName desc;
--- Customers | project FirstName,LastName,Occupation | take 5 | order by Occupation desc;
+set dialect='clickhouse';
+Select '-- Query with desc sort --';
+set dialect='kusto';
+Customers | project FirstName | take 5 | sort by FirstName desc;
+Customers | project Occupation | take 5 | order by Occupation desc;
 
--- set dialect='clickhouse';
--- Select '-- Query with asc sort --';
--- set dialect='kusto';
--- Customers | project FirstName,LastName,Occupation | take 5 | sort by Occupation asc;
+set dialect='clickhouse';
+Select '-- Query with asc sort --';
+set dialect='kusto';
+Customers | project Occupation | take 5 | sort by Occupation asc;
 
--- set dialect='clickhouse';
--- Select '-- Query with sort (without keyword asc desc) --';
--- set dialect='kusto';
--- Customers | project FirstName,LastName,Occupation | take 5 | sort by FirstName;
--- Customers | project FirstName,LastName,Occupation | take 5 | order by Occupation;
+set dialect='clickhouse';
+Select '-- Query with sort (without keyword asc desc) --';
+set dialect='kusto';
+Customers | project FirstName | take 5 | sort by FirstName;
+Customers | project Occupation | take 5 | order by Occupation;
 
--- set dialect='clickhouse';
--- Select '-- Query with sort 2 Columns with different direction --';
--- set dialect='kusto';
--- Customers | project FirstName,LastName,Occupation | take 5 |sort by Occupation asc, LastName desc;
+set dialect='clickhouse';
+Select '-- Query with sort 2 Columns with different direction --';
+set dialect='kusto';
+Customers | project FirstName,LastName,Occupation | take 5 | sort by Occupation asc, LastName desc;
 
--- set dialect='clickhouse';
--- Select '-- Query with second sort --';
--- set dialect='kusto';
--- Customers | project FirstName,LastName,Occupation | take 5 |sort by Occupation desc |sort by Occupation asc;
-
+set dialect='clickhouse';
+Select '-- Query with second sort --';
+set dialect='kusto';
+Customers | project FirstName,LastName,Occupation | take 5 | sort by Occupation desc |sort by Occupation asc, LastName desc;
 
 set dialect='clickhouse';
 Select '-- Test String Equals (==) --';
@@ -119,15 +118,7 @@ Select '-- Test Filter using numerical great and less (> , <) --';
 set dialect='kusto';
 Customers | project FirstName,LastName,Occupation,Education,Age | where Age > 30 and Age < 40;
 
-
 set dialect='clickhouse';
 Select '-- Test Filter using multi where --';
 set dialect='kusto';
 Customers | project FirstName,LastName,Occupation,Education,Age | where Age > 30 | where Occupation == 'Professional';
-
--- TODO: verify the issue that order by can not be followed by other statements
-set dialect='clickhouse';
-Select '-- test sort, order --';
-set dialect='kusto';
-Customers | order by Age desc, FirstName asc;
-

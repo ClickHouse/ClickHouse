@@ -49,6 +49,46 @@ Peter	Nara
 Theodore	Diaz	Bachelors
 Stephanie	Cox	Bachelors
 Peter	Nara	Graduate Degree
+-- Query with desc sort --
+Theodore
+Stephanie
+Peter
+Latoya
+Joshua
+Skilled Manual
+Skilled Manual
+Skilled Manual
+Skilled Manual
+Professional
+-- Query with asc sort --
+Management
+Professional
+Professional
+Professional
+Professional
+-- Query with sort (without keyword asc desc) --
+Theodore
+Stephanie
+Peter
+Latoya
+Joshua
+Skilled Manual
+Skilled Manual
+Skilled Manual
+Skilled Manual
+Professional
+-- Query with sort 2 Columns with different direction --
+Stephanie	Cox	Management
+Dalton	Wood	Professional
+Angel	Stewart	Professional
+Latoya	Shen	Professional
+Cameron	Rodriguez	Professional
+-- Query with second sort --
+Stephanie	Cox	Management
+Dalton	Wood	Professional
+Angel	Stewart	Professional
+Latoya	Shen	Professional
+Cameron	Rodriguez	Professional
 -- Test String Equals (==) --
 Theodore	Diaz	Skilled Manual
 Peter	Nara	Skilled Manual
@@ -98,14 +138,3 @@ Christine	Nara	Skilled Manual	Partial College	33
 -- Test Filter using multi where --
 Dalton	Wood	Professional	Partial College	42
 Angel	Stewart	Professional	Partial College	46
--- test sort, order --
-Angel	Stewart	Professional	Partial College	46
-Dalton	Wood	Professional	Partial College	42
-Edward	Hernandez	Skilled Manual	High School	36
-Christine	Nara	Skilled Manual	Partial College	33
-Stephanie	Cox	Management	Bachelors	33
-Cameron	Rodriguez	Professional	Partial College	28
-Theodore	Diaz	Skilled Manual	Bachelors	28
-Joshua	Lee	Professional	Partial College	26
-Peter	Nara	Skilled Manual	Graduate Degree	26
-Latoya	Shen	Professional	Graduate Degree	25
