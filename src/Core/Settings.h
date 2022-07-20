@@ -35,6 +35,10 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
   *
   * `flags` can be either 0 or IMPORTANT.
   * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
+  *
+  * When adding new settings that control some backward incompatible changes or when changing some settings values,
+  * consider adding them to settings changes history in SettingsChangesHistory.h for special `compatibility` setting
+  * to work correctly.
   */
 
 #define COMMON_SETTINGS(M) \
@@ -601,6 +605,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, allow_deprecated_database_ordinary, false, "Allow to create databases with deprecated Ordinary engine", 0) \
     M(Bool, allow_deprecated_syntax_for_merge_tree, false, "Allow to create *MergeTree tables with deprecated engine definition syntax", 0) \
     \
+    M(String, compatibility, "", "Changes other settings according to provided ClickHouse version. If we know that we changed some behaviour in ClickHouse by changing some settings in some version, this compatibility setting will control these settings", 0) \
+    \
     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
@@ -827,6 +833,13 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     void addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field);
 
     void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
+
+    void set(std::string_view name, const Field & value) override;
+
+private:
+    void applyCompatibilitySetting();
+
+    std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
 
 /*
