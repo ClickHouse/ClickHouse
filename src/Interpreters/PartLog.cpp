@@ -201,8 +201,8 @@ bool PartLog::addNewParts(
         {
             PartLogElement elem;
 
-            if (query_id.data && query_id.size)
-                elem.query_id.insert(0, query_id.data, query_id.size);
+            if (!query_id.empty())
+                elem.query_id.insert(0, query_id.data(), query_id.size());
 
             elem.event_type = PartLogElement::NEW_PART; //-V1048
 
