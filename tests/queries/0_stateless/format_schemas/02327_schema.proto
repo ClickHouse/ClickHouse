@@ -1,8 +1,9 @@
 syntax = "proto3";
 
-message Nested {
+message Empty {
 }
 
 message Message {
-  Nested nested = 1;
+  Empty empty = 1;
+  string str = 2;
 };
