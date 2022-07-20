@@ -466,7 +466,10 @@ IProcessor::Status SortingAggregatedTransform::prepare()
         /// We want to keep not more than `num_inputs` buckets in memory (and there will be only a single chunk with the given `bucket_id`).
         const bool bucket_from_this_input_still_in_memory = chunks.contains(last_bucket_number[input_num]);
         if (bucket_from_this_input_still_in_memory)
+        {
+            all_finished = false;
             continue;
+        }
 
         in->setNeeded();
 
