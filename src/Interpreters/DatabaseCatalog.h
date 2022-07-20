@@ -131,7 +131,7 @@ public:
     static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
 
     /// Returns true if a passed name is one of the predefined databases' names.
-    static bool isPredefinedDatabase(const std::string_view & database_name);
+    static bool isPredefinedDatabase(std::string_view database_name);
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
