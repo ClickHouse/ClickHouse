@@ -786,8 +786,16 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (analysis_result.use_grouping_set_key)
             res.insert({ nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set" });
 
-        for (const auto & key : query_analyzer->aggregationKeys())
-            res.insert({nullptr, header.getByName(key.name).type, key.name});
+        if (context->getSettingsRef().group_by_use_nulls && analysis_result.use_grouping_set_key)
+        {
+            for (const auto & key : query_analyzer->aggregationKeys())
+                res.insert({nullptr, makeNullableSafe(header.getByName(key.name).type), key.name});
+        }
+        else
+        {
+            for (const auto & key : query_analyzer->aggregationKeys())
+                res.insert({nullptr, header.getByName(key.name).type, key.name});
+        }
 
         for (const auto & aggregate : query_analyzer->aggregates())
         {
@@ -2326,6 +2334,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         merge_threads,
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,
+        settings.group_by_use_nulls,
         std::move(group_by_info),
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number);
@@ -2402,9 +2411,9 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
 
     QueryPlanStepPtr step;
     if (modificator == Modificator::ROLLUP)
-        step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(params), final);
+        step = std::make_unique<RollupStep>(query_plan.getCurrentDataStream(), std::move(params), final, settings.group_by_use_nulls);
     else if (modificator == Modificator::CUBE)
-        step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(params), final);
+        step = std::make_unique<CubeStep>(query_plan.getCurrentDataStream(), std::move(params), final, settings.group_by_use_nulls);
 
     query_plan.addStep(std::move(step));
 }
