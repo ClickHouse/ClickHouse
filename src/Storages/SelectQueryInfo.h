@@ -132,8 +132,13 @@ struct ProjectionCandidate
   *  that can be used during query processing
   *  inside storage engines.
   */
-struct SelectQueryInfoBase
+struct SelectQueryInfo
 {
+
+    SelectQueryInfo()
+        : prepared_sets(std::make_shared<PreparedSets>())
+    {}
+
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
@@ -162,7 +167,7 @@ struct SelectQueryInfoBase
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
-    PreparedSetsPtr sets;
+    PreparedSetsPtr prepared_sets;
 
     /// Cached value of ExpressionAnalysisResult::has_window
     bool has_window = false;
@@ -177,16 +182,6 @@ struct SelectQueryInfoBase
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
-};
-
-/// Contains non-copyable stuff
-struct SelectQueryInfo : SelectQueryInfoBase
-{
-    SelectQueryInfo() = default;
-    SelectQueryInfo(const SelectQueryInfo & other) : SelectQueryInfoBase(other) {}
-
-    /// Make sets reusable across different interpreters.
-    PreparedSetsPtr prepared_sets;
 };
 
 }

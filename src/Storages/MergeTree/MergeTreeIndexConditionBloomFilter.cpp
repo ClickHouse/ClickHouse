@@ -692,12 +692,12 @@ SetPtr MergeTreeIndexConditionBloomFilter::getPreparedSet(const ASTPtr & node)
     {
         const auto & column_and_type = header.getByName(node->getColumnName());
         auto set_key = getPreparedSetKey(node, column_and_type.type);
-        if (auto prepared_set = query_info.sets->getSet(set_key))
+        if (auto prepared_set = query_info.prepared_sets->getSet(set_key))
             return prepared_set;
     }
     else
     {
-        for (const auto & set : query_info.sets->getByTreeHash(node->getTreeHash()))
+        for (const auto & set : query_info.prepared_sets->getByTreeHash(node->getTreeHash()))
             if (set->hasExplicitSetElements())
                 return set;
     }

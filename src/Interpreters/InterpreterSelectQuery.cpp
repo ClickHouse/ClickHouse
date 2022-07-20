@@ -2015,7 +2015,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             SelectQueryInfo temp_query_info;
             temp_query_info.query = query_ptr;
             temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
-            temp_query_info.sets = query_analyzer->getPreparedSets();
+            temp_query_info.prepared_sets = query_analyzer->getPreparedSets();
 
             num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, context);
         }

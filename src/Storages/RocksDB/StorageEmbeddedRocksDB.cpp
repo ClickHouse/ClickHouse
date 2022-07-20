@@ -175,7 +175,7 @@ static std::pair<FieldVectorPtr, bool> getFilterKeys(
         return {{}, true};
 
     FieldVectorPtr res = std::make_shared<FieldVector>();
-    auto matched_keys = traverseASTFilter(primary_key, primary_key_type, select.where(), query_info.sets, res);
+    auto matched_keys = traverseASTFilter(primary_key, primary_key_type, select.where(), query_info.prepared_sets, res);
     return std::make_pair(res, !matched_keys);
 }
 
