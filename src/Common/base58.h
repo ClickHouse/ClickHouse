@@ -5,7 +5,7 @@
 namespace DB
 {
 
-inline bool encodeBase58(const char8_t * src, char8_t * dst)
+inline size_t encodeBase58(const char8_t * src, char8_t * dst)
 {
     const char * base58_encoding_alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -38,10 +38,10 @@ inline bool encodeBase58(const char8_t * src, char8_t * dst)
         dst[c_idx] = base58_encoding_alphabet[static_cast<unsigned char>(dst[c_idx])];
     }
     dst[idx] = '\0';
-    return true;
+    return idx + 1;
 }
 
-inline bool decodeBase58(const char8_t * src, char8_t * dst)
+inline size_t decodeBase58(const char8_t * src, char8_t * dst)
 {
     const char map_digits[128]
         = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -53,12 +53,12 @@ inline bool decodeBase58(const char8_t * src, char8_t * dst)
 
     for (; *src; ++src)
     {
-        unsigned int carry = static_cast<unsigned int>(map_digits[static_cast<unsigned char>(*src)]);
-        if (carry == UINT_MAX || *src < '1' || map_digits[static_cast<unsigned char>(*src)] == map_digits[0])
+        unsigned int carry = map_digits[*src];
+        if (unlikely(carry == UINT_MAX))
         {
-            return false;
+            return 0;
         }
-        for (size_t j = 0; j < idx; j++)
+        for (size_t j = 0; j < idx; ++j)
         {
             carry += static_cast<unsigned char>(dst[j]) * 58;
             dst[j] = static_cast<unsigned char>(carry & 0xff);
@@ -79,7 +79,7 @@ inline bool decodeBase58(const char8_t * src, char8_t * dst)
         dst[idx - (i + 1)] = s;
     }
     dst[idx] = '\0';
-    return true;
+    return idx + 1;
 }
 
 }

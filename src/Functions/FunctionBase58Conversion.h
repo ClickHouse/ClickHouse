@@ -39,7 +39,7 @@ struct Base58Encode
 
         const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
-        const auto * source = src_column.getChars().data();
+        const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
         auto * dst_pos = dst;
 
@@ -47,13 +47,11 @@ struct Base58Encode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t srclen = src_offsets[row] - src_offset_prev - 1;
-            encodeBase58(source, dst_pos);
+            size_t srclen = src_offsets[row] - src_offset_prev;
+            auto encoded_size = encodeBase58(src, dst_pos);
 
-            size_t encoded_length = strlen(reinterpret_cast<const char *>(dst_pos));
-
-            source += srclen + 1;
-            dst_pos += encoded_length + 1;
+            src += srclen;
+            dst_pos += encoded_size;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];
@@ -82,7 +80,7 @@ struct Base58Decode
 
         const ColumnString::Offsets & src_offsets = src_column.getOffsets();
 
-        const auto * source = src_column.getChars().data();
+        const auto * src = src_column.getChars().data();
         auto * dst = dst_data.data();
         auto * dst_pos = dst;
 
@@ -90,14 +88,14 @@ struct Base58Decode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t srclen = src_offsets[row] - src_offset_prev - 1;
-            if (!decodeBase58(source, dst_pos))
+            size_t srclen = src_offsets[row] - src_offset_prev;
+
+            auto decoded_size = decodeBase58(src, dst_pos);
+            if (!decoded_size)
                 throw Exception("Invalid Base58 value, cannot be decoded", ErrorCodes::BAD_ARGUMENTS);
 
-            size_t encoded_length = strlen(reinterpret_cast<const char *>(dst_pos));
-
-            source += srclen + 1;
-            dst_pos += encoded_length + 1;
+            src += srclen;
+            dst_pos += decoded_size;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];
