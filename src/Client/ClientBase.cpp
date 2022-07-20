@@ -601,6 +601,7 @@ void ClientBase::initLogsOutputStream()
     {
         WriteBuffer * wb = out_logs_buf.get();
 
+        bool color_logs = false;
         if (!out_logs_buf)
         {
             if (server_logs_file.empty())
@@ -608,11 +609,13 @@ void ClientBase::initLogsOutputStream()
                 /// Use stderr by default
                 out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
                 wb = out_logs_buf.get();
+                color_logs = stderr_is_a_tty;
             }
             else if (server_logs_file == "-")
             {
                 /// Use stdout if --server_logs_file=- specified
                 wb = &std_out;
+                color_logs = stdout_is_a_tty;
             }
             else
             {
@@ -622,7 +625,7 @@ void ClientBase::initLogsOutputStream()
             }
         }
 
-        logs_out_stream = std::make_unique<InternalTextLogs>(*wb, stdout_is_a_tty);
+        logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
     }
 }
 
@@ -980,8 +983,7 @@ void ClientBase::onProfileEvents(Block & block)
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
                 thread_times[host_name][thread_id].memory_usage = value;
         }
-        auto elapsed_time = profile_events.watch.elapsedMicroseconds();
-        progress_indication.updateThreadEventData(thread_times, elapsed_time);
+        progress_indication.updateThreadEventData(thread_times);
 
         if (need_render_progress)
             progress_indication.writeProgress();
@@ -2155,6 +2157,7 @@ void ClientBase::init(int argc, char ** argv)
 
     stdin_is_a_tty = isatty(STDIN_FILENO);
     stdout_is_a_tty = isatty(STDOUT_FILENO);
+    stderr_is_a_tty = isatty(STDERR_FILENO);
     terminal_width = getTerminalWidth();
 
     Arguments common_arguments{""}; /// 0th argument is ignored.
