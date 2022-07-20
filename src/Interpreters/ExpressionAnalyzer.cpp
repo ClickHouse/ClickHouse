@@ -45,6 +45,9 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Columns/ColumnNullable.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
@@ -345,6 +348,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 group_by_kind = GroupByKind::GROUPING_SETS;
             else
                 group_by_kind = GroupByKind::ORDINARY;
+            bool use_nulls = group_by_kind != GroupByKind::ORDINARY && getContext()->getSettingsRef().group_by_use_nulls;
 
             /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
             /// With set number, which is used as an additional key at the stage of merging aggregating data.
@@ -399,7 +403,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             }
                         }
 
-                        NameAndTypePair key{column_name, node->result_type};
+                        NameAndTypePair key{column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
 
                         grouping_set_list.push_back(key);
 
@@ -453,7 +457,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         }
                     }
 
-                    NameAndTypePair key{column_name, node->result_type};
+                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.contains(key.name))
@@ -1489,6 +1493,28 @@ void SelectQueryExpressionAnalyzer::appendExpressionsAfterWindowFunctions(Expres
     }
 }
 
+void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool /* only_types */)
+{
+    const auto * select_query = getAggregatingQuery();
+
+    if (!select_query->groupBy() || !(select_query->group_by_with_rollup || select_query->group_by_with_cube))
+        return;
+
+    auto source_columns = before_aggregation->getResultColumns();
+    ColumnsWithTypeAndName result_columns;
+
+    for (const auto & source_column : source_columns)
+    {
+        if (source_column.type->canBeInsideNullable())
+            result_columns.emplace_back(makeNullableSafe(source_column.type), source_column.name);
+        else
+            result_columns.push_back(source_column);
+    }
+    ExpressionActionsChain::Step & step = chain.lastStep(before_aggregation->getNamesAndTypesList());
+
+    step.actions() = ActionsDAG::makeConvertingActions(source_columns, result_columns, ActionsDAG::MatchColumnsMode::Position);
+}
+
 void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node)
 {
     if (auto * function = node->as<ASTFunction>())
@@ -1955,6 +1981,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
+
+            if (settings.group_by_use_nulls)
+                query_analyzer.appendGroupByModifiers(before_aggregation, chain, only_types);
 
             finalize_chain(chain);
 
