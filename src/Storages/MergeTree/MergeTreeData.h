@@ -669,12 +669,7 @@ public:
         AlterLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
-    void reportBrokenPart(const String & name) const
-    {
-        broken_part_callback(name);
-    }
-
-    /// Same as above but has the ability to check all other parts
+    /// Has the ability to check all other parts
     /// which reside on the same disk of the suspicious part.
     void reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const;
 
