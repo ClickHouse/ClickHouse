@@ -197,7 +197,9 @@ def compare_states(zk1, zk2, path="/", exclude_paths=[]):
     if path == "/":
         assert set(first_children) ^ set(second_children) == set(["keeper"])
     else:
-        assert first_children == second_children, "Childrens are not equal on path " + path
+        assert first_children == second_children, (
+            "Childrens are not equal on path " + path
+        )
 
     for children in first_children:
         if path != "/" or children != "keeper":
