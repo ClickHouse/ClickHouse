@@ -64,11 +64,11 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
 
-    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
+    void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     void shutdown() override;
 
@@ -78,7 +78,7 @@ public:
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:
-    void tryConnectToZooKeeperAndInitDatabase(bool force_attach, bool is_create_query);
+    void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 

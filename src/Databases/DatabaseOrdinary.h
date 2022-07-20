@@ -21,15 +21,16 @@ public:
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
 
     bool supportsLoadingInTopologicalOrder() const override { return true; }
 
     void loadTablesMetadata(ContextPtr context, ParsedTablesMetadata & metadata, bool is_startup) override;
 
-    void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore) override;
+    void loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast,
+        LoadingStrictnessLevel mode) override;
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     void alterTable(
         ContextPtr context,

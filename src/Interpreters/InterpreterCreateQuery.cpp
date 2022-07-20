@@ -249,6 +249,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
@@ -303,8 +304,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (!load_database_without_tables)
         {
+
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, has_force_restore_data_flag, create.attach && force_attach}; //-V560
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode}; //-V560
             loader.loadTables();
             loader.startupTables();
         }

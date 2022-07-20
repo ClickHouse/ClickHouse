@@ -81,7 +81,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 void DatabaseOrdinary::loadStoredObjects(
-    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -89,6 +89,7 @@ void DatabaseOrdinary::loadStoredObjects(
       */
 
     ParsedTablesMetadata metadata;
+    bool force_attach = LoadingStrictnessLevel::FORCE_ATTACH <= mode;
     loadTablesMetadata(local_context, metadata, force_attach);
 
     size_t total_tables = metadata.parsed_tables.size() - metadata.total_dictionaries;
@@ -118,7 +119,7 @@ void DatabaseOrdinary::loadStoredObjects(
         {
             pool.scheduleOrThrowOnError([&]()
             {
-                loadTableFromMetadata(local_context, path, name, ast, force_restore);
+                loadTableFromMetadata(local_context, path, name, ast, mode);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++dictionaries_processed, metadata.total_dictionaries, watch);
@@ -140,7 +141,7 @@ void DatabaseOrdinary::loadStoredObjects(
         {
             pool.scheduleOrThrowOnError([&]()
             {
-                loadTableFromMetadata(local_context, path, name, ast, force_restore);
+                loadTableFromMetadata(local_context, path, name, ast, mode);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
@@ -153,7 +154,7 @@ void DatabaseOrdinary::loadStoredObjects(
     if (!skip_startup_tables)
     {
         /// After all tables was basically initialized, startup them.
-        startupTables(pool, force_restore, force_attach);
+        startupTables(pool, mode);
     }
 }
 
@@ -238,7 +239,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
              TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database);
 }
 
-void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
+void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast,
+    LoadingStrictnessLevel mode)
 {
     assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & create_query = ast->as<const ASTCreateQuery &>();
@@ -248,11 +250,10 @@ void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, co
         create_query,
         *this,
         name.database,
-        file_path,
-        force_restore);
+        file_path, LoadingStrictnessLevel::FORCE_RESTORE <= mode);
 }
 
-void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_restore*/, bool /*force_attach*/)
+void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel /*mode*/)
 {
     LOG_INFO(log, "Starting up tables.");
 

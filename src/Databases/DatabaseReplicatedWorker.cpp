@@ -35,7 +35,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
             chassert(!database->is_probably_dropped);
             auto zookeeper = getAndSetZooKeeper();
             if (database->is_readonly)
-                database->tryConnectToZooKeeperAndInitDatabase(/* force_attach */ false, /* is_create_query */ false);
+                database->tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::ATTACH);
             initializeReplication();
             initialized = true;
             return true;
