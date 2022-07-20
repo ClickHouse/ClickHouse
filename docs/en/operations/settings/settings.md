@@ -3332,7 +3332,7 @@ Default value: `1GiB`.
 ## compatibility {#compatibility}
 
 This setting changes other settings according to provided ClickHouse version.
-If we know that we changed some behaviour in ClickHouse by changing some settings in some version, this compatibility setting will control these settings if they were not set by user.
+If a behaviour in ClickHouse was changed by using a different default value for some setting, this compatibility setting allows you to use default values from previous versions for all the settings that were not set by the user.
 
 This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
 
