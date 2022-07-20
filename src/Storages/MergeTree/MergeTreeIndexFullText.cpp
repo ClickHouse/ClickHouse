@@ -146,7 +146,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , token_extractor(token_extactor_)
-    , prepared_sets(query_info.sets)
+    , prepared_sets(query_info.prepared_sets)
 {
     rpn = std::move(
             RPNBuilder<RPNElement>(

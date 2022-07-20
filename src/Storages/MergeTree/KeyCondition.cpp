@@ -442,7 +442,7 @@ KeyCondition::KeyCondition(
     bool strict_)
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , prepared_sets(query_info.sets)
+    , prepared_sets(query_info.prepared_sets)
     , single_point(single_point_)
     , strict(strict_)
 {
