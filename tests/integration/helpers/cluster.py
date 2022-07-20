@@ -409,8 +409,6 @@ class ClickHouseCluster:
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
 
         self.coredns_host = "coredns"
-        self.coredns_port = 53
-        self.coredns_docker_id = self.get_instance_docker_id(self.coredns_host)
 
         # available when with_kerberozed_kafka == True
         self.kerberized_kafka_host = "kerberized_kafka1"
