@@ -664,12 +664,12 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     new_values["jemalloc.epoch"] = epoch;
 
     // Collect the statistics themselves.
-    size_t je_malloc_allocated = saveJemallocMetric<size_t>(new_values, "allocated");
+    [[maybe_unused]] size_t je_malloc_allocated = saveJemallocMetric<size_t>(new_values, "allocated");
     saveJemallocMetric<size_t>(new_values, "active");
     saveJemallocMetric<size_t>(new_values, "metadata");
     saveJemallocMetric<size_t>(new_values, "metadata_thp");
     saveJemallocMetric<size_t>(new_values, "resident");
-    size_t je_malloc_mapped = saveJemallocMetric<size_t>(new_values, "mapped");
+    [[maybe_unused]] size_t je_malloc_mapped = saveJemallocMetric<size_t>(new_values, "mapped");
     saveJemallocMetric<size_t>(new_values, "retained");
     saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
