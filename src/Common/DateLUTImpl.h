@@ -185,11 +185,6 @@ public:
     static_assert(sizeof(Values) == 16);
 
 private:
-
-    /// Mask is all-ones to allow efficient protection against overflow.
-    // static constexpr UInt32 date_lut_mask = 0x1ffff;
-    // static_assert(date_lut_mask == DATE_LUT_SIZE - 1);
-
     /// Offset to epoch in days (ExtendedDayNum) of the first day in LUT.
     /// "epoch" is the Unix Epoch (starts at unix timestamp zero)
     static constexpr UInt32 daynum_offset_epoch = 25567;
@@ -341,6 +336,15 @@ public:
             return DayNum{static_cast<DayNum::UnderlyingType>(saturateMinus(toLUTIndex(v).toUnderType(), daynum_offset_epoch))};
         else
             return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(toLUTIndex(v).toUnderType() - daynum_offset_epoch)};
+    }
+
+    static UInt16 normalizeDayNum(Int64 d)
+    {
+        if (d < 0)
+            return 0;
+        if (d > 65535)
+            return 65535;
+        return static_cast<UInt16>(d);
     }
 
     /// Round down to start of monday.
