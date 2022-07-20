@@ -5,7 +5,8 @@ CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTr
 INSERT INTO merge_table_standard_delete select number, toString(number) from numbers(100);
 
 SET mutations_sync = 1;
-SET allow_experimental_lightweight_delete = 1;
+SET allow_experimental_lightweight_delete = 0;
+SET allow_experimental_lightweight_delete_with_row_exists = 1;
 
 DELETE FROM merge_table_standard_delete WHERE id = 10;
 

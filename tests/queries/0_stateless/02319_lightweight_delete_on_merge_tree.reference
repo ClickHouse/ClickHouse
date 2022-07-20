@@ -8,8 +8,8 @@
 1
 1
 1
-1	DELETE WHERE (c % 5) = 1	1
-1	DELETE WHERE c = 4	1
+0	UPDATE _row_exists = 0 WHERE (c % 5) = 1	1
+0	UPDATE _row_exists = 0 WHERE c = 4	1
 0	MATERIALIZE INDEX i_c	1
 0	UPDATE b = -1 WHERE a < 3	1
 0	DROP INDEX i_c	1
