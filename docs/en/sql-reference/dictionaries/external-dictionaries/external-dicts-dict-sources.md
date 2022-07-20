@@ -5,9 +5,9 @@ sidebar_label: Sources of External Dictionaries
 
 # Sources of External Dictionaries
 
-An external dictionary can be connected from many different sources.
+An external dictionary can be connected to ClickHouse from many different sources.
 
-If dictionary is configured using xml-file, the configuration looks like this:
+If the dictionary is configured using an xml-file, the configuration looks like this:
 
 ``` xml
 <clickhouse>
@@ -24,7 +24,7 @@ If dictionary is configured using xml-file, the configuration looks like this:
 </clickhouse>
 ```
 
-In case of [DDL-query](../../../sql-reference/statements/create/dictionary.md), equal configuration will looks like:
+In case of [DDL-query](../../../sql-reference/statements/create/dictionary.md), the configuration described above will look like:
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -96,7 +96,7 @@ Setting fields:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
 
-When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
+When a dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in the `user_files` directory to prevent DB users from accessing arbitrary files on the ClickHouse node.
 
 **See Also**
 
@@ -104,7 +104,7 @@ When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONAR
 
 ## Executable File
 
-Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
 Example of settings:
 
@@ -120,22 +120,22 @@ Example of settings:
 
 Setting fields:
 
--   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
+-   `command` — The absolute path to the executable file, or the file name (if the command's directory is in the `PATH`).
 -   `format` — The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
--   `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
--   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
--   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
+-   `command_termination_timeout` — The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. `command_termination_timeout` is specified in seconds. Default value is 10. Optional parameter.
+-   `command_read_timeout` - Timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
+-   `command_write_timeout` - Timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
--   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
-That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
+That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 
 ## Executable Pool
 
-Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct` layouts.
+Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, or `complex_key_direct` layouts.
 
-Executable pool will spawn pool of processes with specified command and keep them running until they exit. The program should read data from STDIN while it is available and output result to STDOUT, and it can wait for next block of data on STDIN. ClickHouse will not close STDIN after processing a block of data but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing — it should poll STDIN and flush data to STDOUT early.
+Executable pool will spawn a pool of processes with the specified command and keep them running until they exit. The program should read data from STDIN while it is available and output the result to STDOUT. It can wait for the next block of data on STDIN. ClickHouse will not close STDIN after processing a block of data, but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing — it should poll STDIN and flush data to STDOUT early.
 
 Example of settings:
 
@@ -553,10 +553,13 @@ Setting fields:
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-There is no explicit parameter `secure`. Both cases: when establishing SSL-connection is mandatory and when it's not are handled automatically.
 :::
 
-MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
+:::note
+There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
+:::
+
+MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`.
 
 Example of settings:
 
