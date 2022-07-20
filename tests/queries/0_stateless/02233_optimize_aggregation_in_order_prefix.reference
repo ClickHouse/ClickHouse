@@ -2,7 +2,7 @@
 0	0	0
 -- { echoOn }
 insert into data_02233 select number%10, number%3, number from numbers(100);
-explain pipeline select parent_key, child_key, count() from data_02233 group by parent_key, child_key with totals order by parent_key, child_key settings max_threads=1, optimize_aggregation_in_order=1;
+explain pipeline select parent_key, child_key, count() from data_02233 group by parent_key, child_key with totals order by parent_key, child_key settings max_threads=1, optimize_aggregation_in_order=1, read_in_order_two_level_merge_threshold=1;
 (Expression)
 ExpressionTransform × 2
   (Sorting)
@@ -20,7 +20,7 @@ ExpressionTransform × 2
                 ExpressionTransform
                   (ReadFromMergeTree)
                   MergeTreeInOrder 0 → 1
-explain pipeline select parent_key, child_key, count() from data_02233 group by parent_key, child_key with totals order by parent_key, child_key settings max_threads=1;
+explain pipeline select parent_key, child_key, count() from data_02233 group by parent_key, child_key with totals order by parent_key, child_key settings max_threads=1, optimize_aggregation_in_order=0, read_in_order_two_level_merge_threshold=1;
 (Expression)
 ExpressionTransform × 2
   (Sorting)
@@ -103,7 +103,7 @@ select parent_key, child_key, count() from data_02233 group by parent_key, child
 9	2	3
 
 0	0	100
-select parent_key, child_key, count() from data_02233 group by parent_key, child_key with totals order by parent_key, child_key settings max_threads=1;
+select parent_key, child_key, count() from data_02233 group by parent_key, child_key with totals order by parent_key, child_key settings max_threads=1, optimize_aggregation_in_order=0;
 0	0	4
 0	1	3
 0	2	3

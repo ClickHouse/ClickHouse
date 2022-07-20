@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
 #include <Core/Types.h>
+#include <Processors/QueryPlan/FilterStep.h>
 
 namespace DB
 {
@@ -89,6 +90,9 @@ struct WindowDescription
     // To calculate the window function, we sort input data first by PARTITION BY,
     // then by ORDER BY. This field holds this combined sort order.
     SortDescription full_sort_description;
+
+    std::vector<ActionsDAGPtr> partition_by_actions;
+    std::vector<ActionsDAGPtr> order_by_actions;
 
     WindowFrame frame;
 

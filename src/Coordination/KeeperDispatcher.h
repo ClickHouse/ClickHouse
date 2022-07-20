@@ -150,6 +150,11 @@ public:
         return server->isLeader();
     }
 
+    bool isFollower() const
+    {
+        return server->isFollower();
+    }
+
     bool hasLeader() const
     {
         return server->isLeaderAlive();

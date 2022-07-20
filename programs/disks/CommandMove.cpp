@@ -16,20 +16,21 @@ public:
     CommandMove()
     {
         command_name = "move";
-        command_option_description.emplace(createOptionsDescription("Help Message for move", getTerminalWidth()));
         description = "Move file or directory from `from_path` to `to_path`\nPath should be in format './' or './path' or 'path'";
-        usage = "Usage: move [OPTION]... <FROM_PATH> <TO_PATH>";
+        usage = "move [OPTION]... <FROM_PATH> <TO_PATH>";
     }
 
     void processOptions(
         Poco::Util::LayeredConfiguration &,
-        po::variables_map &) const override{}
+        po::variables_map &) const override
+    {}
 
-    void executeImpl(
-        const DB::ContextMutablePtr & global_context,
-        const Poco::Util::LayeredConfiguration & config) const override
+    void execute(
+        const std::vector<String> & command_arguments,
+        DB::ContextMutablePtr & global_context,
+        Poco::Util::LayeredConfiguration & config) override
     {
-        if (pos_arguments.size() != 2)
+        if (command_arguments.size() != 2)
         {
             printHelpMessage();
             throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
@@ -37,8 +38,8 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        String path_from = pos_arguments[0];
-        String path_to = pos_arguments[1];
+        String path_from = command_arguments[0];
+        String path_to = command_arguments[1];
 
         DiskPtr disk = global_context->getDisk(disk_name);
 

@@ -74,14 +74,27 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         prewhere_actions = std::make_unique<PrewhereExprInfo>();
 
         if (prewhere_info->row_level_filter)
-            prewhere_actions->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings);
+        {
+            PrewhereExprStep row_level_filter_step
+            {
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter, actions_settings),
+                .column_name = prewhere_info->row_level_column_name,
+                .remove_column = true,
+                .need_filter = true
+            };
 
-        prewhere_actions->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings);
+            prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
+        }
 
-        prewhere_actions->row_level_column_name = prewhere_info->row_level_column_name;
-        prewhere_actions->prewhere_column_name = prewhere_info->prewhere_column_name;
-        prewhere_actions->remove_prewhere_column = prewhere_info->remove_prewhere_column;
-        prewhere_actions->need_filter = prewhere_info->need_filter;
+        PrewhereExprStep prewhere_step
+        {
+            .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
+            .column_name = prewhere_info->prewhere_column_name,
+            .remove_column = prewhere_info->remove_prewhere_column,
+            .need_filter = prewhere_info->need_filter
+        };
+
+        prewhere_actions->steps.emplace_back(std::move(prewhere_step));
     }
 }
 
@@ -204,28 +217,76 @@ Chunk MergeTreeBaseSelectProcessor::generate()
 
 void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & current_task)
 {
+    MergeTreeRangeReader* prev_reader = nullptr;
+    bool last_reader = false;
+
     if (prewhere_info)
     {
-        if (reader->getColumns().empty())
-        {
-            current_task.range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), true, non_const_virtual_column_names);
-        }
-        else
-        {
-            MergeTreeRangeReader * pre_reader_ptr = nullptr;
-            if (pre_reader != nullptr)
-            {
-                current_task.pre_range_reader = MergeTreeRangeReader(pre_reader.get(), nullptr, prewhere_actions.get(), false, non_const_virtual_column_names);
-                pre_reader_ptr = &current_task.pre_range_reader;
-            }
+        if (prewhere_actions->steps.size() != pre_reader_for_step.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "PREWHERE steps count mismatch, actions: {}, readers: {}",
+                            prewhere_actions->steps.size(), pre_reader_for_step.size());
 
-            current_task.range_reader = MergeTreeRangeReader(reader.get(), pre_reader_ptr, nullptr, true, non_const_virtual_column_names);
+
+        for (size_t i = 0; i < prewhere_actions->steps.size(); ++i)
+        {
+            last_reader = reader->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
+            current_task.pre_range_readers.push_back(
+                MergeTreeRangeReader(pre_reader_for_step[i].get(), prev_reader, &prewhere_actions->steps[i], last_reader, non_const_virtual_column_names));
+
+            prev_reader = &current_task.pre_range_readers.back();
         }
+
+    }
+
+    if (!last_reader)
+    {
+        current_task.range_reader = MergeTreeRangeReader(reader.get(), prev_reader, nullptr, true, non_const_virtual_column_names);
     }
     else
     {
-        current_task.range_reader = MergeTreeRangeReader(reader.get(), nullptr, nullptr, true, non_const_virtual_column_names);
+        /// If all columns are read by pre_range_readers than move last pre_range_reader into range_reader
+        current_task.range_reader = std::move(current_task.pre_range_readers.back());
+        current_task.pre_range_readers.pop_back();
     }
+}
+
+static UInt64 estimateNumRows(const MergeTreeReadTask & current_task, UInt64 current_preferred_block_size_bytes,
+    UInt64 current_max_block_size_rows, UInt64 current_preferred_max_column_in_block_size_bytes, double min_filtration_ratio)
+{
+    const MergeTreeRangeReader & current_reader = current_task.range_reader;
+
+    if (!current_task.size_predictor)
+        return static_cast<size_t>(current_max_block_size_rows);
+
+    /// Calculates number of rows will be read using preferred_block_size_bytes.
+    /// Can't be less than avg_index_granularity.
+    size_t rows_to_read = current_task.size_predictor->estimateNumRows(current_preferred_block_size_bytes);
+    if (!rows_to_read)
+        return rows_to_read;
+    auto total_row_in_current_granule = current_reader.numRowsInCurrentGranule();
+    rows_to_read = std::max(total_row_in_current_granule, rows_to_read);
+
+    if (current_preferred_max_column_in_block_size_bytes)
+    {
+        /// Calculates number of rows will be read using preferred_max_column_in_block_size_bytes.
+        auto rows_to_read_for_max_size_column
+            = current_task.size_predictor->estimateNumRowsForMaxSizeColumn(current_preferred_max_column_in_block_size_bytes);
+        double filtration_ratio = std::max(min_filtration_ratio, 1.0 - current_task.size_predictor->filtered_rows_ratio);
+        auto rows_to_read_for_max_size_column_with_filtration
+            = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
+
+        /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than current_index_granularity.
+        rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
+    }
+
+    auto unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
+    if (unread_rows_in_current_granule >= rows_to_read)
+        return rows_to_read;
+
+    const MergeTreeIndexGranularity & index_granularity = current_task.data_part->index_granularity;
+
+    return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
 }
 
 
@@ -237,45 +298,10 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     const UInt64 current_max_block_size_rows = max_block_size_rows;
     const UInt64 current_preferred_block_size_bytes = preferred_block_size_bytes;
     const UInt64 current_preferred_max_column_in_block_size_bytes = preferred_max_column_in_block_size_bytes;
-    const MergeTreeIndexGranularity & index_granularity = task->data_part->index_granularity;
     const double min_filtration_ratio = 0.00001;
 
-    auto estimate_num_rows = [current_preferred_block_size_bytes, current_max_block_size_rows,
-        &index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
-        MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader)
-    {
-        if (!current_task.size_predictor)
-            return static_cast<size_t>(current_max_block_size_rows);
-
-        /// Calculates number of rows will be read using preferred_block_size_bytes.
-        /// Can't be less than avg_index_granularity.
-        size_t rows_to_read = current_task.size_predictor->estimateNumRows(current_preferred_block_size_bytes);
-        if (!rows_to_read)
-            return rows_to_read;
-        auto total_row_in_current_granule = current_reader.numRowsInCurrentGranule();
-        rows_to_read = std::max(total_row_in_current_granule, rows_to_read);
-
-        if (current_preferred_max_column_in_block_size_bytes)
-        {
-            /// Calculates number of rows will be read using preferred_max_column_in_block_size_bytes.
-            auto rows_to_read_for_max_size_column
-                = current_task.size_predictor->estimateNumRowsForMaxSizeColumn(current_preferred_max_column_in_block_size_bytes);
-            double filtration_ratio = std::max(min_filtration_ratio, 1.0 - current_task.size_predictor->filtered_rows_ratio);
-            auto rows_to_read_for_max_size_column_with_filtration
-                = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
-
-            /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than current_index_granularity.
-            rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
-        }
-
-        auto unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
-        if (unread_rows_in_current_granule >= rows_to_read)
-            return rows_to_read;
-
-        return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
-    };
-
-    UInt64 recommended_rows = estimate_num_rows(*task, task->range_reader);
+    UInt64 recommended_rows = estimateNumRows(*task, current_preferred_block_size_bytes,
+        current_max_block_size_rows, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio);
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(current_max_block_size_rows, recommended_rows));
 
     auto read_result = task->range_reader.read(rows_to_read, task->mark_ranges);
@@ -602,9 +628,12 @@ std::unique_ptr<MergeTreeBlockSizePredictor> MergeTreeBaseSelectProcessor::getSi
     const Block & sample_block)
 {
     const auto & required_column_names = task_columns.columns.getNames();
-    const auto & required_pre_column_names = task_columns.pre_columns.getNames();
     NameSet complete_column_names(required_column_names.begin(), required_column_names.end());
-    complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+    for (const auto & pre_columns_per_step : task_columns.pre_columns)
+    {
+        const auto & required_pre_column_names = pre_columns_per_step.getNames();
+        complete_column_names.insert(required_pre_column_names.begin(), required_pre_column_names.end());
+    }
 
     return std::make_unique<MergeTreeBlockSizePredictor>(
         data_part, Names(complete_column_names.begin(), complete_column_names.end()), sample_block);

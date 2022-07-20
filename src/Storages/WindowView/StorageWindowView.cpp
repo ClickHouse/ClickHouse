@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTimeWindow.h>
+#include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -458,6 +459,8 @@ void StorageWindowView::alter(
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
+    output_header.clear();
+
     InterpreterDropQuery::executeDropQuery(
     ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, true);
 
@@ -667,6 +670,19 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto block_io = interpreter.execute();
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));
+
+        auto adding_missing_defaults_dag = addMissingDefaults(
+            pipe.getHeader(),
+            block_io.pipeline.getHeader().getNamesAndTypesList(),
+            getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
+            getContext(),
+            getContext()->getSettingsRef().insert_null_as_default);
+        auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
+        pipe.addSimpleTransform([&](const Block & stream_header)
+        {
+            return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
+        });
+
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
@@ -1001,7 +1017,7 @@ void StorageWindowView::threadFuncFireProc()
     if (shutdown_called)
         return;
 
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
     while (next_fire_signal <= timestamp_now)
@@ -1033,7 +1049,7 @@ void StorageWindowView::threadFuncFireProc()
 
 void StorageWindowView::threadFuncFireEvent()
 {
-    std::unique_lock lock(fire_signal_mutex);
+    std::lock_guard lock(fire_signal_mutex);
 
     LOG_TRACE(log, "Fire events: {}", fire_signal.size());
 
@@ -1053,21 +1069,6 @@ void StorageWindowView::threadFuncFireEvent()
 
     clean_cache_task->schedule();
 }
-
-// Pipe StorageWindowView::read(
-//     const Names & column_names,
-//     const StorageSnapshotPtr & storage_snapshot,
-//     SelectQueryInfo & query_info,
-//     ContextPtr local_context,
-//     QueryProcessingStage::Enum processed_stage,
-//     const size_t max_block_size,
-//     const unsigned num_streams)
-// {
-//     QueryPlan plan;
-//     read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-//     return plan.convertToPipe(
-//         QueryPlanOptimizationSettings::fromContext(local_context), BuildQueryPipelineSettings::fromContext(local_context));
-// }
 
 void StorageWindowView::read(
     QueryPlan & query_plan,
@@ -1163,9 +1164,6 @@ StorageWindowView::StorageWindowView(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    if (!query.select)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
-
     /// If the target table is not set, use inner target table
     has_inner_target_table = query.to_table_id.empty();
     if (has_inner_target_table && !query.storage)
@@ -1231,7 +1229,6 @@ StorageWindowView::StorageWindowView(
 ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr context_)
 {
     select_query = query.clone();
-    input_header.clear();
     output_header.clear();
 
     String select_database_name = getContext()->getCurrentDatabase();
@@ -1609,7 +1606,7 @@ void StorageWindowView::drop()
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     if (!std::exchange(has_inner_table, false))
         return;
@@ -1617,10 +1614,10 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     try
     {
         InterpreterDropQuery::executeDropQuery(
-            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, no_delay);
+            ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id, sync);
 
         if (has_inner_target_table)
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, sync);
     }
     catch (...)
     {
@@ -1628,15 +1625,10 @@ void StorageWindowView::dropInnerTableIfAny(bool no_delay, ContextPtr local_cont
     }
 }
 
-const Block & StorageWindowView::getInputHeader() const
+Block StorageWindowView::getInputHeader() const
 {
-    std::lock_guard lock(sample_block_lock);
-    if (!input_header)
-    {
-        input_header = InterpreterSelectQuery(select_query->clone(), getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns))
-                           .getSampleBlock();
-    }
-    return input_header;
+    auto metadata = getSourceTable()->getInMemoryMetadataPtr();
+    return metadata->getSampleBlockNonMaterialized();
 }
 
 const Block & StorageWindowView::getOutputHeader() const

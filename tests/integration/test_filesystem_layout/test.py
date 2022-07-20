@@ -16,7 +16,10 @@ def started_cluster():
 
 
 def test_file_path_escaping(started_cluster):
-    node.query("CREATE DATABASE IF NOT EXISTS test ENGINE = Ordinary")
+    node.query(
+        "CREATE DATABASE IF NOT EXISTS test ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
     node.query(
         """
         CREATE TABLE test.`T.a_b,l-e!` (`~Id` UInt32)
