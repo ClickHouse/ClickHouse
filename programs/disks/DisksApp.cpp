@@ -154,7 +154,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
-        Poco::Logger::root().setChannel(new Poco::FileChannel(log_path));
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel(log_path)));
     }
 
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
