@@ -29,6 +29,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
@@ -393,10 +394,26 @@ QueryTreeNodePtr QueryTreeBuilder::getFromNode(const ASTPtr & tables_in_select_q
 
                 return node;
             }
-            else
+            else if (table_expression.table_function)
             {
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only table is supported");
+                auto & table_function_expression = table_expression.table_function->as<ASTFunction &>();
+
+                auto node = std::make_shared<TableFunctionNode>(table_function_expression.name);
+
+                if (table_function_expression.arguments)
+                {
+                    const auto & function_arguments_list = table_function_expression.arguments->as<ASTExpressionList>()->children;
+                    for (const auto & argument : function_arguments_list)
+                        node->getArguments().getNodes().push_back(getExpression(argument));
+                }
+
+                node->setAlias(table_function_expression.tryGetAlias());
+                node->setOriginalAST(table_expression.table_function);
+
+                return node;
             }
+
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}", table_element.table_expression->formatForErrorMessage());
         }
 
         // if (table_element.table_join)

@@ -36,16 +36,20 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
 #include <Databases/IDatabase.h>
 
+#include <Storages/IStorage.h>
+
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 #include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
@@ -63,6 +67,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_IDENTIFIER;
+    extern const int UNKNOWN_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int CYCLIC_ALIASES;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
@@ -1084,6 +1089,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
 
     auto * table_node = from_node->as<TableNode>();
     auto * query_node = from_node->as<QueryNode>();
+    auto * table_function_node = from_node->as<TableFunctionNode>();
 
     /** Edge case scenario when subquery in FROM node try to resolve identifier from parent scopes, when FROM is not resolved.
       * SELECT subquery.b AS value FROM (SELECT value, 1 AS b) AS subquery;
@@ -1092,8 +1098,8 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
     if (query_node_from_section_in_resolve_process.contains(query_scope_node))
         return {};
 
-    if (!table_node && !query_node)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "FROM does not contain table or query node. Actual {}", from_node->formatASTForErrorMessage());
+    if (!table_node && !table_function_node && !query_node)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "FROM does not contain table, table function or query node. Actual {}", from_node->formatASTForErrorMessage());
 
     const auto & identifier = identifier_lookup.identifier;
     const auto & path_start = identifier.getParts().front();
@@ -1116,6 +1122,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
 
         if (query_node->hasAlias())
             table_expression_name = query_node->getAlias();
+    }
+    else if (table_function_node)
+    {
+        if (table_function_node->hasAlias())
+            table_expression_name = table_function_node->getAlias();
     }
 
     if (identifier_lookup.isTableLookup())
@@ -1140,9 +1151,9 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTables(const IdentifierL
     {
         TableExpressionColumns storage_columns;
 
-        if (table_node)
+        if (table_node || table_function_node)
         {
-            const auto & storage_snapshot = table_node->getStorageSnapshot();
+            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
             auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
             const auto & columns_description = storage_snapshot->metadata->getColumns();
@@ -1540,14 +1551,18 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
 
             NamesAndTypesList initial_matcher_columns;
 
-            if (auto * table_expression_query_node = table_expression_node->as<QueryNode>())
+            auto * table_expression_query_node = table_expression_node->as<QueryNode>();
+            auto * table_expression_table_node = table_expression_node->as<TableNode>();
+            auto * table_expression_table_function_node = table_expression_node->as<TableFunctionNode>();
+
+            if (table_expression_query_node)
             {
                 initial_matcher_columns = getQueryNodeColumns(table_expression_node);
             }
             else
             {
-                const auto & table_expression_table_node = table_expression_node->as<TableNode &>();
-                initial_matcher_columns = table_expression_table_node.getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::All));
+                const auto & storage_snapshot = table_expression_table_node ? table_expression_table_node->getStorageSnapshot() : table_expression_table_function_node->getStorageSnapshot();
+                initial_matcher_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All));
             }
 
             for (auto & column : initial_matcher_columns)
@@ -1586,13 +1601,17 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
 
         NamesAndTypesList initial_matcher_columns;
 
-        if (auto * from_query_node = scope_query_node->getFrom()->as<QueryNode>())
+        auto * from_query_node = scope_query_node->getFrom()->as<QueryNode>();
+        auto * from_table_node = scope_query_node->getFrom()->as<TableNode>();
+        auto * from_table_function_node = scope_query_node->getFrom()->as<TableFunctionNode>();
+
+        if (from_query_node)
         {
             initial_matcher_columns = getQueryNodeColumns(scope_query_node->getFrom());
         }
-        else
+        else if (from_table_node || from_table_function_node)
         {
-            const auto & table_node = scope_query_node->getFrom()->as<const TableNode &>();
+            const auto & storage_snapshot = from_table_node ? from_table_node->getStorageSnapshot() : from_table_function_node->getStorageSnapshot();
 
             UInt8 get_column_options_kind = 0;
 
@@ -1613,7 +1632,13 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
             }
 
             auto get_columns_options = GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_column_options_kind));
-            initial_matcher_columns = table_node.getStorageSnapshot()->getColumns(get_columns_options);
+            initial_matcher_columns = storage_snapshot->getColumns(get_columns_options);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unqualified matcher resolve unexpected FROM section {}",
+                scope_query_node->getFrom()->formatASTForErrorMessage());
         }
 
         for (auto & column : initial_matcher_columns)
@@ -2385,6 +2410,10 @@ void QueryAnalyzer::initializeQueryFrom(QueryTreeNodePtr & from_node, Identifier
     {
         /// Already initialized
     }
+    else if (auto * table_function = from_node->as<TableFunctionNode>())
+    {
+        /// Already initialized
+    }
     else if (auto * from_table_identifier = from_node->as<IdentifierNode>())
     {
         /// TODO: Context resolve storage
@@ -2478,6 +2507,53 @@ void QueryAnalyzer::resolveQueryFrom(QueryTreeNodePtr & from_node, IdentifierRes
         resolveQuery(from_node, subquery_scope);
         return;
     }
+    else if (auto * from_table_function = from_node->as<TableFunctionNode>())
+    {
+        const auto & table_function_factory = TableFunctionFactory::instance();
+        const auto & table_function_name = from_table_function->getTableFunctionName();
+
+        TableFunctionPtr table_function_ptr = table_function_factory.tryGet(table_function_name, context);
+        if (!table_function_ptr)
+        {
+            auto hints = TableFunctionFactory::instance().getHints(table_function_name);
+            if (!hints.empty())
+                throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}. Maybe you meant: {}", table_function_name, toString(hints));
+            else
+                throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unknown table function {}", table_function_name);
+        }
+
+        if (context->getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
+        {
+            const auto & insertion_table = context->getInsertionTable();
+            if (!insertion_table.empty())
+            {
+                const auto & structure_hint = DatabaseCatalog::instance().getTable(insertion_table, context)->getInMemoryMetadataPtr()->columns;
+                table_function_ptr->setStructureHint(structure_hint);
+            }
+        }
+
+        /// TODO: Special functions that can take query
+        /// TODO: Support qualified matchers for table function
+
+        for (auto & argument_node : from_table_function->getArguments().getNodes())
+        {
+            if (argument_node->getNodeType() == QueryTreeNodeType::MATCHER)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Matcher as table function argument is not supported {}. In scope {}",
+                    from_node->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
+            }
+
+            resolveExpressionNode(argument_node, scope, false /*allow_lambda_expression*/);
+        }
+
+        auto table_function_ast = from_table_function->toAST();
+        table_function_ptr->parseArguments(table_function_ast, context);
+
+        auto table_function_storage = table_function_ptr->execute(table_function_ast, context, table_function_ptr->getName());
+        from_table_function->resolve(std::move(table_function_ptr), std::move(table_function_storage), context);
+    }
     else if (auto * from_table = from_node->as<TableNode>())
     {
         return;
@@ -2546,6 +2622,9 @@ void QueryAnalyzer::resolveQuery(QueryTreeNodePtr & query_node, IdentifierResolv
 
     if (query_node_typed.getFrom())
     {
+        if (auto * table_function = query_node_typed.getFrom()->as<TableFunctionNode>())
+            visitor.visit(table_function->getArgumentsNode());
+
         auto [it, _] = query_node_from_section_in_resolve_process.emplace(query_node.get());
 
         initializeQueryFrom(query_node_typed.getFrom(), scope);
