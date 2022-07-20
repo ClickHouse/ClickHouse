@@ -10,7 +10,6 @@ set(ANNOY_SOURCE_DIR "${ANNOY_PROJECT_DIR}/src")
 
 add_library(_annoy INTERFACE)
 target_include_directories(_annoy SYSTEM INTERFACE ${ANNOY_SOURCE_DIR})
-set_target_properties(_annoy PROPERTIES LINKER_LANGUAGE CXX)
 
 add_library(ch_contrib::annoy ALIAS _annoy)
 target_compile_definitions(_annoy INTERFACE ENABLE_ANNOY)
