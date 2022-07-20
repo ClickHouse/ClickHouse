@@ -81,18 +81,6 @@ public:
     {
     }
 
-    ~WriteIndirectBuffer() override
-    {
-        try
-        {
-            finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
     void finalizeImpl() override
     {
         if (impl.isFinished())

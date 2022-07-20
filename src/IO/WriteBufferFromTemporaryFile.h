@@ -17,8 +17,6 @@ public:
 
     static Ptr create(const std::string & tmp_dir);
 
-    ~WriteBufferFromTemporaryFile() override;
-
 private:
     explicit WriteBufferFromTemporaryFile(std::unique_ptr<TemporaryFile> && tmp_file);
 

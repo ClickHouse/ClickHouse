@@ -63,7 +63,10 @@ public:
     /** it is desirable in the derived classes to place the finalize() call in the destructor,
       * so that the last data is written (if finalize() wasn't called explicitly)
       */
-    virtual ~WriteBuffer() = default;
+    virtual ~WriteBuffer()
+    {
+        assert(finalized);
+    }
 
     inline void nextIfAtEnd()
     {

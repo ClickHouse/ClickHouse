@@ -13,8 +13,6 @@ public:
 
     nuraft::ptr<nuraft::buffer> getBuffer();
 
-    ~WriteBufferFromNuraftBuffer() override;
-
 private:
     void finalizeImpl() override final;
 

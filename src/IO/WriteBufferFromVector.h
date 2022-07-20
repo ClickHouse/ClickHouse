@@ -58,11 +58,6 @@ public:
         finalized = false;
     }
 
-    ~WriteBufferFromVector() override
-    {
-        finalize();
-    }
-
 private:
     void finalizeImpl() override
     {

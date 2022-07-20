@@ -155,22 +155,6 @@ void WriteBufferFromS3::allocateBuffer()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
-#ifndef NDEBUG
-    if (!finalized)
-    {
-        LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
-        std::terminate();
-    }
-#else
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-#endif
 }
 
 bool WriteBufferFromS3::cacheEnabled() const

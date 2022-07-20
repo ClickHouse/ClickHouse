@@ -28,8 +28,6 @@ public:
         const WriteSettings & write_settings_,
         std::optional<std::map<std::string, std::string>> attributes_ = {});
 
-    ~WriteBufferFromAzureBlobStorage() override;
-
     void nextImpl() override;
 
 private:

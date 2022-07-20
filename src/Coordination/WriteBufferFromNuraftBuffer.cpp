@@ -52,16 +52,4 @@ nuraft::ptr<nuraft::buffer> WriteBufferFromNuraftBuffer::getBuffer()
     return buffer;
 }
 
-WriteBufferFromNuraftBuffer::~WriteBufferFromNuraftBuffer()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 }

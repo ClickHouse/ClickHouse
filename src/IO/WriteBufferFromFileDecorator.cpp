@@ -21,18 +21,6 @@ void WriteBufferFromFileDecorator::finalizeImpl()
     impl->finalize();
 }
 
-WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 void WriteBufferFromFileDecorator::sync()
 {
     impl->sync();

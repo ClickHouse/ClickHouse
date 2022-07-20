@@ -11,8 +11,6 @@ class WriteBufferFromFileDecorator : public WriteBufferFromFileBase
 public:
     explicit WriteBufferFromFileDecorator(std::unique_ptr<WriteBuffer> impl_);
 
-    ~WriteBufferFromFileDecorator() override;
-
     void sync() override;
 
     std::string getFileName() const override;

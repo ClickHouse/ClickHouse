@@ -81,11 +81,6 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
 
 }
 
-ZstdDeflatingAppendableWriteBuffer::~ZstdDeflatingAppendableWriteBuffer()
-{
-    finalize();
-}
-
 void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
 {
     if (first_write)

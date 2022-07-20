@@ -71,7 +71,6 @@ WriteBufferFromFile::WriteBufferFromFile(
 
 WriteBufferFromFile::~WriteBufferFromFile()
 {
-    finalize();
     ::close(fd);
 }
 

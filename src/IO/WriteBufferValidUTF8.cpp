@@ -143,11 +143,6 @@ void WriteBufferValidUTF8::nextImpl()
     working_buffer = Buffer(&memory[cnt], memory.data() + memory.size());
 }
 
-WriteBufferValidUTF8::~WriteBufferValidUTF8()
-{
-    finalize();
-}
-
 void WriteBufferValidUTF8::finalizeImpl()
 {
     /// Write all complete sequences from buffer.

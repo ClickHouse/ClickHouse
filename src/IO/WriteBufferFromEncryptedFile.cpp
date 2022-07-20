@@ -19,11 +19,6 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
     encryptor.setOffset(old_file_size);
 }
 
-WriteBufferFromEncryptedFile::~WriteBufferFromEncryptedFile()
-{
-    finalize();
-}
-
 void WriteBufferFromEncryptedFile::finalizeBefore()
 {
     /// If buffer has pending data - write it.

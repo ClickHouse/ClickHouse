@@ -55,18 +55,6 @@ public:
     RestartAwareWriteBuffer(const DiskRestartProxy & disk, std::unique_ptr<WriteBuffer> impl_)
         : WriteBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
 
-    ~RestartAwareWriteBuffer() override
-    {
-        try
-        {
-            finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
     void finalizeImpl() override
     {
         WriteBufferFromFileDecorator::finalizeImpl();

@@ -40,8 +40,6 @@ public:
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);
 
-    ~WriteBufferFromHTTPServerResponse() override;
-
     /// Writes progress in repeating HTTP headers.
     void onProgress(const Progress & progress);
 

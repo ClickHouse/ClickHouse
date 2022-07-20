@@ -27,12 +27,6 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
 {
 }
 
-
-WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
-{
-    finalize();
-}
-
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     if (attributes.has_value())

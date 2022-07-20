@@ -19,8 +19,6 @@ public:
         CreateMetadataCallback && create_callback_,
         const String & remote_path_);
 
-    ~WriteIndirectBufferFromRemoteFS() override;
-
     String getFileName() const override { return remote_path; }
 
 private:

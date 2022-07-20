@@ -24,8 +24,6 @@ public:
         const FileEncryption::Header & header_,
         size_t old_file_size = 0);
 
-    ~WriteBufferFromEncryptedFile() override;
-
     void sync() override;
 
     std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out.get())->getFileName(); }

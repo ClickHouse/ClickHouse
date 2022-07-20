@@ -22,8 +22,6 @@ public:
         const char * replacement_ = "\xEF\xBF\xBD",
         size_t size = DEFAULT_SIZE);
 
-    ~WriteBufferValidUTF8() override;
-
 private:
     void putReplacement();
     void putValid(char * data, size_t len);

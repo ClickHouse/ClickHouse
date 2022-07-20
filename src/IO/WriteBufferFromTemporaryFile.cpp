@@ -62,8 +62,4 @@ ReadBufferPtr WriteBufferFromTemporaryFile::getReadBufferImpl()
     return res;
 }
 
-
-WriteBufferFromTemporaryFile::~WriteBufferFromTemporaryFile() = default;
-
-
 }

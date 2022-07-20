@@ -23,18 +23,6 @@ public:
     {
     }
 
-    ~WritingToCacheWriteBuffer() override
-    {
-        try
-        {
-            finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
     void preFinalize() override
     {
         impl->next();
