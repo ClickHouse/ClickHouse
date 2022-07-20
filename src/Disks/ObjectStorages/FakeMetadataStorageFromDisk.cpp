@@ -11,7 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int FS_METADATA_ERROR;
 }
 
 FakeMetadataStorageFromDisk::FakeMetadataStorageFromDisk(
@@ -112,85 +111,6 @@ uint32_t FakeMetadataStorageFromDisk::getHardlinkCount(const std::string & path)
 const IMetadataStorage & FakeMetadataStorageFromDiskTransaction::getStorageForNonTransactionalReads() const
 {
     return metadata_storage;
-}
-
-void FakeMetadataStorageFromDiskTransaction::addOperation(MetadataOperationPtr && operation)
-{
-    if (state != MetadataFromDiskTransactionState::PREPARING)
-        throw Exception(
-            ErrorCodes::FS_METADATA_ERROR,
-            "Cannot add operations to transaction in {} state, it should be in {} state",
-            toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
-
-    operations.emplace_back(std::move(operation));
-}
-
-void FakeMetadataStorageFromDiskTransaction::commit()
-{
-    if (state != MetadataFromDiskTransactionState::PREPARING)
-        throw Exception(
-            ErrorCodes::FS_METADATA_ERROR,
-            "Cannot commit transaction in {} state, it should be in {} state",
-            toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
-
-    {
-        std::unique_lock lock(metadata_storage.metadata_mutex);
-        for (size_t i = 0; i < operations.size(); ++i)
-        {
-            try
-            {
-                operations[i]->execute();
-            }
-            catch (Exception & ex)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                ex.addMessage(fmt::format("While committing metadata operation #{}", i));
-                state = MetadataFromDiskTransactionState::FAILED;
-                rollback(i);
-                throw;
-            }
-        }
-    }
-
-    /// Do it in "best effort" mode
-    for (size_t i = 0; i < operations.size(); ++i)
-    {
-        try
-        {
-            operations[i]->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to finalize operation #{}", i));
-        }
-    }
-
-    state = MetadataFromDiskTransactionState::COMMITTED;
-}
-
-void FakeMetadataStorageFromDiskTransaction::rollback(size_t until_pos)
-{
-    /// Otherwise everything is alright
-    if (state == MetadataFromDiskTransactionState::FAILED)
-    {
-        for (int64_t i = until_pos; i >= 0; --i)
-        {
-            try
-            {
-                operations[i]->undo();
-            }
-            catch (Exception & ex)
-            {
-                state = MetadataFromDiskTransactionState::PARTIALLY_ROLLED_BACK;
-                ex.addMessage(fmt::format("While rolling back operation #{}", i));
-                throw;
-            }
-        }
-    }
-    else
-    {
-        /// Nothing to do, transaction committed or not even started to commit
-    }
 }
 
 void FakeMetadataStorageFromDiskTransaction::writeStringToFile(const std::string & path, const std::string & data)
