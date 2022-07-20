@@ -3015,8 +3015,12 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
+    size_t source_rows = 0;
+
     for (Block & block : blocks)
     {
+        source_rows += block.rows();
+
         if (bucket_num >= 0 && block.info.bucket_num != bucket_num)
             bucket_num = -1;
 
@@ -3049,9 +3053,15 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_DEBUG(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({:.3f} rows/sec., {}/sec.)",
-        rows, ReadableSize(bytes),
-        elapsed_seconds, rows / elapsed_seconds,
+    LOG_DEBUG(
+        log,
+        "Merged partially aggregated blocks for bucket #{}. Got {} rows, {} from {} source rows in {} sec. ({:.3f} rows/sec., {}/sec.)",
+        bucket_num,
+        rows,
+        ReadableSize(bytes),
+        source_rows,
+        elapsed_seconds,
+        rows / elapsed_seconds,
         ReadableSize(bytes / elapsed_seconds));
 
     block.info.bucket_num = bucket_num;
