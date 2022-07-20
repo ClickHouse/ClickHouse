@@ -28,8 +28,9 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     const JoinPtr & getJoin() const { return join; }
+    bool allowPushDownToRight() const;
 
-    void updateLeftStream(const DataStream & left_stream_);
+    void updateInputStream(const DataStream & new_input_stream_, size_t idx);
 
 private:
     JoinPtr join;

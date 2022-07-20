@@ -855,7 +855,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    algorithm.logElapsed(total_stopwatch.elapsedSeconds(), true);
+    algorithm.logElapsed(total_stopwatch.elapsedSeconds());
 }
 
 }
