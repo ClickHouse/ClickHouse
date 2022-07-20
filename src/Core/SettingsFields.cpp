@@ -54,6 +54,7 @@ namespace
             return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
+#ifndef KEEPER_STANDALONE_BUILD
     Map stringToMap(const String & str)
     {
         /// Allow empty string as an empty map
@@ -81,6 +82,8 @@ namespace
 
         return f.safeGet<const Map &>();
     }
+#endif
+
 }
 
 template <typename T>
@@ -321,6 +324,8 @@ void SettingFieldString::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
+#ifndef KEEPER_STANDALONE_BUILD
+
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
 String SettingFieldMap::toString() const
@@ -360,6 +365,7 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
     *this = map;
 }
 
+#endif
 
 namespace
 {
