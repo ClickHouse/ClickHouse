@@ -25,6 +25,7 @@ public:
 
 protected:
     void nextImpl() override;
+    void finalizeImpl() override;
 
 private:
     WriteBufferPtrs sources;
