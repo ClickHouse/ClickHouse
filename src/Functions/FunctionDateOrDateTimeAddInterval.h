@@ -288,12 +288,7 @@ struct AddDaysImpl
 
     static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, UInt16 = 0)
     {
-        Int64 r = d + delta;
-        if (r < 0)
-            return 0;
-        if (r > 65535)
-            return 65535;
-        return static_cast<UInt16>(r);
+        return DateLUT::instance().normalizeDayNum(d + delta);
     }
 
     static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, UInt16 = 0)
@@ -327,12 +322,7 @@ struct AddWeeksImpl
 
     static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int32 delta, const DateLUTImpl &, UInt16 = 0)
     {
-        Int64 r = d + delta * 7;
-        if (r < 0)
-            return 0;
-        if (r > 65535)
-            return 65535;
-        return static_cast<UInt16>(r);
+        return DateLUT::instance().normalizeDayNum(d + delta * 7);
     }
 
     static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int32 delta, const DateLUTImpl &, UInt16 = 0)
