@@ -275,6 +275,7 @@ Block RemoteQueryExecutor::read()
 
     while (true)
     {
+        std::lock_guard lock(was_cancelled_mutex);
         if (was_cancelled)
             return Block();
 
@@ -602,7 +603,8 @@ void RemoteQueryExecutor::sendExternalTables()
 
 void RemoteQueryExecutor::tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context)
 {
-    /// Flag was_cancelled is atomic because it is checked in read().
+    /// Flag was_cancelled is atomic because it is checked in read(),
+    /// in case of packet had been read by fiber (async_socket_for_remote).
     std::lock_guard guard(was_cancelled_mutex);
 
     if (was_cancelled)

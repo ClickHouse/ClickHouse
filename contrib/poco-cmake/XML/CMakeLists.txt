@@ -11,6 +11,7 @@ add_library (_poco_xml_expat ${SRCS_EXPAT})
 add_library (Poco::XML::Expat ALIAS _poco_xml_expat)
 
 target_include_directories (_poco_xml_expat PUBLIC "${LIBRARY_DIR}/XML/include")
+target_include_directories (_poco_xml_expat PRIVATE "${LIBRARY_DIR}/Foundation/include")
 
 # Poco::XML
 

@@ -99,7 +99,7 @@ public:
     }
 
     void add(
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         size_t row_num,
         Arena * arena) const override
@@ -138,7 +138,7 @@ public:
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
@@ -169,7 +169,7 @@ public:
     void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
@@ -206,7 +206,7 @@ public:
     }
 
     void merge(
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         ConstAggregateDataPtr rhs,
         Arena * arena) const override
     {
@@ -227,14 +227,14 @@ public:
             (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_function->serialize(place, buf, version);
 
         writeChar(place[size_of_data], buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_function->deserialize(place, buf, version, arena);
 
@@ -261,7 +261,7 @@ public:
     }
 
     void insertResultInto(
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         IColumn & to,
         Arena * arena) const override
     {

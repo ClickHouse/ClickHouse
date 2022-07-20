@@ -27,7 +27,7 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MergeListEntry & merge_
     prev_untracked_memory = current_thread->untracked_memory;
     current_thread->untracked_memory = merge_list_entry->untracked_memory;
 
-    prev_query_id = current_thread->getQueryId().toString();
+    prev_query_id = std::string(current_thread->getQueryId());
     current_thread->setQueryId(merge_list_entry->query_id);
 }
 
@@ -64,7 +64,7 @@ MergeListElement::MergeListElement(
     for (const auto & source_part : future_part->parts)
     {
         source_part_names.emplace_back(source_part->name);
-        source_part_paths.emplace_back(source_part->getFullPath());
+        source_part_paths.emplace_back(source_part->data_part_storage->getFullPath());
 
         total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_marks += source_part->getMarksCount();

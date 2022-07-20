@@ -42,7 +42,7 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
             from->getName());
 
     edge.to = it->second;
-    auto & added_edge = edges.emplace_back(edge);
+    auto & added_edge = edges.emplace_back(std::move(edge));
     added_edge.update_info.id = &added_edge;
     return added_edge;
 }
@@ -66,7 +66,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
             const IProcessor * to = &it->getOutputPort().getProcessor();
             auto output_port_number = to->getOutputPortNumber(&it->getOutputPort());
             Edge edge(0, true, from_input, output_port_number, &nodes[node]->post_updated_input_ports);
-            auto & added_edge = addEdge(nodes[node]->back_edges, edge, from, to);
+            auto & added_edge = addEdge(nodes[node]->back_edges, std::move(edge), from, to);
             it->setUpdateInfo(&added_edge.update_info);
         }
     }
@@ -84,7 +84,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
             const IProcessor * to = &it->getInputPort().getProcessor();
             auto input_port_number = to->getInputPortNumber(&it->getInputPort());
             Edge edge(0, false, input_port_number, from_output, &nodes[node]->post_updated_output_ports);
-            auto & added_edge = addEdge(nodes[node]->direct_edges, edge, from, to);
+            auto & added_edge = addEdge(nodes[node]->direct_edges, std::move(edge), from, to);
             it->setUpdateInfo(&added_edge.update_info);
         }
     }

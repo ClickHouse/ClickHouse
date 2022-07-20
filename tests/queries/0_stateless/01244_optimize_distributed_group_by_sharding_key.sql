@@ -15,6 +15,7 @@ create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards
 
 set max_distributed_connections=1;
 set prefer_localhost_replica=0;
+set enable_positional_arguments=0;
 
 select '-';
 select * from dist_01247;

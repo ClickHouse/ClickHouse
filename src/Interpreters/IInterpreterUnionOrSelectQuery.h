@@ -12,12 +12,12 @@ namespace DB
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
         : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
     {
     }
 
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
         : query_ptr(query_ptr_)
         , context(context_)
         , options(options_)
@@ -38,7 +38,7 @@ public:
 
     virtual void ignoreWithTotals() = 0;
 
-    virtual ~IInterpreterUnionOrSelectQuery() override = default;
+    ~IInterpreterUnionOrSelectQuery() override = default;
 
     Block getSampleBlock() { return result_header; }
 
