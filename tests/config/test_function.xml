@@ -13,18 +13,4 @@
         <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
         <execute_direct>0</execute_direct>
     </function>
-    <function>
-        <type>executable</type>
-        <name>test_function_with_parameter</name>
-        <return_type>UInt64</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y + {test_parameter : UInt64} FROM table"</command>
-        <execute_direct>0</execute_direct>
-    </function>
 </functions>

@@ -114,6 +114,7 @@ public:
 
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
+    void onCancel() override;
     void onException() override;
     void onFinish() override;
 
@@ -152,6 +153,8 @@ public:
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
+
+    static ASTs::iterator collectHeaders(ASTs & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context);
 };
 
 

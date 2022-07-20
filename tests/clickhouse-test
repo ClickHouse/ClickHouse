@@ -5,6 +5,7 @@
 # pylint: disable=too-many-lines
 
 import enum
+from queue import Full
 import shutil
 import sys
 import os
@@ -385,6 +386,7 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
+    STRESS = "stress"
     BUILD = "not running for current build"
     BACKWARD_INCOMPATIBLE = "test is backward incompatible"
 
@@ -420,6 +422,31 @@ class SettingsRandomizer:
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
         "optimize_or_like_chain": lambda: random.randint(0, 1),
+        "optimize_read_in_order": lambda: random.randint(0, 1),
+        "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
+        "optimize_aggregation_in_order": lambda: random.randint(0, 1),
+        "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
+        "use_uncompressed_cache": lambda: random.randint(0, 1),
+        "min_bytes_to_use_direct_io": lambda: 0
+        if random.random() < 0.5
+        else 1
+        if random.random() < 0.2
+        else random.randint(1, 1024 * 1024 * 1024),
+        "min_bytes_to_use_mmap_io": lambda: 0
+        if random.random() < 0.5
+        else 1
+        if random.random() < 0.2
+        else random.randint(1, 1024 * 1024 * 1024),
+        "local_filesystem_read_method": lambda: random.choice(
+            ["read", "pread", "mmap", "pread_threadpool"]
+        ),
+        "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
+        "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        "compile_expressions": lambda: random.randint(0, 1),
+        "compile_aggregate_expressions": lambda: random.randint(0, 1),
+        "compile_sort_description": lambda: random.randint(0, 1),
+        "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
     }
 
     @staticmethod
@@ -493,6 +520,7 @@ class TestCase:
             database = testcase_args.database
             os.environ.setdefault("CLICKHOUSE_DATABASE", database)
             os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
+            testcase_args.test_tmp_dir = suite_tmp_dir
         else:
             # If --database is not specified, we will create temporary database with
             # unique name and we will recreate and drop it for each test
@@ -519,9 +547,19 @@ class TestCase:
             # collisions.
             testcase_args.test_tmp_dir = os.path.join(suite_tmp_dir, database)
             os.mkdir(testcase_args.test_tmp_dir)
-            os.environ.setdefault("CLICKHOUSE_TMP", testcase_args.test_tmp_dir)
+            os.environ["CLICKHOUSE_TMP"] = testcase_args.test_tmp_dir
 
         testcase_args.testcase_database = database
+
+        # Printed only in case of failures
+        #
+        # NOTE: here we use "CLICKHOUSE_TMP" instead of "file_suffix",
+        # so it is installed in configure_testcase_args() unlike other files
+        # (stdout_file, stderr_file) in TestCase::__init__().
+        # Since using CLICKHOUSE_TMP is easier to use in expect.
+        testcase_args.debug_log_file = (
+            os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
+        )
 
         return testcase_args
 
@@ -679,6 +717,9 @@ class TestCase:
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
 
+        elif tags and ("no-stress" in tags) and args.stress:
+            return FailureReason.STRESS
+
         elif tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
@@ -690,7 +731,9 @@ class TestCase:
 
         return None
 
-    def process_result_impl(self, proc, stdout: str, stderr: str, total_time: float):
+    def process_result_impl(
+        self, proc, stdout: str, stderr: str, debug_log: str, total_time: float
+    ):
         description = ""
 
         if proc:
@@ -703,6 +746,9 @@ class TestCase:
 
                 if stderr:
                     description += stderr
+                if debug_log:
+                    description += "\n"
+                    description += debug_log
                 return TestResult(
                     self.name,
                     TestStatus.FAIL,
@@ -718,6 +764,9 @@ class TestCase:
                 if stderr:
                     description += "\n"
                     description += stderr
+                if debug_log:
+                    description += "\n"
+                    description += debug_log
 
                 # Stop on fatal errors like segmentation fault. They are sent to client via logs.
                 if " <Fatal> " in stderr:
@@ -748,6 +797,9 @@ class TestCase:
         if stderr:
             description += "\n{}\n".format("\n".join(stderr.splitlines()[:100]))
             description += f"\nstdout:\n{stdout}\n"
+            if debug_log:
+                description += "\n"
+                description += debug_log
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -758,6 +810,9 @@ class TestCase:
 
         if "Exception" in stdout:
             description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
+            if debug_log:
+                description += "\n"
+                description += debug_log
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -804,6 +859,9 @@ class TestCase:
                 universal_newlines=True,
             ).communicate()[0]
             description += f"\n{diff}\n"
+            if debug_log:
+                description += "\n"
+                description += debug_log
             return TestResult(
                 self.name,
                 TestStatus.FAIL,
@@ -817,6 +875,9 @@ class TestCase:
             and total_time > 60
             and "long" not in self.tags
         ):
+            if debug_log:
+                description += "\n"
+                description += debug_log
             # We're in Flaky Check mode, check the run time as well while we're at it.
             return TestResult(
                 self.name,
@@ -830,6 +891,8 @@ class TestCase:
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
             os.remove(self.stderr_file)
+        if os.path.exists(self.testcase_args.debug_log_file):
+            os.remove(self.testcase_args.debug_log_file)
 
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
@@ -863,7 +926,7 @@ class TestCase:
 
     def run_single_test(
         self, server_logs_level, client_options
-    ) -> Tuple[Optional[Popen], str, str, float]:
+    ) -> Tuple[Optional[Popen], str, str, str, float]:
         args = self.testcase_args
         client = args.testcase_client
         start_time = args.testcase_start_time
@@ -879,7 +942,7 @@ class TestCase:
             "test": self.case_file,
             "stdout": self.stdout_file,
             "stderr": self.stderr_file,
-            "secure": "--secure" if args.secure else ""
+            "secure": "--secure" if args.secure else "",
         }
 
         # >> append to stderr (but not stdout since it is not used there),
@@ -913,6 +976,13 @@ class TestCase:
             )
             need_drop_database = not maybe_passed
 
+        debug_log = ""
+        if os.path.exists(self.testcase_args.debug_log_file):
+            with open(self.testcase_args.debug_log_file, "rb") as stream:
+                debug_log += self.testcase_args.debug_log_file + ":\n"
+                debug_log += str(stream.read(), errors="replace", encoding="utf-8")
+                debug_log += "\n"
+
         if need_drop_database:
             seconds_left = max(
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
@@ -932,6 +1002,7 @@ class TestCase:
                     None,
                     "",
                     f"Timeout dropping database {database} after test",
+                    debug_log,
                     total_time,
                 )
             shutil.rmtree(args.test_tmp_dir)
@@ -955,12 +1026,13 @@ class TestCase:
         if os.path.exists(self.stdout_file):
             with open(self.stdout_file, "rb") as stdfd:
                 stdout = str(stdfd.read(), errors="replace", encoding="utf-8")
+
         stderr = ""
         if os.path.exists(self.stderr_file):
             with open(self.stderr_file, "rb") as stdfd:
-                stderr = str(stdfd.read(), errors="replace", encoding="utf-8")
+                stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
-        return proc, stdout, stderr, total_time
+        return proc, stdout, stderr, debug_log, total_time
 
     def run(self, args, suite, client_options, server_logs_level):
         try:
@@ -985,11 +1057,13 @@ class TestCase:
                 args, self.case_file, suite.suite_tmp_path
             )
             client_options = self.add_random_settings(args, client_options)
-            proc, stdout, stderr, total_time = self.run_single_test(
+            proc, stdout, stderr, debug_log, total_time = self.run_single_test(
                 server_logs_level, client_options
             )
 
-            result = self.process_result_impl(proc, stdout, stderr, total_time)
+            result = self.process_result_impl(
+                proc, stdout, stderr, debug_log, total_time
+            )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(
@@ -1214,7 +1288,9 @@ class TestSuite:
             try:
                 return int(clickhouse_execute(args, "EXISTS TABLE test.hits"))
             except Exception as e:
-                print("Cannot check if dataset is available, assuming it's not: ", str(e))
+                print(
+                    "Cannot check if dataset is available, assuming it's not: ", str(e)
+                )
                 return False
 
         base_dir = os.path.abspath(args.queries)
@@ -1479,9 +1555,10 @@ def collect_build_flags(args):
         result.append(BuildFlags.RELEASE)
 
     value = clickhouse_execute(
-        args, "SELECT value FROM system.settings WHERE name = 'default_database_engine'"
+        args,
+        "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'",
     )
-    if value == b"Ordinary":
+    if value == b"1":
         result.append(BuildFlags.ORDINARY_DATABASE)
 
     value = int(
@@ -1571,15 +1648,22 @@ def do_run_tests(jobs, test_suite: TestSuite, parallel):
         for _ in range(jobs):
             parallel_tests_array.append((None, batch_size, test_suite))
 
-        with closing(multiprocessing.Pool(processes=jobs)) as pool:
-            pool.map_async(run_tests_array, parallel_tests_array)
+        try:
+            with closing(multiprocessing.Pool(processes=jobs)) as pool:
+                pool.map_async(run_tests_array, parallel_tests_array)
 
-            for suit in test_suite.parallel_tests:
-                queue.put(suit, timeout=args.timeout * 1.1)
+                for suit in test_suite.parallel_tests:
+                    queue.put(suit, timeout=args.timeout * 1.1)
 
-            for _ in range(jobs):
-                queue.put(None, timeout=args.timeout * 1.1)
+                for _ in range(jobs):
+                    queue.put(None, timeout=args.timeout * 1.1)
 
+                queue.close()
+        except Full:
+            print(
+                "Couldn't put test to the queue within timeout. Server probably hung."
+            )
+            print_stacktraces()
             queue.close()
 
         pool.join()
@@ -1956,6 +2040,12 @@ if __name__ == "__main__":
         help="Run tests over s3 storage",
     )
     parser.add_argument(
+        "--stress",
+        action="store_true",
+        default=False,
+        help="Run stress tests",
+    )
+    parser.add_argument(
         "--no-random-settings",
         action="store_true",
         default=False,
@@ -2009,7 +2099,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--backward-compatibility-check",
         action="store_true",
-        help="Run tests for further backwoard compatibility testing by ignoring all"
+        help="Run tests for further backward compatibility testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
     )
     parser.add_argument(
@@ -2155,5 +2245,8 @@ if __name__ == "__main__":
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
+
+    if args.db_engine and args.db_engine == "Ordinary":
+        MESSAGES_TO_RETRY.append(" locking attempt on ")
 
     main(args)

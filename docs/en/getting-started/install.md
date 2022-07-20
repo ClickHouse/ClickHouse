@@ -127,22 +127,36 @@ After that downloaded archives should be unpacked and installed with installatio
 LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
 export LATEST_VERSION
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION-amd64.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION-amd64.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION-amd64.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION-amd64.tgz"
 
-tar -xzvf "clickhouse-common-static-$LATEST_VERSION-amd64.tgz"
+case $(uname -m) in
+  x86_64) ARCH=amd64 ;;
+  aarch64) ARCH=arm64 ;;
+  *) echo "Unknown architecture $(uname -m)"; exit 1 ;;
+esac
+
+for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client
+do
+  curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
+    || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
+done
+
+exit 0
+
+tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
 
-tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-amd64.tgz"
+tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
 
-tar -xzvf "clickhouse-server-$LATEST_VERSION-amd64.tgz"
+tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
 sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
 sudo /etc/init.d/clickhouse-server start
 
-tar -xzvf "clickhouse-client-$LATEST_VERSION-amd64.tgz"
+tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
 sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
@@ -190,8 +204,7 @@ sudo ./clickhouse install
 
 ### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
 
-For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
-
+For non-Linux operating systems and for AArch64 CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
 
 -   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse)
      ```bash

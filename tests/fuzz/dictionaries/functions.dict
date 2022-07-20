@@ -68,6 +68,7 @@
 "reinterpretAsUInt8"
 "atanh"
 "formatReadableTimeDelta"
+"parseTimeDelta"
 "geohashEncode"
 "atan2"
 "acos"

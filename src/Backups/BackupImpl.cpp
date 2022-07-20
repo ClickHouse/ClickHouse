@@ -4,7 +4,7 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupCoordinationLocal.h>
-#include <Backups/BackupCoordinationDistributed.h>
+#include <Backups/BackupCoordinationRemote.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>
 #include <Common/quoteString.h>
@@ -36,7 +36,8 @@ namespace ErrorCodes
     extern const int WRONG_BASE_BACKUP;
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
     extern const int BACKUP_ENTRY_NOT_FOUND;
-    extern const int BAD_ARGUMENTS;
+    extern const int BACKUP_IS_EMPTY;
+    extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -64,6 +65,14 @@ namespace
     String formatSizeAndChecksum(const SizeAndChecksum & size_and_checksum)
     {
         return hexChecksum(size_and_checksum.second) + std::to_string(size_and_checksum.first);
+    }
+
+    /// We store entries' file names in the backup without leading slashes.
+    String removeLeadingSlash(const String & path)
+    {
+        if (path.starts_with('/'))
+            return path.substr(1);
+        return path;
     }
 }
 
@@ -138,9 +147,9 @@ BackupImpl::BackupImpl(
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupWriter> writer_,
     const ContextPtr & context_,
-    const std::optional<UUID> & backup_uuid_,
     bool is_internal_backup_,
-    const std::shared_ptr<IBackupCoordination> & coordination_)
+    const std::shared_ptr<IBackupCoordination> & coordination_,
+    const std::optional<UUID> & backup_uuid_)
     : backup_name(backup_name_)
     , archive_params(archive_params_)
     , use_archives(!archive_params.archive_name.empty())
@@ -151,7 +160,7 @@ BackupImpl::BackupImpl(
     , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
-    , log(&Poco::Logger::get("Backup"))
+    , log(&Poco::Logger::get("BackupImpl"))
 {
     open(context_);
 }
@@ -159,44 +168,37 @@ BackupImpl::BackupImpl(
 
 BackupImpl::~BackupImpl()
 {
-    close();
+    try
+    {
+        close();
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
-
 
 void BackupImpl::open(const ContextPtr & context)
 {
     std::lock_guard lock{mutex};
-
-    String file_name_to_check_existence;
-    if (use_archives)
-        file_name_to_check_existence = archive_params.archive_name;
-    else
-        file_name_to_check_existence = ".backup";
-    bool backup_exists = (open_mode == OpenMode::WRITE) ? writer->fileExists(file_name_to_check_existence) : reader->fileExists(file_name_to_check_existence);
-
-    if (open_mode == OpenMode::WRITE)
-    {
-        if (backup_exists)
-            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name);
-    }
-    else
-    {
-        if (!backup_exists)
-            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
-    }
 
     if (open_mode == OpenMode::WRITE)
     {
         timestamp = std::time(nullptr);
         if (!uuid)
             uuid = UUIDHelpers::generateV4();
+        lock_file_name = use_archives ? (archive_params.archive_name + ".lock") : ".lock";
         writing_finalized = false;
+
+        /// Check that we can write a backup there and create the lock file to own this destination.
+        checkBackupDoesntExist();
+        if (!is_internal_backup)
+            createLockFile();
+        checkLockFile(true);
     }
 
     if (open_mode == OpenMode::READ)
         readBackupMetadata();
-
-    assert(uuid); /// Backup's UUID must be loaded or generated at this point.
 
     if (base_backup_info)
     {
@@ -218,22 +220,16 @@ void BackupImpl::close()
 {
     std::lock_guard lock{mutex};
 
-    if (!is_internal_backup && writing_finalized)
-    {
-        LOG_TRACE(log, "Finalizing backup {}", backup_name);
-        writeBackupMetadata();
-        LOG_INFO(log, "Finalized backup {}", backup_name);
-    }
-
     archive_readers.clear();
     for (auto & archive_writer : archive_writers)
         archive_writer = {"", nullptr};
 
     if (!is_internal_backup && writer && !writing_finalized)
-    {
-        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name);
         removeAllFilesAfterFailure();
-    }
+
+    writer.reset();
+    reader.reset();
+    coordination.reset();
 }
 
 time_t BackupImpl::getTimestamp() const
@@ -244,15 +240,19 @@ time_t BackupImpl::getTimestamp() const
 
 void BackupImpl::writeBackupMetadata()
 {
+    assert(!is_internal_backup);
+
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->setUInt("version", CURRENT_BACKUP_VERSION);
     config->setString("timestamp", toString(LocalDateTime{timestamp}));
     config->setString("uuid", toString(*uuid));
 
+    auto all_file_infos = coordination->getAllFileInfos();
+
     if (base_backup_info)
     {
         bool base_backup_in_use = false;
-        for (const auto & info : coordination->getAllFileInfos())
+        for (const auto & info : all_file_infos)
         {
             if (info.base_size)
                 base_backup_in_use = true;
@@ -266,13 +266,13 @@ void BackupImpl::writeBackupMetadata()
     }
 
     size_t index = 0;
-    for (const auto & info : coordination->getAllFileInfos())
+    for (const auto & info : all_file_infos)
     {
         String prefix = index ? "contents.file[" + std::to_string(index) + "]." : "contents.file.";
+        config->setString(prefix + "name", info.file_name);
         config->setUInt(prefix + "size", info.size);
         if (info.size)
         {
-            config->setString(prefix + "name", info.file_name);
             config->setString(prefix + "checksum", hexChecksum(info.checksum));
             if (info.base_size)
             {
@@ -297,21 +297,32 @@ void BackupImpl::writeBackupMetadata()
     config->save(stream);
     String str = stream.str();
 
+    checkLockFile(true);
+
     std::unique_ptr<WriteBuffer> out;
     if (use_archives)
         out = getArchiveWriter("")->writeFile(".backup");
     else
         out = writer->writeFile(".backup");
     out->write(str.data(), str.size());
+    out->finalize();
 }
 
 void BackupImpl::readBackupMetadata()
 {
     std::unique_ptr<ReadBuffer> in;
     if (use_archives)
+    {
+        if (!reader->fileExists(archive_params.archive_name))
+            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
         in = getArchiveReader("")->readFile(".backup");
+    }
     else
+    {
+        if (!reader->fileExists(".backup"))
+            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
         in = reader->readFile(".backup");
+    }
 
     String str;
     readStringUntilEOF(str, *in);
@@ -375,18 +386,78 @@ void BackupImpl::readBackupMetadata()
     }
 }
 
-Strings BackupImpl::listFiles(const String & prefix, const String & terminator) const
+void BackupImpl::checkBackupDoesntExist() const
+{
+    String file_name_to_check_existence;
+    if (use_archives)
+        file_name_to_check_existence = archive_params.archive_name;
+    else
+        file_name_to_check_existence = ".backup";
+
+    if (writer->fileExists(file_name_to_check_existence))
+        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", backup_name);
+
+    /// Check that no other backup (excluding internal backups) is writing to the same destination.
+    if (!is_internal_backup)
+    {
+        assert(!lock_file_name.empty());
+        if (writer->fileExists(lock_file_name))
+            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name);
+    }
+}
+
+void BackupImpl::createLockFile()
+{
+    /// Internal backup must not create the lock file (it should be created by the initiator).
+    assert(!is_internal_backup);
+
+    assert(uuid);
+    auto out = writer->writeFile(lock_file_name);
+    writeUUIDText(*uuid, *out);
+}
+
+bool BackupImpl::checkLockFile(bool throw_if_failed) const
+{
+    if (!lock_file_name.empty() && uuid && writer->fileContentsEqual(lock_file_name, toString(*uuid)))
+        return true;
+
+    if (throw_if_failed)
+    {
+        if (!writer->fileExists(lock_file_name))
+            throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Lock file {} suddenly disappeared while writing backup {}", lock_file_name, backup_name);
+        throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "A concurrent backup writing to the same destination {} detected", backup_name);
+    }
+    return false;
+}
+
+void BackupImpl::removeLockFile()
+{
+    if (is_internal_backup)
+        return; /// Internal backup must not remove the lock file (it's still used by the initiator).
+
+    if (checkLockFile(false))
+        writer->removeFiles({lock_file_name});
+}
+
+Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 {
     std::lock_guard lock{mutex};
-    if (!prefix.ends_with('/') && !prefix.empty())
-        throw Exception("prefix should end with '/'", ErrorCodes::BAD_ARGUMENTS);
-    return coordination->listFiles(prefix, terminator);
+    auto adjusted_dir = removeLeadingSlash(directory);
+    return coordination->listFiles(adjusted_dir, recursive);
+}
+
+bool BackupImpl::hasFiles(const String & directory) const
+{
+    std::lock_guard lock{mutex};
+    auto adjusted_dir = removeLeadingSlash(directory);
+    return coordination->hasFiles(adjusted_dir);
 }
 
 bool BackupImpl::fileExists(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    return coordination->getFileInfo(file_name).has_value();
+    auto adjusted_path = removeLeadingSlash(file_name);
+    return coordination->getFileInfo(adjusted_path).has_value();
 }
 
 bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
@@ -398,7 +469,8 @@ bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
 UInt64 BackupImpl::getFileSize(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfo(file_name);
+    auto adjusted_path = removeLeadingSlash(file_name);
+    auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
@@ -408,7 +480,8 @@ UInt64 BackupImpl::getFileSize(const String & file_name) const
 UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfo(file_name);
+    auto adjusted_path = removeLeadingSlash(file_name);
+    auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
@@ -418,7 +491,8 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) const
 {
     std::lock_guard lock{mutex};
-    auto info = coordination->getFileInfo(file_name);
+    auto adjusted_path = removeLeadingSlash(file_name);
+    auto info = coordination->getFileInfo(adjusted_path);
     if (!info)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, quoteString(file_name));
@@ -436,17 +510,18 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
     if (open_mode != OpenMode::READ)
         throw Exception("Backup is not opened for reading", ErrorCodes::LOGICAL_ERROR);
 
+    if (!size_and_checksum.first)
+    {
+        /// Entry's data is empty.
+        return std::make_unique<BackupEntryFromMemory>(nullptr, 0, UInt128{0, 0});
+    }
+
     auto info_opt = coordination->getFileInfo(size_and_checksum);
     if (!info_opt)
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", backup_name, formatSizeAndChecksum(size_and_checksum));
 
     const auto & info = *info_opt;
-    if (!info.size)
-    {
-        /// Entry's data is empty.
-        return std::make_unique<BackupEntryFromMemory>(nullptr, 0, UInt128{0, 0});
-    }
 
     if (!info.base_size)
     {
@@ -494,12 +569,16 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     if (open_mode != OpenMode::WRITE)
         throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
 
-    if (coordination->getFileInfo(file_name))
+    if (writing_finalized)
+        throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+
+    auto adjusted_path = removeLeadingSlash(file_name);
+    if (coordination->getFileInfo(adjusted_path))
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", backup_name, quoteString(file_name));
 
     FileInfo info;
-    info.file_name = file_name;
+    info.file_name = adjusted_path;
     size_t size = entry->getSize();
     info.size = size;
 
@@ -520,13 +599,13 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     /// Check if a entry with such name exists in the base backup.
-    bool base_exists = (base_backup && base_backup->fileExists(file_name));
+    bool base_exists = (base_backup && base_backup->fileExists(adjusted_path));
     UInt64 base_size = 0;
     UInt128 base_checksum{0, 0};
     if (base_exists)
     {
-        base_size = base_backup->getFileSize(file_name);
-        base_checksum = base_backup->getFileChecksum(file_name);
+        base_size = base_backup->getFileSize(adjusted_path);
+        base_checksum = base_backup->getFileChecksum(adjusted_path);
     }
 
     std::unique_ptr<SeekableReadBuffer> read_buffer; /// We'll set that later.
@@ -621,6 +700,9 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         read_buffer = entry->getReadBuffer();
     read_buffer->seek(copy_pos, SEEK_SET);
 
+    if (!num_files_written)
+        checkLockFile(true);
+
     /// Copy the entry's data after `copy_pos`.
     std::unique_ptr<WriteBuffer> out;
     if (use_archives)
@@ -647,6 +729,8 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     copyData(*read_buffer, *out);
+    out->finalize();
+    ++num_files_written;
 }
 
 
@@ -655,6 +739,20 @@ void BackupImpl::finalizeWriting()
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
         throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
+
+    if (writing_finalized)
+        throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+
+    if (!coordination->hasFiles(""))
+        throw Exception("Backup must not be empty", ErrorCodes::BACKUP_IS_EMPTY);
+
+    if (!is_internal_backup)
+    {
+        LOG_TRACE(log, "Finalizing backup {}", backup_name);
+        writeBackupMetadata();
+        removeLockFile();
+        LOG_TRACE(log, "Finalized backup {}", backup_name);
+    }
 
     writing_finalized = true;
 }
@@ -700,24 +798,40 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
 
 void BackupImpl::removeAllFilesAfterFailure()
 {
-    Strings files_to_remove;
-    if (use_archives)
-    {
-        files_to_remove.push_back(archive_params.archive_name);
-        for (const auto & suffix : coordination->getAllArchiveSuffixes())
-        {
-            String archive_name_with_suffix = getArchiveNameWithSuffix(suffix);
-            files_to_remove.push_back(std::move(archive_name_with_suffix));
-        }
-    }
-    else
-    {
-        files_to_remove.push_back(".backup");
-        for (const auto & file_info : coordination->getAllFileInfos())
-            files_to_remove.push_back(file_info.data_file_name);
-    }
+    if (is_internal_backup)
+        return; /// Let the initiator remove unnecessary files.
 
-    writer->removeFilesAfterFailure(files_to_remove);
+    try
+    {
+        LOG_INFO(log, "Removing all files of backup {} after failure", backup_name);
+
+        Strings files_to_remove;
+        if (use_archives)
+        {
+            files_to_remove.push_back(archive_params.archive_name);
+            for (const auto & suffix : coordination->getAllArchiveSuffixes())
+            {
+                String archive_name_with_suffix = getArchiveNameWithSuffix(suffix);
+                files_to_remove.push_back(std::move(archive_name_with_suffix));
+            }
+        }
+        else
+        {
+            files_to_remove.push_back(".backup");
+            for (const auto & file_info : coordination->getAllFileInfos())
+                files_to_remove.push_back(file_info.data_file_name);
+        }
+
+        if (!checkLockFile(false))
+            return;
+
+        writer->removeFiles(files_to_remove);
+        removeLockFile();
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }
