@@ -41,10 +41,10 @@ SELECT (id + 1 + 1 + 1 + id) AS id FROM test_table;
 
 SELECT 'Alias setting prefer_column_name_to_alias';
 
-SELECT id AS value, value FROM test_table;
+WITH id AS value SELECT value FROM test_table;
 
 SET prefer_column_name_to_alias = 1;
-SELECT id AS value, value FROM test_table;
+WITH id AS value SELECT value FROM test_table;
 SET prefer_column_name_to_alias = 0;
 
 DROP TABLE test_table;
