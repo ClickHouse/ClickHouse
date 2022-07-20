@@ -38,6 +38,17 @@ ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chu
     return block.getColumnsWithTypeAndName();
 }
 
+std::string formatBytesHumanReadable(size_t bytes)
+{
+    if (bytes >= 1_GiB)
+        return fmt::format("{:.2f} GB", static_cast<double>(bytes) / 1_GiB);
+    if (bytes >= 1_MiB)
+        return fmt::format("{:.2f} MB", static_cast<double>(bytes) / 1_MiB);
+    if (bytes >= 1_KiB)
+        return fmt::format("{:.2f} KB", static_cast<double>(bytes) / 1_KiB);
+    return fmt::format("{:.2f} B", static_cast<double>(bytes));
+}
+
 }
 
 
@@ -66,9 +77,8 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
         bool limit_exceeded = !set->insertFromBlock(key_cols);
         if (limit_exceeded)
         {
-            LOG_DEBUG(log, "Set limit exceeded, give up building set, after using {} KB", set->getTotalByteCount() / 1024);
+            LOG_DEBUG(log, "Set limit exceeded, give up building set, after using {}", formatBytesHumanReadable(set->getTotalByteCount()));
             // set->clear();
-            // LOG_DEBUG(log, "Set limit exceeded, give up building set, after using {} KB", set->getTotalByteCount() / 1024);
             set.reset();
         }
     }
@@ -76,7 +86,8 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     if (input.isFinished())
     {
         set->finishInsert();
-        LOG_DEBUG(log, "Finish building set with {} rows, set size is {} MB", set->getTotalRowCount(), set->getTotalByteCount() / 1024 / 1024);
+        LOG_DEBUG(log, "Finish building set with {} rows, set size is {}",
+            set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
 
         /// Release pointer to make it possible destroy it by consumer
         set.reset();
