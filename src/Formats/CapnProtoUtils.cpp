@@ -565,7 +565,7 @@ NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema, 
             names_and_types.emplace_back(name, type);
     }
     if (names_and_types.empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert CapnProto schema to ClickHouse table schema, all fields have unsupported types");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert CapnProto schema to ClickHouse table schema, all fields have unsupported types");
 
     return names_and_types;
 }
