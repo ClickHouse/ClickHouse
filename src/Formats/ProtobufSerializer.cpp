@@ -3574,7 +3574,7 @@ NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * 
             schema.push_back(*name_and_type);
     }
     if (schema.empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert Protobuf schema to ClickHouse table schema, all fields have unsupported types");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert Protobuf schema to ClickHouse table schema, all fields have unsupported types");
     return schema;
 }
 
