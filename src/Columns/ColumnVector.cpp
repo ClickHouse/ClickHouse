@@ -496,7 +496,7 @@ inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
 template <typename T, typename Container, size_t SIMD_BYTES>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
-    static constexpr size_t VEC_LEN = 64;
+    static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
     static constexpr size_t ELEMENT_SIZE = sizeof(T);
     static constexpr size_t ELEMENT_PER_VEC = VEC_LEN / ELEMENT_SIZE;
     static constexpr UInt64 kmask = 0xffffffffffffffff >> (64 - ELEMENT_PER_VEC);
@@ -516,15 +516,15 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
                 int count = std::popcount(mask);
                 /// reserve and resize for later writing
                 res_data.resize(current_offset + count);
-                for (int i = 0; i < 64; i += ELEMENT_PER_VEC)
+                for (size_t i = 0; i < SIMD_BYTES; i += ELEMENT_PER_VEC)
                 {
                     compressStoreAVX512<ELEMENT_SIZE>(reinterpret_cast<const void *>(data_pos + i),
                             reinterpret_cast<void *>(&res_data[current_offset]), mask & kmask);
                     /// prepare for next iter, if ELEMENT_PER_VEC = 64, no next iter
                     if (ELEMENT_PER_VEC < 64)
                     {
-                        mask >>= ELEMENT_PER_VEC;
                         current_offset += std::popcount(mask & kmask);
+                        mask >>= ELEMENT_PER_VEC;
                     }
                 }
             }
