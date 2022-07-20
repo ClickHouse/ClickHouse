@@ -51,6 +51,7 @@ void UnlinkFileOperation::execute(std::unique_lock<std::shared_mutex> &)
 
 void UnlinkFileOperation::undo()
 {
+    // TODO: What if the rollback cause is because read error and prev_data contains garbage?
     auto buf = disk.writeFile(path);
     writeString(prev_data, *buf);
     buf->finalize();
@@ -69,6 +70,8 @@ void CreateDirectoryOperation::execute(std::unique_lock<std::shared_mutex> &)
 
 void CreateDirectoryOperation::undo()
 {
+    // TODO: What if the rollback cause is because directory exists?
+    // Do we have consistent EEXIST error code for all types of disks to rollback correctly?
     disk.removeDirectory(path);
 }
 
@@ -112,6 +115,8 @@ void RemoveDirectoryOperation::execute(std::unique_lock<std::shared_mutex> &)
 
 void RemoveDirectoryOperation::undo()
 {
+    // TODO: What if the rollback cause is because directory doesn't exist?
+    // Do we have consistent ENOENT error code for all types of disks to rollback correctly?
     disk.createDirectory(path);
 }
 
@@ -140,6 +145,7 @@ void RemoveRecursiveOperation::undo()
 
 void RemoveRecursiveOperation::finalize()
 {
+    // TODO: How do we deal with garbages if exception happens in finalize()?
     if (disk.exists(temp_path))
         disk.removeRecursive(temp_path);
 
@@ -172,6 +178,9 @@ void CreateHardlinkOperation::undo()
 {
     if (write_operation)
         write_operation->undo();
+
+    // TODO: What if the rollback cause is because path_to exists?
+    // Do we have consistent EEXISTS error code for all types of disks to rollback correctly?
     disk.removeFile(path_to);
 }
 
@@ -189,6 +198,7 @@ void MoveFileOperation::execute(std::unique_lock<std::shared_mutex> &)
 
 void MoveFileOperation::undo()
 {
+    // TODO: What if the rollback cause is because path_from doesn't exist and path_to exists?
     disk.moveFile(path_to, path_from);
 }
 
@@ -206,6 +216,7 @@ void MoveDirectoryOperation::execute(std::unique_lock<std::shared_mutex> &)
 
 void MoveDirectoryOperation::undo()
 {
+    // TODO: What if the rollback cause is because path_from doesn't exist and path_to exists?
     disk.moveDirectory(path_to, path_from);
 }
 

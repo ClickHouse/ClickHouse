@@ -319,6 +319,7 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
     void undo() override
     {
+        // TODO: What if the rollback cause is because object exists?
         if (object_storage.exists(object))
             object_storage.removeObject(object);
     }
