@@ -75,10 +75,10 @@ void checkRemoveAccess(IDisk & disk)
 
 bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_with_trailing_slash)
 {
-    const String path = key_with_trailing_slash + "_test_remove_objects_capability";
+    StoredObject object(key_with_trailing_slash + "_test_remove_objects_capability");
     try
     {
-        auto file = storage.writeObject(path, WriteMode::Rewrite);
+        auto file = storage.writeObject(object, WriteMode::Rewrite);
         file->write("test", 4);
         file->finalize();
     }
@@ -86,7 +86,7 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_wit
     {
         try
         {
-            storage.removeObject(path);
+            storage.removeObject(object);
         }
         catch (...)
         {
@@ -96,14 +96,14 @@ bool checkBatchRemoveIsMissing(S3ObjectStorage & storage, const String & key_wit
     try
     {
         /// Uses `DeleteObjects` request (batch delete).
-        storage.removeObjects({{ path, 0 }});
+        storage.removeObjects({object});
         return false;
     }
     catch (const Exception &)
     {
         try
         {
-            storage.removeObject(path);
+            storage.removeObject(object);
         }
         catch (...)
         {
@@ -137,9 +137,9 @@ void registerDiskS3(DiskFactory & factory)
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
 
         auto s3_storage = std::make_unique<S3ObjectStorage>(
-            std::move(cache), getClient(config, config_prefix, context),
+            getClient(config, config_prefix, context),
             getSettings(config, config_prefix, context),
-            uri.version_id, s3_capabilities, uri.bucket);
+            uri.version_id, s3_capabilities, uri.bucket, cache);
 
         bool skip_access_check = config.getBool(config_prefix + ".skip_access_check", false);
 

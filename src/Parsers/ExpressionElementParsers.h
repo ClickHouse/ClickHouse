@@ -162,7 +162,7 @@ protected:
     bool is_table_function;
 };
 
-// A special function parser for view table function.
+// A special function parser for view and viewIfPermitted table functions.
 // It parses an SELECT query as its argument and doesn't support getColumnName().
 class ParserTableFunctionView : public IParserBase
 {

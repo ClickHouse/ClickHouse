@@ -813,6 +813,13 @@ public:
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
+    void onCancel() override
+    {
+        if (!writer)
+            return;
+        onFinish();
+    }
+
     void onException() override
     {
         if (!writer)
