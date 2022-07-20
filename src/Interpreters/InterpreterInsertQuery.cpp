@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
+    extern const int TABLE_IS_DROPPED;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -424,6 +425,15 @@ BlockIO InterpreterInsertQuery::execute()
         for (size_t i = 0; i < out_streams_size; ++i)
         {
             auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);
+            if (!out_chains.empty())
+            {
+                if (out.getProcessors().size() != out_chains.back().getProcessors().size())
+                {
+                    throw Exception(ErrorCodes::TABLE_IS_DROPPED,
+                        "Some VIEW is gone in between ({} vs {} processors, on {} parallel stream)",
+                        out.getProcessors().size(), out_chains.back().getProcessors().size(), i);
+                }
+            }
             out_chains.emplace_back(std::move(out));
         }
     }
