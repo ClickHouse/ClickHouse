@@ -35,7 +35,6 @@ def started_cluster():
 def setup_dns_server(ip):
     domains_string = "test3.example.com test2.example.com test1.example.com"
     example_file_path = f'{ch_server.env_variables["COREDNS_CONFIG_DIR"]}/example.com'
-    run_and_check(f"echo '{example_file_path}' > /custom_log", shell=True)
     run_and_check(f"echo '{ip} {domains_string}' > {example_file_path}", shell=True)
 
 
