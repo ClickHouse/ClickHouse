@@ -13,11 +13,13 @@ DistinctSortedChunkTransform::DistinctSortedChunkTransform(
     const SizeLimits & output_size_limits_,
     UInt64 limit_hint_,
     const SortDescription & sorted_columns_descr_,
-    const Names & source_columns)
+    const Names & source_columns,
+    const bool sorted_stream_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , output_size_limits(output_size_limits_)
     , sorted_columns_descr(sorted_columns_descr_)
+    , sorted_stream(sorted_stream_)
 {
     /// calculate sorted columns positions
     sorted_columns_pos.reserve(sorted_columns_descr.size());
@@ -43,7 +45,7 @@ DistinctSortedChunkTransform::DistinctSortedChunkTransform(
     /// reserve space in auxiliary column vectors for processing
     sorted_columns.reserve(sorted_columns_pos.size());
     other_columns.reserve(other_columns_pos.size());
-    current_key.reserve(sorted_columns.size());
+    prev_chunk_latest_key.reserve(sorted_columns.size());
 }
 
 void DistinctSortedChunkTransform::initChunkProcessing(const Columns & input_columns)
@@ -101,28 +103,40 @@ size_t DistinctSortedChunkTransform::buildFilterForRange(
     return count;
 }
 
-void DistinctSortedChunkTransform::setCurrentKey(const size_t row_pos)
+void DistinctSortedChunkTransform::saveLatestKey(const size_t row_pos)
 {
-    current_key.clear();
+    prev_chunk_latest_key.clear();
     for (auto const & col : sorted_columns)
     {
-        current_key.emplace_back(col->cloneEmpty());
-        current_key.back()->insertFrom(*col, row_pos);
+        prev_chunk_latest_key.emplace_back(col->cloneEmpty());
+        prev_chunk_latest_key.back()->insertFrom(*col, row_pos);
     }
 }
 
-bool DistinctSortedChunkTransform::isCurrentKey(const size_t row_pos) const
+bool DistinctSortedChunkTransform::isKey(const size_t key_pos, const size_t row_pos) const
 {
     for (size_t i = 0; i < sorted_columns.size(); ++i)
     {
-        int res = current_key[i]->compareAt(0, row_pos, *sorted_columns[i], sorted_columns_descr[i].nulls_direction);
+        const int res = sorted_columns[i]->compareAt(key_pos, row_pos, *sorted_columns[i], sorted_columns_descr[i].nulls_direction);
         if (res != 0)
             return false;
     }
     return true;
 }
 
-size_t DistinctSortedChunkTransform::getRangeEnd(size_t begin, size_t end) const
+bool DistinctSortedChunkTransform::isLatestKeyFromPrevChunk(const size_t row_pos) const
+{
+    for (size_t i = 0; i < sorted_columns.size(); ++i)
+    {
+        const int res = prev_chunk_latest_key[i]->compareAt(0, row_pos, *sorted_columns[i], sorted_columns_descr[i].nulls_direction);
+        if (res != 0)
+            return false;
+    }
+    return true;
+}
+
+template<typename Predicate>
+size_t DistinctSortedChunkTransform::getRangeEnd(size_t begin, size_t end, Predicate pred) const
 {
     assert(begin < end);
 
@@ -133,7 +147,7 @@ size_t DistinctSortedChunkTransform::getRangeEnd(size_t begin, size_t end) const
 
     for (size_t pos = begin; pos < linear_probe_end; ++pos)
     {
-        if (!isCurrentKey(pos))
+        if (!pred(begin, pos))
             return pos;
     }
 
@@ -142,7 +156,7 @@ size_t DistinctSortedChunkTransform::getRangeEnd(size_t begin, size_t end) const
     while (low <= high)
     {
         size_t mid = low + (high - low) / 2;
-        if (isCurrentKey(mid))
+        if (pred(begin, mid))
             low = mid + 1;
         else
         {
@@ -155,13 +169,13 @@ size_t DistinctSortedChunkTransform::getRangeEnd(size_t begin, size_t end) const
 
 std::pair<size_t, size_t> DistinctSortedChunkTransform::continueWithPrevRange(const size_t chunk_rows, IColumn::Filter & filter)
 {
-    /// current_key is empty on very first transform() call
+    /// prev_chunk_latest_key is empty on very first transform() call
     /// or first row doesn't match a key from previous transform()
-    if (current_key.empty() || !isCurrentKey(0))
+    if (prev_chunk_latest_key.empty() || !isLatestKeyFromPrevChunk(0))
         return {0, 0};
 
     size_t output_rows = 0;
-    const size_t range_end = getRangeEnd(0, chunk_rows);
+    const size_t range_end = getRangeEnd(0, chunk_rows, [&](size_t, size_t row_pos) { return isLatestKeyFromPrevChunk(row_pos); });
     if (other_columns.empty())
         std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
     else
@@ -191,11 +205,8 @@ void DistinctSortedChunkTransform::transform(Chunk & chunk)
     size_t range_end = range_begin;
     while (range_end != chunk_rows)
     {
-        // set current key to find range
-        setCurrentKey(range_begin);
-
         // find new range [range_begin, range_end)
-        range_end = getRangeEnd(range_begin, chunk_rows);
+        range_end = getRangeEnd(range_begin, chunk_rows, [&](size_t key_pos, size_t row_pos) { return isKey(key_pos, row_pos); });
 
         // update filter for range
         if (other_columns.empty())
@@ -213,6 +224,8 @@ void DistinctSortedChunkTransform::transform(Chunk & chunk)
         // set where next range start
         range_begin = range_end;
     }
+
+    saveLatestKey(chunk_rows - 1);
 
     /// apply the built filter
     for (auto & input_column : input_columns)

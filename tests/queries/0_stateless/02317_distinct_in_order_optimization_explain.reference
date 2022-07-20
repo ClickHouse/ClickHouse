@@ -7,13 +7,13 @@ DistinctSortedChunkTransform
 -- distinct with primary key prefix -> pre-distinct optimization only
 DistinctSortedChunkTransform
 -- distinct with primary key prefix and order by on column in distinct -> pre-distinct and final distinct optimization
-DistinctSortedTransform
+DistinctSortedStreamTransform
 DistinctSortedChunkTransform
 -- distinct with primary key prefix and order by on column _not_ in distinct -> pre-distinct optimization only
 DistinctSortedChunkTransform
 -- distinct with non-primary key prefix -> no optimizations
 No optimizations
 -- distinct with non-primary key prefix and order by on column in distinct -> final distinct optimization only
-DistinctSortedTransform
+DistinctSortedStreamTransform
 -- distinct with non-primary key prefix and order by on column _not_ in distinct -> no optimizations
 No optimizations
