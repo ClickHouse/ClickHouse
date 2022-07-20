@@ -254,7 +254,7 @@ jobs:
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
   BuilderDebRelease:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -301,7 +301,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   BuilderBinRelease:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -346,7 +346,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   # BuilderBinGCC:
-  #   needs: [DockerHubPush, FastTest]
+  #   needs: [DockerHubPush, FastTest, StyleCheck]
   #   runs-on: [self-hosted, builder]
   #   steps:
   #     - name: Set envs
@@ -391,7 +391,7 @@ jobs:
   #         docker rm -f $(docker ps -a -q) ||:
   #         sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAarch64:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -438,7 +438,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -483,7 +483,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebUBsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -528,7 +528,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebTsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -573,7 +573,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebMsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -618,7 +618,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebDebug:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -666,7 +666,7 @@ jobs:
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderDebSplitted:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -711,7 +711,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinClangTidy:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -756,7 +756,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwin:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -801,7 +801,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinAarch64:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -846,7 +846,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinFreeBSD:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -891,7 +891,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwinAarch64:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -936,7 +936,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinPPC64:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
