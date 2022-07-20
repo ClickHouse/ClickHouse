@@ -2,8 +2,10 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadataHelper.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Common/FileCache_fwd.h>
+#include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <re2/re2.h>
 
 namespace CurrentMetrics
@@ -23,18 +25,21 @@ class DiskObjectStorage : public IDisk
 {
 
 friend class DiskObjectStorageReservation;
-friend class DiskObjectStorageMetadataHelper;
+friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & remote_fs_root_path_,
+        const String & object_storage_root_path_,
         const String & log_name,
-        DiskPtr metadata_disk_,
-        ObjectStoragePtr && object_storage_,
+        MetadataStoragePtr metadata_storage_,
+        ObjectStoragePtr object_storage_,
         DiskType disk_type_,
         bool send_metadata_,
-        uint64_t thread_pool_size);
+        uint64_t thread_pool_size_);
+
+    /// Create fake transaction
+    DiskTransactionPtr createTransaction() override;
 
     DiskType getType() const override { return disk_type; }
 
@@ -42,35 +47,18 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    using Metadata = DiskObjectStorageMetadata;
-    using MetadataUpdater = std::function<bool(Metadata & metadata)>;
-
     const String & getName() const override { return name; }
 
-    const String & getPath() const override { return metadata_disk->getPath(); }
+    const String & getPath() const override { return metadata_storage->getPath(); }
 
-    std::vector<String> getRemotePaths(const String & local_path) const override;
+    StoredObjects getStorageObjects(const String & local_path) const override;
 
-    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
     std::string getCacheBasePath() const override
     {
         return object_storage->getCacheBasePath();
     }
-
-    /// Methods for working with metadata. For some operations (like hardlink
-    /// creation) metadata can be updated concurrently from multiple threads
-    /// (file actually rewritten on disk). So additional RW lock is required for
-    /// metadata read and write, but not for create new metadata.
-    Metadata readMetadata(const String & path) const;
-    Metadata readMetadataUnlocked(const String & path, std::shared_lock<std::shared_mutex> &) const;
-    Metadata readUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
-    void readUpdateStoreMetadataAndRemove(const String & path, bool sync, MetadataUpdater updater);
-
-    Metadata readOrCreateUpdateAndStoreMetadata(const String & path, WriteMode mode, bool sync, MetadataUpdater updater);
-
-    Metadata createAndStoreMetadata(const String & path, bool sync);
-    Metadata createUpdateAndStoreMetadata(const String & path, bool sync, MetadataUpdater updater);
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 
@@ -106,9 +94,7 @@ public:
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    void removeFromRemoteFS(const std::vector<String> & paths);
-
-    DiskPtr getMetadataDiskIfExistsOrSelf() override { return metadata_disk; }
+    MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
     UInt32 getRefCount(const String & path) const override;
 
@@ -119,13 +105,12 @@ public:
 
     String getUniqueId(const String & path) const override;
 
-    bool checkObjectExists(const String & path) const;
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
     void createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata);
 
-    void listFiles(const String & path, std::vector<String> & file_names) override;
+    void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     void setReadOnly(const String & path) override;
 
@@ -141,11 +126,13 @@ public:
 
     void removeDirectory(const String & path) override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
-    Poco::Timestamp getLastModified(const String & path) override;
+    Poco::Timestamp getLastModified(const String & path) const override;
+
+    time_t getLastChanged(const String & path) const override;
 
     bool isRemote() const override { return true; }
 
@@ -176,30 +163,38 @@ public:
     void syncRevision(UInt64 revision) override;
 
     UInt64 getRevision() const override;
+
+    DiskObjectStoragePtr createDiskObjectStorage(const String & name_) override;
+
+    bool supportsCache() const override;
+
 private:
+
+    /// Create actual disk object storage transaction for operations
+    /// execution.
+    DiskTransactionPtr createObjectStorageTransaction();
+
     const String name;
-    const String remote_fs_root_path;
+    const String object_storage_root_path;
     Poco::Logger * log;
-    DiskPtr metadata_disk;
 
     const DiskType disk_type;
+    MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
-    mutable std::shared_mutex metadata_mutex;
-    void removeMetadata(const String & path, std::vector<String> & paths_to_remove);
-
-    void removeMetadataRecursive(const String & path, std::unordered_map<String, std::vector<String>> & paths_to_remove);
-
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
-    bool send_metadata;
+    const bool send_metadata;
+    size_t threadpool_size;
 
-    std::unique_ptr<DiskObjectStorageMetadataHelper> metadata_helper;
+    std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
+
+using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 class DiskObjectStorageReservation final : public IReservation
 {
@@ -223,7 +218,7 @@ public:
     ~DiskObjectStorageReservation() override;
 
 private:
-    std::shared_ptr<DiskObjectStorage> disk;
+    DiskObjectStoragePtr disk;
     UInt64 size;
     UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;

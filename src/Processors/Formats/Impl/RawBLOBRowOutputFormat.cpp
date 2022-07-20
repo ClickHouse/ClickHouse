@@ -17,8 +17,8 @@ RawBLOBRowOutputFormat::RawBLOBRowOutputFormat(
 
 void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerialization &, size_t row_num)
 {
-    StringRef value = column.getDataAt(row_num);
-    out.write(value.data, value.size);
+    std::string_view value = column.getDataAt(row_num).toView();
+    out.write(value.data(), value.size());
 }
 
 

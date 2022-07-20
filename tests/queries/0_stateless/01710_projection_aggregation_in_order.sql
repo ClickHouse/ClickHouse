@@ -1,3 +1,6 @@
+-- Test that check the correctness of the result for optimize_aggregation_in_order and projections,
+-- not that this optimization will take place.
+
 DROP TABLE IF EXISTS normal;
 
 CREATE TABLE normal

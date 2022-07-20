@@ -21,7 +21,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION=22.5.1.*
+ARG VERSION=22.6.1.*
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 # set non-empty deb_location_url url to create a docker image

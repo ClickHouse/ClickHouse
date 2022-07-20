@@ -11,68 +11,69 @@ results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 The supported formats are:
 
 | Format                                                                                    | Input | Output |
-|-------------------------------------------------------------------------------------------|-------|--------|
-| [TabSeparated](#tabseparated)                                                             | ✔     | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔     | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔     | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔     | ✔      |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔     | ✔      |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔     | ✔      |
-| [Template](#format-template)                                                              | ✔     | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔     | ✗      |
-| [CSV](#csv)                                                                               | ✔     | ✔      |
-| [CSVWithNames](#csvwithnames)                                                             | ✔     | ✔      |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔     | ✔      |
-| [CustomSeparated](#format-customseparated)                                                | ✔     | ✔      |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔     | ✔      |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔     | ✔      |
-| [Values](#data-format-values)                                                             | ✔     | ✔      |
-| [Vertical](#vertical)                                                                     | ✗     | ✔      |
-| [JSON](#json)                                                                             | ✗     | ✔      |
-| [JSONAsString](#jsonasstring)                                                             | ✔     | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
-| [JSONColumns](#jsoncolumns)                                                               | ✔     | ✔      |
-| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗     | ✔      |
-| [JSONCompact](#jsoncompact)                                                               | ✗     | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
-| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔     | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                               | ✔     | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗     | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗     | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔     | ✔      |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔     | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔     | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
-| [TSKV](#tskv)                                                                             | ✔     | ✔      |
-| [Pretty](#pretty)                                                                         | ✗     | ✔      |
-| [PrettyCompact](#prettycompact)                                                           | ✗     | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗     | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗     | ✔      |
-| [PrettySpace](#prettyspace)                                                               | ✗     | ✔      |
-| [Prometheus](#prometheus)                                                                 | ✗     | ✔      |
-| [Protobuf](#protobuf)                                                                     | ✔     | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                         | ✔     | ✔      |
-| [Avro](#data-format-avro)                                                                 | ✔     | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                              | ✔     | ✗      |
-| [Parquet](#data-format-parquet)                                                           | ✔     | ✔      |
-| [Arrow](#data-format-arrow)                                                               | ✔     | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                  | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                   | ✔     | ✔      |
-| [RowBinary](#rowbinary)                                                                   | ✔     | ✔      |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔     | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔     | ✔      |
-| [Native](#native)                                                                         | ✔     | ✔      |
-| [Null](#null)                                                                             | ✗     | ✔      |
-| [XML](#xml)                                                                               | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                   | ✔     | ✔      |
-| [LineAsString](#lineasstring)                                                             | ✔     | ✗      |
-| [Regexp](#data-format-regexp)                                                             | ✔     | ✗      |
-| [RawBLOB](#rawblob)                                                                       | ✔     | ✔      |
-| [MsgPack](#msgpack)                                                                       | ✔     | ✔      |
-| [MySQLDump](#mysqldump)                                                                   | ✔     | ✗      |
+|-------------------------------------------------------------------------------------------|------|--------|
+| [TabSeparated](#tabseparated)                                                             | ✔    | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔      |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔      |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔      |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔      |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔    | ✔      |
+| [Template](#format-template)                                                              | ✔    | ✔      |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔    | ✗      |
+| [CSV](#csv)                                                                               | ✔    | ✔      |
+| [CSVWithNames](#csvwithnames)                                                             | ✔    | ✔      |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔    | ✔      |
+| [CustomSeparated](#format-customseparated)                                                | ✔    | ✔      |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔    | ✔      |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔    | ✔      |
+| [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔      |
+| [Values](#data-format-values)                                                             | ✔    | ✔      |
+| [Vertical](#vertical)                                                                     | ✗    | ✔      |
+| [JSON](#json)                                                                             | ✗    | ✔      |
+| [JSONAsString](#jsonasstring)                                                             | ✔    | ✗      |
+| [JSONStrings](#jsonstrings)                                                               | ✗    | ✔      |
+| [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔      |
+| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✗    | ✔      |
+| [JSONCompact](#jsoncompact)                                                               | ✗    | ✔      |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔      |
+| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔      |
+| [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔      |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔      |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔      |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔    | ✔      |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔    | ✔      |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔    | ✔      |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔      |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔      |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔      |
+| [TSKV](#tskv)                                                                             | ✔    | ✔      |
+| [Pretty](#pretty)                                                                         | ✗    | ✔      |
+| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
+| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔      |
+| [PrettySpace](#prettyspace)                                                               | ✗    | ✔      |
+| [Prometheus](#prometheus)                                                                 | ✗    | ✔      |
+| [Protobuf](#protobuf)                                                                     | ✔    | ✔      |
+| [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔      |
+| [Avro](#data-format-avro)                                                                 | ✔    | ✔      |
+| [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗      |
+| [Parquet](#data-format-parquet)                                                           | ✔    | ✔      |
+| [Arrow](#data-format-arrow)                                                               | ✔    | ✔      |
+| [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔      |
+| [ORC](#data-format-orc)                                                                   | ✔    | ✔      |
+| [RowBinary](#rowbinary)                                                                   | ✔    | ✔      |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔      |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔      |
+| [Native](#native)                                                                         | ✔    | ✔      |
+| [Null](#null)                                                                             | ✗    | ✔      |
+| [XML](#xml)                                                                               | ✗    | ✔      |
+| [CapnProto](#capnproto)                                                                   | ✔    | ✔      |
+| [LineAsString](#lineasstring)                                                             | ✔    | ✗      |
+| [Regexp](#data-format-regexp)                                                             | ✔    | ✗      |
+| [RawBLOB](#rawblob)                                                                       | ✔    | ✔      |
+| [MsgPack](#msgpack)                                                                       | ✔    | ✔      |
+| [MySQLDump](#mysqldump)                                                                   | ✔    | ✗      |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
@@ -119,7 +120,7 @@ Dates with times are written in the format `YYYY-MM-DD hh:mm:ss` and parsed in t
 This all occurs in the system time zone at the time the client or server starts (depending on which of them formats data). For dates with times, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
 During a read operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
 
-As an exception, parsing dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
+As an exception, parsing dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats `YYYY-MM-DD hh:mm:ss` and `NNNNNNNNNN` are differentiated automatically.
 
 Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH` (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n` or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of space can be parsed in any of the following variations:
 
@@ -333,8 +334,9 @@ Total rows: 2
 ```
 
 ``` sql
-INSERT INTO UserActivity FORMAT Template SETTINGS
+INSERT INTO UserActivity SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
+FORMAT Template
 ```
 
 `/some/path/resultset.format`:
@@ -359,8 +361,9 @@ Similar to `Template`, but skips whitespace characters between delimiters and va
 It’s possible to read `JSON` using this format, if values of columns have the same order in all rows. For example, the following request can be used for inserting data from output example of format [JSON](#json):
 
 ``` sql
-INSERT INTO table_name FORMAT TemplateIgnoreSpaces SETTINGS
+INSERT INTO table_name SETTINGS
 format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = ','
+FORMAT TemplateIgnoreSpaces
 ```
 
 `/some/path/resultset.format`:
@@ -465,6 +468,34 @@ Also prints the header row with column names, similar to [TabSeparatedWithNames]
 ## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+## SQLInsert {#sqlinsert}
+
+Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
+
+Example:
+
+```sql
+SELECT number AS x, number + 1 AS y, 'Hello' AS z FROM numbers(10) FORMAT SQLInsert SETTINGS output_format_sql_insert_max_batch_size = 2
+```
+
+```sql
+INSERT INTO table (x, y, z) VALUES (0, 1, 'Hello'), (1, 2, 'Hello');
+INSERT INTO table (x, y, z) VALUES (2, 3, 'Hello'), (3, 4, 'Hello');
+INSERT INTO table (x, y, z) VALUES (4, 5, 'Hello'), (5, 6, 'Hello');
+INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
+INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
+```
+
+To read data output by this format ypu can use [MySQLDump](#mysqldump) input format.
+
+### SQLInsert format settings {#sqlinsert-format-settings}
+
+- [output_format_sql_insert_max_batch_size](../operations/settings/settings.md#output_format_sql_insert_max_batch_size) - The maximum number of rows in one INSERT statement. Default value - `65505`.
+- [output_format_sql_insert_table_name](../operations/settings/settings.md#output_format_sql_insert_table_name) - The name of table in the output INSERT query. Default value - `'table'`.
+- [output_format_sql_insert_include_column_names](../operations/settings/settings.md#output_format_sql_insert_include_column_names) - Include column names in INSERT query. Default value - `true`.
+- [output_format_sql_insert_use_replace](../operations/settings/settings.md#output_format_sql_insert_use_replace) - Use REPLACE statement instead of INSERT. Default value - `false`.
+- [output_format_sql_insert_quote_names](../operations/settings/settings.md#output_format_sql_insert_quote_names) - Quote column names with "\`" characters . Default value - `true`.
 
 ## JSON {#json}
 
@@ -816,7 +847,7 @@ Columns that are not present in the block will be filled with default values (yo
 
 ## JSONEachRow {#jsoneachrow}
 
-In this format, CliskHouse outputs each row as a separated, newline-delimited JSON Object.
+In this format, ClickHouse outputs each row as a separated, newline-delimited JSON Object.
 
 Example:
 
@@ -1337,7 +1368,7 @@ Arrays can be nested and can have a value of the `Nullable` type as an argument.
 You can insert CapnProto data from a file into ClickHouse table by the following command:
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_schema = 'schema:Message' FORMAT CapnProto"
 ```
 
 Where `schema.capnp` looks like this:
@@ -1363,9 +1394,9 @@ Columns `name` ([String](../sql-reference/data-types/string.md)) and `value` (nu
 Rows may optionally contain `help` ([String](../sql-reference/data-types/string.md)) and `timestamp` (number).
 Column `type` ([String](../sql-reference/data-types/string.md)) is either `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
 Each metric value may also have some `labels` ([Map(String, String)](../sql-reference/data-types/map.md)).
-Several consequent rows may refer to the one metric with different lables. The table should be sorted by metric name (e.g., with `ORDER BY name`).
+Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
 
-There's special requirements for labels for `histogram` and `summary`, see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. Special rules applied to row with labels `{'count':''}` and `{'sum':''}`, they'll be convered to `<metric_name>_count` and `<metric_name>_sum` respectively.
+There's special requirements for labels for `histogram` and `summary`, see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. Special rules applied to row with labels `{'count':''}` and `{'sum':''}`, they'll be converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
 
 **Example:**
 
@@ -1439,7 +1470,7 @@ SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:Me
 ```
 
 ``` bash
-cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
+cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table SETTINGS format_schema='schemafile:MessageType' FORMAT Protobuf"
 ```
 
 where the file `schemafile.proto` looks like this:
@@ -1601,6 +1632,8 @@ kafka_topic_list = 'topic1',
 kafka_group_name = 'group1',
 kafka_format = 'AvroConfluent';
 
+-- for debug purposes you can set format_avro_schema_registry_url in a session.
+-- this way cannot be used in production
 SET format_avro_schema_registry_url = 'http://schema-registry';
 
 SELECT * FROM topic1_stream;
@@ -1665,7 +1698,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 ### Parquet format settings {#parquet-format-settings}
 
-- [output_format_parquet_row_group_size](../operations/settings/settings.md#output_format_parquet_row_group_size) - row group size in rows while data output. Default value - `1000000`.  
+- [output_format_parquet_row_group_size](../operations/settings/settings.md#output_format_parquet_row_group_size) - row group size in rows while data output. Default value - `1000000`.
 - [output_format_parquet_string_as_string](../operations/settings/settings.md#output_format_parquet_string_as_string) - use Parquet String type instead of Binary for String columns. Default value - `false`.
 - [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) - allow inserting array of structs into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) table in Parquet input format. Default value - `false`.
 - [input_format_parquet_case_insensitive_column_matching](../operations/settings/settings.md#input_format_parquet_case_insensitive_column_matching) - ignore case when matching Parquet columns with ClickHouse columns. Default value - `false`.
@@ -1845,7 +1878,7 @@ When working with the `Regexp` format, you can use the following settings:
     -   Quoted (similarly to [Values](#data-format-values))
     -   Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
 
--   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+-   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
 **Usage**
 
@@ -1875,7 +1908,7 @@ CREATE TABLE imp_regex_table (id UInt32, array Array(UInt32), string String, dat
 Import command:
 
 ```bash
-$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table FORMAT Regexp SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0;"
+$ cat data.tsv | clickhouse-client  --query "INSERT INTO imp_regex_table SETTINGS format_regexp='id: (.+?) array: (.+?) string: (.+?) date: (.+?)', format_regexp_escaping_rule='Escaped', format_regexp_skip_unmatched=0 FORMAT Regexp;"
 ```
 
 Query:

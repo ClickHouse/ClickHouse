@@ -26,14 +26,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of request parameters, see [request description](../../../sql-reference/statements/create/table.md).
 
-**Parameters of SummingMergeTree**
+### Parameters of SummingMergeTree
 
--   `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
+#### columns
+
+`columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
     The columns must be of a numeric type and must not be in the primary key.
 
     If `columns` not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
 
-**Query clauses**
+### Query clauses
 
 When creating a `SummingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 

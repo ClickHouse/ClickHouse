@@ -222,7 +222,8 @@ namespace
 }
 
 template <>
-SettingFieldSeconds::SettingFieldTimespan(const Field & f) : SettingFieldTimespan(float64AsSecondsToTimespan(fieldToNumber<Float64>(f)))
+SettingFieldSeconds::SettingFieldTimespan(const Field & f)
+    : SettingFieldTimespan(Poco::Timespan{float64AsSecondsToTimespan(fieldToNumber<Float64>(f))})
 {
 }
 
@@ -418,7 +419,7 @@ void SettingFieldURI::readBinary(ReadBuffer & in)
 }
 
 
-void SettingFieldEnumHelpers::writeBinary(const std::string_view & str, WriteBuffer & out)
+void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & out)
 {
     writeStringBinary(str, out);
 }

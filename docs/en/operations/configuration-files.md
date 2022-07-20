@@ -57,7 +57,7 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
 
-Users configuration can be splitted into separate files similar to `config.xml` and `config.d/`.
+Users configuration can be split into separate files similar to `config.xml` and `config.d/`.
 Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
 Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
 
