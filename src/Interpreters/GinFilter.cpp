@@ -212,12 +212,7 @@ bool GinFilter::contains(const GinFilter & af, PostingsCacheForStore &cache_stor
         cache_store.cache[af.getMatchString()] = postings_cache;
     }
 
-    if (match(postings_cache))
-    {
-        return true;
-    }
-
-    return false;
+    return match(postings_cache);
 }
 
 const String& GinFilter::getName()
