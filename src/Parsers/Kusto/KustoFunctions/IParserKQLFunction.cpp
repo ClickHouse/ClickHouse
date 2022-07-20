@@ -23,10 +23,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
-bool IParserKQLFunction::convert(String &out,IParser::Pos &pos)
+bool IParserKQLFunction::convert(String & out,IParser::Pos & pos)
 {
     return wrapConvertImpl(pos, IncreaseDepthTag{}, [&]
     {
@@ -37,7 +38,7 @@ bool IParserKQLFunction::convert(String &out,IParser::Pos &pos)
     });
 }
 
-bool IParserKQLFunction::directMapping(String &out,IParser::Pos &pos,const String &ch_fn)
+bool IParserKQLFunction::directMapping(String & out,IParser::Pos & pos,const String & ch_fn)
 {
     std::vector<String> arguments;
 
@@ -75,7 +76,7 @@ bool IParserKQLFunction::directMapping(String &out,IParser::Pos &pos,const Strin
     return false;
 }
 
-String IParserKQLFunction::getConvertedArgument(const String &fn_name, IParser::Pos &pos)
+String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
 {
     String converted_arg;
     std::vector<String> tokens;
@@ -85,7 +86,7 @@ String IParserKQLFunction::getConvertedArgument(const String &fn_name, IParser::
         return converted_arg;
 
     if (pos->isEnd() || pos->type == TokenType::PipeMark || pos->type == TokenType::Semicolon)
-        throw Exception("Syntax error near " + fn_name, ErrorCodes::SYNTAX_ERROR);
+        throw Exception("Need more argument(s) in function: " + fn_name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
@@ -119,7 +120,7 @@ String IParserKQLFunction::getConvertedArgument(const String &fn_name, IParser::
     return converted_arg;
 }
 
-String IParserKQLFunction::getKQLFunctionName(IParser::Pos &pos)
+String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
 {
     String fn_name = String(pos->begin, pos->end);
     ++pos;
@@ -129,6 +130,12 @@ String IParserKQLFunction::getKQLFunctionName(IParser::Pos &pos)
         return "";
     }
     return  fn_name;
+}
+
+void IParserKQLFunction::validateEndOfFunction(const String & fn_name, IParser::Pos & pos)
+{
+    if (pos->type != TokenType:: ClosingRoundBracket)
+        throw Exception("Too many arguments in function: " + fn_name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 }

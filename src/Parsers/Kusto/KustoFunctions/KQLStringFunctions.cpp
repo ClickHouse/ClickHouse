@@ -2,6 +2,7 @@
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
 #include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
+#include <format>
 #include <cstdlib>
 #include <Parsers/CommonParsers.h>
 
@@ -456,7 +457,19 @@ bool StrCatDelim::convertImpl(String & out,IParser::Pos & pos)
 
 bool StrCmp::convertImpl(String & out,IParser::Pos & pos)
 {
-    return directMapping(out,pos,"lengthUTF8");
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    const String string1 = getConvertedArgument(fn_name, pos);
+    ++pos;
+    const String string2 = getConvertedArgument(fn_name, pos);
+
+    validateEndOfFunction(fn_name, pos);
+
+    out = std::format("multiIf({0} == {1}, 0, {0} < {1}, -1, 1)", string1, string2);
+    return true;
 }
 
 bool StrLen::convertImpl(String & out,IParser::Pos & pos)
