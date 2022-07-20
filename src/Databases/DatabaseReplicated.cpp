@@ -232,7 +232,7 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name, const Poco:
     cluster_auth_info.cluster_secure_connection = config_ref.getBool(config_prefix + ".cluster_secure_connection", false);
 }
 
-void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach, bool is_create_query)
+void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
 {
     try
     {
@@ -250,6 +250,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach,
         }
 
         replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
+        bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
 
         String replica_host_id;
         if (current_zookeeper->tryGet(replica_path, replica_host_id))
@@ -290,7 +291,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach,
     }
     catch (...)
     {
-        if (!force_attach)
+        if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
             throw;
 
         /// It's server startup, ignore error.
@@ -339,6 +340,8 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
+    if (!ddl_worker)
+        return false;
     return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 }
 
@@ -374,21 +377,21 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     createEmptyLogEntry(current_zookeeper);
 }
 
-void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool /*force_restore*/, bool force_attach)
+void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, LoadingStrictnessLevel mode)
 {
-    tryConnectToZooKeeperAndInitDatabase(force_attach, /* is_create_query */ !force_attach);
+    tryConnectToZooKeeperAndInitDatabase(mode);
 }
 
 void DatabaseReplicated::loadStoredObjects(
-    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
 {
-    beforeLoadingMetadata(local_context, force_restore, force_attach);
-    DatabaseAtomic::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
+    beforeLoadingMetadata(local_context, mode);
+    DatabaseAtomic::loadStoredObjects(local_context, mode, skip_startup_tables);
 }
 
-void DatabaseReplicated::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+void DatabaseReplicated::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
 {
-    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
+    DatabaseAtomic::startupTables(thread_pool, mode);
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     if (is_probably_dropped)
         return;
