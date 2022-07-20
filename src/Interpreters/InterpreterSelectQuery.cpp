@@ -363,6 +363,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
+    if (!prepared_sets)
+        prepared_sets = std::make_shared<PreparedSets>();
+
     query_info.ignore_projections = options.ignore_projections;
     query_info.is_projection_query = options.is_projection_query;
 

@@ -234,7 +234,10 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     , syntax(syntax_analyzer_result_)
 {
     /// Cache prepared sets because we might run analysis multiple times
-    prepared_sets = prepared_sets_;
+    if (prepared_sets_)
+        prepared_sets = prepared_sets_;
+    else
+        prepared_sets = std::make_shared<PreparedSets>();
 
     /// external_tables, sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
