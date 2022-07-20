@@ -325,7 +325,20 @@ void LocalServer::setupUsers()
     access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
     if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
     {
-        const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
+        String config_path = config().getString("config-file","");
+        bool has_user_directories = config().has("user_directories");
+        const auto config_dir = std::filesystem::path{config_path}.remove_filename().string();
+        String users_config_path = config().getString("users_config","");
+        if (users_config_path.empty())
+        {
+            if (!has_user_directories)
+                users_config_path = config_path;
+        }
+        if (has_user_directories)
+           users_config_path = config().getString("user_directories.users_xml.path","");
+
+        if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
+            users_config_path = config_dir + users_config_path;
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
         users_config = loaded_config.configuration;
@@ -575,7 +588,8 @@ void LocalServer::processConfig()
       * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
-    std::string default_database = config().getString("default_database", "_local");
+    std::string default_database = config().getString("default_database", "");
+    default_database = default_database + "_local";
     DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
