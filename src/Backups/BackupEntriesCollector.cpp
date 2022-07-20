@@ -239,6 +239,7 @@ bool BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(std::option
         table_infos.clear();
         gatherDatabasesMetadata();
         gatherTablesMetadata();
+        lockTablesForReading();
     }
     catch (Exception & e)
     {
