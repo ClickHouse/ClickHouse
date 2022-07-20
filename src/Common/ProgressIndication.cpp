@@ -8,6 +8,7 @@
 #include "Common/formatReadable.h"
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
+#include <Common/Stopwatch.h>
 #include "IO/WriteBufferFromString.h"
 #include <Databases/DatabaseMemory.h>
 
@@ -16,16 +17,16 @@ namespace
 {
     constexpr UInt64 ALL_THREADS = 0;
 
-    double calculateCPUUsage(DB::ThreadIdToTimeMap times, UInt64 elapsed)
+    UInt64 aggregateCPUUsageNs(DB::ThreadIdToTimeMap times)
     {
-        auto accumulated = std::accumulate(times.begin(), times.end(), 0,
+        constexpr UInt64 us_to_ns = 1000;
+        return us_to_ns * std::accumulate(times.begin(), times.end(), 0ull,
         [](UInt64 acc, const auto & elem)
         {
             if (elem.first == ALL_THREADS)
                 return acc;
             return acc + elem.second.time();
         });
-        return static_cast<double>(accumulated) / elapsed;
     }
 }
 
@@ -55,7 +56,7 @@ void ProgressIndication::resetProgress()
     write_progress_on_update = false;
     {
         std::lock_guard lock(profile_events_mutex);
-        host_cpu_usage.clear();
+        cpu_usage_meter.reset(static_cast<double>(clock_gettime_ns()));
         thread_data.clear();
     }
 }
@@ -82,15 +83,17 @@ void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id
     thread_to_times[thread_id] = {};
 }
 
-void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time)
+void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data)
 {
     std::lock_guard lock(profile_events_mutex);
 
+    UInt64 total_cpu_ns = 0;
     for (auto & new_host_map : new_thread_data)
     {
-        host_cpu_usage[new_host_map.first] = calculateCPUUsage(new_host_map.second, elapsed_time);
+        total_cpu_ns += aggregateCPUUsageNs(new_host_map.second);
         thread_data[new_host_map.first] = std::move(new_host_map.second);
     }
+    cpu_usage_meter.add(static_cast<double>(clock_gettime_ns()), total_cpu_ns);
 }
 
 size_t ProgressIndication::getUsedThreadsCount() const
@@ -104,14 +107,10 @@ size_t ProgressIndication::getUsedThreadsCount() const
         });
 }
 
-double ProgressIndication::getCPUUsage() const
+double ProgressIndication::getCPUUsage()
 {
     std::lock_guard lock(profile_events_mutex);
-
-    double res = 0;
-    for (const auto & elem : host_cpu_usage)
-        res += elem.second;
-    return res;
+    return cpu_usage_meter.rate(clock_gettime_ns());
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const

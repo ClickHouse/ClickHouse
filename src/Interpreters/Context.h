@@ -607,8 +607,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(const StringRef & name, const String & value);
-    void setSetting(const StringRef & name, const Field & value);
+    void setSetting(std::string_view name, const String & value);
+    void setSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 

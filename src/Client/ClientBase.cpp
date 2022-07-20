@@ -983,8 +983,7 @@ void ClientBase::onProfileEvents(Block & block)
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
                 thread_times[host_name][thread_id].memory_usage = value;
         }
-        auto elapsed_time = profile_events.watch.elapsedMicroseconds();
-        progress_indication.updateThreadEventData(thread_times, elapsed_time);
+        progress_indication.updateThreadEventData(thread_times);
 
         if (need_render_progress)
             progress_indication.writeProgress();
