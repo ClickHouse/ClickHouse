@@ -6,15 +6,27 @@
 namespace DB
 {
 
-RestoreCoordinationRemote::RestoreCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
+RestoreCoordinationRemote::RestoreCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , status_sync(zookeeper_path_ + "/status", get_zookeeper_, &Poco::Logger::get("RestoreCoordination"))
+    , remove_zk_nodes_in_destructor(remove_zk_nodes_in_destructor_)
+    , stage_sync(zookeeper_path_ + "/stage", get_zookeeper_, &Poco::Logger::get("RestoreCoordination"))
 {
     createRootNodes();
 }
 
-RestoreCoordinationRemote::~RestoreCoordinationRemote() = default;
+RestoreCoordinationRemote::~RestoreCoordinationRemote()
+{
+    try
+    {
+        if (remove_zk_nodes_in_destructor)
+            removeAllNodes();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 void RestoreCoordinationRemote::createRootNodes()
 {
@@ -27,24 +39,24 @@ void RestoreCoordinationRemote::createRootNodes()
 }
 
 
-void RestoreCoordinationRemote::setStatus(const String & current_host, const String & new_status, const String & message)
+void RestoreCoordinationRemote::setStage(const String & current_host, const String & new_stage, const String & message)
 {
-    status_sync.set(current_host, new_status, message);
+    stage_sync.set(current_host, new_stage, message);
 }
 
-void RestoreCoordinationRemote::setErrorStatus(const String & current_host, const Exception & exception)
+void RestoreCoordinationRemote::setError(const String & current_host, const Exception & exception)
 {
-    status_sync.setError(current_host, exception);
+    stage_sync.setError(current_host, exception);
 }
 
-Strings RestoreCoordinationRemote::waitStatus(const Strings & all_hosts, const String & status_to_wait)
+Strings RestoreCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait)
 {
-    return status_sync.wait(all_hosts, status_to_wait);
+    return stage_sync.wait(all_hosts, stage_to_wait);
 }
 
-Strings RestoreCoordinationRemote::waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms)
+Strings RestoreCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout)
 {
-    return status_sync.waitFor(all_hosts, status_to_wait, timeout_ms);
+    return stage_sync.waitFor(all_hosts, stage_to_wait, timeout);
 }
 
 
@@ -91,11 +103,6 @@ void RestoreCoordinationRemote::removeAllNodes()
 {
     auto zookeeper = get_zookeeper();
     zookeeper->removeRecursive(zookeeper_path);
-}
-
-void RestoreCoordinationRemote::drop()
-{
-    removeAllNodes();
 }
 
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Backups/IRestoreCoordination.h>
-#include <Backups/BackupCoordinationStatusSync.h>
+#include <Backups/BackupCoordinationStageSync.h>
 
 
 namespace DB
@@ -11,14 +11,14 @@ namespace DB
 class RestoreCoordinationRemote : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationRemote(const String & zookeeper_path, zkutil::GetZooKeeper get_zookeeper);
+    RestoreCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_);
     ~RestoreCoordinationRemote() override;
 
-    /// Sets the current status and waits for other hosts to come to this status too. If status starts with "error:" it'll stop waiting on all the hosts.
-    void setStatus(const String & current_host, const String & new_status, const String & message) override;
-    void setErrorStatus(const String & current_host, const Exception & exception) override;
-    Strings waitStatus(const Strings & all_hosts, const String & status_to_wait) override;
-    Strings waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms) override;
+    /// Sets the current stage and waits for other hosts to come to this stage too.
+    void setStage(const String & current_host, const String & new_stage, const String & message) override;
+    void setError(const String & current_host, const Exception & exception) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -31,9 +31,6 @@ public:
     /// The function returns false if this access storage is being already restored by another replica.
     bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) override;
 
-    /// Removes remotely stored information.
-    void drop() override;
-
 private:
     void createRootNodes();
     void removeAllNodes();
@@ -42,7 +39,9 @@ private:
 
     const String zookeeper_path;
     const zkutil::GetZooKeeper get_zookeeper;
-    BackupCoordinationStatusSync status_sync;
+    const bool remove_zk_nodes_in_destructor;
+
+    BackupCoordinationStageSync stage_sync;
 };
 
 }

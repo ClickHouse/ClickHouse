@@ -34,16 +34,21 @@ namespace ErrorCodes
 namespace
 {
     /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
-    constexpr const char * kGatheringMetadataStatus = "gathering metadata";
+    constexpr const char * kGatheringMetadataStage = "gathering metadata";
+
+    String formatGatheringMetadataStage(size_t pass)
+    {
+        return fmt::format("{} ({})", kGatheringMetadataStage, pass);
+    }
 
     /// Making temporary hard links and prepare backup entries.
-    constexpr const char * kExtractingDataFromTablesStatus = "extracting data from tables";
+    constexpr const char * kExtractingDataFromTablesStage = "extracting data from tables";
 
     /// Running special tasks for replicated tables which can also prepare some backup entries.
-    constexpr const char * kRunningPostTasksStatus = "running post-tasks";
+    constexpr const char * kRunningPostTasksStage = "running post-tasks";
 
     /// Writing backup entries to the backup and removing temporary hard links.
-    constexpr const char * kWritingBackupStatus = "writing backup";
+    constexpr const char * kWritingBackupStage = "writing backup";
 
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
@@ -90,7 +95,8 @@ BackupEntriesCollector::BackupEntriesCollector(
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
     , context(context_)
-    , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 300000))
+    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
+    , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000))
     , log(&Poco::Logger::get("BackupEntriesCollector"))
 {
 }
@@ -100,7 +106,7 @@ BackupEntriesCollector::~BackupEntriesCollector() = default;
 BackupEntries BackupEntriesCollector::run()
 {
     /// run() can be called onle once.
-    if (!current_status.empty())
+    if (!current_stage.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
 
     /// Find other hosts working along with us to execute this ON CLUSTER query.
@@ -123,36 +129,40 @@ BackupEntries BackupEntriesCollector::run()
     makeBackupEntriesForTablesDefs();
 
     /// Make backup entries for the data of the found tables.
-    setStatus(kExtractingDataFromTablesStatus);
+    setStage(kExtractingDataFromTablesStage);
     makeBackupEntriesForTablesData();
 
     /// Run all the tasks added with addPostCollectingTask().
-    setStatus(kRunningPostTasksStatus);
+    setStage(kRunningPostTasksStage);
     runPostTasks();
 
     /// No more backup entries or tasks are allowed after this point.
-    setStatus(kWritingBackupStatus);
+    setStage(kWritingBackupStage);
 
     return std::move(backup_entries);
 }
 
-Strings BackupEntriesCollector::setStatus(const String & new_status, const String & message)
+Strings BackupEntriesCollector::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, "{}", toUpperFirst(new_status));
-    current_status = new_status;
+    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
+    current_stage = new_stage;
 
-    backup_coordination->setStatus(backup_settings.host_id, new_status, message);
+    backup_coordination->setStage(backup_settings.host_id, new_stage, message);
 
-    if (new_status.starts_with(kGatheringMetadataStatus))
+    if (new_stage == formatGatheringMetadataStage(1))
     {
-        auto now = std::chrono::steady_clock::now();
-        auto end_of_timeout = std::max(now, consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout);
-        return backup_coordination->waitStatusFor(
-            all_hosts, new_status, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - now).count());
+        return backup_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+    }
+    else if (new_stage.starts_with(kGatheringMetadataStage))
+    {
+        auto current_time = std::chrono::steady_clock::now();
+        auto end_of_timeout = std::max(current_time, consistent_metadata_snapshot_end_time);
+        return backup_coordination->waitForStage(
+            all_hosts, new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
     }
     else
     {
-        return backup_coordination->waitStatus(all_hosts, new_status);
+        return backup_coordination->waitForStage(all_hosts, new_stage);
     }
 }
 
@@ -173,18 +183,18 @@ void BackupEntriesCollector::calculateRootPathInBackup()
 /// Finds databases and tables which we will put to the backup.
 void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
 {
-    consistent_metadata_snapshot_start_time = std::chrono::steady_clock::now();
-    auto end_of_timeout = consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout;
-    setStatus(fmt::format("{} ({})", kGatheringMetadataStatus, 1));
+    setStage(formatGatheringMetadataStage(1));
+
+    consistent_metadata_snapshot_end_time = std::chrono::steady_clock::now() + consistent_metadata_snapshot_timeout;
 
     for (size_t pass = 1;; ++pass)
     {
-        String new_status = fmt::format("{} ({})", kGatheringMetadataStatus, pass + 1);
+        String next_stage = formatGatheringMetadataStage(pass + 1);
         std::optional<Exception> inconsistency_error;
         if (tryGatherMetadataAndCompareWithPrevious(inconsistency_error))
         {
             /// Gathered metadata and checked consistency, cool! But we have to check that other hosts cope with that too.
-            auto all_hosts_results = setStatus(new_status, "consistent");
+            auto all_hosts_results = setStage(next_stage, "consistent");
 
             std::optional<String> host_with_inconsistency;
             std::optional<String> inconsistency_error_on_other_host;
@@ -210,13 +220,13 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
         else
         {
             /// Failed to gather metadata or something wasn't consistent. We'll let other hosts know that and try again.
-            setStatus(new_status, inconsistency_error->displayText());
+            setStage(next_stage, inconsistency_error->displayText());
         }
 
         /// Two passes is minimum (we need to compare with table names with previous ones to be sure we don't miss anything).
         if (pass >= 2)
         {
-            if (std::chrono::steady_clock::now() > end_of_timeout)
+            if (std::chrono::steady_clock::now() > consistent_metadata_snapshot_end_time)
                 inconsistency_error->rethrow();
             else
                 LOG_WARNING(log, "{}", inconsistency_error->displayText());
@@ -713,7 +723,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
 void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
 {
-    if (current_status == kWritingBackupStatus)
+    if (current_stage == kWritingBackupStage)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     backup_entries.emplace_back(file_name, backup_entry);
 }
@@ -725,21 +735,21 @@ void BackupEntriesCollector::addBackupEntry(const std::pair<String, BackupEntryP
 
 void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entries_)
 {
-    if (current_status == kWritingBackupStatus)
+    if (current_stage == kWritingBackupStage)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, backup_entries_);
 }
 
 void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 {
-    if (current_status == kWritingBackupStatus)
+    if (current_stage == kWritingBackupStage)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, std::move(backup_entries_));
 }
 
 void BackupEntriesCollector::addPostTask(std::function<void()> task)
 {
-    if (current_status == kWritingBackupStatus)
+    if (current_stage == kWritingBackupStage)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of post tasks is not allowed");
     post_tasks.push(std::move(task));
 }

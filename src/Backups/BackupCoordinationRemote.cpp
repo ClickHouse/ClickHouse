@@ -165,15 +165,28 @@ namespace
     constexpr size_t NUM_ATTEMPTS = 10;
 }
 
-BackupCoordinationRemote::BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_)
+BackupCoordinationRemote::BackupCoordinationRemote(
+    const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
-    , status_sync(zookeeper_path_ + "/status", get_zookeeper_, &Poco::Logger::get("BackupCoordination"))
+    , remove_zk_nodes_in_destructor(remove_zk_nodes_in_destructor_)
+    , stage_sync(zookeeper_path_ + "/stage", get_zookeeper_, &Poco::Logger::get("BackupCoordination"))
 {
     createRootNodes();
 }
 
-BackupCoordinationRemote::~BackupCoordinationRemote() = default;
+BackupCoordinationRemote::~BackupCoordinationRemote()
+{
+    try
+    {
+        if (remove_zk_nodes_in_destructor)
+            removeAllNodes();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 void BackupCoordinationRemote::createRootNodes()
 {
@@ -196,24 +209,24 @@ void BackupCoordinationRemote::removeAllNodes()
 }
 
 
-void BackupCoordinationRemote::setStatus(const String & current_host, const String & new_status, const String & message)
+void BackupCoordinationRemote::setStage(const String & current_host, const String & new_stage, const String & message)
 {
-    status_sync.set(current_host, new_status, message);
+    stage_sync.set(current_host, new_stage, message);
 }
 
-void BackupCoordinationRemote::setErrorStatus(const String & current_host, const Exception & exception)
+void BackupCoordinationRemote::setError(const String & current_host, const Exception & exception)
 {
-    status_sync.setError(current_host, exception);
+    stage_sync.setError(current_host, exception);
 }
 
-Strings BackupCoordinationRemote::waitStatus(const Strings & all_hosts, const String & status_to_wait)
+Strings BackupCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait)
 {
-    return status_sync.wait(all_hosts, status_to_wait);
+    return stage_sync.wait(all_hosts, stage_to_wait);
 }
 
-Strings BackupCoordinationRemote::waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms)
+Strings BackupCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout)
 {
-    return status_sync.waitFor(all_hosts, status_to_wait, timeout_ms);
+    return stage_sync.waitFor(all_hosts, stage_to_wait, timeout);
 }
 
 
@@ -563,11 +576,6 @@ Strings BackupCoordinationRemote::getAllArchiveSuffixes() const
     for (auto & node_name : node_names)
         node_name = formatArchiveSuffix(extractCounterFromSequentialNodeName(node_name));
     return node_names;
-}
-
-void BackupCoordinationRemote::drop()
-{
-    removeAllNodes();
 }
 
 }
