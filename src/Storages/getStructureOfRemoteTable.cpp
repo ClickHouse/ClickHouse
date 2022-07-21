@@ -126,10 +126,11 @@ ColumnsDescription getStructureOfRemoteTable(
     // use local shard as first priority, as it needs no network communication
     for (const auto & shard_info : shards_info)
     {
-        if(shard_info.isLocal()){
+        if(shard_info.isLocal())
+        {
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
             if (res.empty())
-                continue;
+                break;
 
             return res;
         }
