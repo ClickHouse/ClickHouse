@@ -297,7 +297,8 @@ static ASTPtr parseAdditionalFilterConditionForTable(
         auto & table = tuple.at(0).safeGet<String>();
         auto & filter = tuple.at(1).safeGet<String>();
 
-        if ((table == target.table && context.getCurrentDatabase() == target.database) ||
+        if (table == target.alias ||
+            (table == target.table && context.getCurrentDatabase() == target.database) ||
             (table == target.database + '.' + target.table))
         {
             /// Try to parse expression
