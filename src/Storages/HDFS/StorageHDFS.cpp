@@ -437,7 +437,7 @@ public:
     {
         std::lock_guard lock(cancel_mutex);
         finalize();
-        cancelled = false;
+        cancelled = true;
     }
 
     void onException() override
