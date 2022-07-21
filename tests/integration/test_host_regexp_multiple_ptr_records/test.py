@@ -39,8 +39,12 @@ def setup_dns_server(ip):
 
 
 def setup_ch_server(dns_server_ip):
-    ch_server.exec_in_container((["bash", "-c", f"echo 'nameserver {dns_server_ip}' > /etc/resolv.conf"]))
-    ch_server.exec_in_container((["bash", "-c", "echo 'options ndots:0' >> /etc/resolv.conf"]))
+    ch_server.exec_in_container(
+        (["bash", "-c", f"echo 'nameserver {dns_server_ip}' > /etc/resolv.conf"])
+    )
+    ch_server.exec_in_container(
+        (["bash", "-c", "echo 'options ndots:0' >> /etc/resolv.conf"])
+    )
     ch_server.query("SYSTEM DROP DNS CACHE")
 
 
