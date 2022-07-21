@@ -13,6 +13,16 @@ else()
     set(RECONFIGURE_MESSAGE_LEVEL WARNING)
 endif()
 
+# Setup NATIVE_BUILD_TARGETS list for further native build
+# when cross-compiling and host architecture differs from target architecture.
+# Add target to the list:
+#    add_native_target (<target>...)
+set_property (GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
+function (add_native_target)
+    get_property (tmp GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
+    set_property (GLOBAL PROPERTY NATIVE_BUILD_TARGETS "${tmp}" "${ARGV}")
+endfunction (add_native_target)
+
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
@@ -557,3 +567,36 @@ add_subdirectory (tests)
 add_subdirectory (utils)
 
 include (cmake/sanitize_target_link_libraries.cmake)
+
+# Build native targets if necessary
+get_property(NATIVE_BUILD_TARGETS GLOBAL PROPERTY NATIVE_BUILD_TARGETS)
+if (NATIVE_BUILD_TARGETS 
+	AND NOT(
+    	CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
+        AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
+	)
+)
+    message (STATUS "Building native targets...")
+
+    set (NATIVE_BUILD_DIR "${CMAKE_BINARY_DIR}/native")
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${NATIVE_BUILD_DIR}"
+        COMMAND_ECHO STDOUT)
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND}
+            "-G${CMAKE_GENERATOR}"
+            "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+            "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+            "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+            "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY "${NATIVE_BUILD_DIR}"
+        COMMAND_ECHO STDOUT)
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} --build "${NATIVE_BUILD_DIR}" --target ${NATIVE_BUILD_TARGETS}
+        COMMAND_ECHO STDOUT)
+endif ()
+
