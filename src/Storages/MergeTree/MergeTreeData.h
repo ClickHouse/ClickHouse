@@ -56,6 +56,9 @@ struct ZeroCopyLock;
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
 
+class MergeTreeTransaction;
+using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
+
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
 {
