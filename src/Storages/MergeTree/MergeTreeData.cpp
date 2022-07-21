@@ -1077,7 +1077,7 @@ void MergeTreeData::loadDataPartsFromDisk(
             has_adaptive_parts.store(true, std::memory_order_relaxed);
 
         /// Check if there is lightweight delete in part
-        if (part->hasLightweightDelete() || part->getColumns().contains("_row_exists")) // TODO: implement properly
+        if (part->hasLightweightDelete())
             has_lightweight_in_parts.store(true, std::memory_order_relaxed);
 
         part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
@@ -2872,7 +2872,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
             ErrorCodes::LOGICAL_ERROR);
 
-    if (part->hasLightweightDelete() || part->getColumns().contains("_row_exists")) // TODO: implement properly
+    if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
 
     checkPartCanBeAddedToTable(part, lock);
@@ -6562,7 +6562,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
-        NameAndTypePair("_row_exists", std::make_shared<DataTypeUInt8>()),
+        LightweightDeleteDescription::filter_column,
     };
 }
 

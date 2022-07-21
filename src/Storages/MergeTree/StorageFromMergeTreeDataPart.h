@@ -106,9 +106,9 @@ public:
         return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
     }
 
-    bool hasLightweightDeleteColumn() const
+    bool hasLightweightDeletedMask() const override
     {
-        return parts.front()->getColumns().contains("_row_exists"); // TODO: fix hardcoded column name
+        return parts.front()->hasLightweightDelete();
     }
 
 private:

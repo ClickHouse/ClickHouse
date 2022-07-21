@@ -1214,7 +1214,7 @@ static void selectColumnNames(
         {
             virt_column_names.push_back(name);
         }
-        else if (name == "_row_exists")
+        else if (name == LightweightDeleteDescription::filter_column.name)
         {
             virt_column_names.push_back(name);
         }

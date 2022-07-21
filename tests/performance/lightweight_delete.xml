@@ -19,8 +19,7 @@
     <settings>
         <max_threads>1</max_threads>
         <mutations_sync>1</mutations_sync>
-        <allow_experimental_lightweight_delete>0</allow_experimental_lightweight_delete>
-        <allow_experimental_lightweight_delete_with_row_exists>1</allow_experimental_lightweight_delete_with_row_exists>
+        <allow_experimental_lightweight_delete>1</allow_experimental_lightweight_delete>
     </settings>
 
     <!-- delete most of the rows -->
