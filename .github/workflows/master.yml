@@ -2692,7 +2692,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (asan, actions)
+          CHECK_NAME=Unit tests (asan)
           REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
           EOF
       - name: Download json reports
@@ -2728,7 +2728,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (release-clang, actions)
+          CHECK_NAME=Unit tests (release-clang)
           REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
           EOF
       - name: Download json reports
@@ -2764,7 +2764,7 @@ jobs:
   #         cat >> "$GITHUB_ENV" << 'EOF'
   #         TEMP_PATH=${{runner.temp}}/unit_tests_asan
   #         REPORTS_PATH=${{runner.temp}}/reports_dir
-  #         CHECK_NAME=Unit tests (release-gcc, actions)
+  #         CHECK_NAME=Unit tests (release-gcc)
   #         REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
   #         EOF
   #     - name: Download json reports
@@ -2800,7 +2800,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (tsan, actions)
+          CHECK_NAME=Unit tests (tsan)
           REPO_COPY=${{runner.temp}}/unit_tests_tsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2836,7 +2836,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_msan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (msan, actions)
+          CHECK_NAME=Unit tests (msan)
           REPO_COPY=${{runner.temp}}/unit_tests_msan/ClickHouse
           EOF
       - name: Download json reports
@@ -2872,7 +2872,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_ubsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (ubsan, actions)
+          CHECK_NAME=Unit tests (ubsan)
           REPO_COPY=${{runner.temp}}/unit_tests_ubsan/ClickHouse
           EOF
       - name: Download json reports
