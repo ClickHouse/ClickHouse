@@ -1,5 +1,6 @@
 from time import sleep
 import pytest
+import re
 import os.path
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
@@ -11,6 +12,7 @@ main_configs = [
     "configs/remote_servers.xml",
     "configs/replicated_access_storage.xml",
     "configs/backups_disk.xml",
+    "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
 ]
 
 user_configs = [
@@ -33,6 +35,7 @@ node2 = cluster.add_instance(
     external_dirs=["/backups/"],
     macros={"replica": "node2", "shard": "shard1"},
     with_zookeeper=True,
+    stay_alive=True,  # Necessary for the "test_stop_other_host_while_backup" test
 )
 
 
@@ -763,3 +766,62 @@ def test_mutation():
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+
+
+def test_get_error_from_other_host():
+    node1.query("CREATE TABLE tbl (`x` UInt8) ENGINE = MergeTree ORDER BY x")
+    node1.query("INSERT INTO tbl VALUES (3)")
+
+    backup_name = new_backup_name()
+    expected_error = "Got error from node2.*Table default.tbl was not found"
+    assert re.search(
+        expected_error,
+        node1.query_and_get_error(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+        ),
+    )
+
+
+@pytest.mark.parametrize("kill", [False, True])
+def test_stop_other_host_while_backup(kill):
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (3)")
+    node2.query("INSERT INTO tbl VALUES (5)")
+
+    backup_name = new_backup_name()
+
+    id = node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+    ).split("\t")[0]
+
+    # If kill=False the pending backup must be completed
+    # If kill=True the pending backup might be completed or failed
+    node2.stop_clickhouse(kill=kill)
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT status FROM system.backups WHERE uuid='{id}' AND status == 'MAKING_BACKUP'",
+        "",
+    )
+
+    status = node1.query(f"SELECT status FROM system.backups WHERE uuid='{id}'").strip()
+
+    if kill:
+        assert status in ["BACKUP_COMPLETE", "FAILED_TO_BACKUP"]
+    else:
+        assert status == "BACKUP_COMPLETE"
+
+    node2.start_clickhouse()
+
+    if status == "BACKUP_COMPLETE":
+        node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+        node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+        assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
+    elif status == "FAILED_TO_BACKUP":
+        assert not os.path.exists(get_path_to_backup(backup_name))
