@@ -10,17 +10,16 @@
 #include <memory>
 #include <iostream>
 
+#if (defined(__APPLE__) || defined(__FreeBSD__)) && defined(__GNUC__)
+#   include <machine/endian.h>
+#elif !defined(_MSC_VER)
+#   include <endian.h>
+#endif
+
 #if defined OS_DARWIN
-
-// dependencies
-#include <machine/endian.h>
-#include <libkern/OSByteOrder.h>
-
-// define 64 bit macros
-#define htole64(x) OSSwapHostToLittleInt64(x)
-
-#else
-#include <endian.h>
+#   include <libkern/OSByteOrder.h>
+    // define 64 bit macros
+#   define htole64(x) OSSwapHostToLittleInt64(x)
 #endif
 
 #include "types.h"
