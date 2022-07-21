@@ -20,3 +20,7 @@ The local version of the query will eventually be executed on each host in the c
 :::warning    
 The order for executing queries within a single host is guaranteed.
 :::
+
+:::warning    
+There is a special process inside ClickHouse server -- DDLWorker. It starts when ClickHouse starts. When you execute some SQL with `on cluster` ClickHouse creates tasks in ZK for each shard in the cluster. DDLWorker on each node takes its own tasks and executes them locally. But because DDLWorker starts with ClickHouse it uses settings from the default profile which were defined when ClickHouse started. There is no way to restart DDLWorker. To apply changes in profile settings you need to restart ClickHouse.
+:::
