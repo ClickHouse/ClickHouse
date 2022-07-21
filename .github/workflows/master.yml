@@ -1678,7 +1678,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (release, actions)
+          CHECK_NAME=Stateful tests (release)
           REPO_COPY=${{runner.temp}}/stateful_release/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1715,7 +1715,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_release_database_ordinary
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (release, DatabaseOrdinary, actions)
+          CHECK_NAME=Stateful tests (release, DatabaseOrdinary)
           REPO_COPY=${{runner.temp}}/stateful_release_database_ordinary/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1752,7 +1752,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (aarch64, actions)
+          CHECK_NAME=Stateful tests (aarch64)
           REPO_COPY=${{runner.temp}}/stateful_release/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1789,7 +1789,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (address, actions)
+          CHECK_NAME=Stateful tests (address)
           REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1826,7 +1826,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (thread, actions)
+          CHECK_NAME=Stateful tests (thread)
           REPO_COPY=${{runner.temp}}/stateful_tsan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1863,7 +1863,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_msan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (memory, actions)
+          CHECK_NAME=Stateful tests (memory)
           REPO_COPY=${{runner.temp}}/stateful_msan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1900,7 +1900,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_ubsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (ubsan, actions)
+          CHECK_NAME=Stateful tests (ubsan)
           REPO_COPY=${{runner.temp}}/stateful_ubsan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1937,7 +1937,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (debug, actions)
+          CHECK_NAME=Stateful tests (debug)
           REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
           KILL_TIMEOUT=3600
           EOF

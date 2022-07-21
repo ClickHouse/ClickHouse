@@ -203,31 +203,31 @@ CI_CONFIG = {
     "tests_config": {
         # required_build - build name for artifacts
         # force_tests - force success status for tests
-        "Stateful tests (address, actions)": {
+        "Stateful tests (address)": {
             "required_build": "package_asan",
         },
-        "Stateful tests (thread, actions)": {
+        "Stateful tests (thread)": {
             "required_build": "package_tsan",
         },
-        "Stateful tests (memory, actions)": {
+        "Stateful tests (memory)": {
             "required_build": "package_msan",
         },
-        "Stateful tests (ubsan, actions)": {
+        "Stateful tests (ubsan)": {
             "required_build": "package_ubsan",
         },
-        "Stateful tests (debug, actions)": {
+        "Stateful tests (debug)": {
             "required_build": "package_debug",
         },
-        "Stateful tests (release, actions)": {
+        "Stateful tests (release)": {
             "required_build": "package_release",
         },
-        "Stateful tests (aarch64, actions)": {
+        "Stateful tests (aarch64)": {
             "required_build": "package_aarch64",
         },
-        "Stateful tests (release, DatabaseOrdinary, actions)": {
+        "Stateful tests (release, DatabaseOrdinary)": {
             "required_build": "package_release",
         },
-        "Stateful tests (release, DatabaseReplicated, actions)": {
+        "Stateful tests (release, DatabaseReplicated)": {
             "required_build": "package_release",
         },
         "Stateless tests (address, actions)": {
