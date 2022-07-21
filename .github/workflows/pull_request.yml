@@ -1808,7 +1808,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_flaky_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests flaky check (address, actions)
+          CHECK_NAME=Stateless tests flaky check (address)
           REPO_COPY=${{runner.temp}}/stateless_flaky_asan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -2869,7 +2869,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan_flaky_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests flaky check (asan, actions)
+          CHECK_NAME=Integration tests flaky check (asan)
           REPO_COPY=${{runner.temp}}/integration_tests_asan_flaky_check/ClickHouse
           EOF
       - name: Download json reports
