@@ -69,8 +69,6 @@ namespace
         {"ns", 1e-9},
     };
 
-    const std::unordered_set<char> separators = {' ', ';', '-', '+', ',', ':'};
-
     /** Prints amount of seconds in form of:
      * "1 year 2 months 4 weeks 12 days 3 hours 1 minute 33 seconds".
      * ' ', ';', '-', '+', ',', ':' can be used as separator, eg. "1yr-2mo", "2m:6s"
@@ -267,7 +265,7 @@ namespace
         static bool scanUnit(std::string_view & str, Int64 & index, Int64 last_pos)
         {
             int64_t begin_index = index;
-            while (index <= last_pos && !isdigit(str[index]) && !separators.contains(str[index]))
+            while (index <= last_pos && !isdigit(str[index]) && !isSeparator(str[index]))
             {
                 index++;
             }
@@ -290,12 +288,17 @@ namespace
             scanSpaces(str, index, last_pos);
 
             /// ignore separator
-            if (index <= last_pos && (separators.contains(str[index])))
+            if (index <= last_pos && isSeparator(str[index]))
             {
                 index++;
             }
 
             scanSpaces(str, index, last_pos);
+        }
+
+        static bool isSeparator(char symbol)
+        {
+            return symbol == ';' || symbol == '-' || symbol == '+' || symbol == ',' || symbol == ':' || symbol == ' ';
         }
     };
 
