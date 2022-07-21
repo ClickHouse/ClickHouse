@@ -302,19 +302,19 @@ CI_CONFIG = {
         "Testflows check (actions)": {
             "required_build": "package_release",
         },
-        "Unit tests (release-clang, actions)": {
+        "Unit tests (release-clang)": {
             "required_build": "binary_release",
         },
-        "Unit tests (asan, actions)": {
+        "Unit tests (asan)": {
             "required_build": "package_asan",
         },
-        "Unit tests (msan, actions)": {
+        "Unit tests (msan)": {
             "required_build": "package_msan",
         },
-        "Unit tests (tsan, actions)": {
+        "Unit tests (tsan)": {
             "required_build": "package_tsan",
         },
-        "Unit tests (ubsan, actions)": {
+        "Unit tests (ubsan)": {
             "required_build": "package_ubsan",
         },
         "AST fuzzer (debug, actions)": {
