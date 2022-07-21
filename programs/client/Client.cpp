@@ -125,9 +125,9 @@ void Client::showWarnings()
 std::vector<String> Client::loadWarningMessages()
 {
     /// Older server versions cannot execute the query loading warnings.
-    constexpr UInt64 MIN_SERVER_REVISION_TO_LOAD_WARNINGS = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
+    constexpr UInt64 min_server_revision_to_load_warnings = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
 
-    if (server_revision < MIN_SERVER_REVISION_TO_LOAD_WARNINGS)
+    if (server_revision < min_server_revision_to_load_warnings)
         return {};
 
     std::vector<String> messages;
