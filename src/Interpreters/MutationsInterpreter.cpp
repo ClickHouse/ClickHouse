@@ -792,11 +792,11 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         if (i > 0)
             prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
 
-        if (prepared_stages[i].output_columns.size() < all_columns.size())
-        {
-            for (const auto & kv : prepared_stages[i].column_to_updated)
-                prepared_stages[i].output_columns.insert(kv.first);
-        }
+        /// Make sure that all updated columns are included into output_columns set.
+        /// This is important for a "hidden" column like _row_exists gets because it is a virtual column
+        /// and so it is not in the list of AllPhysical columns.
+        for (const auto & kv : prepared_stages[i].column_to_updated)
+            prepared_stages[i].output_columns.insert(kv.first);
     }
 
     /// Now, calculate `expressions_chain` for each stage except the first.
