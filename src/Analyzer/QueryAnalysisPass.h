@@ -26,7 +26,11 @@ namespace DB
   * TODO: Scalar subqueries must be evaluated only if they are part of query tree where we must have constant. This is currently not done
   * because execution layer does not support scalar subqueries execution.
   *
-  * 8. Special function `untuple` is handled properly.
+  * 8. Special functions handling:
+  * Function `untuple` is handled properly.
+  * Function `arrayJoin` is handled properly.
+  * For function `grouping` arguments are resolved, but it is planner responsibility to initialize it with concrete grouping function
+  * based on group by kind and group by keys positions.
   * 9. Sets are build for `in` function.
   */
 class QueryAnalysisPass final : public IQueryTreePass

@@ -45,6 +45,8 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 QueryPipeline buildDummyPipeline()
@@ -352,6 +354,18 @@ private:
     std::pair<std::string, size_t> visitFunction(FunctionNode & function_node)
     {
         auto function_node_name = function_node.getName();
+
+        if (function_node.getFunctionName() == "grouping")
+        {
+            size_t arguments_size = function_node.getArguments().getNodes().size();
+
+            if (arguments_size == 0)
+                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
+            else if (arguments_size > 64)
+                throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
+
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function GROUPING is not supported");
+        }
 
         if (function_node.isAggregateFunction())
         {
