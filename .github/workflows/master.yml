@@ -2509,7 +2509,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (ASan, actions)
+          CHECK_NAME=AST fuzzer (ASan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_asan/ClickHouse
           EOF
       - name: Download json reports
@@ -2545,7 +2545,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (TSan, actions)
+          CHECK_NAME=AST fuzzer (TSan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_tsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2581,7 +2581,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_ubsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (UBSan, actions)
+          CHECK_NAME=AST fuzzer (UBSan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_ubsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2617,7 +2617,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_msan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (MSan, actions)
+          CHECK_NAME=AST fuzzer (MSan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_msan/ClickHouse
           EOF
       - name: Download json reports
@@ -2653,7 +2653,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (debug, actions)
+          CHECK_NAME=AST fuzzer (debug)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_debug/ClickHouse
           EOF
       - name: Download json reports
