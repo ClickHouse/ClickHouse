@@ -27,7 +27,7 @@ from clickhouse_helper import (
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
 
-NAME = "Style Check (actions)"
+NAME = "Style Check"
 
 
 def process_result(result_folder):
