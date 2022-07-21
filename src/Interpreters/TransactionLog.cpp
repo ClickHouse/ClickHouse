@@ -457,6 +457,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 
 CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {
@@ -502,6 +503,7 @@ bool TransactionLog::waitForCSNLoaded(CSN csn) const
 
 void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     LOG_TRACE(log, "Rolling back transaction {}{}", txn->tid,
               std::uncaught_exceptions() ? fmt::format(" due to uncaught exception (code: {})", getCurrentExceptionCode()) : "");
 

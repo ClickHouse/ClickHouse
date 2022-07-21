@@ -71,7 +71,7 @@ static const Graphite::Pattern undef_pattern =
         .type = undef_pattern.TypeUndef,
 };
 
-inline static const Patterns & selectPatternsForMetricType(const Graphite::Params & params, const StringRef path)
+inline static const Patterns & selectPatternsForMetricType(const Graphite::Params & params, StringRef path)
 {
     if (params.patterns_typed)
     {
