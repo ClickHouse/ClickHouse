@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/Context.h>
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
@@ -10,6 +9,10 @@
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/WriteMode.h>
+#include <Disks/DirectoryIterator.h>
+#include <Disks/IDiskTransaction.h>
 
 #include <memory>
 #include <mutex>
@@ -37,8 +40,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class IDiskDirectoryIterator;
-using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+using DisksMap = std::map<String, DiskPtr>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -47,15 +51,15 @@ using Reservations = std::vector<ReservationPtr>;
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
 class MMappedFileCache;
+class IMetadataStorage;
+using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;
+struct IDiskTransaction;
+using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
+struct RemoveRequest;
+using RemoveBatchRequest = std::vector<RemoveRequest>;
 
-/**
- * Mode of opening a file for write.
- */
-enum class WriteMode
-{
-    Rewrite,
-    Append
-};
+class DiskObjectStorage;
+using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 /**
  * Provide interface for reservation.
@@ -98,7 +102,12 @@ class IDisk : public Space
 {
 public:
     /// Default constructor.
-    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>()) : executor(std::move(executor_)) { }
+    explicit IDisk(std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>())
+        : executor(std::move(executor_))
+    {
+    }
+
+    virtual DiskTransactionPtr createTransaction();
 
     /// Root path for all files stored on the disk.
     /// It's not required to be a local filesystem path.
@@ -141,10 +150,10 @@ public:
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
 
     /// Return iterator to the contents of the specified directory.
-    virtual DiskDirectoryIteratorPtr iterateDirectory(const String & path) = 0;
+    virtual DirectoryIteratorPtr iterateDirectory(const String & path) const = 0;
 
     /// Return `true` if the specified directory is empty.
-    bool isDirectoryEmpty(const String & path);
+    bool isDirectoryEmpty(const String & path) const;
 
     /// Create empty file at `path`.
     virtual void createFile(const String & path) = 0;
@@ -167,7 +176,7 @@ public:
     virtual void copyFile(const String & from_file_path, IDisk & to_disk, const String & to_file_path);
 
     /// List files at `path` and add their names to `file_names`
-    virtual void listFiles(const String & path, std::vector<String> & file_names) = 0;
+    virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
@@ -211,58 +220,41 @@ public:
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
     virtual void removeSharedFileIfExists(const String & path, bool /* keep_shared_data */) { removeFileIfExists(path); }
 
+    virtual String getCacheBasePath() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no cache path"); }
 
-    virtual String getCacheBasePath() const { return ""; }
+    virtual bool supportsCache() const { return false; }
 
-    /// Returns a list of paths because for Log family engines there might be
-    /// multiple files in remote fs for single clickhouse file.
-    virtual std::vector<String> getRemotePaths(const String &) const
+    /// Returns a list of storage objects (contains path, size, ...).
+    /// (A list is returned because for Log family engines there might
+    /// be multiple files in remote fs for single clickhouse file.
+    virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePaths() not implemented for disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getType());
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
-    using LocalPathWithRemotePaths = std::pair<String, std::vector<String>>;
+    using LocalPathWithObjectStoragePaths = std::pair<String, StoredObjects>;
 
-    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithRemotePaths> &)
+    virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
     }
-
-    struct RemoveRequest
-    {
-        String path;
-        bool if_exists = false;
-
-        explicit RemoveRequest(String path_, bool if_exists_ = false)
-            : path(std::move(path_)), if_exists(std::move(if_exists_))
-        {
-        }
-    };
-
-    using RemoveBatchRequest = std::vector<RemoveRequest>;
 
     /// Batch request to remove multiple files.
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
-    {
-        for (const auto & file : files)
-        {
-            bool keep_file = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
-            if (file.if_exists)
-                removeSharedFileIfExists(file.path, keep_file);
-            else
-                removeSharedFile(file.path, keep_file);
-        }
-    }
+    virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only);
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
 
     /// Get last modified time of file or directory at `path`.
-    virtual Poco::Timestamp getLastModified(const String & path) = 0;
+    virtual Poco::Timestamp getLastModified(const String & path) const = 0;
+
+    /// Get last changed time of file or directory at `path`.
+    /// Meaning is the same as stat.mt_ctime (e.g. different from getLastModified()).
+    virtual time_t getLastChanged(const String & path) const = 0;
 
     /// Set file at `path` as read-only.
     virtual void setReadOnly(const String & path) = 0;
@@ -289,14 +281,14 @@ public:
 
     virtual bool isReadOnly() const { return false; }
 
-    /// Check if disk is broken. Broken disks will have 0 space and not be used.
+    /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
 
     /// Performs action on disk startup.
-    virtual void startup() {}
+    virtual void startup(ContextPtr) {}
 
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
@@ -323,7 +315,7 @@ public:
     /// Actually it's a part of IDiskRemote implementation but we have so
     /// complex hierarchy of disks (with decorators), so we cannot even
     /// dynamic_cast some pointer to IDisk to pointer to IDiskRemote.
-    virtual std::shared_ptr<IDisk> getMetadataDiskIfExistsOrSelf() { return std::static_pointer_cast<IDisk>(shared_from_this()); }
+    virtual MetadataStoragePtr getMetadataStorage();
 
     /// Very similar case as for getMetadataDiskIfExistsOrSelf(). If disk has "metadata"
     /// it will return mapping for each required path: path -> metadata as string.
@@ -343,6 +335,21 @@ public:
     /// other alive harlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
+    /// Revision is an incremental counter of disk operation.
+    /// Revision currently exisis only in DiskS3.
+    /// It is used to save current state during backup and restore that state from backup.
+    /// This method sets current disk revision if it lower than required.
+    virtual void syncRevision(UInt64) {}
+    /// Return current disk revision.
+    virtual UInt64 getRevision() const { return 0; }
+
+    virtual DiskObjectStoragePtr createDiskObjectStorage(const String &)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method createDiskObjectStorage() is not implemented for disk type: {}",
+            getType());
+    }
 
 protected:
     friend class DiskDecorator;
@@ -359,29 +366,7 @@ private:
     std::unique_ptr<Executor> executor;
 };
 
-using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
-
-/**
- * Iterator of directory contents on particular disk.
- */
-class IDiskDirectoryIterator
-{
-public:
-    /// Iterate to the next file.
-    virtual void next() = 0;
-
-    /// Return `true` if the iterator points to a valid element.
-    virtual bool isValid() const = 0;
-
-    /// Path to the file that the iterator currently points to.
-    virtual String path() const = 0;
-
-    /// Name of the file that the iterator currently points to.
-    virtual String name() const = 0;
-
-    virtual ~IDiskDirectoryIterator() = default;
-};
 
 /**
  * Information about reserved size on particular disk.
@@ -391,6 +376,10 @@ class IReservation : boost::noncopyable
 public:
     /// Get reservation size.
     virtual UInt64 getSize() const = 0;
+
+    /// Space available for reservation
+    /// (with this reservation already take into account).
+    virtual UInt64 getUnreservedSpace() const = 0;
 
     /// Get i-th disk where reservation take place.
     virtual DiskPtr getDisk(size_t i = 0) const = 0; /// NOLINT

@@ -26,7 +26,7 @@ public:
     virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer() const = 0;
 };
 
-using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
+using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 
 }

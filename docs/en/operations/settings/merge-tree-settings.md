@@ -1,6 +1,18 @@
-# MergeTree tables settings {#merge-tree-settings}
+# MergeTree tables settings
 
 The values of `merge_tree` settings (for all MergeTree tables) can be viewed in the table `system.merge_tree_settings`, they can be overridden in `config.xml` in the `merge_tree` section, or set in the `SETTINGS` section of each table.
+
+These are example overrides for `max_suspicious_broken_parts`:
+
+## max_suspicious_broken_parts
+
+If the number of broken parts in a single partition exceeds the `max_suspicious_broken_parts` value, automatic deletion is denied.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 10.
 
 Override example in `config.xml`:
 
@@ -27,7 +39,7 @@ An example of changing the settings for a specific table with the `ALTER TABLE .
 ``` sql
 ALTER TABLE foo
     MODIFY SETTING max_suspicious_broken_parts = 100;
-    
+
 -- reset to default (use value from system.merge_tree_settings)
 ALTER TABLE foo
     RESET SETTING max_suspicious_broken_parts;
@@ -114,7 +126,7 @@ A large number of parts in a table reduces performance of ClickHouse queries and
 
 ## replicated_deduplication_window {#replicated-deduplication-window}
 
-The number of most recently inserted blocks for which Zookeeper stores hash sums to check for duplicates.
+The number of most recently inserted blocks for which ClickHouse Keeper stores hash sums to check for duplicates.
 
 Possible values:
 
@@ -123,7 +135,7 @@ Possible values:
 
 Default value: 100.
 
-The `Insert` command creates one or more blocks (parts). When inserting into Replicated tables, ClickHouse for [insert deduplication](../../engines/table-engines/mergetree-family/replication/) writes the hash sums of the created parts into Zookeeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from Zookeeper.
+The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication/), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the inserted part (stream of bytes).
 
@@ -142,7 +154,7 @@ A deduplication mechanism is used, similar to replicated tables (see [replicated
 
 ## replicated_deduplication_window_seconds {#replicated-deduplication-window-seconds}
 
-The number of seconds after which the hash sums of the inserted blocks are removed from Zookeeper.
+The number of seconds after which the hash sums of the inserted blocks are removed from ClickHouse Keeper.
 
 Possible values:
 
@@ -150,7 +162,188 @@ Possible values:
 
 Default value: 604800 (1 week).
 
-Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from Zookeeper, even if they are less than ` replicated_deduplication_window`.
+Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
+
+## max_replicated_logs_to_keep
+
+How many records may be in the ClickHouse Keeper log if there is inactive replica. An inactive replica becomes lost when when this number exceed.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 1000
+
+## min_replicated_logs_to_keep
+
+Keep about this number of last records in ZooKeeper log, even if they are obsolete. It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 10
+
+## prefer_fetch_merged_part_time_threshold
+
+If the time passed since a replication log (ClickHouse Keeper or ZooKeeper) entry creation exceeds this threshold, and the sum of the size of parts is greater than `prefer_fetch_merged_part_size_threshold`, then prefer fetching merged part from a replica instead of doing merge locally. This is to speed up very long merges.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 3600
+
+## prefer_fetch_merged_part_size_threshold
+
+If the sum of the size of parts exceeds this threshold and the time since a replication log entry creation is greater than `prefer_fetch_merged_part_time_threshold`, then prefer fetching merged part from a replica instead of doing merge locally. This is to speed up very long merges.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 10,737,418,240
+
+## execute_merges_on_single_replica_time_threshold
+
+When this setting has a value greater than zero, only a single replica starts the merge immediately, and other replicas wait up to that amount of time to download the result instead of doing merges locally. If the chosen replica doesn't finish the merge during that amount of time, fallback to standard behavior happens.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 0 (seconds)
+
+## remote_fs_execute_merges_on_single_replica_time_threshold
+
+When this setting has a value greater than than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 1800
+
+## try_fetch_recompressed_part_timeout
+
+Recompression works slow in most cases, so we don't start merge with recompression until this timeout and trying to fetch recompressed part from replica which assigned this merge with recompression.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 7200
+
+## always_fetch_merged_part
+
+If true, this replica never merges parts and always downloads merged parts from other replicas.
+
+Possible values:
+
+-   true, false
+
+Default value: false
+
+## max_suspicious_broken_parts
+
+Max broken parts, if more - deny automatic deletion.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 10
+
+## max_suspicious_broken_parts_bytes
+
+
+Max size of all broken parts, if more - deny automatic deletion.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 1,073,741,824
+
+## max_files_to_modify_in_alter_columns
+
+Do not apply ALTER if number of files for modification(deletion, addition) is greater than this setting.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 75
+
+## max_files_to_remove_in_alter_columns
+
+Do not apply ALTER, if the number of files for deletion is greater than this setting.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 50
+
+## replicated_max_ratio_of_wrong_parts
+
+If the ratio of wrong parts to total number of parts is less than this - allow to start.
+
+Possible values:
+
+-   Float, 0.0 - 1.0
+
+Default value: 0.5
+
+## replicated_max_parallel_fetches_for_host 
+
+Limit parallel fetches from endpoint (actually pool size).
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 15
+
+## replicated_fetches_http_connection_timeout
+
+HTTP connection timeout for part fetch requests. Inherited from default profile `http_connection_timeout` if not set explicitly.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: Inherited from default profile `http_connection_timeout` if not set explicitly.
+
+## replicated_can_become_leader
+
+If true, replicated tables replicas on this node will try to acquire leadership.
+
+Possible values:
+
+-   true, false
+
+Default value: true
+
+## zookeeper_session_expiration_check_period
+
+ZooKeeper session expiration check period, in seconds.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 60
+
+## detach_old_local_parts_when_cloning_replica
+
+Do not remove old local parts when repairing lost replica.
+
+Possible values:
+
+-   true, false
+
+Default value: true
 
 ## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout}
 

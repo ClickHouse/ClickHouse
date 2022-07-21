@@ -1,11 +1,11 @@
-add_executable(zkutil_test_commands zkutil_test_commands.cpp)
+clickhouse_add_executable(zkutil_test_commands zkutil_test_commands.cpp)
 target_link_libraries(zkutil_test_commands PRIVATE clickhouse_common_zookeeper_no_log)
 
-add_executable(zkutil_test_commands_new_lib zkutil_test_commands_new_lib.cpp)
+clickhouse_add_executable(zkutil_test_commands_new_lib zkutil_test_commands_new_lib.cpp)
 target_link_libraries(zkutil_test_commands_new_lib PRIVATE clickhouse_common_zookeeper_no_log string_utils)
 
-add_executable(zkutil_test_async zkutil_test_async.cpp)
+clickhouse_add_executable(zkutil_test_async zkutil_test_async.cpp)
 target_link_libraries(zkutil_test_async PRIVATE clickhouse_common_zookeeper_no_log)
 
-add_executable (zookeeper_impl zookeeper_impl.cpp)
+clickhouse_add_executable (zookeeper_impl zookeeper_impl.cpp)
 target_link_libraries (zookeeper_impl PRIVATE clickhouse_common_zookeeper_no_log)

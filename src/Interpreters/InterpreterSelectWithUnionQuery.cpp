@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -31,8 +32,13 @@ namespace ErrorCodes
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-        const ASTPtr & query_ptr_, ContextPtr context_,
-        const SelectQueryOptions & options_, const Names & required_result_column_names)
+    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
+    : InterpreterSelectWithUnionQuery(query_ptr_, Context::createCopy(context_), options_, required_result_column_names)
+{
+}
+
+InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
+    const ASTPtr & query_ptr_, ContextMutablePtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
@@ -153,7 +159,22 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     {
         Blocks headers(num_children);
         for (size_t query_num = 0; query_num < num_children; ++query_num)
+        {
             headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
+            const auto & current_required_result_column_names = required_result_column_names_for_other_selects[query_num];
+            if (!current_required_result_column_names.empty())
+            {
+                const auto & header_columns = headers[query_num].getNames();
+                if (current_required_result_column_names != header_columns)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Different order of columns in UNION subquery: {} and {}",
+                        fmt::join(current_required_result_column_names, ", "),
+                        fmt::join(header_columns, ", "));
+                }
+
+            }
+        }
 
         result_header = getCommonHeaderForUnion(headers);
     }
@@ -263,6 +284,11 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     size_t num_plans = nested_interpreters.size();
     const Settings & settings = context->getSettingsRef();
 
+    auto local_limits = getStorageLimits(*context, options);
+    storage_limits.emplace_back(local_limits);
+    for (auto & interpreter : nested_interpreters)
+        interpreter->addStorageLimits(storage_limits);
+
     /// Skip union for single interpreter.
     if (num_plans == 1)
     {
@@ -303,8 +329,13 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             /// Add distinct transform
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
-            auto distinct_step
-                = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
+            auto distinct_step = std::make_unique<DistinctStep>(
+                query_plan.getCurrentDataStream(),
+                limits,
+                0,
+                result_header.getNames(),
+                false,
+                settings.optimize_distinct_in_order);
 
             query_plan.addStep(std::move(distinct_step));
         }
@@ -326,6 +357,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         }
     }
 
+    addAdditionalPostFilter(query_plan);
+    query_plan.addInterpreterContext(context);
 }
 
 BlockIO InterpreterSelectWithUnionQuery::execute()
@@ -335,16 +368,14 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline_builder = query_plan.buildQueryPipeline(
+    auto builder = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
-    pipeline_builder->addInterpreterContext(context);
-
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    setQuota(res.pipeline);
     return res;
 }
-
 
 void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 {

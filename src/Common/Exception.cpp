@@ -1,6 +1,6 @@
 #include "Exception.h"
 
-#include <string.h>
+#include <cstring>
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
@@ -35,6 +35,18 @@ namespace ErrorCodes
     extern const int CANNOT_MREMAP;
 }
 
+void abortOnFailedAssertion(const String & description)
+{
+    LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", description);
+
+    /// This is to suppress -Wmissing-noreturn
+    volatile bool always_false = false;
+    if (always_false)
+        return;
+
+    abort();
+}
+
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
 void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
@@ -44,8 +56,7 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
 #ifdef ABORT_ON_LOGICAL_ERROR
     if (code == ErrorCodes::LOGICAL_ERROR)
     {
-        LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", msg);
-        abort();
+        abortOnFailedAssertion(msg);
     }
 #endif
 
@@ -55,12 +66,6 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
 Exception::Exception(const std::string & msg, int code, bool remote_)
     : Poco::Exception(msg, code)
     , remote(remote_)
-{
-    handle_error_code(msg, code, remote, getStackFramePointers());
-}
-
-Exception::Exception(const std::string & msg, const Exception & nested, int code)
-    : Poco::Exception(msg, nested, code)
 {
     handle_error_code(msg, code, remote, getStackFramePointers());
 }
@@ -213,7 +218,7 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
         formatReadableQuantity(fs.f_favail),
         mount_point);
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     msg += "\nFilesystem: " + getFilesystemName(mount_point);
 #endif
 }
@@ -225,7 +230,7 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
   */
 static void getNotEnoughMemoryMessage(std::string & msg)
 {
-#if defined(__linux__)
+#if defined(OS_LINUX)
     try
     {
         static constexpr size_t buf_size = 1024;
@@ -256,7 +261,7 @@ static void getNotEnoughMemoryMessage(std::string & msg)
             }
         }
 
-        if (num_maps > max_map_count * 0.99)
+        if (num_maps > max_map_count * 0.90)
         {
             msg += fmt::format(
                 "\nIt looks like that the process is near the limit on number of virtual memory mappings."

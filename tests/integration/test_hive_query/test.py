@@ -19,12 +19,20 @@ def started_cluster():
         cluster.add_instance(
             "h0_0_0",
             main_configs=["configs/config.xml"],
-            extra_configs=["configs/hdfs-site.xml"],
+            extra_configs=["configs/hdfs-site.xml", "data/prepare_hive_data.sh"],
             with_hive=True,
         )
 
         logging.info("Starting cluster ...")
         cluster.start()
+        cluster.copy_file_to_container(
+            "roottesthivequery_hdfs1_1",
+            "/ClickHouse/tests/integration/test_hive_query/data/prepare_hive_data.sh",
+            "/prepare_hive_data.sh",
+        )
+        cluster.exec_in_container(
+            "roottesthivequery_hdfs1_1", ["bash", "-c", "bash /prepare_hive_data.sh"]
+        )
         yield cluster
     finally:
         cluster.shutdown()
@@ -375,7 +383,7 @@ def test_cache_read_bytes(started_cluster):
     for i in range(10):
         result = node.query(
             """
-    SELECT day, count(*) FROM default.demo_parquet_1 group by day order by day settings input_format_parquet_allow_missing_columns = true
+    SELECT * FROM default.demo_parquet_1 settings input_format_parquet_allow_missing_columns = true
             """
         )
         node.query("system flush logs")
@@ -389,3 +397,92 @@ def test_cache_read_bytes(started_cluster):
         test_passed = True
         break
     assert test_passed
+
+
+def test_cache_dir_use(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result0 = node.exec_in_container(
+        ["bash", "-c", "ls /tmp/clickhouse_local_cache | wc -l"]
+    )
+    result1 = node.exec_in_container(
+        ["bash", "-c", "ls /tmp/clickhouse_local_cache1 | wc -l"]
+    )
+    assert result0 != "0" and result1 != "0"
+
+
+def test_hive_struct_type(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query(
+        """
+        CREATE TABLE IF NOT EXISTS default.test_hive_types (`f_tinyint` Int8, `f_smallint` Int16, `f_int` Int32, `f_integer` Int32, `f_bigint` Int64, `f_float` Float32, `f_double` Float64, `f_decimal` Float64, `f_timestamp` DateTime, `f_date` Date, `f_string` String, `f_varchar` String, `f_char` String, `f_bool` Boolean, `f_array_int` Array(Int32), `f_array_string` Array(String), `f_array_float` Array(Float32), `f_map_int` Map(String, Int32), `f_map_string` Map(String, String), `f_map_float` Map(String, Float32), `f_struct` Tuple(a String, b Int32, c Float32, d Tuple(x Int32, y String)), `day` String) ENGINE = Hive('thrift://hivetest:9083', 'test', 'test_hive_types') PARTITION BY (day)
+        """
+    )
+    result = node.query(
+        """
+    SELECT * FROM default.test_hive_types WHERE day = '2022-02-20' SETTINGS input_format_parquet_import_nested=1
+        """
+    )
+    expected_result = """1	2	3	4	5	6.11	7.22	8	2022-02-20 14:47:04	2022-02-20	hello world	hello world	hello world	true	[1,2,3]	['hello world','hello world']	[1.1,1.2]	{'a':100,'b':200,'c':300}	{'a':'aa','b':'bb','c':'cc'}	{'a':111.1,'b':222.2,'c':333.3}	('aaa',200,333.3,(10,'xyz'))	2022-02-20"""
+    assert result.strip() == expected_result
+
+    result = node.query(
+        """
+    SELECT day, f_struct.a, f_struct.d.x FROM default.test_hive_types WHERE day = '2022-02-20' SETTINGS input_format_parquet_import_nested=1
+        """
+    )
+    expected_result = """2022-02-20	aaa	10"""
+
+
+def test_table_alter_add(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query("DROP TABLE IF EXISTS default.demo_parquet_1")
+    result = node.query(
+        """
+CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+        """
+    )
+    result = node.query(
+        """
+ALTER TABLE default.demo_parquet_1 ADD COLUMN id Nullable(String) FIRST
+        """
+    )
+    result = node.query("""DESC default.demo_parquet_1 FORMAT TSV""")
+
+    expected_result = "id\tNullable(String)\t\t\t\t\t\nscore\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"
+    assert result.strip() == expected_result
+
+
+def test_table_alter_drop(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query("DROP TABLE IF EXISTS default.demo_parquet_1")
+    result = node.query(
+        """
+CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+        """
+    )
+    result = node.query(
+        """
+ALTER TABLE default.demo_parquet_1 DROP COLUMN id
+        """
+    )
+
+    result = node.query("""DESC default.demo_parquet_1 FORMAT TSV""")
+    expected_result = """score\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"""
+    assert result.strip() == expected_result
+
+
+def test_table_alter_comment(started_cluster):
+    node = started_cluster.instances["h0_0_0"]
+    result = node.query("DROP TABLE IF EXISTS default.demo_parquet_1")
+    result = node.query(
+        """
+CREATE TABLE IF NOT EXISTS default.demo_parquet_1 (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+        """
+    )
+
+    result = node.query(
+        """ALTER TABLE default.demo_parquet_1 COMMENT COLUMN id 'Text comment'"""
+    )
+    result = node.query("""DESC default.demo_parquet_1 FORMAT TSV""")
+    expected_result = """id\tNullable(String)\t\t\tText comment\t\t\nscore\tNullable(Int32)\t\t\t\t\t\nday\tNullable(String)"""
+    assert result.strip() == expected_result

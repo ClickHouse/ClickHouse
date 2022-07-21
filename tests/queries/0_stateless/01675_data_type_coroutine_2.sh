@@ -17,9 +17,3 @@ done
 
 #echo "I = ${I}"
 echo 'Ok'
-
-# wait queries, since there is 'Maximum parse depth' error on the client
-# and in this case it simply reset the connection and don't read everything
-# from server, so there is no guarantee that the query is stopped when the
-# client returns
-clickhouse_test_wait_queries 60

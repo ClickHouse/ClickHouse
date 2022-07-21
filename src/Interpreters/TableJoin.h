@@ -9,7 +9,8 @@
 #include <Interpreters/asof.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Storages/IStorage_fwd.h>
+#include <Storages/IKVStorage.h>
+
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -31,6 +32,7 @@ class Block;
 class DictionaryReader;
 class StorageJoin;
 class StorageDictionary;
+class IKeyValueStorage;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -55,7 +57,7 @@ public:
     struct JoinOnClause
     {
         Names key_names_left;
-        Names key_names_right; /// Duplicating right key names are qualified.
+        Names key_names_right; /// Duplicating right key names are qualified
 
         ASTPtr on_filter_condition_left;
         ASTPtr on_filter_condition_right;
@@ -107,7 +109,7 @@ private:
     const size_t default_max_bytes = 0;
     const bool join_use_nulls = false;
     const size_t max_joined_block_rows = 0;
-    JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
+    MultiEnum<JoinAlgorithm> join_algorithm = MultiEnum<JoinAlgorithm>(JoinAlgorithm::AUTO);
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
@@ -148,11 +150,14 @@ private:
     std::shared_ptr<StorageDictionary> right_storage_dictionary;
     std::shared_ptr<DictionaryReader> dictionary_reader;
 
+    std::shared_ptr<IKeyValueStorage> right_kv_storage;
+
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, NameToNameMap & key_column_rename,
+        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping,
+        NameToNameMap & key_column_rename,
         bool make_nullable) const;
 
     void addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast = nullptr);
@@ -161,7 +166,7 @@ private:
 
     /// Calculates common supertypes for corresponding join key columns.
     template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-    void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right);
+    void inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict);
 
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 
@@ -189,14 +194,25 @@ public:
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
-    bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
-    bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
+
+    bool isAllowedAlgorithm(JoinAlgorithm val) const { return join_algorithm.isSet(val) || join_algorithm.isSet(JoinAlgorithm::AUTO); }
+    bool isForcedAlgorithm(JoinAlgorithm val) const { return join_algorithm == MultiEnum<JoinAlgorithm>(val); }
+
+    bool preferMergeJoin() const { return join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PREFER_PARTIAL_MERGE); }
+    bool forceMergeJoin() const { return join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARTIAL_MERGE); }
+
+    bool allowParallelHashJoin() const;
+    bool forceFullSortingMergeJoin() const { return !isSpecialStorage() && join_algorithm.isSet(JoinAlgorithm::FULL_SORTING_MERGE); }
+
     bool forceHashJoin() const
     {
         /// HashJoin always used for DictJoin
-        return dictionary_reader || join_algorithm == JoinAlgorithm::HASH;
+        return dictionary_reader
+            || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::HASH)
+            || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARALLEL_HASH);
     }
 
+    bool joinUseNulls() const { return join_use_nulls; }
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
     size_t defaultMaxBytes() const { return default_max_bytes; }
@@ -242,6 +258,7 @@ public:
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
+    String getOriginalName(const String & column_name) const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_required_columns) const;
 
@@ -253,13 +270,19 @@ public:
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
 
+    template <typename TColumns>
+    void addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, bool correct_nullability);
+
     void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns, bool correct_nullability);
+    void addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & left_columns, bool correct_nullability);
 
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
     std::pair<ActionsDAGPtr, ActionsDAGPtr>
-    createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
+    createConvertingActions(
+        const ColumnsWithTypeAndName & left_sample_columns,
+        const ColumnsWithTypeAndName & right_sample_columns);
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }
@@ -289,6 +312,7 @@ public:
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
+    void setStorageJoin(std::shared_ptr<IKeyValueStorage> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
     void setStorageJoin(std::shared_ptr<StorageDictionary> storage);
 
@@ -296,8 +320,10 @@ public:
 
     bool tryInitDictJoin(const Block & sample_block, ContextPtr context);
 
-    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join; }
+    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join || right_kv_storage; }
     const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
+
+    std::shared_ptr<IKeyValueStorage> getStorageKeyValue() { return right_kv_storage; }
 };
 
 }

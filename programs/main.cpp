@@ -1,8 +1,8 @@
-#include <signal.h>
-#include <setjmp.h>
+#include <csignal>
+#include <csetjmp>
 #include <unistd.h>
 
-#ifdef __linux__
+#ifdef OS_LINUX
 #include <sys/mman.h>
 #endif
 
@@ -65,6 +65,9 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_SU
+int mainEntryClickHouseSU(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -72,16 +75,17 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_DISKS
+int mainEntryClickHouseDisks(int argc, char ** argv);
+#endif
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
     /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .note.ClickHouse.hash=<(./clickhouse hash-binary) clickhouse
+    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
-
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
 namespace
 {
@@ -139,7 +143,13 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
 #endif
+#if ENABLE_CLICKHOUSE_SU
+    {"su", mainEntryClickHouseSU},
+#endif
     {"hash-binary", mainEntryClickHouseHashBinary},
+#if ENABLE_CLICKHOUSE_DISKS
+    {"disks", mainEntryClickHouseDisks},
+#endif
 };
 
 int printHelp(int, char **)
@@ -189,7 +199,7 @@ auto instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
-#define ret(x) return std::make_tuple(STDERR_FILENO, x, ARRAY_SIZE(x) - 1)
+#define ret(x) return std::make_tuple(STDERR_FILENO, x, sizeof(x) - 1)
         case InstructionFail::NONE:
             ret("NONE");
         case InstructionFail::SSE3:
@@ -277,7 +287,7 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 #define writeError(data) do \
     { \
         static_assert(__builtin_constant_p(data)); \
-        if (!writeRetry(STDERR_FILENO, data, ARRAY_SIZE(data) - 1)) \
+        if (!writeRetry(STDERR_FILENO, data, sizeof(data) - 1)) \
             _Exit(1); \
     } while (false)
 
@@ -329,13 +339,14 @@ struct Checker
         checkRequiredInstructions();
     }
 } checker
-#ifndef __APPLE__
+#ifndef OS_DARWIN
     __attribute__((init_priority(101)))    /// Run before other static initializers.
 #endif
 ;
 
+
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
-void checkHarmfulEnvironmentVariables()
+void checkHarmfulEnvironmentVariables(char ** argv)
 {
     std::initializer_list<const char *> harmful_env_variables = {
         /// The list is a selection from "man ld-linux".
@@ -351,13 +362,38 @@ void checkHarmfulEnvironmentVariables()
         "DYLD_INSERT_LIBRARIES",
     };
 
+    bool require_reexec = false;
     for (const auto * var : harmful_env_variables)
     {
         if (const char * value = getenv(var); value && value[0])
         {
-            std::cerr << fmt::format("Environment variable {} is set to {}. It can compromise security.\n", var, value);
-            _exit(1);
+            /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
+            if (setenv(var, "", true))
+            {
+                fmt::print(stderr, "Cannot override {} environment variable", var);
+                _exit(1);
+            }
+            require_reexec = true;
         }
+    }
+
+    if (require_reexec)
+    {
+        /// Use execvp() over execv() to search in PATH.
+        ///
+        /// This should be safe, since:
+        /// - if argv[0] is relative path - it is OK
+        /// - if argv[0] has only basename, the it will search in PATH, like shell will do.
+        ///
+        /// Also note, that this (search in PATH) because there is no easy and
+        /// portable way to get absolute path of argv[0].
+        /// - on linux there is /proc/self/exec and AT_EXECFN
+        /// - but on other OSes there is no such thing (especially on OSX).
+        ///
+        /// And since static linking will be done someday anyway,
+        /// let's not pollute the code base with special cases.
+        int error = execvp(argv[0], argv);
+        _exit(error);
     }
 }
 
@@ -381,16 +417,16 @@ int main(int argc_, char ** argv_)
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
 
-    checkHarmfulEnvironmentVariables();
-
-    /// Reset new handler to default (that throws std::bad_alloc)
-    /// It is needed because LLVM library clobbers it.
-    std::set_new_handler(nullptr);
-
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
     updatePHDRCache();
+
+    checkHarmfulEnvironmentVariables(argv_);
+
+    /// Reset new handler to default (that throws std::bad_alloc)
+    /// It is needed because LLVM library clobbers it.
+    std::set_new_handler(nullptr);
 
     std::vector<char *> argv(argv_, argv_ + argc_);
 

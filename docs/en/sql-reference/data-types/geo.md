@@ -3,7 +3,7 @@ sidebar_position: 62
 sidebar_label: Geo
 ---
 
-# Geo Data Types {#geo-data-types}
+# Geo Data Types
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
 
@@ -15,7 +15,7 @@ Currently geo data types are an experimental feature. To work with them you must
 - [Representing simple geographical features](https://en.wikipedia.org/wiki/GeoJSON).
 - [allow_experimental_geo_types](../../operations/settings/settings.md#allow-experimental-geo-types) setting.
 
-## Point {#point-data-type}
+## Point
 
 `Point` is represented by its X and Y coordinates, stored as a [Tuple](tuple.md)([Float64](float.md), [Float64](float.md)).
 
@@ -37,7 +37,7 @@ Result:
 └───────┴───────────────┘
 ```
 
-## Ring {#ring-data-type}
+## Ring
 
 `Ring` is a simple polygon without holes stored as an array of points: [Array](array.md)([Point](#point-data-type)).
 
@@ -59,7 +59,7 @@ Result:
 └───────────────────────────────┴───────────────┘
 ```
 
-## Polygon {#polygon-data-type}
+## Polygon
 
 `Polygon` is a polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring-data-type)). First element of outer array is the outer shape of polygon and all the following elements are holes.
 
@@ -82,7 +82,7 @@ Result:
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-## MultiPolygon {#multipolygon-data-type}
+## MultiPolygon
 
 `MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](array.md)([Polygon](#polygon-data-type)).
 
@@ -104,4 +104,3 @@ Result:
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/data-types/geo/) <!--hide-->

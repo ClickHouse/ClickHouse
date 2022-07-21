@@ -31,6 +31,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
     , params(std::move(params_))
+    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
     , group_by_info(group_by_info_)
     , sort_description(group_by_description_)
     , aggregate_columns(params->params.aggregates_size)
@@ -38,7 +39,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , variants(*many_data->variants[current_variant])
 {
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
-    res_header = params->getCustomHeader(false);
+    res_header = params->getCustomHeader(/* final_= */ false);
 
     for (size_t i = 0; i < group_by_info->order_key_prefix_descr.size(); ++i)
     {
@@ -66,6 +67,7 @@ static Int64 getCurrentMemoryUsage()
 
 void AggregatingInOrderTransform::consume(Chunk chunk)
 {
+    const Columns & columns = chunk.getColumns();
     Int64 initial_memory_usage = getCurrentMemoryUsage();
 
     size_t rows = chunk.getNumRows();
@@ -85,7 +87,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     Columns key_columns(params->params.keys_size);
     for (size_t i = 0; i < params->params.keys_size; ++i)
     {
-        materialized_columns.push_back(chunk.getColumns().at(params->params.keys[i])->convertToFullColumnIfConst());
+        const auto pos = inputs.front().getHeader().getPositionByName(params->params.keys[i]);
+        materialized_columns.push_back(chunk.getColumns().at(pos)->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back();
         if (group_by_key)
             key_columns_raw[i] = materialized_columns.back().get();
@@ -93,7 +96,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions aggregate_function_instructions;
-    params->aggregator.prepareAggregateInstructions(chunk.getColumns(), aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
+    if (!params->params.only_merge)
+    {
+        params->aggregator.prepareAggregateInstructions(
+            columns, aggregate_columns, materialized_columns, aggregate_function_instructions, nested_columns_holder);
+    }
 
     size_t key_end = 0;
     size_t key_begin = 0;
@@ -120,6 +127,17 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     Int64 current_memory_usage = 0;
 
+    Aggregator::AggregateColumnsConstData aggregate_columns_data(params->params.aggregates_size);
+    if (params->params.only_merge)
+    {
+        for (size_t i = 0, j = 0; i < columns.size(); ++i)
+        {
+            if (!aggregates_mask[i])
+                continue;
+            aggregate_columns_data[j++] = &typeid_cast<const ColumnAggregateFunction &>(*columns[i]).getData();
+        }
+    }
+
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
@@ -136,10 +154,20 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
         {
-            if (group_by_key)
-                params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
+            if (params->params.only_merge)
+            {
+                if (group_by_key)
+                    params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
+                else
+                    params->aggregator.mergeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_columns_data);
+            }
             else
-                params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
+            {
+                if (group_by_key)
+                    params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
+                else
+                    params->aggregator.executeOnIntervalWithoutKeyImpl(variants, key_begin, key_end, aggregate_function_instructions.data());
+            }
         }
 
         current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;
@@ -308,6 +336,24 @@ void AggregatingInOrderTransform::generate()
 
     res_rows += to_push_chunk.getNumRows();
     need_generate = false;
+}
+
+FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
+    : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
+    , params(params_)
+    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
+{
+}
+
+void FinalizeAggregatedTransform::transform(Chunk & chunk)
+{
+    if (params->final)
+        finalizeChunk(chunk, aggregates_mask);
+    else if (!chunk.getChunkInfo())
+    {
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        chunk.setChunkInfo(std::move(info));
+    }
 }
 
 

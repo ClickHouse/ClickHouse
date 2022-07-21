@@ -33,9 +33,12 @@ public:
     void finish();
 
     off_t getPosition() override;
+
     std::string getFileName() const override;
+
     int getFD() const;
+
+    size_t getFileSize() override;
 };
 
 }
-

@@ -3,7 +3,7 @@ sidebar_position: 45
 sidebar_label: Secured Communication with Zookeeper
 ---
 
-# Optional secured communication between ClickHouse and Zookeeper {#secured-communication-with-zookeeper}
+# Optional secured communication between ClickHouse and Zookeeper
 
 You should specify `ssl.keyStore.location`, `ssl.keyStore.password` and `ssl.trustStore.location`, `ssl.trustStore.password` for communication with ClickHouse client over SSL. These options are available from Zookeeper version 3.5.2.
 

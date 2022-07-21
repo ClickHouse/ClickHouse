@@ -7,13 +7,19 @@ import sys
 
 from github import Github
 
-from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
+from env_helper import (
+    RUNNER_TEMP,
+    GITHUB_WORKSPACE,
+)
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status
+from commit_status_helper import (
+    post_commit_status,
+    fail_simple_check,
+)
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -119,5 +125,6 @@ if __name__ == "__main__":
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "error":
+    if state in ["error", "failure"]:
+        fail_simple_check(gh, pr_info, f"{NAME} failed")
         sys.exit(1)

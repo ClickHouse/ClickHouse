@@ -50,52 +50,58 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
-    WriteBufferFromOwnString query;
-    query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
-        "SELECT name FROM system.functions"
-        " UNION ALL "
-        "SELECT name FROM system.table_engines"
-        " UNION ALL "
-        "SELECT name FROM system.formats"
-        " UNION ALL "
-        "SELECT name FROM system.table_functions"
-        " UNION ALL "
-        "SELECT name FROM system.data_type_families"
-        " UNION ALL "
-        "SELECT name FROM system.merge_tree_settings"
-        " UNION ALL "
-        "SELECT name FROM system.settings"
-        " UNION ALL ";
+    String query;
+
+    auto add_subquery = [&](std::string_view select, std::string_view result_column_name)
+    {
+        if (!query.empty())
+            query += " UNION ALL ";
+        query += fmt::format("SELECT * FROM viewIfPermitted({} ELSE null('{} String'))", select, result_column_name);
+    };
+
+    auto add_column = [&](std::string_view column_name, std::string_view table_name, bool distinct, std::optional<Int64> limit)
+    {
+        add_subquery(
+            fmt::format(
+                "SELECT {}{} FROM system.{}{}",
+                (distinct ? "DISTINCT " : ""),
+                column_name,
+                table_name,
+                (limit ? (" LIMIT " + std::to_string(*limit)) : "")),
+            column_name);
+    };
+
+    add_column("name", "functions", false, {});
+    add_column("name", "table_engines", false, {});
+    add_column("name", "formats", false, {});
+    add_column("name", "table_functions", false, {});
+    add_column("name", "data_type_families", false, {});
+    add_column("name", "merge_tree_settings", false, {});
+    add_column("name", "settings", false, {});
+
     if (!basic_suggestion)
     {
-        query << "SELECT cluster FROM system.clusters"
-                 " UNION ALL "
-                 "SELECT macro FROM system.macros"
-                 " UNION ALL "
-                 "SELECT policy_name FROM system.storage_policies"
-                 " UNION ALL ";
+        add_column("cluster", "clusters", false, {});
+        add_column("macro", "macros", false, {});
+        add_column("policy_name", "storage_policies", false, {});
     }
-    query << "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+
+    add_subquery("SELECT concat(func.name, comb.name) AS x FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate", "x");
+
     /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
     if (suggestion_limit > 0)
     {
-        String limit_str = toString(suggestion_limit);
-        query << " UNION ALL "
-                 "SELECT name FROM system.databases LIMIT " << limit_str
-              << " UNION ALL "
-                 "SELECT DISTINCT name FROM system.tables LIMIT " << limit_str
-              << " UNION ALL ";
-
+        add_column("name", "databases", false, suggestion_limit);
+        add_column("name", "tables", true, suggestion_limit);
         if (!basic_suggestion)
         {
-            query << "SELECT DISTINCT name FROM system.dictionaries LIMIT " << limit_str
-                  << " UNION ALL ";
+            add_column("name", "dictionaries", true, suggestion_limit);
         }
-        query << "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
+        add_column("name", "columns", true, suggestion_limit);
     }
-    query << ") WHERE notEmpty(res)";
 
-    return query.str();
+    query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
+    return query;
 }
 
 template <typename ConnectionType>
@@ -132,7 +138,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
-    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false);
+    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, nullptr, nullptr, false, {});
 
     while (true)
     {

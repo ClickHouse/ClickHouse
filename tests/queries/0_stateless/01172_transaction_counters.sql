@@ -1,5 +1,6 @@
--- Tags: no-s3-storage
+-- Tags: no-s3-storage, no-tsan, no-ordinary-database
 -- FIXME this test fails with S3 due to a bug in DiskCacheWrapper
+-- FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
 drop table if exists txn_counters;
 
 create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n;
@@ -42,7 +43,13 @@ rollback;
 
 system flush logs;
 select indexOf((select arraySort(groupUniqArray(tid)) from system.transactions_info_log where database=currentDatabase() and table='txn_counters'), tid),
-       (toDecimal64(now64(6), 6) - toDecimal64(event_time, 6)) < 100, type, thread_id!=0, length(query_id)=length(queryID()), tid_hash!=0, csn=0, part
+       (toDecimal64(now64(6), 6) - toDecimal64(event_time, 6)) < 100,
+       type,
+       thread_id!=0,
+       length(query_id)=length(queryID()) or type='Commit' and query_id='',  -- ignore fault injection after commit
+       tid_hash!=0,
+       csn=0,
+       part
 from system.transactions_info_log
 where tid in (select tid from system.transactions_info_log where database=currentDatabase() and table='txn_counters' and not (tid.1=1 and tid.2=1))
 or (database=currentDatabase() and table='txn_counters') order by event_time;

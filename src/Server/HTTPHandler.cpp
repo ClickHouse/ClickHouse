@@ -103,6 +103,8 @@ namespace ErrorCodes
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int SUPPORT_IS_DISABLED;
+
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -228,6 +230,10 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     {
         return HTTPResponse::HTTP_LENGTH_REQUIRED;
     }
+    else if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
+    {
+        return HTTPResponse::HTTP_REQUEST_TIMEOUT;
+    }
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
 }
@@ -293,10 +299,11 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const std::string & name)
+HTTPHandler::HTTPHandler(IServer & server_, const std::string & name, const std::optional<String> & content_type_override_)
     : server(server_)
     , log(&Poco::Logger::get(name))
     , default_settings(server.context()->getSettingsRef())
+    , content_type_override(content_type_override_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
 }
@@ -642,7 +649,7 @@ void HTTPHandler::processQuery(
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str));
+        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str), context->getSettingsRef().zstd_window_log_max);
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -770,6 +777,7 @@ void HTTPHandler::processQuery(
     if (client_supports_http_compression)
         used_output.out->setCompressionLevel(settings.http_zlib_compression_level);
 
+    used_output.out->setSendProgress(settings.send_progress_in_http_headers);
     used_output.out->setSendProgressInterval(settings.http_headers_progress_interval_ms);
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
@@ -802,8 +810,8 @@ void HTTPHandler::processQuery(
     };
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
-    if (settings.send_progress_in_http_headers)
-        append_callback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+    /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
+    append_callback([&used_output](const Progress & progress) { used_output.out->onProgress(progress); });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
@@ -819,9 +827,9 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
-            response.setContentType(content_type);
+            response.setContentType(content_type_override.value_or(content_type));
             response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
             response.add("X-ClickHouse-Timezone", timezone);
@@ -842,7 +850,12 @@ void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+    /// In case data has already been sent, like progress headers, try using the output buffer to
+    /// set the exception code since it will be able to append it if it hasn't finished writing headers
+    if (response.sent() && used_output.out)
+        used_output.out->setExceptionCode(exception_code);
+    else
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
 
     /// FIXME: make sure that no one else is reading from the same stream at the moment.
 
@@ -991,8 +1004,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     used_output.finalize();
 }
 
-DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)
-    : HTTPHandler(server_, "DynamicQueryHandler"), param_name(param_name_)
+DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_, const std::optional<String>& content_type_override_)
+    : HTTPHandler(server_, "DynamicQueryHandler", content_type_override_), param_name(param_name_)
 {
 }
 
@@ -1052,8 +1065,9 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const NameSet & receive_params_,
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regex_,
-    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
-    : HTTPHandler(server_, "PredefinedQueryHandler")
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
+    const std::optional<String> & content_type_override_)
+    : HTTPHandler(server_, "PredefinedQueryHandler", content_type_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regex(url_regex_)
@@ -1123,7 +1137,13 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     auto query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, std::move(query_param_name));
+
+    std::optional<String> content_type_override;
+    if (server.config().has(config_prefix + ".handler.content_type"))
+        content_type_override = server.config().getString(config_prefix + ".handler.content_type");
+
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(
+        server, std::move(query_param_name), std::move(content_type_override));
 
     factory->addFiltersFromConfig(server.config(), config_prefix);
 
@@ -1180,6 +1200,10 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
             headers_name_with_regex.emplace(std::make_pair(header_name, regex));
     }
 
+    std::optional<String> content_type_override;
+    if (configuration.has(config_prefix + ".handler.content_type"))
+        content_type_override = configuration.getString(config_prefix + ".handler.content_type");
+
     std::shared_ptr<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>> factory;
 
     if (configuration.has(config_prefix + ".url"))
@@ -1197,14 +1221,20 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server, co
                 std::move(analyze_receive_params),
                 std::move(predefined_query),
                 std::move(regex),
-                std::move(headers_name_with_regex));
+                std::move(headers_name_with_regex),
+                std::move(content_type_override));
             factory->addFiltersFromConfig(configuration, config_prefix);
             return factory;
         }
     }
 
     factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
-        server, std::move(analyze_receive_params), std::move(predefined_query), CompiledRegexPtr{}, std::move(headers_name_with_regex));
+        server,
+        std::move(analyze_receive_params),
+        std::move(predefined_query),
+        CompiledRegexPtr{},
+        std::move(headers_name_with_regex),
+        std::move(content_type_override));
     factory->addFiltersFromConfig(configuration, config_prefix);
 
     return factory;
