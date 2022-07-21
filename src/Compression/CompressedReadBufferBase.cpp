@@ -304,16 +304,14 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
 
 void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
 {
-    /// The codec should be created at the latest in readHeaderAndGetCodec
-    assert(codec.get());
-    codec->flushAsynchronousDecompressRequests();
+    if (!codec)
+        codec->flushAsynchronousDecompressRequests();
 }
 
 void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode)
 {
-    /// The codec should be created at the latest in readHeaderAndGetCodec
-    assert(codec.get());
-    codec->setDecompressMode(mode);
+    if (!codec)
+        codec->setDecompressMode(mode);
 }
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
