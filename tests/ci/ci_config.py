@@ -317,19 +317,19 @@ CI_CONFIG = {
         "Unit tests (ubsan)": {
             "required_build": "package_ubsan",
         },
-        "AST fuzzer (debug, actions)": {
+        "AST fuzzer (debug)": {
             "required_build": "package_debug",
         },
-        "AST fuzzer (ASan, actions)": {
+        "AST fuzzer (ASan)": {
             "required_build": "package_asan",
         },
-        "AST fuzzer (MSan, actions)": {
+        "AST fuzzer (MSan)": {
             "required_build": "package_msan",
         },
-        "AST fuzzer (TSan, actions)": {
+        "AST fuzzer (TSan)": {
             "required_build": "package_tsan",
         },
-        "AST fuzzer (UBSan, actions)": {
+        "AST fuzzer (UBSan)": {
             "required_build": "package_ubsan",
         },
         "Release (actions)": {
