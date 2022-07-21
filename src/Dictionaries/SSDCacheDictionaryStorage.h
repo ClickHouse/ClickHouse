@@ -527,8 +527,6 @@ public:
                 throw Exception(ErrorCodes::CANNOT_IO_SUBMIT, "Cannot submit request for asynchronous IO on file {}", file_path);
         }
 
-        // CurrentMetrics::Increment metric_increment_write{CurrentMetrics::Write};
-
         io_event event;
 
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)
