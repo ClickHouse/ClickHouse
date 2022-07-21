@@ -10,6 +10,7 @@
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/MultiVersion.h>
 
 
 namespace DB
