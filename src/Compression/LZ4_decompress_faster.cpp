@@ -24,11 +24,11 @@
 #include <arm_neon.h>
 #endif
 
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
-static inline UInt16 LZ4_readLE16(const void* memPtr)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+static inline UInt16 LZ4_readLE16(const void* mem_ptr)
 {
-        const UInt8* p = reinterpret_cast<const UInt8*>(memPtr);
-        return static_cast<UInt16>(p[0]) + (p[1]<<8);
+        const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
+        return static_cast<UInt16>(p[0]) + (p[1] << 8);
 }
 #endif
 
@@ -569,7 +569,7 @@ bool NO_INLINE decompressImpl(
 
         /// Get match offset.
 
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
         size_t offset = LZ4_readLE16(ip);
 #else
         size_t offset = unalignedLoad<UInt16>(ip);
