@@ -25,7 +25,7 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
-NAME = "Fast test (actions)"
+NAME = "Fast test"
 
 
 def get_fasttest_cmd(

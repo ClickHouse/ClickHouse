@@ -293,10 +293,10 @@ CI_CONFIG = {
         "Integration tests flaky check (asan)": {
             "required_build": "package_asan",
         },
-        "Compatibility check (actions)": {
+        "Compatibility check": {
             "required_build": "package_release",
         },
-        "Split build smoke test (actions)": {
+        "Split build smoke test": {
             "required_build": "binary_splitted",
         },
         "Unit tests (release-clang)": {
@@ -332,7 +332,7 @@ CI_CONFIG = {
         "Stateless tests flaky check (address)": {
             "required_build": "package_asan",
         },
-        "ClickHouse Keeper Jepsen (actions)": {
+        "ClickHouse Keeper Jepsen": {
             "required_build": "binary_release",
         },
         "Performance Comparison": {
