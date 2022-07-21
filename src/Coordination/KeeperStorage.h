@@ -340,7 +340,11 @@ public:
 
     const String superdigest;
 
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_);
+    bool initialized{false};
+
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_, bool initialize_system_nodes = true);
+
+    void initializeSystemNodes();
 
     /// Allocate new session id with the specified timeouts
     int64_t getSessionID(int64_t session_timeout_ms)
