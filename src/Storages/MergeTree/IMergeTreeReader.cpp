@@ -18,7 +18,6 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int THERE_IS_NO_COLUMN;
 }
 
 
