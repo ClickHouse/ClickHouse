@@ -133,6 +133,8 @@ private:
     AtomicStopwatch time_after_previous_cleanup_temporary_directories;
     /// For clearOldBrokenDetachedParts
     AtomicStopwatch time_after_previous_cleanup_broken_detached_parts;
+    /// For optimizeOnePartition;
+    AtomicStopwatch time_after_previous_optimize_one_partition;
 
     /// Mutex for parts currently processing in background
     /// merging (also with TTL), mutating or moving.
@@ -171,6 +173,15 @@ private:
             const MergeTreeTransactionPtr & txn,
             String * out_disable_reason = nullptr,
             bool optimize_skip_merged_partitions = false);
+
+    /** Determines what parts which within one partition should be merged.
+    */
+    std::shared_ptr<MergeMutateSelectedEntry> selectOnePartitionToOptimize(
+        const StorageMetadataPtr & metadata_snapshot,
+        TableLockHolder &  table_lock_holder,
+        std::unique_lock<std::mutex> & lock,
+        const MergeTreeTransactionPtr & txn,
+        bool optimize_skip_merged_partitions = false);
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists

@@ -288,9 +288,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     merge_selecting_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
+    if (getSettings()->auto_optimize_partition_after_seconds)
+        auto_optimize_partition_task = getContext()->getSchedulePool().createTask(
+            getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::autoOptimizePartitionTask)", [this] { autoOptimizePartitionTask(); });
 
     /// Will be activated if we win leader election.
     merge_selecting_task->deactivate();
+    if (auto_optimize_partition_task)
+        auto_optimize_partition_task->deactivate();
 
     mutations_finalizing_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
@@ -4447,10 +4452,30 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
         local_context);
 }
 
+void StorageReplicatedMergeTree::autoOptimizePartitionTask()
+{
+    if (!is_leader || !getSettings()->auto_optimize_partition_after_seconds)
+        return;
+    auto table_lock = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
+    try
+    {
+        optimizeImpl(nullptr, nullptr, nullptr, true, true, Names{}, table_lock, getContext(), true);
+    }
+    catch (const Exception & e)
+    {
+        LOG_ERROR(log, "Can't optimize partitions automatically for table: {}, reason: {}", getStorageID().getNameForLogs(), e.displayText());
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "There is a problem when optimizing table: {}, reason: {}", getStorageID().getNameForLogs(), getCurrentExceptionMessage(true));
+    }
+    if (auto_optimize_partition_task)
+        auto_optimize_partition_task->scheduleAfter(getSettings()->auto_optimize_partition_interval_seconds);
+}
 
 bool StorageReplicatedMergeTree::optimize(
-    const ASTPtr &,
-    const StorageMetadataPtr &,
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
     const ASTPtr & partition,
     bool final,
     bool deduplicate,
@@ -4460,7 +4485,20 @@ bool StorageReplicatedMergeTree::optimize(
     /// NOTE: exclusive lock cannot be used here, since this may lead to deadlock (see comments below),
     /// but it should be safe to use non-exclusive to avoid dropping parts that may be required for processing queue.
     auto table_lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+    return optimizeImpl(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, table_lock, query_context, false);
+}
 
+bool StorageReplicatedMergeTree::optimizeImpl(
+        const ASTPtr &,
+        const StorageMetadataPtr &,
+        const ASTPtr & partition,
+        bool final,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        TableLockHolder & table_lock,
+        ContextPtr query_context,
+        bool auto_optimize_in_background)
+{
     assertNotReadonly();
 
     if (!is_leader)
@@ -4558,8 +4596,12 @@ bool StorageReplicatedMergeTree::optimize(
         DataPartsVector data_parts = getVisibleDataPartsVector(query_context);
         std::unordered_set<String> partition_ids;
 
+        ssize_t baseline = time(nullptr) - storage_settings_ptr->auto_optimize_partition_after_seconds;
         for (const DataPartPtr & part : data_parts)
-            partition_ids.emplace(part->info.partition_id);
+        {
+            if (!auto_optimize_in_background || part->modification_time < baseline)
+                partition_ids.emplace(part->info.partition_id);
+        }
 
         for (const String & partition_id : partition_ids)
         {
@@ -4578,8 +4620,11 @@ bool StorageReplicatedMergeTree::optimize(
 
     table_lock.reset();
 
-    for (auto & merge_entry : merge_entries)
-        waitForLogEntryToBeProcessedIfNecessary(merge_entry, query_context);
+    if (!auto_optimize_in_background)
+    {
+        for (auto & merge_entry : merge_entries)
+            waitForLogEntryToBeProcessedIfNecessary(merge_entry, query_context);
+    }
 
     return assigned;
 }

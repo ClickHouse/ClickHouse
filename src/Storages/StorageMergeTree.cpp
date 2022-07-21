@@ -765,6 +765,63 @@ void StorageMergeTree::loadMutations()
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
+std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectOnePartitionToOptimize(
+    const StorageMetadataPtr & metadata_snapshot,
+    TableLockHolder & table_lock_holder,
+    std::unique_lock<std::mutex> & lock,
+    const MergeTreeTransactionPtr & txn,
+    bool optimize_skip_merged_partitions)
+{
+    // Select the `best partition to merge.
+    std::unordered_map<String, Int32> partition_parts_sum_diff;
+    ssize_t base = time(nullptr) - getSettings()->auto_optimize_partition_after_seconds;
+    auto data_parts = getDataPartsForInternalUsage();
+    for (auto part : data_parts)
+    {
+        if (part->modification_time < base)
+            partition_parts_sum_diff[part->info.partition_id] += (base - part->modification_time);
+    }
+    String best_partition_id;
+    Int32 max_diff = 0;
+    for (auto [partition_id, diff] : partition_parts_sum_diff)
+    {
+        if (diff > max_diff)
+        {
+           best_partition_id = partition_id;
+           max_diff = diff;
+        }
+    }
+    if (best_partition_id.empty())
+    {
+        return nullptr;
+    }
+    // Merge the selected partition.
+    String disable_reason;
+    SelectPartsDecision select_decision;
+    auto merge_entry = selectPartsToMerge(
+        metadata_snapshot,
+        true,
+        best_partition_id,
+        true,
+        &disable_reason,
+        table_lock_holder,
+        lock,
+        txn,
+        optimize_skip_merged_partitions,
+        &select_decision);
+
+    if (select_decision == SelectPartsDecision::NOTHING_TO_MERGE)
+        return nullptr;
+    if (!merge_entry)
+    {
+        constexpr const char * message = "Cannot OPTIMIZE table: {} in background";
+        if (disable_reason.empty())
+            disable_reason = "unknown reason";
+        LOG_INFO(log, fmt::runtime(message), disable_reason);
+    }
+    return merge_entry;
+}
+
 std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
     const StorageMetadataPtr & metadata_snapshot,
     bool aggressive,
@@ -1150,6 +1207,12 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (!merge_entry)
             mutate_entry = selectPartsToMutate(metadata_snapshot, nullptr, share_lock, lock, were_some_mutations_skipped);
 
+        if (getSettings()->auto_optimize_partition_after_seconds
+            && !merge_entry && !mutate_entry
+            && time_after_previous_optimize_one_partition.compareAndRestartDeferred(getSettings()->auto_optimize_partition_interval_seconds))
+        {
+            merge_entry = selectOnePartitionToOptimize(metadata_snapshot, share_lock, lock, txn);
+        }
         has_mutations = !current_mutations_by_version.empty();
     }
 
