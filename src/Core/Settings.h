@@ -35,6 +35,10 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
   *
   * `flags` can be either 0 or IMPORTANT.
   * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
+  *
+  * When adding new settings that control some backward incompatible changes or when changing some settings values,
+  * consider adding them to settings changes history in SettingsChangesHistory.h for special `compatibility` setting
+  * to work correctly.
   */
 
 #define COMMON_SETTINGS(M) \
@@ -96,6 +100,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, replace_running_query, false, "Whether the running request should be canceled with the same id as the new one.", 0) \
     M(UInt64, max_replicated_fetches_network_bandwidth_for_server, 0, "The maximum speed of data exchange over the network in bytes per second for replicated fetches. Zero means unlimited. Only has meaning at server startup.", 0) \
     M(UInt64, max_replicated_sends_network_bandwidth_for_server, 0, "The maximum speed of data exchange over the network in bytes per second for replicated sends. Zero means unlimited. Only has meaning at server startup.", 0) \
+    M(UInt64, max_remote_read_network_bandwidth_for_server, 0, "The maximum speed of data exchange over the network in bytes per second for read. Zero means unlimited. Only has meaning at server startup.", 0) \
+    M(UInt64, max_remote_write_network_bandwidth_for_server, 0, "The maximum speed of data exchange over the network in bytes per second for write. Zero means unlimited. Only has meaning at server startup.", 0) \
     M(Bool, stream_like_engine_allow_direct_select, false, "Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.", 0) \
     M(String, stream_like_engine_insert_queue, "", "When stream like engine reads from multiple queues, user will need to select one queue to insert into when writing. Used by Redis Streams and NATS.", 0) \
     \
@@ -129,6 +135,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled.", 0) \
     M(UInt64, aggregation_memory_efficient_merge_threads, 0, "Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.", 0) \
     M(Bool, enable_positional_arguments, true, "Enable positional arguments in ORDER BY, GROUP BY and LIMIT BY", 0) \
+    \
+    M(Bool, group_by_use_nulls, false, "Treat columns mentioned in ROLLUP, CUBE or GROUPING SETS as Nullable", 0) \
     \
     M(UInt64, max_parallel_replicas, 1, "The maximum number of replicas of each shard used when the query is executed. For consistency (to get different parts of the same partition), this option only works for the specified sampling key. The lag of the replicas is not controlled.", 0) \
     M(UInt64, parallel_replicas_count, 0, "", 0) \
@@ -286,6 +294,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, metrics_perf_events_enabled, false, "If enabled, some of the perf events will be measured throughout queries' execution.", 0) \
     M(String, metrics_perf_events_list, "", "Comma separated list of perf metrics that will be measured throughout queries' execution. Empty means all events. See PerfEventInfo in sources for the available events.", 0) \
     M(Float, opentelemetry_start_trace_probability, 0., "Probability to start an OpenTelemetry trace for an incoming query.", 0) \
+    M(Bool, opentelemetry_trace_processors, false, "Collect OpenTelemetry spans for processors.", 0) \
     M(Bool, prefer_column_name_to_alias, false, "Prefer using column names instead of aliases if possible.", 0) \
     M(Bool, prefer_global_in_and_join, false, "If enabled, all IN/JOIN operators will be rewritten as GLOBAL IN/JOIN. It's useful when the to-be-joined tables are only available on the initiator and we need to always scatter their data on-the-fly during distributed processing with the GLOBAL keyword. It's also useful to reduce the need to access the external sources joining external tables.", 0) \
     \
@@ -596,6 +605,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, allow_deprecated_database_ordinary, false, "Allow to create databases with deprecated Ordinary engine", 0) \
     M(Bool, allow_deprecated_syntax_for_merge_tree, false, "Allow to create *MergeTree tables with deprecated engine definition syntax", 0) \
     \
+    M(String, compatibility, "", "Changes other settings according to provided ClickHouse version. If we know that we changed some behaviour in ClickHouse by changing some settings in some version, this compatibility setting will control these settings", 0) \
+    \
     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
@@ -755,7 +766,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, output_format_pretty_row_numbers, false, "Add row numbers before each row for pretty output format", 0) \
     M(Bool, insert_distributed_one_random_shard, false, "If setting is enabled, inserting into distributed table will choose a random shard to write when there is no sharding key", 0) \
     \
-    M(UInt64, cross_to_inner_join_rewrite, 1, "Use inner join instead of comma/cross join if possible. Possible values: 0 - no rewrite, 1 - apply if possible, 2 - force rewrite all cross joins", 0) \
+    M(UInt64, cross_to_inner_join_rewrite, 2, "Use inner join instead of comma/cross join if possible. Possible values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible", 0) \
     \
     M(Bool, output_format_arrow_low_cardinality_as_dictionary, false, "Enable output LowCardinality type as Dictionary Arrow type", 0) \
     M(Bool, output_format_arrow_string_as_string, false, "Use Arrow String type instead of Binary for String columns", 0) \
@@ -822,6 +833,13 @@ struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings
     void addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field);
 
     void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
+
+    void set(std::string_view name, const Field & value) override;
+
+private:
+    void applyCompatibilitySetting();
+
+    std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
 };
 
 /*

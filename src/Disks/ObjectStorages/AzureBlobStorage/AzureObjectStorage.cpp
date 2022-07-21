@@ -67,8 +67,8 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
     auto settings_ptr = settings.get();
 
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
-        client.get(), object.absolute_path, read_settings, settings_ptr->max_single_read_retries,
-        settings_ptr->max_single_download_retries, read_settings.remote_fs_buffer_size);
+        client.get(), object.absolute_path, patchSettings(read_settings), settings_ptr->max_single_read_retries,
+        settings_ptr->max_single_download_retries);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOLINT
@@ -77,18 +77,19 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
     std::optional<size_t>,
     std::optional<size_t>) const
 {
+    ReadSettings disk_read_settings = patchSettings(read_settings);
     auto settings_ptr = settings.get();
     auto reader_impl = std::make_unique<ReadBufferFromAzureBlobStorageGather>(
         client.get(),
         objects,
         settings_ptr->max_single_read_retries,
         settings_ptr->max_single_download_retries,
-        read_settings);
+        disk_read_settings);
 
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
+    if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto reader = getThreadPoolReader();
-        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(reader_impl));
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, disk_read_settings, std::move(reader_impl));
     }
     else
     {
@@ -104,7 +105,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     std::optional<ObjectAttributes>,
     FinalizeCallback && finalize_callback,
     size_t buf_size,
-    const WriteSettings &)
+    const WriteSettings & write_settings)
 {
     if (mode != WriteMode::Rewrite)
         throw Exception("Azure storage doesn't support append", ErrorCodes::UNSUPPORTED_METHOD);
@@ -113,7 +114,8 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         client.get(),
         object.absolute_path,
         settings.get()->max_single_part_upload_size,
-        buf_size);
+        buf_size,
+        patchSettings(write_settings));
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(buffer), std::move(finalize_callback), object.absolute_path);
 }
@@ -207,7 +209,7 @@ void AzureObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguratio
 {
     auto new_settings = getAzureBlobStorageSettings(config, config_prefix, context);
     settings.set(std::move(new_settings));
-
+    applyRemoteThrottlingSettings(context);
     /// We don't update client
 }
 

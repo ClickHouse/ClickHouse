@@ -1,6 +1,6 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#if defined __APPLE__
+#if defined OS_DARWIN
 #include <sys/mount.h>
 #else
 #include <sys/statfs.h>
@@ -13,10 +13,17 @@
 #include <cstring>
 #include <iostream>
 
-#if (defined(__APPLE__) || defined(__FreeBSD__)) && defined(__GNUC__)
-#   include <machine/endian.h>
-#elif !defined(_MSC_VER)
-#   include <endian.h>
+#if defined OS_DARWIN
+
+// dependencies
+#include <machine/endian.h>
+#include <libkern/OSByteOrder.h>
+
+// define 64 bit macros
+#define le64toh(x) OSSwapLittleToHostInt64(x)
+
+#else
+#include <endian.h>
 #endif
 
 #include "types.h"

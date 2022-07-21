@@ -1102,9 +1102,8 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
         if (future_part.isDisjoint(result_part))
             continue;
 
-        /// Parts are not disjoint, so new_part_name either contains or covers future_part.
-        if (!(future_part.contains(result_part) || result_part.contains(future_part)))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected non-disjoint parts: {} and {}", future_part_elem.first, new_part_name);
+        /// Parts are not disjoint. They can be even intersecting and it's not a problem,
+        /// because we may have two queue entries producing intersecting parts if there's DROP_RANGE between them (so virtual_parts are ok).
 
         /// We cannot execute `entry` (or upgrade its actual_part_name to `new_part_name`)
         /// while any covered or covering parts are processed.
@@ -2335,6 +2334,12 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
 bool ReplicatedMergeTreeMergePredicate::hasDropRange(const MergeTreePartInfo & new_drop_range_info) const
 {
     return queue.hasDropRange(new_drop_range_info);
+}
+
+String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & part_name) const
+{
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    return queue.virtual_parts.getContainingPart(MergeTreePartInfo::fromPartName(part_name, queue.format_version));
 }
 
 
