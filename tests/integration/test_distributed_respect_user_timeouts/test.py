@@ -8,8 +8,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
-cluster = ClickHouseCluster(__file__)
-
 NODES = {"node" + str(i): None for i in (1, 2)}
 
 IS_DEBUG = False
