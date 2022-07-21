@@ -1,1 +1,0 @@
--- check that slow query with distinct in order has the same result as ordinary distinct
