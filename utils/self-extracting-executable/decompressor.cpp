@@ -1,9 +1,9 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#if defined OS_DARWIN
-#include <sys/mount.h>
+#if defined(OS_DARWIN) || defined(OS_FREEBSD)
+#   include <sys/mount.h>
 #else
-#include <sys/statfs.h>
+#   include <sys/statfs.h>
 #endif
 #include <fcntl.h>
 #include <sys/wait.h>
