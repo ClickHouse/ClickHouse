@@ -338,9 +338,6 @@ CI_CONFIG = {
         "Stateless tests flaky check (address)": {
             "required_build": "package_asan",
         },
-        "Stateless tests bugfix validate check (address, actions)": {
-            "required_build": "package_asan",
-        },
         "ClickHouse Keeper Jepsen (actions)": {
             "required_build": "binary_release",
         },
