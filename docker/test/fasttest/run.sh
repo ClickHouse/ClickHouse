@@ -135,6 +135,7 @@ function clone_submodules
             contrib/replxx
             contrib/wyhash
             contrib/hashidsxx
+            contrib/c-ares
         )
 
         git submodule sync

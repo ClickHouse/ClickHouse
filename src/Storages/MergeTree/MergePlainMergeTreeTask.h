@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 
 namespace DB
 {
