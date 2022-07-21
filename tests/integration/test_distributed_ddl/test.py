@@ -49,7 +49,7 @@ def test_default_database(test_cluster):
     test_cluster.ddl_check_query(
         instance,
         "CREATE TABLE null ON CLUSTER 'cluster2' (s String DEFAULT 'escape\t\nme') ENGINE = Null",
-        settings={"distributed_ddl_entry_format_version": 2}
+        settings={"distributed_ddl_entry_format_version": 2},
     )
 
     contents = instance.query(
@@ -58,8 +58,9 @@ def test_default_database(test_cluster):
     assert TSV(contents) == TSV("ch1\tdefault\nch2\ttest2\nch3\tdefault\nch4\ttest2\n")
 
     test_cluster.ddl_check_query(
-        instance, "DROP TABLE IF EXISTS null ON CLUSTER cluster2",
-        settings={"distributed_ddl_entry_format_version": 2}
+        instance,
+        "DROP TABLE IF EXISTS null ON CLUSTER cluster2",
+        settings={"distributed_ddl_entry_format_version": 2},
     )
     test_cluster.ddl_check_query(
         instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'"
