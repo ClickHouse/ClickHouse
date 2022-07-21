@@ -1306,7 +1306,7 @@ def test_schema_inference_from_globs(started_cluster):
     result = instance.query(
         f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
     )
-    assert result.strip() == "c1\tNullable(Float64)"
+    assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
         f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
@@ -1316,7 +1316,7 @@ def test_schema_inference_from_globs(started_cluster):
     result = instance.query(
         f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
     )
-    assert result.strip() == "c1\tNullable(Float64)"
+    assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
