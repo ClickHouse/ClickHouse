@@ -21,6 +21,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
