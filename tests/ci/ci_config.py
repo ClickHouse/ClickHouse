@@ -230,37 +230,37 @@ CI_CONFIG = {
         "Stateful tests (release, DatabaseReplicated)": {
             "required_build": "package_release",
         },
-        "Stateless tests (address, actions)": {
+        "Stateless tests (address)": {
             "required_build": "package_asan",
         },
-        "Stateless tests (thread, actions)": {
+        "Stateless tests (thread)": {
             "required_build": "package_tsan",
         },
-        "Stateless tests (memory, actions)": {
+        "Stateless tests (memory)": {
             "required_build": "package_msan",
         },
-        "Stateless tests (ubsan, actions)": {
+        "Stateless tests (ubsan)": {
             "required_build": "package_ubsan",
         },
-        "Stateless tests (debug, actions)": {
+        "Stateless tests (debug)": {
             "required_build": "package_debug",
         },
-        "Stateless tests (release, actions)": {
+        "Stateless tests (release)": {
             "required_build": "package_release",
         },
-        "Stateless tests (aarch64, actions)": {
+        "Stateless tests (aarch64)": {
             "required_build": "package_aarch64",
         },
-        "Stateless tests (release, wide parts enabled, actions)": {
+        "Stateless tests (release, wide parts enabled)": {
             "required_build": "package_release",
         },
-        "Stateless tests (release, DatabaseOrdinary, actions)": {
+        "Stateless tests (release, DatabaseOrdinary)": {
             "required_build": "package_release",
         },
-        "Stateless tests (release, DatabaseReplicated, actions)": {
+        "Stateless tests (release, DatabaseReplicated)": {
             "required_build": "package_release",
         },
-        "Stateless tests (release, s3 storage, actions)": {
+        "Stateless tests (release, s3 storage)": {
             "required_build": "package_release",
         },
         "Stress test (address, actions)": {
