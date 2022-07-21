@@ -168,6 +168,32 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
+#ifndef KEEPER_STANDALONE_BUILD
+
+struct SettingFieldMap
+{
+public:
+    Map value;
+    bool changed = false;
+
+    explicit SettingFieldMap(const Map & map = {}) : value(map) {}
+    explicit SettingFieldMap(Map && map) : value(std::move(map)) {}
+    explicit SettingFieldMap(const Field & f);
+
+    SettingFieldMap & operator =(const Map & map) { value = map; changed = true; return *this; }
+    SettingFieldMap & operator =(const Field & f);
+
+    operator const Map &() const { return value; } /// NOLINT
+    explicit operator Field() const { return value; }
+
+    String toString() const;
+    void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+};
+
+#endif
 
 struct SettingFieldChar
 {
