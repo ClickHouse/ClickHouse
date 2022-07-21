@@ -278,16 +278,16 @@ CI_CONFIG = {
         "Stress test (debug)": {
             "required_build": "package_debug",
         },
-        "Integration tests (asan, actions)": {
+        "Integration tests (asan)": {
             "required_build": "package_asan",
         },
-        "Integration tests (thread, actions)": {
+        "Integration tests (thread)": {
             "required_build": "package_tsan",
         },
-        "Integration tests (release, actions)": {
+        "Integration tests (release)": {
             "required_build": "package_release",
         },
-        "Integration tests (memory, actions)": {
+        "Integration tests (memory)": {
             "required_build": "package_msan",
         },
         "Integration tests flaky check (asan, actions)": {
