@@ -27,7 +27,8 @@
     <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY medium FORMAT Null</query>
     <query>SELECT DISTINCT low, medium FROM distinct_cardinality_low ORDER BY low FORMAT Null</query>
     <query>SELECT DISTINCT low, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query>
-    <query>SELECT DISTINCT low, medium, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query>
+    <!-- one of the worst cases for distinct in order (final sorted distinct with high cardinality) -->
+    <!-- <query>SELECT DISTINCT low, medium, high FROM distinct_cardinality_low ORDER BY high FORMAT Null</query> -->
 
     <drop_query>DROP TABLE IF EXISTS distinct_cardinality_low</drop_query>
 </test>
