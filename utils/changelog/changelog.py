@@ -278,10 +278,13 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
 
 def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
     year = date.today().year
+    to_commit = runner(f"git rev-parse {TO_REF}^{{}}")[:11]
+    from_commit = runner(f"git rev-parse {FROM_REF}^{{}}")[:11]
     fd.write(
         f"---\nsidebar_position: 1\nsidebar_label: {year}\n---\n\n"
         f"# {year} Changelog\n\n"
-        f"### ClickHouse release {TO_REF} FIXME as compared to {FROM_REF}\n\n"
+        f"### ClickHouse release {TO_REF} ({to_commit}) FIXME "
+        f"as compared to {FROM_REF} ({from_commit})\n\n"
     )
 
     seen_categories = []  # type: List[str]
