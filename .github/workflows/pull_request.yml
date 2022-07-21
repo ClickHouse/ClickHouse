@@ -1844,7 +1844,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/tests_bugfix_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Tests bugfix validate check (actions)
+          CHECK_NAME=tests bugfix validate check
           KILL_TIMEOUT=3600
           REPO_COPY=${{runner.temp}}/tests_bugfix_check/ClickHouse
           EOF
@@ -1866,12 +1866,12 @@ jobs:
 
           TEMP_PATH="${TEMP_PATH}/integration" \
             REPORTS_PATH="${REPORTS_PATH}/integration" \
-            python3 integration_test_check.py "Integration tests bugfix validate check" \
+            python3 integration_test_check.py "Integration $CHECK_NAME" \
               --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
 
           TEMP_PATH="${TEMP_PATH}/stateless" \
             REPORTS_PATH="${REPORTS_PATH}/stateless" \
-            python3 functional_test_check.py "Stateless tests bugfix validate check" "$KILL_TIMEOUT" \
+            python3 functional_test_check.py "Stateless $CHECK_NAME" "$KILL_TIMEOUT" \
               --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
 
           python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/post_commit_status.tsv" "${TEMP_PATH}/integration/post_commit_status.tsv"
