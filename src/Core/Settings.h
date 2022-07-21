@@ -607,7 +607,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     \
     M(String, compatibility, "", "Changes other settings according to provided ClickHouse version. If we know that we changed some behaviour in ClickHouse by changing some settings in some version, this compatibility setting will control these settings", 0) \
     \
-    M(Map, additional_table_filters, "", "Additional filter expression which would be applied after reading from specified table. Syntax : {'table1' : 'expression', 'database.table2' : 'expression'}", 0) \
+    M(Map, additional_table_filters, "", "Additional filter expression which would be applied after reading from specified table. Syntax: {'table1': 'expression', 'database.table2': 'expression'}", 0) \
     M(String, additional_result_filter, "", "Additional filter expression which would be applied to query result", 0) \
     \
     /** Experimental functions */ \
