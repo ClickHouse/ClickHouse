@@ -281,6 +281,7 @@ struct ExpressionAnalysisResult
         bool second_stage,
         bool only_types,
         const FilterDAGInfoPtr & filter_info,
+        const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
         const Block & source_header);
 
     /// Filter for row-level security.
