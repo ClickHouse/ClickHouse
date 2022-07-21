@@ -263,19 +263,19 @@ CI_CONFIG = {
         "Stateless tests (release, s3 storage)": {
             "required_build": "package_release",
         },
-        "Stress test (address, actions)": {
+        "Stress test (address)": {
             "required_build": "package_asan",
         },
-        "Stress test (thread, actions)": {
+        "Stress test (thread)": {
             "required_build": "package_tsan",
         },
-        "Stress test (undefined, actions)": {
+        "Stress test (undefined)": {
             "required_build": "package_ubsan",
         },
-        "Stress test (memory, actions)": {
+        "Stress test (memory)": {
             "required_build": "package_msan",
         },
-        "Stress test (debug, actions)": {
+        "Stress test (debug)": {
             "required_build": "package_debug",
         },
         "Integration tests (asan, actions)": {
