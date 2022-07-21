@@ -437,7 +437,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (address, actions)
+          CHECK_NAME=Stateless tests (address)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           EOF
