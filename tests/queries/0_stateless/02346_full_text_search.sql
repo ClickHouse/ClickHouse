@@ -1,5 +1,4 @@
 SET log_queries = 1;
-SET max_threads = 1;
 
 -- create table for gin(2)
 DROP TABLE IF EXISTS simple1;
