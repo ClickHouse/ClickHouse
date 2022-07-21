@@ -12,7 +12,12 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
-#include <endian.h>
+
+#if (defined(__APPLE__) || defined(__FreeBSD__)) && defined(__GNUC__)
+#   include <machine/endian.h>
+#elif !defined(_MSC_VER)
+#   include <endian.h>
+#endif
 
 #include "types.h"
 
