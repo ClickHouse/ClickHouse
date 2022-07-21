@@ -368,10 +368,7 @@ void DataPartStorageOnDisk::clearDirectory(
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
 
         if (!is_projection)
-        {
             request.emplace_back(fs::path(dir) / "txn_version.txt", true);
-            request.emplace_back(fs::path(dir) / "deleted_rows_mask.bin", true);
-        }
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);

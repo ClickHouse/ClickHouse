@@ -46,7 +46,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects().withVirtuals();  /// TODO: only add _rows_exists column (if it's present on disk)
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withExtendedObjects()
+            .withSystemColumns();
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else

@@ -25,6 +25,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/LightweightDeleteDescription.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
@@ -786,7 +787,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
         return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
-            column_name == metadata.lightweight_delete_description.filter_column.name;
+            column_name == LightweightDeleteDescription::filter_column.name;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -1152,7 +1153,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (all_columns.has(command.column_name) ||
                 all_columns.hasNested(command.column_name) ||
-                (command.clear && column_name == metadata.lightweight_delete_description.filter_column.name))
+                (command.clear && column_name == LightweightDeleteDescription::filter_column.name))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {

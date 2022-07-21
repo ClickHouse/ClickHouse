@@ -28,6 +28,8 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
+#include <Storages/LightweightDeleteDescription.h>
+
 
 namespace DB
 {
@@ -349,7 +351,7 @@ static void validateUpdateColumns(
         }
 
         /// Allow to override value of lightweight delete filter virtual column
-        if (!found && column_name == metadata_snapshot->lightweight_delete_description.filter_column.name)
+        if (!found && column_name == LightweightDeleteDescription::filter_column.name)
             found = true;
 
         if (!found)
@@ -508,8 +510,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 DataTypePtr type;
                 if (auto physical_column = columns_desc.tryGetPhysical(column))
                     type = physical_column->type;
-                else if (column == metadata_snapshot->lightweight_delete_description.filter_column.name)
-                    type = metadata_snapshot->lightweight_delete_description.filter_column.type;
+                else if (column == LightweightDeleteDescription::filter_column.name)
+                    type = LightweightDeleteDescription::filter_column.type;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
 
@@ -772,11 +774,11 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
     auto all_columns = storage_snapshot->getColumns(options);
 
-    // TODO: add _row_exists column if it is present in the part???
+    /// Add _row_exists column if it is present in the part
     if (auto part_storage = dynamic_pointer_cast<DB::StorageFromMergeTreeDataPart>(storage))
     {
-        if (part_storage->hasLightweightDeleteColumn())
-            all_columns.push_back({metadata_snapshot->lightweight_delete_description.filter_column});
+        if (part_storage->hasLightweightDeletedMask())
+            all_columns.push_back({LightweightDeleteDescription::filter_column});
     }
 
     /// Next, for each stage calculate columns changed by this and previous stages.

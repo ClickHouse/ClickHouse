@@ -1,8 +1,10 @@
 #include <Storages/StorageSnapshot.h>
+#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
 #include <sparsehash/dense_hash_set>
+#include "Storages/LightweightDeleteDescription.h"
 
 namespace DB
 {
@@ -19,6 +21,9 @@ void StorageSnapshot::init()
 {
     for (const auto & [name, type] : storage.getVirtuals())
         virtual_columns[name] = type;
+
+    if (storage.hasLightweightDeletedMask())
+        system_columns[LightweightDeleteDescription::filter_column.name] = LightweightDeleteDescription::filter_column.type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
@@ -28,13 +33,13 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
     if (options.with_extended_objects)
         extendObjectColumns(all_columns, object_columns, options.with_subcolumns);
 
+    NameSet column_names;
     if (options.with_virtuals)
     {
         /// Virtual columns must be appended after ordinary,
         /// because user can override them.
         if (!virtual_columns.empty())
         {
-            NameSet column_names;
             for (const auto & column : all_columns)
                 column_names.insert(column.name);
 
@@ -42,6 +47,19 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
                 if (!column_names.contains(name))
                     all_columns.emplace_back(name, type);
         }
+    }
+
+    if (options.with_system_columns)
+    {
+        if (!system_columns.empty() && column_names.empty())
+        {
+            for (const auto & column : all_columns)
+                column_names.insert(column.name);
+        }
+
+        for (const auto & [name, type] : system_columns)
+            if (!column_names.contains(name))
+                all_columns.emplace_back(name, type);
     }
 
     return all_columns;
@@ -73,6 +91,13 @@ std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOpt
     {
         auto it = virtual_columns.find(column_name);
         if (it != virtual_columns.end())
+            return NameAndTypePair(column_name, it->second);
+    }
+
+    if (options.with_system_columns)
+    {
+        auto it = system_columns.find(column_name);
+        if (it != system_columns.end())
             return NameAndTypePair(column_name, it->second);
     }
 

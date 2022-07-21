@@ -62,8 +62,6 @@ public:
 
     MergeTreeData::DataPartPtr data_part;
 
-    bool needReadDeletedMask() { return settings.apply_deleted_mask && data_part->hasLightweightDelete(); }
-
 protected:
     /// Returns actual column type in part, which can differ from table metadata.
     NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;
