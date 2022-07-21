@@ -102,9 +102,34 @@ void Client::processError(const String & query) const
 }
 
 
+void Client::showWarnings()
+{
+    try
+    {
+        std::vector<String> messages = loadWarningMessages();
+        if (!messages.empty())
+        {
+            std::cout << "Warnings:" << std::endl;
+            for (const auto & message : messages)
+                std::cout << " * " << message << std::endl;
+            std::cout << std::endl;
+        }
+    }
+    catch (...)
+    {
+        /// Ignore exception
+    }
+}
+
 /// Make query to get all server warnings
 std::vector<String> Client::loadWarningMessages()
 {
+    /// Older server versions cannot execute the query loading warnings.
+    constexpr UInt64 min_server_revision_to_load_warnings = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
+
+    if (server_revision < min_server_revision_to_load_warnings)
+        return {};
+
     std::vector<String> messages;
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
@@ -226,25 +251,9 @@ try
 
     connect();
 
-    /// Load Warnings at the beginning of connection
+    /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
-    {
-        try
-        {
-            std::vector<String> messages = loadWarningMessages();
-            if (!messages.empty())
-            {
-                std::cout << "Warnings:" << std::endl;
-                for (const auto & message : messages)
-                    std::cout << " * " << message << std::endl;
-                std::cout << std::endl;
-            }
-        }
-        catch (...)
-        {
-            /// Ignore exception
-        }
-    }
+        showWarnings();
 
     if (is_interactive && !delayed_interactive)
     {
@@ -370,7 +379,7 @@ void Client::connect()
     }
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
-    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false));
+    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
