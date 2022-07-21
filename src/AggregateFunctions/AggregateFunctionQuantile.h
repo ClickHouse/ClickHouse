@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 /// These must be exposed in header for the purpose of dynamic compilation.
 #include <AggregateFunctions/QuantileReservoirSampler.h>
@@ -20,9 +21,11 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/GatherFunctionQuantileVisitor.h>
 
 #include <type_traits>
 
@@ -105,9 +108,21 @@ public:
             return res;
     }
 
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
-        return getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
+        return GatherFunctionQuantileData::toFusedNameOrSelf(getName()) == GatherFunctionQuantileData::toFusedNameOrSelf(rhs.getName())
+            && this->haveEqualArgumentTypes(rhs);
+    }
+
+    DataTypePtr getStateType() const override
+    {
+        Array params{1};
+        AggregateFunctionProperties properties;
+        return std::make_shared<DataTypeAggregateFunction>(
+            AggregateFunctionFactory::instance().get(
+                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), this->argument_types, params, properties),
+            this->argument_types,
+            params);
     }
 
     bool allocatesMemoryInArena() const override { return false; }
