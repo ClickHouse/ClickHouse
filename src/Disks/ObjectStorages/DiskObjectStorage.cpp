@@ -18,6 +18,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
