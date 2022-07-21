@@ -1,4 +1,5 @@
 #include <Databases/LoadingStrictnessLevel.h>
+#include <cassert>
 
 namespace DB
 {
