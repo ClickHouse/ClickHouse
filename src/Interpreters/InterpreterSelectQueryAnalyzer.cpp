@@ -134,6 +134,18 @@ struct QueryTreeActionsScopeNode
         return node;
     }
 
+    const ActionsDAG::Node * addInputConstantColumnIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
+    {
+        auto it = node_name_to_node.find(node_name);
+        if (it != node_name_to_node.end())
+            return it->second;
+
+        const auto * node = &actions_dag->addInput(column);
+        node_name_to_node[node->result_name] = node;
+
+        return node;
+    }
+
     const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
     {
         auto it = node_name_to_node.find(node_name);
@@ -161,6 +173,18 @@ struct QueryTreeActionsScopeNode
         // std::cout << "QueryTreeActionsScopeNode::addFunctionIfNecessary dag " << actions_dag << " node name " << node_name;
         // std::cout << " result node ptr " << node << std::endl;
 
+        node_name_to_node[node->result_name] = node;
+
+        return node;
+    }
+
+    const ActionsDAG::Node * addArrayJoinIfNecessary(const std::string & node_name, const ActionsDAG::Node * child)
+    {
+        auto it = node_name_to_node.find(node_name);
+        if (it != node_name_to_node.end())
+            return it->second;
+
+        const auto * node = &actions_dag->addArrayJoin(*child, node_name);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -253,7 +277,7 @@ private:
         for (size_t i = 1; i < actions_stack_size; ++i)
         {
             auto & actions_stack_node = actions_stack[i];
-            actions_stack_node.addInputColumnIfNecessary(constant_name, column.type);
+            actions_stack_node.addInputConstantColumnIfNecessary(constant_name, column);
         }
 
         return {constant_name, 0};
@@ -408,7 +432,19 @@ private:
         for (auto & function_argument_node_name : function_arguments_node_names)
             children.push_back(actions_stack[level].getNodeOrThrow(function_argument_node_name));
 
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node.getFunction());
+        if (function_node.getFunctionName() == "arrayJoin")
+        {
+            if (level != 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Expression in arrayJoin cannot depend on lambda argument: {} ",
+                    function_arguments_node_names.at(0));
+
+            actions_stack[level].addArrayJoinIfNecessary(function_node_name, children.at(0));
+        }
+        else
+        {
+            actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node.getFunction());
+        }
 
         size_t actions_stack_size = actions_stack.size();
         for (size_t i = level + 1; i < actions_stack_size; ++i)
