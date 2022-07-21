@@ -4,7 +4,7 @@ struct Empty
 {
 }
 
-struct Message
+struct MessageWithEmpty
 {
     tuple1 @0 : Empty;
     text @1 : Text;
