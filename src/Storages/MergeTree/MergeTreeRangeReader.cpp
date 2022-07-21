@@ -656,10 +656,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
-//    , non_const_virtual_column_names()
 {
-
-
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();
 
@@ -675,9 +672,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
         if (column_name == "_part_offset")
             sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
-
-//        if (column_name == "_row_exists")
-//            sample_block.insert(ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), column_name));
     }
 
     if (prewhere_info)
@@ -862,11 +856,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         if (read_result.num_rows)
         {
             /// Physical columns go first and then some virtual columns follow
+            /// TODO: is there a better way to account for virtual columns that were filled by previous readers?
             size_t physical_columns_count = read_result.columns.size() - read_result.extra_columns_filled.size();
-///////////
-// TODO: properly account for "virtual columns" that are overridden with real data in the part
-
-/////////////
             Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
 
             bool should_evaluate_missing_defaults;
@@ -1159,10 +1150,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
                 block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
             }
-            else if (column_name == "_row_exists")
+            else if (column_name == LightweightDeleteDescription::filter_column.name)
             {
-                /// do nothing, it will be added later
-                /// TODO: properly implement reading non-const virtual columns or filling them with default values
+                /// Do nothing, it will be added later
             }
             else
                 throw Exception("Unexpected non-const virtual column: " + column_name, ErrorCodes::LOGICAL_ERROR);

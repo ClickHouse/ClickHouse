@@ -86,7 +86,6 @@ private:
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
@@ -100,7 +99,6 @@ private:
     bool can_execute;
     SelectQueryOptions select_limits;
 
-    /// TODO: is it needed?
     bool apply_deleted_mask = true;
 
     ASTPtr mutation_ast;

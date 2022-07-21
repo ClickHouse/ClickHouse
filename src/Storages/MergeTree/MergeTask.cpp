@@ -5,6 +5,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 
 #include <DataTypes/ObjectUtils.h>
@@ -814,10 +815,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         auto columns = global_ctx->merging_column_names;
 
         /// The part might have some rows masked by lightweight deletes
-        const auto lwd_filter_column = global_ctx->metadata_snapshot->lightweight_delete_description.filter_column.name;
-        const bool need_to_filter_deleted_rows = !lwd_filter_column.empty() && part->getColumns().contains(lwd_filter_column);
+        const auto lightweight_delete_filter_column = LightweightDeleteDescription::filter_column.name;
+        const bool need_to_filter_deleted_rows = part->hasLightweightDelete();
         if (need_to_filter_deleted_rows)
-            columns.emplace_back(lwd_filter_column);
+            columns.emplace_back(lightweight_delete_filter_column);
 
         auto input = std::make_unique<MergeTreeSequentialSource>(
             *global_ctx->data, global_ctx->storage_snapshot, part, columns, ctx->read_with_direct_io, true);
@@ -827,9 +828,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         /// Add filtering step that discards deleted rows
         if (need_to_filter_deleted_rows)
         {
-            pipe.addSimpleTransform([lwd_filter_column](const Block & header)
+            pipe.addSimpleTransform([lightweight_delete_filter_column](const Block & header)
             {
-                return std::make_shared<FilterTransform>(header, nullptr, lwd_filter_column, true);
+                return std::make_shared<FilterTransform>(header, nullptr, lightweight_delete_filter_column, true);
             });
         }
 

@@ -61,7 +61,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         {
             non_const_virtual_column_names.emplace_back(*it);
         }
-        else if (*it == "_row_exists")
+        else if (*it == LightweightDeleteDescription::filter_column.name)
         {
             non_const_virtual_column_names.emplace_back(*it);
         }
@@ -242,10 +242,9 @@ void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForPart(
     pre_reader_for_step.clear();
 
     /// Add lightweight delete filtering step
-    const auto & lightweigth_delete_info = metadata_snapshot->lightweight_delete_description;
-    if (reader_settings.apply_deleted_mask && data_part->getColumns().contains(lightweigth_delete_info.filter_column.name))
+    if (reader_settings.apply_deleted_mask && data_part->hasLightweightDelete())
     {
-        pre_reader_for_step.push_back(data_part->getReader({lightweigth_delete_info.filter_column}, metadata_snapshot, mark_ranges,
+        pre_reader_for_step.push_back(data_part->getReader({LightweightDeleteDescription::filter_column}, metadata_snapshot, mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 value_size_map, profile_callback));
     }
@@ -268,11 +267,10 @@ void MergeTreeBaseSelectProcessor::initializeRangeReaders(MergeTreeReadTask & cu
     size_t pre_readers_shift = 0;
 
     /// Add filtering step with lightweight delete mask
-    const auto & lightweigth_delete_info = storage_snapshot->metadata->lightweight_delete_description;
-    if (reader_settings.apply_deleted_mask && current_task.data_part->getColumns().contains(lightweigth_delete_info.filter_column.name))
+    if (reader_settings.apply_deleted_mask && current_task.data_part->hasLightweightDelete())
     {
         current_task.pre_range_readers.push_back(
-            MergeTreeRangeReader(pre_reader_for_step[0].get(), prev_reader, &lwd_filter_step, last_reader, non_const_virtual_column_names));
+            MergeTreeRangeReader(pre_reader_for_step[0].get(), prev_reader, &lightweight_delete_filter_step, last_reader, non_const_virtual_column_names));
         prev_reader = &current_task.pre_range_readers.back();
         pre_readers_shift++;
     }
@@ -471,14 +469,14 @@ static void injectNonConstVirtualColumns(
             }
         }
 
-        if (virtual_column_name == "_row_exists")
+        if (virtual_column_name == LightweightDeleteDescription::filter_column.name)
         {
                 /// If _row_exists column isn't present in the part then fill it here with 1s
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeUInt8().createColumnConst(rows, 1)->convertToFullColumnIfConst();
+                    column = LightweightDeleteDescription::filter_column.type->createColumnConst(rows, 1)->convertToFullColumnIfConst();
                 else
-                    column = DataTypeUInt8().createColumn();
+                    column = LightweightDeleteDescription::filter_column.type->createColumn();
 
                 inserter.insertUInt8Column(column, virtual_column_name);
         }

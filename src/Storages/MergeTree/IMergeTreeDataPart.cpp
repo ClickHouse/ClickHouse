@@ -294,7 +294,6 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
     }
 }
 
-
 IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreeData & storage_,
     const String & name_,
@@ -789,9 +788,6 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (data_part_storage->exists(TXN_VERSION_METADATA_FILE_NAME))
         result.emplace(TXN_VERSION_METADATA_FILE_NAME);
-
-    if (data_part_storage->exists(DELETED_ROWS_MARK_FILE_NAME))
-        result.emplace(DELETED_ROWS_MARK_FILE_NAME);
 
     return result;
 }
