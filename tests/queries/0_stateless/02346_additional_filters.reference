@@ -1,0 +1,257 @@
+-- { echoOn }
+
+select * from table_1;
+1	a
+2	bb
+3	ccc
+4	dddd
+select * from table_1 settings additional_table_filters={'table_1' : 'x != 2'};
+1	a
+3	ccc
+4	dddd
+select * from table_1 settings additional_table_filters={'table_1' : 'x != 2 and x != 3'};
+1	a
+4	dddd
+select x from table_1 settings additional_table_filters={'table_1' : 'x != 2'};
+1
+3
+4
+select y from table_1 settings additional_table_filters={'table_1' : 'x != 2'};
+a
+ccc
+dddd
+select * from table_1 where x != 3 settings additional_table_filters={'table_1' : 'x != 2'};
+1	a
+4	dddd
+select * from table_1 prewhere x != 4 settings additional_table_filters={'table_1' : 'x != 2'};
+1	a
+3	ccc
+select * from table_1 prewhere x != 4 where x != 3 settings additional_table_filters={'table_1' : 'x != 2'};
+1	a
+select x from table_1 where x != 3 settings additional_table_filters={'table_1' : 'x != 2'};
+1
+4
+select x from table_1 prewhere x != 4 settings additional_table_filters={'table_1' : 'x != 2'};
+1
+3
+select x from table_1 prewhere x != 4 where x != 3 settings additional_table_filters={'table_1' : 'x != 2'};
+1
+select y from table_1 where x != 3 settings additional_table_filters={'table_1' : 'x != 2'};
+a
+dddd
+select y from table_1 prewhere x != 4 settings additional_table_filters={'table_1' : 'x != 2'};
+a
+ccc
+select y from table_1 prewhere x != 4 where x != 3 settings additional_table_filters={'table_1' : 'x != 2'};
+a
+select x from table_1 where x != 2 settings additional_table_filters={'table_1' : 'x != 2'};
+1
+3
+4
+select x from table_1 prewhere x != 2 settings additional_table_filters={'table_1' : 'x != 2'};
+1
+3
+4
+select x from table_1 prewhere x != 2 where x != 2 settings additional_table_filters={'table_1' : 'x != 2'};
+1
+3
+4
+select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filters={'system.one' : 'dummy = 0'};
+0
+0
+select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filters={'system.one' : 'dummy != 0'};
+select * from system.numbers limit 5;
+0
+1
+2
+3
+4
+select * from system.numbers limit 5 settings additional_table_filters={'system.numbers' : 'number != 3'};
+0
+1
+2
+4
+5
+select * from system.numbers limit 5 settings additional_table_filters={'system.numbers':'number != 3','table_1':'x!=2'};
+0
+1
+2
+4
+5
+select * from (select number from system.numbers limit 5 union all select x from table_1) order by number settings additional_table_filters={'system.numbers':'number != 3','table_1':'x!=2'};
+0
+1
+1
+2
+3
+4
+4
+5
+select number, x, y from (select number from system.numbers limit 5) f any left join (select x, y from table_1) s on f.number = s.x settings additional_table_filters={'system.numbers' : 'number != 3', 'table_1' : 'x != 2'};
+0	0	
+1	1	a
+2	0	
+4	4	dddd
+5	0	
+select b + 1 as c from (select a + 1 as b from (select x + 1 as a from table_1)) settings additional_table_filters={'table_1' : 'x != 2 and x != 3'};
+4
+7
+-- { echoOn }
+select * from v_numbers;
+1
+2
+3
+4
+5
+select * from v_numbers settings additional_table_filters={'system.numbers' : 'number != 3'};
+1
+2
+3
+5
+6
+select * from v_numbers settings additional_table_filters={'v_numbers' : 'x != 3'};
+1
+2
+4
+5
+select * from v_numbers settings additional_table_filters={'system.numbers' : 'number != 3', 'v_numbers' : 'x != 3'};
+1
+2
+5
+6
+-- additional filter for inner tables for Materialized View does not work because it does not create internal interpreter
+-- probably it is expected
+-- { echoOn }
+select * from mv_table;
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from mv_table settings additional_table_filters={'mv_table' : 'x != 5'};
+4	dddd
+6	ffffff
+7	ggggggg
+select * from mv_table settings additional_table_filters={'table_1' : 'x != 5'};
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from mv_table settings additional_table_filters={'table_2' : 'x != 5'};
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+-- additional filter for inner tables for Merge does not work because it does not create internal interpreter
+-- probably it is expected
+-- { echoOn }
+select * from m_table order by x;
+1	a
+2	bb
+3	ccc
+4	dddd
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from m_table order by x settings additional_table_filters={'table_1' : 'x != 2'};
+1	a
+2	bb
+3	ccc
+4	dddd
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from m_table order by x  settings additional_table_filters={'table_2' : 'x != 5'};
+1	a
+2	bb
+3	ccc
+4	dddd
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from m_table order by x  settings additional_table_filters={'table_1' : 'x != 2', 'table_2' : 'x != 5'};
+1	a
+2	bb
+3	ccc
+4	dddd
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from m_table order by x  settings additional_table_filters={'table_1' : 'x != 4'};
+1	a
+2	bb
+3	ccc
+4	dddd
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from m_table order by x  settings additional_table_filters={'table_2' : 'x != 4'};
+1	a
+2	bb
+3	ccc
+4	dddd
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from m_table order by x  settings additional_table_filters={'table_1' : 'x != 4', 'table_2' : 'x != 4'};
+1	a
+2	bb
+3	ccc
+4	dddd
+4	dddd
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from m_table order by x  settings additional_table_filters={'m_table' : 'x != 4'};
+1	a
+2	bb
+3	ccc
+5	eeeee
+6	ffffff
+7	ggggggg
+select * from m_table order by x  settings additional_table_filters={'m_table' : 'x != 4', 'table_1' : 'x != 2', 'table_2' : 'x != 5'};
+1	a
+2	bb
+3	ccc
+5	eeeee
+6	ffffff
+7	ggggggg
+-- additional_result_filter
+
+select * from table_1 settings additional_result_filter='x != 2';
+1	a
+3	ccc
+4	dddd
+select *, x != 2 from table_1 settings additional_result_filter='x != 2';
+1	a	1
+3	ccc	1
+4	dddd	1
+select * from table_1 where x != 1 settings additional_result_filter='x != 2';
+3	ccc
+4	dddd
+select * from table_1 where x != 1 settings additional_result_filter='x != 2 and x != 3';
+4	dddd
+select * from table_1 prewhere x != 3 where x != 1 settings additional_result_filter='x != 2';
+4	dddd
+select * from table_1 limit 3 settings additional_result_filter='x != 2';
+1	a
+3	ccc
+select x + 1 from table_1 settings additional_result_filter='`plus(x, 1)` != 2';
+3
+4
+5
+select * from (select x + 1 as a, y from table_1 union all select x as a, y from table_1) order by a, y settings additional_result_filter='a = 3';
+3	bb
+3	ccc
+select * from (select x + 1 as a, y from table_1 union all select x as a, y from table_1) order by a, y settings additional_result_filter='a != 3';
+1	a
+2	a
+2	bb
+4	ccc
+4	dddd
+5	dddd
