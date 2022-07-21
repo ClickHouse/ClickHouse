@@ -15,7 +15,7 @@ SELECT * FROM testJoinTable;
 DROP TABLE testJoinTable;
 
 SELECT '-';
- 
+
 DROP TABLE IF EXISTS master;
 DROP TABLE IF EXISTS transaction;
 
@@ -38,8 +38,8 @@ DROP TABLE IF EXISTS tbl;
 CREATE TABLE tbl (eventDate Date, id String) ENGINE = MergeTree() PARTITION BY tuple() ORDER BY eventDate;
 CREATE TABLE some_join (id String, value String) ENGINE = Join(ANY, LEFT, id) SETTINGS any_join_distinct_right_table_keys = 1;
 
-SELECT * FROM tbl AS t ANY LEFT JOIN some_join USING (id);
-SELECT * FROM tbl AS t ANY LEFT JOIN some_join AS d USING (id);
+SELECT * FROM tbl AS t ANY LEFT JOIN some_join USING (id) ORDER BY id;
+SELECT * FROM tbl AS t ANY LEFT JOIN some_join AS d USING (id) ORDER BY id;
 -- TODO SELECT t.*, d.* FROM tbl AS t ANY LEFT JOIN some_join AS d USING (id);
 
 DROP TABLE some_join;
