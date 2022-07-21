@@ -7,7 +7,7 @@
 #include <Interpreters/Context.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
-
+#include <Common/EventRateMeter.h>
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define CLEAR_TO_END_OF_LINE "\033[K"
@@ -59,12 +59,12 @@ public:
 
     void addThreadIdToList(String const & host, UInt64 thread_id);
 
-    void updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time);
+    void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
 
 private:
     size_t getUsedThreadsCount() const;
 
-    double getCPUUsage() const;
+    double getCPUUsage();
 
     struct MemoryUsage
     {
@@ -91,7 +91,7 @@ private:
 
     bool write_progress_on_update = false;
 
-    std::unordered_map<String, double> host_cpu_usage;
+    EventRateMeter cpu_usage_meter{static_cast<double>(clock_gettime_ns()), 3'000'000'000 /*ns*/}; // average cpu utilization last 3 second
     HostToThreadTimesMap thread_data;
     /// In case of all of the above:
     /// - clickhouse-local
@@ -100,7 +100,7 @@ private:
     ///
     /// It is possible concurrent access to the following:
     /// - writeProgress() (class properties) (guarded with progress_mutex)
-    /// - thread_data/host_cpu_usage (guarded with profile_events_mutex)
+    /// - thread_data/cpu_usage_meter (guarded with profile_events_mutex)
     mutable std::mutex profile_events_mutex;
     mutable std::mutex progress_mutex;
 };

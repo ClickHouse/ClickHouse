@@ -6055,8 +6055,10 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) con
                 broken_part_callback(part->name);
         }
     }
-    else
+    else if (data_part && data_part->getState() == IMergeTreeDataPart::State::Active)
         broken_part_callback(data_part->name);
+    else
+        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
