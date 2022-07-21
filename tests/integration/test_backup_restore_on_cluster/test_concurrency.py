@@ -1,5 +1,8 @@
+from random import randint
 import pytest
 import os.path
+import time
+import concurrent
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
@@ -27,6 +30,7 @@ def generate_cluster_def():
 
 main_configs = ["configs/backups_disk.xml", generate_cluster_def()]
 
+user_configs = ["configs/allow_experimental_database_replicated.xml"]
 
 nodes = []
 for i in range(num_nodes):
@@ -34,6 +38,7 @@ for i in range(num_nodes):
         cluster.add_instance(
             f"node{i}",
             main_configs=main_configs,
+            user_configs=user_configs,
             external_dirs=["/backups/"],
             macros={"replica": f"node{i}", "shard": "shard1"},
             with_zookeeper=True,
@@ -160,3 +165,87 @@ def test_concurrent_backups_on_different_nodes():
         nodes[i].query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
         for j in range(num_nodes):
             assert nodes[j].query("SELECT sum(x) FROM tbl") == TSV([expected_sum])
+
+
+def test_create_or_drop_tables_during_backup():
+    node0.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
+    )
+
+    # Will do this test for 60 seconds
+    start_time = time.time()
+    end_time = start_time + 60
+
+    def create_table():
+        while time.time() < end_time:
+            node = nodes[randint(0, num_nodes - 1)]
+            table_name = f"mydb.tbl{randint(1, num_nodes)}"
+            node.query(
+                f"CREATE TABLE IF NOT EXISTS {table_name}(x Int32) ENGINE=ReplicatedMergeTree ORDER BY x"
+            )
+            node.query_and_get_answer_with_error(
+                f"INSERT INTO {table_name} SELECT rand32() FROM numbers(10)"
+            )
+
+    def drop_table():
+        while time.time() < end_time:
+            table_name = f"mydb.tbl{randint(1, num_nodes)}"
+            node = nodes[randint(0, num_nodes - 1)]
+            node.query(f"DROP TABLE IF EXISTS {table_name} NO DELAY")
+
+    def rename_table():
+        while time.time() < end_time:
+            table_name1 = f"mydb.tbl{randint(1, num_nodes)}"
+            table_name2 = f"mydb.tbl{randint(1, num_nodes)}"
+            node = nodes[randint(0, num_nodes - 1)]
+            node.query_and_get_answer_with_error(
+                f"RENAME TABLE {table_name1} TO {table_name2}"
+            )
+
+    def make_backup():
+        ids = []
+        while time.time() < end_time:
+            time.sleep(
+                5
+            )  # 1 minute total, and around 5 seconds per each backup => around 12 backups should be created
+            backup_name = new_backup_name()
+            id = node0.query(
+                f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+            ).split("\t")[0]
+            ids.append(id)
+        return ids
+
+    ids = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        ids_future = executor.submit(make_backup)
+        futures.append(ids_future)
+        futures.append(executor.submit(create_table))
+        futures.append(executor.submit(drop_table))
+        futures.append(executor.submit(rename_table))
+        for future in futures:
+            future.result()
+        ids = ids_future.result()
+
+    ids_list = "[" + ", ".join([f"'{id}'" for id in ids]) + "]"
+    for node in nodes:
+        assert_eq_with_retry(
+            node,
+            f"SELECT status, error from system.backups WHERE uuid IN {ids_list} AND (status == 'MAKING_BACKUP')",
+            "",
+        )
+
+    backup_names = {}
+    for node in nodes:
+        for id in ids:
+            backup_name = node.query(
+                f"SELECT backup_name FROM system.backups WHERE uuid='{id}' FORMAT RawBLOB"
+            ).strip()
+            if backup_name:
+                backup_names[id] = backup_name
+
+    for id in ids:
+        node0.query("DROP DATABASE mydb ON CLUSTER 'cluster'")
+        node0.query(
+            f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_names[id]}"
+        )
