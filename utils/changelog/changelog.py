@@ -43,7 +43,7 @@ class Description:
     ):
         self.number = number
         self.html_url = html_url
-        self.user = user
+        self.user = gh.get_user_cached(user._rawData["login"])  # type: ignore
         self.entry = entry
         self.category = category
 
@@ -88,11 +88,18 @@ class Description:
         return self.number < other.number
 
 
-def get_descriptions(
-    repo: Repository, prs: PullRequests
-) -> Dict[str, List[Description]]:
+def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
     descriptions = {}  # type: Dict[str, List[Description]]
+    repos = {}  # type: Dict[str, Repository]
     for pr in prs:
+        # See https://github.com/PyGithub/PyGithub/issues/2202,
+        # obj._rawData doesn't spend additional API requests
+        # We'll save some requests
+        # pylint: disable=protected-access
+        repo_name = pr._rawData["base"]["repo"]["full_name"]  # type: ignore
+        # pylint: enable=protected-access
+        if repo_name not in repos:
+            repos[repo_name] = pr.base.repo
         in_changelog = False
         merge_commit = pr.merge_commit_sha
         try:
@@ -104,7 +111,7 @@ def get_descriptions(
 
         in_changelog = merge_commit in SHA_IN_CHANGELOG
         if in_changelog:
-            desc = generate_description(pr, repo)
+            desc = generate_description(pr, repos[repo_name])
             if desc is not None:
                 if desc.category not in descriptions:
                     descriptions[desc.category] = []
@@ -336,11 +343,11 @@ def set_sha_in_changelog():
 
 
 def main():
-    log_levels = [logging.CRITICAL, logging.WARN, logging.INFO, logging.DEBUG]
+    log_levels = [logging.WARN, logging.INFO, logging.DEBUG]
     args = parse_args()
     logging.basicConfig(
         format="%(asctime)s %(levelname)-8s [%(filename)s:%(lineno)d]:\n%(message)s",
-        level=log_levels[min(args.verbose, 3)],
+        level=log_levels[min(args.verbose, 2)],
     )
     if args.debug_helpers:
         logging.getLogger("github_helper").setLevel(logging.DEBUG)
@@ -379,10 +386,9 @@ def main():
     )
     gh.cache_path = CACHE_PATH
     query = f"type:pr repo:{args.repo} is:merged"
-    repo = gh.get_repo(args.repo)
     prs = gh.get_pulls_from_search(query=query, merged=merged, sort="created")
 
-    descriptions = get_descriptions(repo, prs)
+    descriptions = get_descriptions(prs)
 
     write_changelog(args.output, descriptions)
 
