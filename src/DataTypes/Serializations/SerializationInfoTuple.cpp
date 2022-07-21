@@ -10,7 +10,6 @@ namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int LOGICAL_ERROR;
 }
 
 SerializationInfoTuple::SerializationInfoTuple(
