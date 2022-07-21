@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/Context.h>
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
@@ -40,6 +39,10 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+using DisksMap = std::map<String, DiskPtr>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -363,7 +366,6 @@ private:
     std::unique_ptr<Executor> executor;
 };
 
-using DiskPtr = std::shared_ptr<IDisk>;
 using Disks = std::vector<DiskPtr>;
 
 /**
