@@ -11,7 +11,7 @@ INSERT INTO simple1 VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click 
 SELECT name, type FROM system.data_skipping_indices where (table =='simple1') limit 1;
 
 -- search gin index
-SELECT * FROM simple1 WHERE s LIKE '%01%';
+SELECT * FROM simple1 WHERE s LIKE '%01%' order by k;
 SYSTEM FLUSH LOGS;
 -- check the query only read 2 granules (4 rows total; each granule has 2 rows)
 SELECT read_rows, result_rows from system.query_log 
@@ -32,7 +32,7 @@ INSERT INTO simple2 VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click 
 -- check gin index was created
 SELECT name, type FROM system.data_skipping_indices where (table =='simple2') limit 1;
 -- search gin index
-SELECT * FROM simple2 WHERE hasToken(s, 'Alick');
+SELECT * FROM simple2 WHERE hasToken(s, 'Alick') order by k;
 SYSTEM FLUSH LOGS;
 -- check the query only read 4 granules (8 rows total; each granule has 2 rows)
 SELECT read_rows, result_rows from system.query_log 
@@ -53,7 +53,7 @@ INSERT INTO simple3 VALUES (201, 'rick c01'), (202, 'mick c02'),(203, 'nick c03'
 -- check gin index was created
 SELECT name, type FROM system.data_skipping_indices where (table =='simple3') limit 1;
 -- search gin index
-SELECT * FROM simple3 WHERE s LIKE '%01%';
+SELECT * FROM simple3 WHERE s LIKE '%01%' order by k;
 SYSTEM FLUSH LOGS;
 -- check the query only read 3 granules (6 rows total; each granule has 2 rows)
 SELECT read_rows, result_rows from system.query_log 
@@ -71,7 +71,7 @@ INSERT INTO simple4 VALUES (101, 'Alick 好'),(102, 'clickhouse你好'), (103, '
 -- check gin index was created
 SELECT name, type FROM system.data_skipping_indices where (table =='simple4') limit 1;
 -- search gin index
-SELECT * FROM simple4 WHERE s LIKE '%你好%';
+SELECT * FROM simple4 WHERE s LIKE '%你好%' order by k;
 SYSTEM FLUSH LOGS;
 -- check the query only read 1 granule (2 rows total; each granule has 2 rows)
 SELECT read_rows, result_rows from system.query_log 
@@ -79,25 +79,3 @@ SELECT read_rows, result_rows from system.query_log
         and current_database = currentDatabase()    
         and endsWith(trimRight(query), 'SELECT * FROM simple4 WHERE s LIKE \'%你好%\';') 
         and result_rows==1 limit 1;
-
--- create table with 1000000 rows
-DROP TABLE IF EXISTS hextable;
-CREATE TABLE hextable(k UInt64,s String,INDEX af(s) TYPE gin(0) GRANULARITY 1)
-                     Engine=MergeTree
-                          ORDER BY (k)
-                          SETTINGS index_granularity = 1024
-                          AS
-                          SELECT
-                          number,
-                          format('{},{},{},{}', hex(12345678), hex(87654321), hex(number/17 + 5), hex(13579012)) as s
-                          FROM numbers(1000000);
--- check gin index was created
-SELECT name, type FROM system.data_skipping_indices where (table =='hextable') limit 1;
--- search gin index
-select * from hextable where hasToken(s, '2D2D2D2D2D2D1540');
-SYSTEM FLUSH LOGS;
--- check the query only read 3 granules (6 rows total; each granule has 2 rows)
-SELECT read_rows, result_rows from system.query_log
-    where query_kind ='Select'
-        and current_database = currentDatabase()     
-        and hasToken(query, 'hextable') and result_rows==1 limit 1;
