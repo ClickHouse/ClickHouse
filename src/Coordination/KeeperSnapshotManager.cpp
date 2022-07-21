@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <memory>
 #include <Common/logger_useful.h>
+#include <Coordination/KeeperConstants.h>
 
 namespace DB
 {
@@ -188,6 +189,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     {
         const auto & path = it->key;
         const auto & node = it->value;
+
         /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
         /// and only after some time we lock storage and enable snapshot mode. So snapshot_container_size can be
         /// slightly bigger than required.
@@ -323,6 +325,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         readBinary(path, in);
         KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
+
         storage.container.insertOrReplace(path, node);
         if (node.stat.ephemeralOwner != 0)
             storage.ephemerals[node.stat.ephemeralOwner].insert(path);
@@ -583,8 +586,9 @@ SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuff
         compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
 
     SnapshotDeserializationResult result;
-    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, digest_enabled);
+    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, digest_enabled, false);
     KeeperStorageSnapshot::deserialize(result, *compressed_reader);
+    result.storage->initializeSystemNodes();
     return result;
 }
 

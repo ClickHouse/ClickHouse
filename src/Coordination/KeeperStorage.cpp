@@ -227,26 +227,49 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
     cached_digest = other.cached_digest;
 }
 
-KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const bool digest_enabled_)
+KeeperStorage::KeeperStorage(
+    int64_t tick_time_ms, const String & superdigest_, const bool digest_enabled_, const bool initialize_system_nodes)
     : session_expiry_queue(tick_time_ms), digest_enabled(digest_enabled_), superdigest(superdigest_)
 {
-
     Node root_node;
     container.insert("/", root_node);
     addDigest(root_node, "/");
 
+    if (initialize_system_nodes)
+        initializeSystemNodes();
+}
+
+void KeeperStorage::initializeSystemNodes()
+{
+    if (initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
+
     const auto create_system_node = [&](const auto & path, auto data)
     {
-        // we update numChildren during preprocessing so and createNode is called during
-        // commit so we need to update it manually here
-        container.updateValue(
-                parentPath(path),
-                [](KeeperStorage::Node & parent)
-                {
-                    ++parent.stat.numChildren;
-                }
-        );
-        createNode(path, std::move(data), {}, false, {});
+        auto node_it = container.find(path);
+        if (node_it == container.end())
+        {
+            // we update numChildren during preprocessing so and createNode is called during
+            // commit so we need to update it manually here
+            container.updateValue(
+                    parentPath(path),
+                    [](KeeperStorage::Node & parent)
+                    {
+                        ++parent.stat.numChildren;
+                    }
+            );
+            createNode(path, std::move(data), {}, false, {});
+        }
+        else
+        {
+            container.updateValue(
+                    path,
+                    [data = std::move(data)](KeeperStorage::Node & node)
+                    {
+                        node.setData(std::move(data));
+                    }
+            );
+        }
     };
 
     create_system_node(keeper_system_path, "");
@@ -254,6 +277,8 @@ KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_, 
     assert(keeper_api_version_path.starts_with(keeper_system_path));
     auto api_version_data = toString(static_cast<uint8_t>(current_keeper_api_version));
     create_system_node(keeper_api_version_path, std::move(api_version_data));
+
+    initialized = true;
 }
 
 template <class... Ts>
@@ -1847,6 +1872,9 @@ void KeeperStorage::preprocessRequest(
     bool check_acl,
     std::optional<Digest> digest)
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
+
     int64_t last_zxid = getNextZXID() - 1;
 
     if (uncommitted_transactions.empty())
@@ -1932,6 +1960,9 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     bool check_acl,
     bool is_local)
 {
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
+
     if (new_last_zxid)
     {
         if (uncommitted_transactions.empty())
