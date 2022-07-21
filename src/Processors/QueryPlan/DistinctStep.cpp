@@ -52,6 +52,27 @@ static SortDescription getSortDescription(const SortDescription & input_sort_des
     return distinct_sort_desc;
 }
 
+static Poco::Logger * getLogger()
+{
+    static Poco::Logger & logger = Poco::Logger::get("DistinctStep");
+    return &logger;
+}
+
+static String dumpColumnNames(const Names & columns)
+{
+    WriteBufferFromOwnString wb;
+    bool first = true;
+
+    for (const auto & name : columns)
+    {
+        if (!first)
+            wb << ", ";
+        first = false;
+
+        wb << name;
+    }
+    return wb.str();
+}
 
 DistinctStep::DistinctStep(
     const DataStream & input_stream_,
@@ -91,7 +112,11 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
     if (optimize_distinct_in_order)
     {
+        LOG_DEBUG(getLogger(), "Input sort description    ({}): {}", input_stream.sort_description.size(), dumpSortDescription(input_stream.sort_description));
+        LOG_DEBUG(getLogger(), "Distinct columns          ({}): {}", columns.size(), dumpColumnNames(columns));
         SortDescription distinct_sort_desc = getSortDescription(input_stream.sort_description, columns);
+        LOG_DEBUG(getLogger(), "Distinct sort description ({}): {}", distinct_sort_desc.size(), dumpSortDescription(distinct_sort_desc));
+
         if (!distinct_sort_desc.empty())
         {
             const bool sorted_stream = input_stream.sort_mode == DataStream::SortMode::Stream;
