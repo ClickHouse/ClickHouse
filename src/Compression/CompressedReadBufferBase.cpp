@@ -304,13 +304,13 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
 
 void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
 {
-    if (!codec)
+    if (codec)
         codec->flushAsynchronousDecompressRequests();
 }
 
 void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode)
 {
-    if (!codec)
+    if (codec)
         codec->setDecompressMode(mode);
 }
 
