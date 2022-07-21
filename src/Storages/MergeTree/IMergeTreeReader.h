@@ -62,7 +62,7 @@ public:
 
     MergeTreeData::DataPartPtr data_part;
 
-    bool needReadDeletedMask() { return !settings.skip_deleted_mask && data_part->hasLightweightDelete(); }
+    bool needReadDeletedMask() { return settings.apply_deleted_mask && data_part->hasLightweightDelete(); }
 
 protected:
     /// Returns actual column type in part, which can differ from table metadata.

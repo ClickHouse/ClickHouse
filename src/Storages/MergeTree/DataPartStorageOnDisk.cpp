@@ -652,32 +652,6 @@ bool DataPartStorageOnDisk::shallParticipateInMerges(const IStoragePolicy & stor
     return !volume_ptr->areMergesAvoided();
 }
 
-void DataPartStorageOnDisk::loadDeletedRowsMask(MergeTreeDataPartDeletedMask & deleted_mask) const
-{
-    String deleted_mask_path = fs::path(getRelativePath()) / deleted_mask.name;
-    auto disk = volume->getDisk();
-
-    if (disk->isFile(deleted_mask_path))
-    {
-        auto read_buf = openForReading(disk, deleted_mask_path);
-        deleted_mask.read(*read_buf);
-        assertEOF(*read_buf);
-    }
-}
-
-void DataPartStorageOnDisk::writeDeletedRowsMask(const MergeTreeDataPartDeletedMask & deleted_mask) const
-{
-    const String final_path = fs::path(getRelativePath()) / deleted_mask.name;
-    const String tmp_path = final_path + ".tmp";
-
-    {
-        auto out = volume->getDisk()->writeFile(tmp_path, 4096);
-        deleted_mask.write(*out);
-    }
-
-    volume->getDisk()->moveFile(tmp_path, final_path);
-}
-
 void DataPartStorageOnDisk::backup(
     TemporaryFilesOnDisks & temp_dirs,
     const MergeTreeDataPartChecksums & checksums,

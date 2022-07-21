@@ -43,8 +43,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        bool can_execute_,
-        bool is_lightweight_);
+        bool can_execute_);
 
     void validate();
 
@@ -79,16 +78,14 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
-    void setSkipDeletedMask(bool skip) { skip_deleted_mask = skip; }
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
 private:
     ASTPtr prepare(bool dry_run);
-    ASTPtr prepareLightweightDelete(bool dry_run);
 
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    static ASTPtr prepareInterpreterSelectQueryLightweight(std::vector<Stage> &prepared_stages, bool dry_run);
 
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
@@ -103,10 +100,8 @@ private:
     bool can_execute;
     SelectQueryOptions select_limits;
 
-    /// True for lightweight delete.
-    bool is_lightweight = false;
-    /// True for MutateSomePartColumns on part with lightweight.
-    bool skip_deleted_mask = false;
+    /// TODO: is it needed?
+    bool apply_deleted_mask = true;
 
     ASTPtr mutation_ast;
 

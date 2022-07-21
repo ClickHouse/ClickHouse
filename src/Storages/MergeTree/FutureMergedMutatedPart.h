@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeMutationEntry.h>
 
 
 namespace DB
@@ -24,7 +23,6 @@ struct FutureMergedMutatedPart
     MergeTreePartInfo part_info;
     MergeTreeData::DataPartsVector parts;
     MergeType merge_type = MergeType::Regular;
-    MutationType mutation_type = MutationType::Ordinary;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 

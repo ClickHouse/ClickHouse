@@ -1217,35 +1217,6 @@ bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
     return part_type == MergeTreeDataPartType::Wide && parent_part == nullptr && projection_parts.empty();
 }
 
-bool IMergeTreeDataPart::getDeletedMask(MergeTreeDataPartDeletedMask & deleted_mask) const
-{
-    bool found = false;
-
-    /// Check if deleted mask file exists.
-    if (data_part_storage->exists(String(deleted_mask.name)))
-    {
-        data_part_storage->loadDeletedRowsMask(deleted_mask);
-
-        if (deleted_mask.getDeletedRows().size() != rows_count)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Size of deleted mask loaded from '{}':'{}' doesn't match expected "
-                    "for part {}"
-                    "(loaded {} rows, expected {} rows).",
-                    data_part_storage->getDiskPath(), deleted_mask.name, name, deleted_mask.getDeletedRows().size(), rows_count);
-
-        found = true;
-    }
-
-    return found;
-}
-
-void IMergeTreeDataPart::writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask) const
-{
-    MergeTreeDataPartDeletedMask deleted_mask {};
-    deleted_mask.setDeletedRows(new_mask);
-    data_part_storage->writeDeletedRowsMask(deleted_mask);
-}
-
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
 {
     TransactionID expected_tid = txn ? txn->tid : Tx::PrehistoricTID;

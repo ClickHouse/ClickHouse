@@ -285,20 +285,15 @@ MutationsInterpreter::MutationsInterpreter(
     const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
     ContextPtr context_,
-    bool can_execute_,
-    bool is_lightweight_)
+    bool can_execute_)
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
     , context(Context::createCopy(context_))
     , can_execute(can_execute_)
     , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
-    , is_lightweight(is_lightweight_)
 {
-    if (is_lightweight)
-        mutation_ast = prepareLightweightDelete(!can_execute);
-    else
-        mutation_ast = prepare(!can_execute);
+    mutation_ast = prepare(!can_execute);
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
@@ -777,6 +772,13 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
     auto all_columns = storage_snapshot->getColumns(options);
 
+    // TODO: add _row_exists column if it is present in the part???
+    if (auto part_storage = dynamic_pointer_cast<DB::StorageFromMergeTreeDataPart>(storage))
+    {
+        if (part_storage->hasLightweightDeleteColumn())
+            all_columns.push_back({metadata_snapshot->lightweight_delete_description.filter_column});
+    }
+
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
     {
@@ -905,70 +907,6 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-/// Prepare for lightweight delete
-ASTPtr MutationsInterpreter::prepareLightweightDelete(bool dry_run)
-{
-    if (is_prepared)
-        throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-    if (commands.empty())
-        throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
-
-    /// For lightweight DELETE, we use predicate expression to get deleted rows.
-    /// Collect predicates in the commands
-    for (auto & command : commands)
-    {
-        if (command.type == MutationCommand::DELETE)
-        {
-            mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (stages.empty())
-                stages.emplace_back(context);
-
-            auto mask_predicate = getPartitionAndPredicateExpressionForMutationCommand(command);
-            stages.back().filters.push_back(mask_predicate);
-        }
-        else
-            throw Exception("Unsupported lightweight mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
-    }
-
-    /// The updated_header is empty for lightweight delete.
-    updated_header = std::make_unique<Block>();
-
-    is_prepared = true;
-
-    return prepareInterpreterSelectQueryLightweight(stages, dry_run);
-}
-
-ASTPtr MutationsInterpreter::prepareInterpreterSelectQueryLightweight(std::vector<Stage> & prepared_stages, bool)
-{
-    /// Construct a SELECT statement for lightweight delete is like "select _part_offset from db.table where <filters>"
-    auto select = std::make_shared<ASTSelectQuery>();
-
-    /// DELETEs only query just need the _part_offset virtual column without real columns
-    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-    select->select()->children.push_back(std::make_shared<ASTIdentifier>("_part_offset"));
-
-    ASTPtr where_expression;
-    if (!prepared_stages[0].filters.empty())
-    {
-        if (prepared_stages[0].filters.size() == 1)
-            where_expression = prepared_stages[0].filters[0];
-        else
-        {
-            auto coalesced_predicates = std::make_shared<ASTFunction>();
-            coalesced_predicates->name = "or";
-            coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
-            coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-            coalesced_predicates->arguments->children = prepared_stages[0].filters;
-            where_expression = std::move(coalesced_predicates);
-        }
-
-        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
-    }
-
-    return select;
-}
-
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
@@ -1053,10 +991,10 @@ QueryPipelineBuilder MutationsInterpreter::execute()
     if (!select_interpreter)
     {
         /// Skip to apply deleted mask for MutateSomePartColumn cases when part has lightweight delete.
-        if (!is_lightweight && skip_deleted_mask)
+        if (!apply_deleted_mask)
         {
             auto context_for_reading = Context::createCopy(context);
-            context_for_reading->setSkipDeletedMask(skip_deleted_mask);
+            context_for_reading->setApplyDeletedMask(apply_deleted_mask);
             select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context_for_reading, storage, metadata_snapshot, select_limits);
         }
         else

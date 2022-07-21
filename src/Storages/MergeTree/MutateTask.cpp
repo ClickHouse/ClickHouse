@@ -173,7 +173,7 @@ getColumnsForNewDataPart(
     const auto all_virtual_columns = source_part->storage.getVirtuals();
 
     /// Preserve virtual columns that have persisted values in the source_part
-/// TODO: only allow LWD mask to be overriden!!!!!
+/// TODO: only allow LWD mask to be overridden!
     for (const auto & virtual_column : all_virtual_columns)
     {
         if (part_columns.has(virtual_column.name) && !storage_columns.contains(virtual_column.name))
@@ -188,7 +188,7 @@ getColumnsForNewDataPart(
             for (const auto & [column_name, _] : command.column_to_update_expression)
             {
                 /// Allow to update and persist values of virtual column
-/// TODO: only allow LWD mask to be overriden!!!!!
+/// TODO: only allow LWD mask to be overridden!
                 auto virtual_column = all_virtual_columns.tryGetByName(column_name);
                 if (virtual_column && !storage_columns.contains(column_name))
                     storage_columns.emplace_back(column_name, virtual_column->type);
@@ -1379,206 +1379,6 @@ private:
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
 };
 
-/// LightweightDeleteTask works for lightweight delete mutate.
-/// The MutationsInterpreter returns a simple select like "select _part_offset where predicates".
-/// The prepare() and execute() has special logics for LWD mutate.
-class LightweightDeleteTask : public IExecutableTask
-{
-public:
-
-    explicit LightweightDeleteTask(MutationContextPtr ctx_) : ctx(ctx_) {}
-
-    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-
-    bool executeStep() override
-    {
-        switch (state)
-        {
-            case State::NEED_PREPARE:
-            {
-                prepare();
-
-                state = State::NEED_EXECUTE;
-                return true;
-            }
-            case State::NEED_EXECUTE:
-            {
-                execute();
-
-                state = State::NEED_FINALIZE;
-                return true;
-            }
-            case State::NEED_FINALIZE:
-            {
-                finalize();
-
-                state = State::SUCCESS;
-                return true;
-            }
-            case State::SUCCESS:
-            {
-                return false;
-            }
-        }
-        return false;
-    }
-
-private:
-
-    void prepare()
-    {
-        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
-            ctx->files_to_skip.insert("ttl.txt");
-
-        ctx->data_part_storage_builder->createDirectories();
-
-        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-        TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
-        /// NOTE do not pass context for writing to system.transactions_info_log,
-        /// because part may have temporary name (with temporary block numbers). Will write it later.
-        ctx->new_data_part->version.setCreationTID(tid, nullptr);
-        ctx->new_data_part->storeVersionMetadata();
-
-        NameSet hardlinked_files;
-        /// Create hardlinks for unchanged files
-        for (auto it = ctx->source_part->data_part_storage->iterate(); it->isValid(); it->next())
-        {
-            if (ctx->files_to_skip.contains(it->name()))
-                continue;
-
-            String destination;
-            destination = it->name();
-
-            if (it->isFile())
-            {
-                ctx->data_part_storage_builder->createHardLinkFrom(
-                    *ctx->source_part->data_part_storage, it->name(), destination);
-                hardlinked_files.insert(it->name());
-            }
-            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
-            {
-                // it's a projection part directory
-                ctx->data_part_storage_builder->createProjection(destination);
-
-                auto projection_data_part_storage = ctx->source_part->data_part_storage->getProjection(destination);
-                auto projection_data_part_storage_builder = ctx->data_part_storage_builder->getProjection(destination);
-
-                for (auto p_it = projection_data_part_storage->iterate(); p_it->isValid(); p_it->next())
-                {
-                    projection_data_part_storage_builder->createHardLinkFrom(
-                        *projection_data_part_storage, p_it->name(), p_it->name());
-                    hardlinked_files.insert(p_it->name());
-                }
-            }
-        }
-
-        /// Tracking of hardlinked files required for zero-copy replication.
-        /// We don't remove them when we delete last copy of source part because
-        /// new part can use them.
-        ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
-        ctx->hardlinked_files.source_part_name = ctx->source_part->name;
-        ctx->hardlinked_files.hardlinks_from_source_part = hardlinked_files;
-
-        /// Only the _delete mask column will be written.
-        (*ctx->mutate_entry)->columns_written = 1;
-
-        ctx->new_data_part->checksums = ctx->source_part->checksums;
-
-        ctx->compression_codec = ctx->source_part->default_codec;
-
-        if (ctx->mutating_pipeline_builder.initialized())
-        {
-            QueryPipelineBuilder builder(std::move(ctx->mutating_pipeline_builder));
-
-            if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
-                builder.addTransform(std::make_shared<TTLTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
-
-            if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
-                builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
-
-            ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-            ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
-            /// Is calculated inside MergeProgressCallback.
-            ctx->mutating_pipeline.disableProfileEventUpdate();
-            ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
-        }
-    }
-
-    void execute()
-    {
-        Block block;
-        bool has_deleted_rows = false;
-
-        auto new_deleted_rows = ColumnUInt8::create();
-        auto & data = new_deleted_rows->getData();
-
-        /// If this part has already applied lightweight mutation, load the past latest bitmap to merge with current bitmap
-        if (ctx->source_part->hasLightweightDelete())
-        {
-            MergeTreeDataPartDeletedMask deleted_mask {};
-            if (ctx->source_part->getDeletedMask(deleted_mask))
-            {
-                const auto & deleted_rows_col = deleted_mask.getDeletedRows();
-                const auto & source_data = deleted_rows_col.getData();
-                data.insert(source_data.begin(), source_data.begin() + ctx->source_part->rows_count);
-
-                has_deleted_rows = true;
-            }
-        }
-
-        if (!has_deleted_rows)
-            new_deleted_rows->insertManyDefaults(ctx->source_part->rows_count);
-
-        /// Mark the data corresponding to the offset in the as deleted.
-        while (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor && ctx->mutating_executor->pull(block))
-        {
-            size_t block_rows = block.rows();
-
-            if (block_rows && !has_deleted_rows)
-                has_deleted_rows = true;
-
-            const auto & cols = block.getColumns();
-            const auto * offset_col = typeid_cast<const ColumnUInt64 *>(cols[0].get());
-            const UInt64 * offset = offset_col->getData().data();
-
-            /// Fill 1 for rows in offset
-            for (size_t current_row = 0; current_row < block_rows; current_row++)
-                data[offset[current_row]] = 1;
-        }
-
-        if (has_deleted_rows)
-        {
-            ctx->new_data_part->writeDeletedMask(ColumnUInt8::Ptr(std::move(new_deleted_rows)));
-        }
-    }
-
-    void finalize()
-    {
-        if (ctx->mutating_executor)
-        {
-            ctx->mutating_executor.reset();
-            ctx->mutating_pipeline.reset();
-        }
-
-        MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->data_part_storage_builder, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context);
-    }
-
-    enum class State
-    {
-        NEED_PREPARE,
-        NEED_EXECUTE,
-        NEED_FINALIZE,
-
-        SUCCESS
-    };
-
-    State state{State::NEED_PREPARE};
-
-    MutationContextPtr ctx;
-};
-
 
 MutateTask::MutateTask(
     FutureMergedMutatedPartPtr future_part_,
@@ -1610,13 +1410,6 @@ MutateTask::MutateTask(
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->storage_from_source_part = std::make_shared<StorageFromMergeTreeDataPart>(ctx->source_part);
-
-    /// part is checked for lightweight delete in selectPartsToMutate().
-    ctx->is_lightweight_mutation = ctx->future_part->mutation_type == MutationType::Lightweight;
-
-    /// Empty mutation commands mean that the mutation is killed. Just work as ordinary, clone the part.
-    if (ctx->commands->empty())
-        ctx->is_lightweight_mutation = false;
 
     auto storage_snapshot = ctx->storage_from_source_part->getStorageSnapshot(ctx->metadata_snapshot, context_);
     extendObjectColumns(ctx->storage_columns, storage_snapshot->object_columns, /*with_subcolumns=*/ false);
@@ -1673,7 +1466,7 @@ bool MutateTask::prepare()
             ctx->commands_for_part.emplace_back(command);
     }
 
-    if (ctx->source_part->isStoredOnDisk() && !ctx->is_lightweight_mutation && !isStorageTouchedByMutations(
+    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
         ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
@@ -1689,25 +1482,15 @@ bool MutateTask::prepare()
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 
-    bool need_mutate_all_columns = !isWidePart(ctx->source_part);
-
     if (!ctx->for_interpreter.empty())
     {
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
-            ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true, ctx->is_lightweight_mutation);
+            ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->for_interpreter, context_for_reading, true);
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
-
-        /// Skip to apply deleted mask when reading for MutateSomePartColumns.
-        need_mutate_all_columns = need_mutate_all_columns || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter->isAffectingAllColumns());
-        if (!need_mutate_all_columns && ctx->source_part->hasLightweightDelete() && !ctx->is_lightweight_mutation)
-            ctx->interpreter->setSkipDeletedMask(true);
-
-/////
-        ctx->interpreter->setSkipDeletedMask(true);
-/////
-
+        /// Always disable filtering in mutations, we want to read all rows
+        ctx->interpreter->setApplyDeletedMask(false);
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
@@ -1737,21 +1520,12 @@ bool MutateTask::prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
-    if (ctx->is_lightweight_mutation)
-    {
-        /// The metadata alter will update the metadata snapshot, we should use same as source part.
-        ctx->new_data_part->setColumns(ctx->source_part->getColumns());
-        ctx->new_data_part->setSerializationInfos(ctx->source_part->getSerializationInfos());
-    }
-    else
-    {
-        auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
-            ctx->source_part, ctx->updated_header, ctx->storage_columns,
-            ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
+    auto [new_columns, new_infos] = MutationHelpers::getColumnsForNewDataPart(
+        ctx->source_part, ctx->updated_header, ctx->storage_columns,
+        ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
 
-        ctx->new_data_part->setColumns(new_columns);
-        ctx->new_data_part->setSerializationInfos(new_infos);
-    }
+    ctx->new_data_part->setColumns(new_columns);
+    ctx->new_data_part->setSerializationInfos(new_infos);
 
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
@@ -1768,16 +1542,10 @@ bool MutateTask::prepare()
 
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
-    if (need_mutate_all_columns)
+    if (!isWidePart(ctx->source_part)
+        || (ctx->mutation_kind == MutationsInterpreter::MutationKind::MUTATE_OTHER && ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         task = std::make_unique<MutateAllPartColumnsTask>(ctx);
-    }
-    else if (ctx->is_lightweight_mutation)
-    {
-        ctx->files_to_skip = ctx->source_part->getFileNamesWithoutChecksums();
-
-        /// We will modify or create only deleted_row_mask for lightweight delete. Other columns and key values are copied as-is.
-        task = std::make_unique<LightweightDeleteTask>(ctx);
     }
     else /// TODO: check that we modify only non-key columns in this case.
     {

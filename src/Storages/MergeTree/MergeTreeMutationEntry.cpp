@@ -46,7 +46,7 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings, MutationType type_)
+                                               const TransactionID & tid_, const WriteSettings & settings)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
@@ -54,13 +54,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
     , tid(tid_)
-    , type(type_)
 {
     try
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        *out << "format version: 2\n"
-            << "type: " << type << "\n"
+        *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
         *out << "commands: ";
         commands.writeText(*out);
@@ -123,25 +121,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name);
 
-    int format_version;
-    *buf >> "format version: " >> format_version >> "\n";
-
-    /// Allow format_version = 1 for backward compatibility.
-    if (format_version != 1 && format_version != 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported format version in mutation.txt, expected '1' or '2', got '{}'", format_version);
-
-    type = MutationType::Ordinary;
-    if (format_version == 2)
-    {
-        String type_str;
-        *buf >> "type: " >> type_str >> "\n";
-
-        auto type_value = magic_enum::enum_cast<MutationType>(type_str);
-        if (type_value.has_value())
-            type = type_value.value();
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported mutation type in mutation.txt, expected 'Lightweight' or 'Ordinary', got '{}'", type_str);
-    }
+    *buf >> "format version: 1\n";
 
     LocalDateTime create_time_dt;
     *buf >> "create time: " >> create_time_dt >> "\n";
