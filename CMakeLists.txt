@@ -223,11 +223,25 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
+    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+    set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT ON)
+else()
+    set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT OFF)
+endif()
+# Provides faster linking and lower binary size.
+# Tradeoff is the inability to debug some source files with e.g. gdb
+# (empty stack frames and no local variables)."
+option(OMIT_HEAVY_DEBUG_SYMBOLS
+    "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
+    ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
+
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     set(USE_DEBUG_HELPERS ON)
 endif()
-
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
+
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 if (NOT BUILD_STANDALONE_KEEPER)
     option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
@@ -252,10 +266,10 @@ else ()
 endif ()
 
 # Optionally split binaries and debug symbols.
-option(INSTALL_STRIPPED_BINARIES "Split binaries and debug symbols" OFF)
-if (INSTALL_STRIPPED_BINARIES)
+option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
+if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
-    set(STRIPPED_BINARIES_OUTPUT "stripped" CACHE STRING "A separate directory for stripped information")
+    set(SPLITTED_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd

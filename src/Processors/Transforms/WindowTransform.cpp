@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 
 namespace DB
@@ -2247,6 +2248,12 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
                             argument_types[ARGUMENT_TIMESTAMP]->getName());
         }
 
+        if (isDateTime64(argument_types[ARGUMENT_TIMESTAMP]))
+        {
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*argument_types[ARGUMENT_TIMESTAMP]);
+            ts_scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64>(datetime64_type.getScale());
+        }
+
         if (argument_types.size() == 3)
         {
             const DataTypeInterval * interval_datatype = checkAndGetDataType<DataTypeInterval>(argument_types[ARGUMENT_INTERVAL].get());
@@ -2265,13 +2272,13 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
                     "The INTERVAL must be a week or shorter, '{}' given",
                     argument_types[ARGUMENT_INTERVAL]->getName());
             }
-            interval_length = interval_datatype->getKind().toAvgSeconds();
+            interval_length = interval_datatype->getKind().toSeconds();
             interval_specified = true;
         }
     }
 
 
-    DataTypePtr getReturnType() const override { return argument_types[0]; }
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeFloat64>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -2285,24 +2292,37 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
         auto interval_duration = interval_specified ? interval_length *
             (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0) : 1;
 
-        Float64 last_metric = state.previous_metric;
-        Float64 last_timestamp = state.previous_timestamp;
-
         Float64 curr_metric = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_METRIC, transform->current_row);
-        Float64 curr_timestamp = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIMESTAMP, transform->current_row);
+        Float64 metric_diff = curr_metric - state.previous_metric;
+        Float64 result;
 
-        Float64 time_elapsed = curr_timestamp - last_timestamp;
-        Float64 metric_diff = curr_metric - last_metric;
-        Float64 result = (time_elapsed != 0) ? (metric_diff / time_elapsed * interval_duration) : 0;
+        if (ts_scale_multiplier)
+        {
+            const auto & column = transform->blockAt(transform->current_row.block).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
+            const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(column.get())->getInt(transform->current_row.row);
 
+            Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
+            result = (time_elapsed > 0) ? (metric_diff * ts_scale_multiplier / time_elapsed  * interval_duration) : 0;
+            state.previous_timestamp = curr_timestamp;
+        }
+        else
+        {
+            Float64 curr_timestamp = WindowFunctionHelpers::getValue<Float64>(transform, function_index, ARGUMENT_TIMESTAMP, transform->current_row);
+            Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
+            result = (time_elapsed > 0) ? (metric_diff / time_elapsed * interval_duration) : 0;
+            state.previous_timestamp = curr_timestamp;
+        }
         state.previous_metric = curr_metric;
-        state.previous_timestamp = curr_timestamp;
+
+        if (unlikely(!transform->current_row.row))
+            result = 0;
 
         WindowFunctionHelpers::setValueToOutputColumn<Float64>(transform, function_index, result >= 0 ? result : 0);
     }
 private:
     Float64 interval_length = 1;
     bool interval_specified = false;
+    Int64 ts_scale_multiplier = 0;
 };
 
 

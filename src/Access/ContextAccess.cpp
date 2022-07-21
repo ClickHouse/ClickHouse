@@ -412,14 +412,17 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         return false;
     };
 
+    if (is_full_access)
+        return access_granted();
+
+    if (user_was_dropped)
+        return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
+
     if (flags & AccessType::CLUSTER && !access_control->doesOnClusterQueriesRequireClusterGrant())
         flags &= ~AccessType::CLUSTER;
 
-    if (!flags || is_full_access)
+    if (!flags)
         return access_granted();
-
-    if (!tryGetUser())
-        return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
 
     /// Access to temporary tables is controlled in an unusual way, not like normal tables.
     /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
@@ -600,9 +603,6 @@ void ContextAccess::checkGrantOption(const AccessRightsElements & elements) cons
 template <bool throw_if_denied, typename Container, typename GetNameFunction>
 bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const
 {
-    if (!std::size(role_ids) || is_full_access)
-        return true;
-
     auto show_error = [this](const String & msg, int error_code [[maybe_unused]])
     {
         UNUSED(this);
@@ -610,11 +610,17 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
             throw Exception(getUserName() + ": " + msg, error_code);
     };
 
-    if (!tryGetUser())
+    if (is_full_access)
+        return true;
+
+    if (user_was_dropped)
     {
         show_error("User has been dropped", ErrorCodes::UNKNOWN_USER);
         return false;
     }
+
+    if (!std::size(role_ids))
+        return true;
 
     if (isGranted(AccessType::ROLE_ADMIN))
         return true;

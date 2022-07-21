@@ -28,15 +28,15 @@ do
     $CLICKHOUSE_CLIENT -q "CREATE TABLE test ENGINE=$engine AS SELECT number + 100 AS n, 0 AS test FROM numbers(50)" 2>&1| grep -Ev "Removing leftovers from table|removed by another replica"
     $CLICKHOUSE_CLIENT -q "select count(), sum(n), sum(test) from test"
     if [[ $engine == *"ReplicatedMergeTree"* ]]; then
-        $CLICKHOUSE_CLIENT --enable_positional_arguments 0 -q "ALTER TABLE test
-            UPDATE test = (SELECT groupArray(id) FROM t1)[n - 99] WHERE 1" 2>&1| grep -Fa "DB::Exception: " | grep -Fv "statement with subquery may be nondeterministic"
-        $CLICKHOUSE_CLIENT --enable_positional_arguments 0 --allow_nondeterministic_mutations=1 --mutations_sync=1 -q "ALTER TABLE test
+        $CLICKHOUSE_CLIENT -q "ALTER TABLE test
+            UPDATE test = (SELECT groupArray(id) FROM t1 GROUP BY 'dummy')[n - 99] WHERE 1" 2>&1| grep -Fa "DB::Exception: " | grep -Fv "statement with subquery may be nondeterministic"
+        $CLICKHOUSE_CLIENT --allow_nondeterministic_mutations=1 --mutations_sync=1 -q "ALTER TABLE test
                     UPDATE test = (SELECT groupArray(id) FROM t1)[n - 99] WHERE 1"
     elif [[ $engine == *"Join"* ]]; then
-        $CLICKHOUSE_CLIENT --enable_positional_arguments 0 -q "ALTER TABLE test
+        $CLICKHOUSE_CLIENT -q "ALTER TABLE test
             UPDATE test = (SELECT groupArray(id) FROM t1)[n - 99] WHERE 1" 2>&1| grep -Fa "DB::Exception: " | grep -Fv "Table engine Join supports only DELETE mutations"
     else
-        $CLICKHOUSE_CLIENT --enable_positional_arguments 0 --mutations_sync=1 -q "ALTER TABLE test
+        $CLICKHOUSE_CLIENT --mutations_sync=1 -q "ALTER TABLE test
             UPDATE test = (SELECT groupArray(id) FROM t1)[n - 99] WHERE 1"
     fi
     $CLICKHOUSE_CLIENT -q "select count(), sum(n), sum(test) from test"

@@ -165,7 +165,7 @@ class CherryPick:
             "user.name=robot-clickhouse",
         ]
 
-        title = (self._pr["title"].replace('"', r"\""),)
+        title = self._pr["title"].replace('"', r"\"")
         pr_title = f"Backport #{self._pr['number']} to {self.target_branch}: {title}"
 
         self._run(git_prefix + ["checkout", "-f", self.backport_branch])

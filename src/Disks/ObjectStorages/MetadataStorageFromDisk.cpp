@@ -56,7 +56,7 @@ void MetadataStorageFromDiskTransaction::commit()
                         toString(state), toString(MetadataFromDiskTransactionState::PREPARING));
 
     {
-        std::unique_lock lock(metadata_storage.metadata_mutex);
+        std::lock_guard lock(metadata_storage.metadata_mutex);
         for (size_t i = 0; i < operations.size(); ++i)
         {
             try

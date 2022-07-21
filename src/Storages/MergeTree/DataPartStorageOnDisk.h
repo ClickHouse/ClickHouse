@@ -1,5 +1,6 @@
 #pragma once
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Disks/IDisk.h>
 #include <memory>
 #include <string>
 
@@ -53,6 +54,7 @@ public:
     std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
 
     void setRelativePath(const std::string & path) override;
+    void onRename(const std::string & new_root_path, const std::string & new_part_dir) override;
 
     std::string getDiskName() const override;
     std::string getDiskType() const override;
@@ -88,6 +90,7 @@ public:
         TemporaryFilesOnDisks & temp_dirs,
         const MergeTreeDataPartChecksums & checksums,
         const NameSet & files_without_checksums,
+        const String & path_in_backup,
         BackupEntries & backup_entries) const override;
 
     DataPartStoragePtr freeze(
@@ -103,10 +106,9 @@ public:
         const DiskPtr & disk,
         Poco::Logger * log) const override;
 
-    void rename(const std::string & new_root_path, const std::string & new_part_dir, Poco::Logger * log, bool remove_new_dir_if_exists, bool fsync_part_dir) override;
-
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
 
+    DataPartStorageBuilderPtr getBuilder() const override;
 private:
     VolumePtr volume;
     std::string root_path;
@@ -130,7 +132,6 @@ public:
     void setRelativePath(const std::string & path) override;
 
     bool exists() const override;
-    bool exists(const std::string & name) const override;
 
     void createDirectories() override;
     void createProjection(const std::string & name) override;
@@ -139,18 +140,13 @@ public:
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
-
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
         size_t buf_size,
         const WriteSettings & settings) override;
 
     void removeFile(const String & name) override;
+    void removeFileIfExists(const String & name) override;
     void removeRecursive() override;
     void removeSharedRecursive(bool keep_in_remote_fs) override;
 
@@ -164,10 +160,20 @@ public:
 
     DataPartStoragePtr getStorage() const override;
 
+    void rename(
+        const std::string & new_root_path,
+        const std::string & new_part_dir,
+        Poco::Logger * log,
+        bool remove_new_dir_if_exists,
+        bool fsync_part_dir) override;
+
+    void commit() override;
+
 private:
     VolumePtr volume;
     std::string root_path;
     std::string part_dir;
+    DiskTransactionPtr transaction;
 };
 
 }

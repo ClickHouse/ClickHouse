@@ -1,11 +1,12 @@
-#include "StorageMongoDB.h"
-#include "StorageMongoDBSocketFactory.h"
+#include <Storages/StorageMongoDB.h>
+#include <Storages/StorageMongoDBSocketFactory.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
 #include <Poco/Version.h>
-#include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -120,7 +121,7 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "options")
-                configuration.options = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+                configuration.options = checkAndGetLiteralArgument<String>(arg_value, "options");
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."
@@ -139,17 +140,17 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         /// 27017 is the default MongoDB port.
-        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 27017);
+        auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
 
         configuration.host = parsed_host_port.first;
         configuration.port = parsed_host_port.second;
-        configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
+        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
+        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
 
         if (engine_args.size() >= 6)
-            configuration.options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.options = checkAndGetLiteralArgument<String>(engine_args[5], "database");
 
     }
 

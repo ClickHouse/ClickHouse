@@ -384,8 +384,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         span.finish_time_us =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-        span.attribute_names.push_back("clickhouse.thread_id");
-        span.attribute_values.push_back(thread_id);
+        span.attributes.push_back(Tuple{"clickhouse.thread_id", toString(thread_id)});
 
         opentelemetry_span_log->add(span);
     }

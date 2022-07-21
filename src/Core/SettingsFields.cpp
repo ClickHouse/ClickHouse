@@ -192,7 +192,8 @@ namespace
 }
 
 template <>
-SettingFieldSeconds::SettingFieldTimespan(const Field & f) : SettingFieldTimespan(float64AsSecondsToTimespan(fieldToNumber<Float64>(f)))
+SettingFieldSeconds::SettingFieldTimespan(const Field & f)
+    : SettingFieldTimespan(Poco::Timespan{float64AsSecondsToTimespan(fieldToNumber<Float64>(f))})
 {
 }
 

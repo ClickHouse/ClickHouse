@@ -43,16 +43,13 @@ catch (...)
 
 
 TransactionLog::TransactionLog()
-    : log(&Poco::Logger::get("TransactionLog"))
+    : global_context(Context::getGlobalContextInstance())
+    , log(&Poco::Logger::get("TransactionLog"))
+    , zookeeper_path(global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn"))
+    , zookeeper_path_log(zookeeper_path + "/log")
+    , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
+    , fault_probability_after_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0))
 {
-    global_context = Context::getGlobalContextInstance();
-    global_context->checkTransactionsAreAllowed();
-
-    zookeeper_path = global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn");
-    zookeeper_path_log = zookeeper_path + "/log";
-    fault_probability_before_commit = global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0);
-    fault_probability_after_commit = global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0);
-
     loadLogFromZooKeeper();
 
     updating_thread = ThreadFromGlobalPool(&TransactionLog::runUpdatingThread, this);
@@ -128,7 +125,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     LOG_TRACE(log, "Loading {} entries from {}: {}..{}", entries_count, zookeeper_path_log, *beg, last_entry);
     futures.reserve(entries_count);
     for (auto it = beg; it != end; ++it)
-        futures.emplace_back(zookeeper->asyncGet(fs::path(zookeeper_path_log) / *it));
+        futures.emplace_back(TSA_READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
 
     std::vector<std::pair<TIDHash, CSNEntry>> loaded;
     loaded.reserve(entries_count);
@@ -213,7 +210,7 @@ void TransactionLog::runUpdatingThread()
         try
         {
             /// Do not wait if we have some transactions to finalize
-            if (unknown_state_list_loaded.empty())
+            if (TSA_READ_ONE_THREAD(unknown_state_list_loaded).empty())
                 log_updated_event->wait();
 
             if (stop_flag.load())
@@ -230,7 +227,7 @@ void TransactionLog::runUpdatingThread()
 
                 /// It's possible that we connected to different [Zoo]Keeper instance
                 /// so we may read a bit stale state.
-                zookeeper->sync(zookeeper_path_log);
+                TSA_READ_ONE_THREAD(zookeeper)->sync(zookeeper_path_log);
             }
 
             loadNewEntries();
@@ -255,13 +252,13 @@ void TransactionLog::runUpdatingThread()
 
 void TransactionLog::loadNewEntries()
 {
-    Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
+    Strings entries_list = TSA_READ_ONE_THREAD(zookeeper)->getChildren(zookeeper_path_log, nullptr, log_updated_event);
     chassert(!entries_list.empty());
     ::sort(entries_list.begin(), entries_list.end());
-    auto it = std::upper_bound(entries_list.begin(), entries_list.end(), last_loaded_entry);
+    auto it = std::upper_bound(entries_list.begin(), entries_list.end(), TSA_READ_ONE_THREAD(last_loaded_entry));
     loadEntries(it, entries_list.end());
-    chassert(last_loaded_entry == entries_list.back());
-    chassert(latest_snapshot == deserializeCSN(last_loaded_entry));
+    chassert(TSA_READ_ONE_THREAD(last_loaded_entry) == entries_list.back());
+    chassert(latest_snapshot == deserializeCSN(TSA_READ_ONE_THREAD(last_loaded_entry)));
     latest_snapshot.notify_all();
 }
 
@@ -281,7 +278,7 @@ void TransactionLog::removeOldEntries()
 
     /// TODO we will need a bit more complex logic for multiple hosts
     Coordination::Stat stat;
-    CSN old_tail_ptr = deserializeCSN(zookeeper->get(zookeeper_path + "/tail_ptr", &stat));
+    CSN old_tail_ptr = deserializeCSN(TSA_READ_ONE_THREAD(zookeeper)->get(zookeeper_path + "/tail_ptr", &stat));
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
@@ -290,7 +287,7 @@ void TransactionLog::removeOldEntries()
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
     LOG_TRACE(log, "Updating tail_ptr from {} to {}", old_tail_ptr, new_tail_ptr);
-    zookeeper->set(zookeeper_path + "/tail_ptr", serializeCSN(new_tail_ptr), stat.version);
+    TSA_READ_ONE_THREAD(zookeeper)->set(zookeeper_path + "/tail_ptr", serializeCSN(new_tail_ptr), stat.version);
     tail_ptr.store(new_tail_ptr);
 
     /// Now we can find and remove old entries
@@ -314,7 +311,7 @@ void TransactionLog::removeOldEntries()
             continue;
 
         LOG_TEST(log, "Removing entry {} -> {}", elem.second.tid, elem.second.csn);
-        auto code = zookeeper->tryRemove(zookeeper_path_log + "/" + serializeCSN(elem.second.csn));
+        auto code = TSA_READ_ONE_THREAD(zookeeper)->tryRemove(zookeeper_path_log + "/" + serializeCSN(elem.second.csn));
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
             removed_entries.push_back(elem.first);
     }
@@ -376,11 +373,11 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
         std::lock_guard lock{running_list_mutex};
         CSN snapshot = latest_snapshot.load();
         LocalTID ltid = 1 + local_tid_counter.fetch_add(1);
-        txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, ServerUUID::get());
+        auto snapshot_lock = snapshots_in_use.insert(snapshots_in_use.end(), snapshot);
+        txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, ServerUUID::get(), snapshot_lock);
         bool inserted = running_list.try_emplace(txn->tid.getHash(), txn).second;
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);
-        txn->snapshot_in_use_it = snapshots_in_use.insert(snapshots_in_use.end(), snapshot);
     }
 
     LOG_TEST(log, "Beginning transaction {} ({})", txn->tid, txn->tid.getHash());
@@ -595,7 +592,7 @@ TransactionLog::TransactionsList TransactionLog::getTransactionsList() const
 
 void TransactionLog::sync() const
 {
-    Strings entries_list = zookeeper->getChildren(zookeeper_path_log);
+    Strings entries_list = getZooKeeper()->getChildren(zookeeper_path_log);
     chassert(!entries_list.empty());
     ::sort(entries_list.begin(), entries_list.end());
     CSN newest_csn = deserializeCSN(entries_list.back());
