@@ -179,7 +179,7 @@ CI_CONFIG = {
         },
     },
     "builds_report_config": {
-        "ClickHouse build check (actions)": [
+        "ClickHouse build check": [
             "package_release",
             "coverity",
             "package_aarch64",
@@ -190,7 +190,7 @@ CI_CONFIG = {
             "package_debug",
             "binary_release",
         ],
-        "ClickHouse special build check (actions)": [
+        "ClickHouse special build check": [
             "binary_tidy",
             "binary_splitted",
             "binary_darwin",

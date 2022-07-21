@@ -1026,7 +1026,7 @@ jobs:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          CHECK_NAME=ClickHouse build check (actions)
+          CHECK_NAME=ClickHouse build check
           REPORTS_PATH=${{runner.temp}}/reports_dir
           TEMP_PATH=${{runner.temp}}/report_check
           NEEDS_DATA_PATH=${{runner.temp}}/needs.json
@@ -1075,7 +1075,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/report_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=ClickHouse special build check (actions)
+          CHECK_NAME=ClickHouse special build check
           NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
