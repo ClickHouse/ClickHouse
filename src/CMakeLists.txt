@@ -376,7 +376,7 @@ if (TARGET ch_contrib::rdkafka)
 endif()
 
 if (TARGET ch_contrib::nats_io)
-    dbms_target_link_libraries(PRIVATE ch_contrib::nats_io)
+    dbms_target_link_libraries(PRIVATE ch_contrib::nats_io ch_contrib::uv)
 endif()
 
 if (TARGET ch_contrib::sasl2)
@@ -446,6 +446,9 @@ endif ()
 if (TARGET ch_contrib::avrocpp)
     dbms_target_link_libraries(PRIVATE ch_contrib::avrocpp)
 endif ()
+
+set_source_files_properties(Common/CaresPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
 
 if (TARGET OpenSSL::Crypto)
     dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)

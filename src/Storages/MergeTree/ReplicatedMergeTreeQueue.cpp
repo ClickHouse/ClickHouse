@@ -2336,6 +2336,12 @@ bool ReplicatedMergeTreeMergePredicate::hasDropRange(const MergeTreePartInfo & n
     return queue.hasDropRange(new_drop_range_info);
 }
 
+String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & part_name) const
+{
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    return queue.virtual_parts.getContainingPart(MergeTreePartInfo::fromPartName(part_name, queue.format_version));
+}
+
 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
