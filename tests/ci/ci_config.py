@@ -290,7 +290,7 @@ CI_CONFIG = {
         "Integration tests (memory)": {
             "required_build": "package_msan",
         },
-        "Integration tests flaky check (asan, actions)": {
+        "Integration tests flaky check (asan)": {
             "required_build": "package_asan",
         },
         "Compatibility check (actions)": {
@@ -335,7 +335,7 @@ CI_CONFIG = {
         "Release (actions)": {
             "required_build": "package_release",
         },
-        "Stateless tests flaky check (address, actions)": {
+        "Stateless tests flaky check (address)": {
             "required_build": "package_asan",
         },
         "Stateless tests bugfix validate check (address, actions)": {
