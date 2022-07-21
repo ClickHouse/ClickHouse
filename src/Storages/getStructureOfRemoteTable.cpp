@@ -122,7 +122,7 @@ ColumnsDescription getStructureOfRemoteTable(
     const auto & shards_info = cluster.getShardsInfo();
 
     std::string fail_messages;
-    
+
     /// Use local shard as first priority, as it needs no network communication
     for (const auto & shard_info : shards_info)
     {
