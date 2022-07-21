@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS lineitem;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS region;
 
+SET cross_to_inner_join_rewrite = 1;
+
 CREATE TABLE part
 (
     p_partkey       Int32,  -- PK
