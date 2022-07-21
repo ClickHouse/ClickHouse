@@ -86,9 +86,6 @@ public:
 
     bool shallParticipateInMerges(const IStoragePolicy &) const override;
 
-    void loadDeletedRowsMask(MergeTreeDataPartDeletedMask & deleted_mask) const override;
-    void writeDeletedRowsMask(const MergeTreeDataPartDeletedMask & deleted_mask) const override;
-
     void backup(
         TemporaryFilesOnDisks & temp_dirs,
         const MergeTreeDataPartChecksums & checksums,

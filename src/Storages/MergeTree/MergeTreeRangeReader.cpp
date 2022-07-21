@@ -321,7 +321,6 @@ void MergeTreeRangeReader::ReadResult::clear()
     total_rows_per_granule = 0;
     filter_holder = nullptr;
     filter = nullptr;
-    deleted_mask_filter_holder = nullptr;
 }
 
 void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns)
@@ -666,7 +665,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 
     for (const auto & name_and_type : merge_tree_reader->getColumns())
         sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
-    
+
     for (const auto & column_name : non_const_virtual_column_names_)
     {
         if (sample_block.has(column_name))
@@ -680,9 +679,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
 //        if (column_name == "_row_exists")
 //            sample_block.insert(ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), column_name));
     }
-
-    if (merge_tree_reader->needReadDeletedMask())
-       need_apply_deleted_mask = merge_tree_reader->data_part->getDeletedMask(deleted_mask);
 
     if (prewhere_info)
     {
@@ -863,15 +859,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         read_result = startReadingChain(max_rows, ranges);
         read_result.num_rows = read_result.numReadRows();
 
-        executeDeletedRowMaskFilterColumns(read_result);
-
         if (read_result.num_rows)
         {
             /// Physical columns go first and then some virtual columns follow
             size_t physical_columns_count = read_result.columns.size() - read_result.extra_columns_filled.size();
 ///////////
-// TODO: properly account for "virtual columns" that are overridden with real data in the part 
-            
+// TODO: properly account for "virtual columns" that are overridden with real data in the part
+
 /////////////
             Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
 
@@ -968,10 +962,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
     }
 
-    /// Do similar as part_offset for deleted mask.
-    if (need_apply_deleted_mask)
-        fillDeletedRowMaskColumn(result, leading_begin_part_offset, leading_end_part_offset);
-
     return result;
 }
 
@@ -1001,47 +991,6 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
 
     result.columns.emplace_back(std::move(column));
     result.extra_columns_filled.push_back("_part_offset");
-}
-
-/// Fill deleted_row_mask column, referenced from fillPartOffsetColumn().
-void MergeTreeRangeReader::fillDeletedRowMaskColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
-{
-    size_t num_rows = result.numReadRows();
-
-    auto mask_column = ColumnUInt8::create(num_rows);
-    ColumnUInt8::Container & vec = mask_column->getData();
-
-    UInt8 * pos = vec.data();
-    UInt8 * end = &vec[num_rows];
-
-    const auto & deleted_rows_col = deleted_mask.getDeletedRows();
-    const ColumnUInt8::Container & deleted_rows_mask = deleted_rows_col.getData();
-
-    while (pos < end && leading_begin_part_offset < leading_end_part_offset)
-    {
-        if (deleted_rows_mask[leading_begin_part_offset++])
-            *pos++ = 0;
-        else
-            *pos++ = 1;
-    }
-
-    const auto start_ranges = result.startedRanges();
-
-    for (const auto & start_range : start_ranges)
-    {
-        UInt64 start_part_offset = index_granularity->getMarkStartingRow(start_range.range.begin);
-        UInt64 end_part_offset = index_granularity->getMarkStartingRow(start_range.range.end);
-
-        while (pos < end && start_part_offset < end_part_offset)
-        {
-            if (deleted_rows_mask[start_part_offset++])
-                *pos++ = 0;
-            else
-                *pos++ = 1;
-        }
-    }
-
-    result.deleted_mask_filter_holder = std::move(mask_column);
 }
 
 Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, size_t & num_rows)
@@ -1158,36 +1107,6 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-
-/// Implicitly apply deleted mask filter to columns.
-/// If there is no prewhere_info, apply directly the deleted mask filter.
-/// If prewhere_info exists, only apply to the first prewhere filter.
-void MergeTreeRangeReader::executeDeletedRowMaskFilterColumns(ReadResult & result)
-{
-    if (prewhere_info || !need_apply_deleted_mask || !result.deleted_mask_filter_holder)
-        return;
-
-    const ColumnUInt8 * mask_filter = typeid_cast<const ColumnUInt8 *>(result.deleted_mask_filter_holder.get());
-    filterColumns(result.columns, mask_filter->getData());
-
-    bool has_column = false;
-    for (auto & column : result.columns)
-    {
-        if (column)
-        {
-            has_column = true;
-            result.num_rows = column->size();
-            break;
-        }
-    }
-
-    /// There is only one filter column. Record the actual number.
-    if (!has_column)
-        result.num_rows = result.countBytesInResultFilter(mask_filter->getData());
-
-    result.need_filter = true;
-}
-
 void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result)
 {
     if (!prewhere_info)
@@ -1243,7 +1162,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             else if (column_name == "_row_exists")
             {
                 /// do nothing, it will be added later
-                /// TODO: properly implement reading non-const virtual columns or filling them with default values 
+                /// TODO: properly implement reading non-const virtual columns or filling them with default values
             }
             else
                 throw Exception("Unexpected non-const virtual column: " + column_name, ErrorCodes::LOGICAL_ERROR);
@@ -1252,19 +1171,6 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         /// Columns might be projected out. We need to store them here so that default columns can be evaluated later.
         result.block_before_prewhere = block;
-
-        /// Apply deleted mask filter for the first prewhere step
-        if (!result.getFilter() && result.deleted_mask_filter_holder)
-        {
-            auto columns = block.getColumns();
-            filterColumns(columns, result.deleted_mask_filter_holder);
-            if (columns.empty())
-                block = block.cloneEmpty();
-            else
-                block.setColumns(columns);
-
-            result.setFilter(result.deleted_mask_filter_holder);
-        }
 
         if (prewhere_info->actions)
            prewhere_info->actions->execute(block);

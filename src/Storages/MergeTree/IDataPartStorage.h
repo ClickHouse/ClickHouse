@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
-#include <Storages/MergeTree/MergeTreeDataPartDeletedMask.h>
 #include <optional>
 
 namespace DB
@@ -169,9 +168,6 @@ public:
 
     /// A leak of abstraction
     virtual bool shallParticipateInMerges(const IStoragePolicy &) const { return true; }
-
-    virtual void loadDeletedRowsMask(MergeTreeDataPartDeletedMask & deleted_mask) const = 0;
-    virtual void writeDeletedRowsMask(const MergeTreeDataPartDeletedMask & deleted_mask) const = 0;
 
     /// Create a backup of a data part.
     /// This method adds a new entry to backup_entries.

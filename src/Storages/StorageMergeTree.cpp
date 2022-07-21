@@ -332,7 +332,7 @@ void StorageMergeTree::alter(
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 
             if (!maybe_mutation_commands.empty())
-                mutation_version = startMutation(maybe_mutation_commands, local_context, MutationType::Ordinary);
+                mutation_version = startMutation(maybe_mutation_commands, local_context);
         }
 
         /// Always execute required mutations synchronously, because alters
@@ -429,7 +429,7 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
     storage.currently_processing_in_background_condition.notify_all();
 }
 
-Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context, MutationType type)
+Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
@@ -447,7 +447,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(), type);
+        MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
         version = increment.get();
         entry.commit(version);
         String mutation_id = entry.file_name;
@@ -555,20 +555,10 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
-    /// Make ordinary ALTER DELETE queries lightweight to check all tests.
-    if (query_context->getSettingsRef().lightweight_delete_mutation
-        && commands.size() == 1 && commands.begin()->type == MutationCommand::DELETE)
-        mutate(commands, query_context, MutationType::Lightweight);
-    else
-        mutate(commands, query_context, MutationType::Ordinary);
-}
-
-void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context, MutationType type)
-{
     /// Validate partition IDs (if any) before starting mutation
     getPartitionIdsAffectedByCommands(commands, query_context);
 
-    Int64 version = startMutation(commands, query_context, type);
+    Int64 version = startMutation(commands, query_context);
 
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
@@ -667,7 +657,6 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
-                entry.type,
                 entry.file_name,
                 buf.str(),
                 entry.create_time,
@@ -1034,18 +1023,10 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto commands = std::make_shared<MutationCommands>();
         size_t current_ast_elements = 0;
         auto last_mutation_to_apply = mutations_end_it;
-
-        bool support_lightweight_mutate = part->supportLightweightDeleteMutate();
-        MutationType first_mutation_type = support_lightweight_mutate ? mutations_begin_it->second.type : MutationType::Ordinary;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
             if (first_mutation_tid != it->second.tid)
-                break;
-
-            /// Do not combine mutations with different types.
-            /// TODO: compact part support lightweight delete.
-            if (support_lightweight_mutate && it->second.type != first_mutation_type)
                 break;
 
             size_t commands_size = 0;
@@ -1073,7 +1054,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                     fake_query_context->makeQueryContext();
                     fake_query_context->setCurrentQueryId("");
                     MutationsInterpreter interpreter(
-                        shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, false, false);
+                        shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, false);
                     commands_size += interpreter.evaluateCommandsSize();
                 }
                 catch (...)
@@ -1132,7 +1113,6 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             future_part->part_info = new_part_info;
             future_part->name = part->getNewName(new_part_info);
             future_part->type = part->getType();
-            future_part->mutation_type = first_mutation_type;
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace({part}), *this, metadata_snapshot, true);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);

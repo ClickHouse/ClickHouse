@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
-#include <Storages/MergeTree/MergeTreeDataPartDeletedMask.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -464,10 +463,6 @@ public:
 
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const { return data_part_storage->exists(DELETED_ROWS_MARK_FILE_NAME); }
-
-    /// Read lightweight deleted mask when needed.
-    bool getDeletedMask(MergeTreeDataPartDeletedMask & deleted_mask) const;
-    void writeDeletedMask(MergeTreeDataPartDeletedMask::DeletedRows new_mask) const;
 
 protected:
 

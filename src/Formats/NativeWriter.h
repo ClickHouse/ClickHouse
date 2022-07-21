@@ -32,8 +32,6 @@ public:
 
     static String getContentType() { return "application/octet-stream"; }
 
-    static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit);
-
 private:
     WriteBuffer & ostr;
     UInt64 client_revision;

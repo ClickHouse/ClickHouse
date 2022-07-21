@@ -98,14 +98,14 @@ CompressionCodecPtr CompressionCodecFactory::get(
 }
 
 
-CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code, const IDataType * column_type) const
+CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
 {
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
     if (family_code_and_creator == family_code_with_codec.end())
         throw Exception("Unknown codec family code: " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
 
-    return family_code_and_creator->second({}, column_type);
+    return family_code_and_creator->second({}, nullptr);
 }
 
 

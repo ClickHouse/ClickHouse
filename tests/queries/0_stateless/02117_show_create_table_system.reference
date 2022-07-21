@@ -378,7 +378,6 @@ CREATE TABLE system.mutations
 (
     `database` String,
     `table` String,
-    `is_lightweight` UInt8,
     `mutation_id` String,
     `command` String,
     `create_time` DateTime,
