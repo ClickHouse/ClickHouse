@@ -197,6 +197,7 @@ public:
                                              can_insert = true;
                                              return std::make_shared<CacheEntry>(Chunks{}, true);
                                          }).first))
+        , result(std::make_shared<CacheEntry>(Chunks{}, false))
     {
     }
 
@@ -205,7 +206,7 @@ public:
         if (can_insert)
         {
             removal_scheduler->scheduleRemoval(std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout_ms}, cache_key);
-            data->is_writing = false;
+            cache->set(cache_key, result);
             LOG_DEBUG(&Poco::Logger::get("CachePutHolder"), "put in cache: a key with header = {}", cache_key.header.getNamesAndTypesList().toString());
         }
     }
@@ -216,9 +217,9 @@ public:
         {
             return;
         }
-        data->chunks.push_back(std::move(chunk));
+        result->chunks.push_back(std::move(chunk));
 
-        if (query_weight(*data) > cache_key.settings.max_query_cache_entry_size)
+        if (query_weight(*result) > cache_key.settings.max_query_cache_entry_size)
         {
             can_insert = false;
             cache->remove(cache_key);
@@ -232,6 +233,7 @@ private:
 
     bool can_insert = false;
     std::shared_ptr<CacheEntry> data;
+    std::shared_ptr<CacheEntry> result;
 
     QueryWeightFunction query_weight;
 };
