@@ -299,9 +299,6 @@ CI_CONFIG = {
         "Split build smoke test (actions)": {
             "required_build": "binary_splitted",
         },
-        "Testflows check (actions)": {
-            "required_build": "package_release",
-        },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
         },
@@ -331,9 +328,6 @@ CI_CONFIG = {
         },
         "AST fuzzer (UBSan)": {
             "required_build": "package_ubsan",
-        },
-        "Release (actions)": {
-            "required_build": "package_release",
         },
         "Stateless tests flaky check (address)": {
             "required_build": "package_asan",
