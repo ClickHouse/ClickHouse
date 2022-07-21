@@ -63,7 +63,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "package_tsan": {
-            "compiler": "clang-14",
+            "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
