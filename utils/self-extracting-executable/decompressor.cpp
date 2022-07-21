@@ -13,7 +13,7 @@
 #include <cstring>
 #include <iostream>
 
-#if (defined(__APPLE__) || defined(__FreeBSD__)) && defined(__GNUC__)
+#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
 #   include <machine/endian.h>
 #elif !defined(_MSC_VER)
 #   include <endian.h>
