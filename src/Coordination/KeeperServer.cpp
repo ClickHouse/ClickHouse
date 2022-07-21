@@ -21,6 +21,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -111,7 +112,7 @@ KeeperServer::KeeperServer(
           configuration_and_settings_->snapshot_storage_path,
           coordination_settings,
           checkAndGetSuperdigest(configuration_and_settings_->super_digest),
-          config.getBool("keeper_server.digest_enabled", true)))
+          config.getBool("keeper_server.digest_enabled", false)))
     , state_manager(nuraft::cs_new<KeeperStateManager>(
           server_id, "keeper_server", configuration_and_settings_->log_storage_path, configuration_and_settings_->state_file_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))

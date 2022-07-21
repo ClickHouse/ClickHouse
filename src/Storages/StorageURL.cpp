@@ -449,13 +449,6 @@ void StorageURLSink::consume(Chunk chunk)
     writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
-void StorageURLSink::onCancel()
-{
-    if (!writer)
-        return;
-    onFinish();
-}
-
 void StorageURLSink::onException()
 {
     if (!writer)

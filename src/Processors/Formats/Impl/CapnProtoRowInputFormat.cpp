@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_)
@@ -264,20 +265,20 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     if (in->eof())
         return false;
 
-    auto array = readMessage();
-
-#if CAPNP_VERSION >= 7000 && CAPNP_VERSION < 8000
-    capnp::UnalignedFlatArrayMessageReader msg(array);
-#else
-    capnp::FlatArrayMessageReader msg(array);
-#endif
-
-    auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
-
-    for (size_t i = 0; i != columns.size(); ++i)
+    try
     {
-        auto value = getReaderByColumnName(root_reader, column_names[i]);
-        insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
+        auto array = readMessage();
+        capnp::FlatArrayMessageReader msg(array);
+        auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
+        for (size_t i = 0; i != columns.size(); ++i)
+        {
+            auto value = getReaderByColumnName(root_reader, column_names[i]);
+            insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
+        }
+    }
+    catch (const kj::Exception & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read row: {}", e.getDescription().cStr());
     }
 
     return true;

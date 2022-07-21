@@ -3395,6 +3395,15 @@ Use schema from cache without last modification time validation for urls without
 
 Default value: `true`.
 
+## compatibility {#compatibility}
+
+This setting changes other settings according to provided ClickHouse version.
+If a behaviour in ClickHouse was changed by using a different default value for some setting, this compatibility setting allows you to use default values from previous versions for all the settings that were not set by the user.
+
+This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
+
+Disabled by default.
+
 # Format settings {#format-settings}
 
 ## input_format_skip_unknown_fields {#input_format_skip_unknown_fields}
