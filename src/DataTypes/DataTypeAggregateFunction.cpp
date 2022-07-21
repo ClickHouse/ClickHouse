@@ -119,7 +119,20 @@ Field DataTypeAggregateFunction::getDefault() const
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
-    return typeid(rhs) == typeid(*this) && getNameWithoutVersion() == typeid_cast<const DataTypeAggregateFunction &>(rhs).getNameWithoutVersion();
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    auto lhs_state_type = function->getStateType();
+    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getStateType();
+
+    if (typeid(lhs_state_type.get()) != typeid(rhs_state_type.get()))
+        return false;
+
+    if (const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get()))
+        return lhs_state->getNameWithoutVersion()
+            == typeid_cast<const DataTypeAggregateFunction &>(*rhs_state_type).getNameWithoutVersion();
+
+    return lhs_state_type->equals(*rhs_state_type);
 }
 
 

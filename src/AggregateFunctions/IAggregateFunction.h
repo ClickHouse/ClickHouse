@@ -79,7 +79,10 @@ public:
     ///  - quantile(x), quantile(a)(x), quantile(b)(x) - parameter doesn't affect state and used for finalization only
     ///  - foo(x) and fooIf(x) - If combinator doesn't affect state
     /// By default returns true only if functions have exactly the same names, combinators and parameters.
-    virtual bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
+    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
+    virtual bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const;
+
+    virtual const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const { return *this; }
 
     bool haveEqualArgumentTypes(const IAggregateFunction & rhs) const;
 
