@@ -30,7 +30,7 @@ Finds non-negative derivative for given `metric_column` by `timestamp_column`.
 `INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
 The computed value is the following for each row:
 - `0` for 1st row,
-- ${metric_i - metric_{i-1} \over timestamp_i - timestamp_{i-1}}  * interval$ for $i_th$ row.
+- (_metric-i_ - _metric-(i-1)_) / (_timestamp-i_ - _timestamp-(i-1)_) * _interval_ for the i-th row.
 
 ## References
 
