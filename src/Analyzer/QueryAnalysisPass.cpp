@@ -78,7 +78,7 @@ namespace ErrorCodes
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
-  * And additional documentation is writter for each method, where special cases are described in detail.
+  * And additional documentation for each method, where special cases are described in detail.
   *
   * Each node in query must be resolved. For each query tree node resolved state is specific.
   *
@@ -86,7 +86,7 @@ namespace ErrorCodes
   *
   * For table node no resolve process exists, it is resolved during construction.
   *
-  * For function node to be resolved parameters and arguments must be resolved, must be initialized with concrete aggregate or
+  * For function node to be resolved parameters and arguments must be resolved, function node must be initialized with concrete aggregate or
   * non aggregate function and with result type.
   *
   * For lambda node there can be 2 different cases.
@@ -111,7 +111,7 @@ namespace ErrorCodes
   *
   * If there are no information of identifier context rules are following:
   * 1. Try to resolve identifier in expression context.
-  * 2. Try to resolve identifier in function context, if it is allowed. Example: SELECT func; Here func identifier cannot be resolved in function context
+  * 2. Try to resolve identifier in function context, if it is allowed. Example: SELECT func(arguments); Here func identifier cannot be resolved in function context
   * because query projection does not support that.
   * 3. Try to resolve identifier in talbe context, if it is allowed. Example: SELECT table; Here table identifier cannot be resolved in function context
   * because query projection does not support that.
@@ -124,8 +124,8 @@ namespace ErrorCodes
   * 2. Try to resolve identifier from aliases.
   * 3. Try to resolve identifier from tables if scope is query, or if there are registered table columns in scope.
   * Steps 2 and 3 can be changed using prefer_column_name_to_alias setting.
-  * If identifier could not be resolved in current scope, resolution must be continued in parent scopes.
   * 4. If it is table lookup, try to resolve identifier from CTE.
+  * If identifier could not be resolved in current scope, resolution must be continued in parent scopes.
   * 5. Try to resolve identifier from parent scopes.
   *
   * Additional rules about aliases and scopes.
@@ -159,9 +159,10 @@ namespace ErrorCodes
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
+  * TODO: UNION
   * TODO: JOIN, ARRAY JOIN
   * TODO: bulding sets
-  * TODO: Special functions grouping, in.
+  * TODO: Special functions in.
   */
 
 /// Identifier lookup context
@@ -2073,6 +2074,11 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
         }
 
         node = result_list;
+        return;
+    }
+    else if (function_name == "grouping")
+    {
+        /// It is responsibility of planner to handle grouping function
         return;
     }
 
