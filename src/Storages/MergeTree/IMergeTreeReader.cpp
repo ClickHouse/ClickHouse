@@ -18,6 +18,7 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 
@@ -33,7 +34,6 @@ IMergeTreeReader::IMergeTreeReader(
     : data_part(data_part_)
     , avg_value_size_hints(avg_value_size_hints_)
     , columns(columns_)
-    , part_columns(data_part->getColumns())
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
@@ -47,11 +47,7 @@ IMergeTreeReader::IMergeTreeReader(
         /// For wide parts convert plain arrays of Nested to subcolumns
         /// to allow to use shared offset column from cache.
         columns = Nested::convertToSubcolumns(columns);
-        part_columns = Nested::collect(part_columns);
     }
-
-    for (const auto & column_from_part : part_columns)
-        columns_from_part[column_from_part.name] = &column_from_part.type;
 }
 
 IMergeTreeReader::~IMergeTreeReader() = default;
@@ -124,37 +120,25 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
-NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & required_column) const
+String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
-
-    ColumnsFromPart::ConstLookupResult it;
     if (alter_conversions.isColumnRenamed(name_in_storage))
     {
-        String old_name = alter_conversions.getColumnOldName(name_in_storage);
-        it = columns_from_part.find(old_name);
-    }
-    else
-    {
-        it = columns_from_part.find(name_in_storage);
+        name_in_storage = alter_conversions.getColumnOldName(name_in_storage);
+        return Nested::concatenateName(name_in_storage, required_column.getSubcolumnName());
     }
 
-    if (it == columns_from_part.end())
-        return required_column;
+    return required_column.name;
+}
 
-    const DataTypePtr & type = *it->getMapped();
-    if (required_column.isSubcolumn())
-    {
-        auto subcolumn_name = required_column.getSubcolumnName();
-        auto subcolumn_type = type->tryGetSubcolumnType(subcolumn_name);
+NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
+{
+    auto column_in_part = data_part->tryGetColumn(getColumnNameInPart(required_column));
+    if (column_in_part)
+        return *column_in_part;
 
-        if (!subcolumn_type)
-            return required_column;
-
-        return {String(it->getKey()), subcolumn_name, type, subcolumn_type};
-    }
-
-    return {String(it->getKey()), type};
+    return required_column;
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
@@ -183,7 +167,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             if (res_columns[pos] == nullptr)
                 continue;
 
-            copy_block.insert({res_columns[pos], getColumnFromPart(*name_and_type).type, name_and_type->name});
+            copy_block.insert({res_columns[pos], getColumnInPart(*name_and_type).type, name_and_type->name});
         }
 
         DB::performRequiredConversions(copy_block, columns, storage.getContext());

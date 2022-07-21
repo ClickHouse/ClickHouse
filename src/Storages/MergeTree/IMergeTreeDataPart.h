@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
@@ -136,6 +137,9 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
 
+    NameAndTypePair getColumn(const String & name) const;
+    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
+
     void setSerializationInfos(const SerializationInfoByName & new_infos);
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
@@ -167,8 +171,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinimumCompressedSize(
-        const StorageSnapshotPtr & storage_snapshot, bool with_subcolumns) const;
+    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -520,6 +523,10 @@ private:
 
     /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos;
+
+    /// Columns description for more convinient access
+    /// to columns by name and getting subcolumns.
+    ColumnsDescription columns_description;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

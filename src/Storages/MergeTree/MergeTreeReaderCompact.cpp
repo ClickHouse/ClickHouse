@@ -54,14 +54,14 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         {
             if (name_and_type->isSubcolumn())
             {
-                auto storage_column_from_part = getColumnFromPart(
+                auto storage_column_from_part = getColumnInPart(
                     {name_and_type->getNameInStorage(), name_and_type->getTypeInStorage()});
 
                 if (!storage_column_from_part.type->tryGetSubcolumnType(name_and_type->getSubcolumnName()))
                     continue;
             }
 
-            auto column_from_part = getColumnFromPart(*name_and_type);
+            auto column_from_part = getColumnInPart(*name_and_type);
 
             auto position = data_part->getColumnPosition(column_from_part.getNameInStorage());
             if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
@@ -153,7 +153,7 @@ size_t MergeTreeReaderCompact::readRows(
         if (!column_positions[i])
             continue;
 
-        auto column_from_part = getColumnFromPart(*column_it);
+        auto column_from_part = getColumnInPart(*column_it);
         if (res_columns[i] == nullptr)
         {
             auto serialization = data_part->getSerialization(column_from_part);
@@ -168,9 +168,10 @@ size_t MergeTreeReaderCompact::readRows(
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            auto column_from_part = getColumnFromPart(*name_and_type);
             if (!res_columns[pos])
                 continue;
+
+            auto column_from_part = getColumnInPart(*name_and_type);
 
             try
             {
