@@ -49,7 +49,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     {
         for (const NameAndTypePair & column : columns)
         {
-            auto column_from_part = getColumnFromPart(column);
+            auto column_from_part = getColumnInPart(column);
             addStreams(column_from_part, profile_callback_, clock_type_);
         }
     }
@@ -83,7 +83,7 @@ size_t MergeTreeReaderWide::readRows(
             auto name_and_type = columns.begin();
             for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
             {
-                auto column_from_part = getColumnFromPart(*name_and_type);
+                auto column_from_part = getColumnInPart(*name_and_type);
                 try
                 {
                     auto & cache = caches[column_from_part.getNameInStorage()];
@@ -102,7 +102,7 @@ size_t MergeTreeReaderWide::readRows(
 
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            auto column_from_part = getColumnFromPart(*name_and_type);
+            auto column_from_part = getColumnInPart(*name_and_type);
             const auto & [name, type] = column_from_part;
 
             /// The column is already present in the block so we will append the values to the end.

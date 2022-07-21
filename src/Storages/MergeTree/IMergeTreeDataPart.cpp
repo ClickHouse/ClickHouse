@@ -15,6 +15,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/PartMetadataManagerWithCache.h>
+#include <Core/NamesAndTypes.h>
+#include <Storages/ColumnsDescription.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
@@ -445,6 +447,18 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 
     for (const auto & column : columns)
         column_name_to_position.emplace(column.name, pos++);
+
+    columns_description = ColumnsDescription(columns);
+}
+
+NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
+{
+    return columns_description.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+}
+
+std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & column_name) const
+{
+    return columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
 void IMergeTreeDataPart::setSerializationInfos(const SerializationInfoByName & new_infos)
@@ -454,10 +468,15 @@ void IMergeTreeDataPart::setSerializationInfos(const SerializationInfoByName & n
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const NameAndTypePair & column) const
 {
-    auto it = serialization_infos.find(column.getNameInStorage());
-    return it == serialization_infos.end()
-        ? IDataType::getSerialization(column)
-        : IDataType::getSerialization(column, *it->second);
+    auto column_in_part = tryGetColumn(column.name);
+    if (!column_in_part)
+        return IDataType::getSerialization(column);
+
+    auto it = serialization_infos.find(column_in_part->getNameInStorage());
+    if (it == serialization_infos.end())
+        return IDataType::getSerialization(*column_in_part);
+
+    return IDataType::getSerialization(*column_in_part, *it->second);
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -564,37 +583,38 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
-    const StorageSnapshotPtr & storage_snapshot, bool with_subcolumns) const
+String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const
 {
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
-    if (with_subcolumns)
-        options.withSubcolumns();
+    auto find_column_with_minimum_size = [&](const auto & columns_list)
+    {
+        std::optional<std::string> minimum_size_column;
+        UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
-    auto storage_columns = storage_snapshot->getColumns(options);
-    MergeTreeData::AlterConversions alter_conversions;
-    if (!parent_part)
-        alter_conversions = storage.getAlterConversionsForPart(shared_from_this());
+        for (const auto & column : columns_list)
+        {
+            if (!hasColumnFiles(column))
+                continue;
+
+            const auto size = getColumnSize(column.name).data_compressed;
+            if (size < minimum_size)
+            {
+                minimum_size = size;
+                minimum_size_column = column.name;
+            }
+        }
+
+        return minimum_size_column;
+    };
 
     std::optional<std::string> minimum_size_column;
-    UInt64 minimum_size = std::numeric_limits<UInt64>::max();
-
-    for (const auto & column : storage_columns)
+    if (with_subcolumns)
     {
-        auto column_name = column.name;
-        auto column_type = column.type;
-        if (alter_conversions.isColumnRenamed(column.name))
-            column_name = alter_conversions.getColumnOldName(column.name);
-
-        if (!hasColumnFiles(column))
-            continue;
-
-        const auto size = getColumnSize(column_name).data_compressed;
-        if (size < minimum_size)
-        {
-            minimum_size = size;
-            minimum_size_column = column_name;
-        }
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+        minimum_size_column = find_column_with_minimum_size(columns_description.get(options));
+    }
+    else
+    {
+        minimum_size_column = find_column_with_minimum_size(columns);
     }
 
     if (!minimum_size_column)
@@ -602,22 +622,6 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
 
     return *minimum_size_column;
 }
-
-// String IMergeTreeDataPart::getFullPath() const
-// {
-//     if (relative_path.empty())
-//         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
-
-//     return fs::path(storage.getFullPathOnDisk(volume->getDisk())) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-// }
-
-// String IMergeTreeDataPart::getRelativePath() const
-// {
-//     if (relative_path.empty())
-//         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
-
-//     return fs::path(storage.relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-// }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {

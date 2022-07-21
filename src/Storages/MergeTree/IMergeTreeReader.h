@@ -63,8 +63,10 @@ public:
     MergeTreeData::DataPartPtr data_part;
 
 protected:
-    /// Returns actual column type in part, which can differ from table metadata.
-    NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;
+    /// Returns actual column name in part, which can differ from table metadata.
+    String getColumnNameInPart(const NameAndTypePair & required_column) const;
+    /// Returns actual column name and type in part, which can differ from table metadata.
+    NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
@@ -75,7 +77,6 @@ protected:
 
     /// Columns that are read.
     NamesAndTypesList columns;
-    NamesAndTypesList part_columns;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
@@ -92,11 +93,6 @@ protected:
 private:
     /// Alter conversions, which must be applied on fly if required
     MergeTreeData::AlterConversions alter_conversions;
-
-    /// Actual data type of columns in part
-
-    using ColumnsFromPart = HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash>;
-    ColumnsFromPart columns_from_part;
 };
 
 }
