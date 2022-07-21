@@ -29,11 +29,11 @@ public:
     void shutdown();
 
     /// Starts executing a BACKUP or RESTORE query. Returns UUID of the operation.
-    UUID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
+    std::pair<UUID, bool> start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
 
     /// Waits until a BACKUP or RESTORE query started by start() is finished.
     /// The function returns immediately if the operation is already finished.
-    void wait(const UUID & backup_or_restore_uuid, bool rethrow_exception = true);
+    void wait(const UUID & backup_or_restore_uuid, bool internal, bool rethrow_exception = true);
 
     /// Information about executing a BACKUP or RESTORE query started by calling start().
     struct Info
@@ -54,29 +54,29 @@ public:
         bool internal = false;
     };
 
-    std::optional<Info> tryGetInfo(const UUID & backup_or_restore_uuid) const;
+    std::optional<Info> tryGetInfo(const UUID & backup_or_restore_uuid, bool internal) const;
     std::vector<Info> getAllInfos() const;
 
 private:
-    UUID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
+    std::pair<UUID, bool> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     
     void doBackup(const UUID & backup_uuid, const std::shared_ptr<ASTBackupQuery> & backup_query, BackupSettings backup_settings,
                   const BackupInfo & backup_info, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context,
                   ContextMutablePtr mutable_context, bool called_async);
 
-    UUID startRestoring(const ASTPtr & query, ContextMutablePtr context);
+    std::pair<UUID, bool> startRestoring(const ASTPtr & query, ContextMutablePtr context);
     
     void doRestore(const UUID & restore_uuid, const std::shared_ptr<ASTBackupQuery> & restore_query, RestoreSettings restore_settings,
                    const BackupInfo & backup_info, std::shared_ptr<IRestoreCoordination> restore_coordination, ContextMutablePtr context,
                    bool called_async);
 
-    void addInfo(const UUID & uuid, const String & backup_name, BackupStatus status, bool internal);
-    void setStatus(const UUID & uuid, BackupStatus status);
+    void addInfo(const UUID & uuid, bool internal, const String & backup_name, BackupStatus status);
+    void setStatus(const UUID & uuid, bool internal, BackupStatus status);
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
 
-    std::unordered_map<UUID, Info> infos;
+    std::map<std::pair<UUID, bool>, Info> infos;
     std::condition_variable status_changed;
     std::atomic<size_t> num_active_backups = 0;
     std::atomic<size_t> num_active_restores = 0;
