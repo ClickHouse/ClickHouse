@@ -74,7 +74,7 @@ private:
 
     static inline LUTIndex normalizeLUTIndex(Int64 index)
     {
-        if unlikely(index < 0 )
+        if (unlikely(index < 0))
             return LUTIndex(0);
         if (index >= DATE_LUT_SIZE)
             return LUTIndex(DATE_LUT_SIZE - 1);
