@@ -71,3 +71,21 @@ select cutToFirstSignificantSubdomainCustom('a.foo.bar', 'no_new_line_list');
 a.foo.bar
 select cutToFirstSignificantSubdomainCustom('a.foo.baz', 'no_new_line_list');
 foo.baz
+select '-- asterisk';
+-- asterisk
+select cutToFirstSignificantSubdomainCustom('foo.something.sheffield.sch.uk', 'public_suffix_list');
+something.sheffield.sch.uk
+select cutToFirstSignificantSubdomainCustom('something.sheffield.sch.uk', 'public_suffix_list');
+something.sheffield.sch.uk
+select cutToFirstSignificantSubdomainCustom('sheffield.sch.uk', 'public_suffix_list');
+sheffield.sch.uk
+select '-- exclamation mark';
+-- exclamation mark
+select cutToFirstSignificantSubdomainCustom('foo.kawasaki.jp', 'public_suffix_list');
+foo.kawasaki.jp
+select cutToFirstSignificantSubdomainCustom('foo.foo.kawasaki.jp', 'public_suffix_list');
+foo.foo.kawasaki.jp
+select cutToFirstSignificantSubdomainCustom('city.kawasaki.jp', 'public_suffix_list');
+city.kawasaki.jp
+select cutToFirstSignificantSubdomainCustom('some.city.kawasaki.jp', 'public_suffix_list');
+city.kawasaki.jp
