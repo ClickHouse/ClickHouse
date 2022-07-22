@@ -796,6 +796,7 @@ public:
     MergeTreeData::MutableDataPartPtr cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
         const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;

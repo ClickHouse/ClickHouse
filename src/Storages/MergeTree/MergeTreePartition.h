@@ -50,6 +50,7 @@ public:
     void assign(const MergeTreePartition & other) { value = other.value; }
 
     void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context);
+    void createAndValidateMinMaxPartitionIds(const StorageMetadataPtr & metadata_snapshot, Block block, ContextPtr context);
 
     static void appendFiles(const MergeTreeData & storage, Strings & files);
 

@@ -57,7 +57,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
-#include <Storages/MergeTree/PartMinMaxPartitionIdCalculator.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Storages/StorageMergeTree.h>
@@ -5906,6 +5905,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
 MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
     const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
     const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files)
 {
     /// Check that the storage policy contains the disk where the src_part is located.
@@ -5949,13 +5949,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithD
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
 
-//    MergeTreeData::DataPart::Checksums checksums;
-    MergeTreePartition pt;
-
-    auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
-    auto block_with_min_max_values = dst_data_part->minmax_idx->loadIntoBlock(src_part->storage, metadata_manager);
-
-    pt.create(getInMemoryMetadataPtr(), block_with_min_max_values, 0, getContext());
+    dst_data_part->minmax_idx->replace(new_min_max_index);
 
     auto volume = getStoragePolicy()->getVolume(0);
 
@@ -5963,27 +5957,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithD
 
     data_part_storage_builder->removeFile("partition.dat");
 
-    auto x = pt.store(*this, data_part_storage_builder, dst_data_part->checksums);
+    auto partition_store_write_buffer = new_partition.store(*this, data_part_storage_builder, dst_data_part->checksums);
 
-    data_part_storage_builder->removeFile("minmax_timestamp.idx");
+    partition_store_write_buffer->finalize();
+
+    for (const auto & column : src_part->getColumns()) {
+        auto file = "minmax_" + escapeForFileName(column.name) + ".idx";
+        data_part_storage_builder->removeFile(file);
+    }
 
     [[maybe_unused]] auto written_files = dst_data_part->minmax_idx->store(*this, data_part_storage_builder, dst_data_part->checksums);
-
-    auto count_out = data_part_storage_builder->writeFile("count.txt", 4096, getContext()->getWriteSettings());
-    HashingWriteBuffer count_out_hashing(*count_out);
-    writeIntText(dst_data_part->rows_count, count_out_hashing);
-    count_out_hashing.next();
-    dst_data_part->checksums.files["count.txt"].file_size = count_out_hashing.count();
-    dst_data_part->checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
-    count_out->preFinalize();
-    written_files.emplace_back(std::move(count_out));
-
-    data_part_storage_builder->removeFile("checksums.txt");
-
-    /// Write file with checksums.
-    auto out = data_part_storage_builder->writeFile("checksums.txt", 4096, getContext()->getWriteSettings());
-    dst_data_part->checksums.write(*out);
-    out->preFinalize();
 
     if (hardlinked_files)
     {
@@ -6004,7 +5987,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithD
 
     dst_data_part->is_temp = true;
 
-    dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
+    data_part_storage_builder->removeFile("checksums.txt");
+
+    dst_data_part->loadColumnsChecksumsIndexes(false, true);
+
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
     return dst_data_part;
 }

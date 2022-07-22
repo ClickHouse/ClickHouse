@@ -96,7 +96,12 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
     initialized = true;
 }
 
-Block IMergeTreeDataPart::MinMaxIndex::loadIntoBlock(const MergeTreeData & data, const PartMetadataManagerPtr & manager) {
+Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) {
+    if (!initialized)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempt to get block from uninitialized MinMax index.");
+
     Block block;
 
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
@@ -111,33 +116,19 @@ Block IMergeTreeDataPart::MinMaxIndex::loadIntoBlock(const MergeTreeData & data,
         auto data_type = minmax_column_types[i];
         auto column_name = minmax_column_names[i];
 
-        String file_name = "minmax_" + escapeForFileName(column_name) + ".idx";
-        auto file = manager->read(file_name);
-        auto serialization = data_type->getDefaultSerialization();
-
-        Field min_val;
-        serialization->deserializeBinary(min_val, *file);
-        Field max_val;
-        serialization->deserializeBinary(max_val, *file);
-
-        // NULL_LAST
-        if (min_val.isNull())
-            min_val = POSITIVE_INFINITY;
-        if (max_val.isNull())
-            max_val = POSITIVE_INFINITY;
-
         auto column = data_type->createColumn();
+
+        auto min_val = hyperrectangle.at(i).left;
+        auto max_val = hyperrectangle.at(i).right;
+
         column->insert(min_val);
         column->insert(max_val);
 
         auto column_with_type_and_name = ColumnWithTypeAndName(column->getPtr(), data_type, column_name);
 
         block.insert(column_with_type_and_name);
-
-        hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
 
-    initialized = true;
     return block;
 }
 
@@ -222,8 +213,7 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
     if (!initialized)
     {
-        hyperrectangle = other.hyperrectangle;
-        initialized = true;
+        replace(other);
     }
     else
     {
@@ -233,6 +223,15 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
             hyperrectangle[i].right = std::max(hyperrectangle[i].right, other.hyperrectangle[i].right);
         }
     }
+}
+
+void IMergeTreeDataPart::MinMaxIndex::replace(const MinMaxIndex & other)
+{
+    if (!other.initialized)
+        return;
+
+    hyperrectangle = other.hyperrectangle;
+    initialized = true;
 }
 
 void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files)

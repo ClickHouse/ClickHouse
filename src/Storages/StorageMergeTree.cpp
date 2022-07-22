@@ -30,7 +30,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/PartMinMaxPartitionIdCalculator.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
@@ -1600,6 +1599,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         return ast ? queryToString(ast) : "";
     };
 
+    const auto is_partition_exp_different = query_to_string(my_metadata_snapshot->getPartitionKeyAST()) != query_to_string(source_metadata_snapshot->getPartitionKeyAST());
+
     for (DataPartPtr & src_part : src_parts)
     {
         if (!canReplacePartition(src_part))
@@ -1607,41 +1608,24 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        if (query_to_string(my_metadata_snapshot->getPartitionKeyAST()) != query_to_string(source_metadata_snapshot->getPartitionKeyAST())) {
-            PartMinMaxPartitionIdCalculator min_max_partition_id_calculator;
+        if (is_partition_exp_different) {
 
-            const auto [min_partition_id, max_partition_id] = min_max_partition_id_calculator.calculate(src_part, my_metadata_snapshot, getContext());
+            auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
 
-            const bool was_data_split = min_partition_id != max_partition_id;
+            IMergeTreeDataPart::MinMaxIndex min_max_index;
 
-            if (was_data_split) {
-                throw Exception("Tables have different partition key", ErrorCodes::BAD_ARGUMENTS);
-            }
+            min_max_index.load(src_part->storage, metadata_manager);
+
+            MergeTreePartition new_partition;
+
+            new_partition.createAndValidateMinMaxPartitionIds(my_metadata_snapshot, min_max_index.getBlock(src_part->storage), getContext());
 
             /// This will generate unique name in scope of current server process.
             Int64 temp_index = insert_increment.get();
 
-            auto new_partition_id = std::to_string(min_partition_id);
+            MergeTreePartInfo dst_part_info(new_partition.getID(*this), temp_index, temp_index, src_part->info.level);
 
-            MergeTreePartInfo dst_part_info(new_partition_id, temp_index, temp_index, src_part->info.level);
-
-            auto dst_part = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {});
-//
-//            MergeTreeData::DataPart::Checksums checksums;
-//            MergeTreePartition pt;
-//
-//            IMergeTreeDataPart::MinMaxIndex min_max_index;
-//
-//            auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
-//            auto block_with_min_max_values = min_max_index.loadIntoBlock(src_part->storage, metadata_manager);
-//
-//            pt.create(my_metadata_snapshot, block_with_min_max_values, 0, getContext());
-//
-//            auto volume = getStoragePolicy()->getVolume(0);
-//
-//            auto data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(volume, getRelativeDataPath(), "tmp_replace_from_" + dst_part->name);
-//
-//            auto x = pt.store(*this, data_part_storage_builder, checksums);
+            auto dst_part = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, new_partition, min_max_index, local_context->getCurrentTransaction(), {});
 
             dst_parts.emplace_back(std::move(dst_part));
 

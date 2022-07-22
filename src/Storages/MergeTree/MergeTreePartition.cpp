@@ -434,6 +434,44 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     }
 }
 
+void MergeTreePartition::createAndValidateMinMaxPartitionIds(const StorageMetadataPtr & metadata_snapshot, Block block, ContextPtr context)
+{
+    if (!metadata_snapshot->hasPartitionKey())
+        return;
+
+    auto partition_key_names_and_types = executePartitionByExpression(metadata_snapshot, block, context);
+    value.resize(partition_key_names_and_types.size());
+
+    /// Executing partition_by expression adds new columns to passed block according to partition functions.
+    /// The block is passed by reference and is used afterwards. `moduloLegacy` needs to be substituted back
+    /// with just `modulo`, because it was a temporary substitution.
+    static constexpr auto modulo_legacy_function_name = "moduloLegacy";
+
+    size_t i = 0;
+    for (const auto & element : partition_key_names_and_types)
+    {
+        auto & partition_column = block.getByName(element.name);
+
+        if (element.name.starts_with(modulo_legacy_function_name))
+            partition_column.name = "modulo" + partition_column.name.substr(std::strlen(modulo_legacy_function_name));
+
+        Field extracted_min_partition_id_field;
+        Field extracted_max_partition_id_field;
+
+        partition_column.column->get(0, extracted_min_partition_id_field);
+        partition_column.column->get(1, extracted_max_partition_id_field);
+
+        const auto extracted_min_partition_id = extracted_min_partition_id_field.get<uint64_t>();
+        const auto extracted_max_partition_id = extracted_max_partition_id_field.get<uint64_t>();
+
+        if (extracted_min_partition_id != extracted_max_partition_id) {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not create the partition. A partition can not contain values that have different partition ids.");
+        }
+
+        partition_column.column->get(0u, value[i++]);
+    }
+}
+
 NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);

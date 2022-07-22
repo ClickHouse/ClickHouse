@@ -303,7 +303,7 @@ public:
         }
 
         void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
-        Block loadIntoBlock(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
+        Block getBlock(const MergeTreeData & data);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
@@ -312,6 +312,7 @@ public:
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
+        void replace(const MinMaxIndex & other);
         static void appendFiles(const MergeTreeData & data, Strings & files);
     };
 
