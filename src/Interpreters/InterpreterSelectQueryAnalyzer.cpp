@@ -13,6 +13,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -389,6 +390,10 @@ private:
                 throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
 
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function GROUPING is not supported");
+        }
+        else if (isNameOfInFunction(function_node.getFunctionName()))
+        {
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Function IN is not supported");
         }
 
         if (function_node.isAggregateFunction())
