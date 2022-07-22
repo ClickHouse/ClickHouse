@@ -66,6 +66,12 @@ select * from system.numbers limit 5;
 2
 3
 4
+select * from system.numbers as t limit 5 settings additional_table_filters={'t' : 'number % 2 != 0'};
+1
+3
+5
+7
+9
 select * from system.numbers limit 5 settings additional_table_filters={'system.numbers' : 'number != 3'};
 0
 1
