@@ -22,6 +22,39 @@ QueryNode::QueryNode()
     children[projection_child_index] = std::make_shared<ListNode>();
 }
 
+String QueryNode::getName() const
+{
+    WriteBufferFromOwnString buffer;
+
+    if (!getWith().getNodes().empty())
+    {
+        buffer << getWith().getName();
+    }
+
+    buffer << " SELECT ";
+    buffer << getProjection().getName();
+
+    if (getFrom())
+    {
+        buffer << " FROM ";
+        buffer << getFrom()->getName();
+    }
+
+    if (getPrewhere())
+    {
+        buffer << " PREWHERE ";
+        buffer << getPrewhere()->getName();
+    }
+
+    if (getWhere())
+    {
+        buffer << " WHERE ";
+        buffer << getWhere()->getName();
+    }
+
+    return buffer.str();
+}
+
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "QUERY id: " << format_state.getNodeId(this);

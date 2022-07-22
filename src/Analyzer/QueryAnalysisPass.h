@@ -31,7 +31,8 @@ namespace DB
   * Function `arrayJoin` is handled properly.
   * For function `grouping` arguments are resolved, but it is planner responsibility to initialize it with concrete grouping function
   * based on group by kind and group by keys positions.
-  * 9. Sets are build for `in` function.
+  * For function `in` and its variations arguments are resolved, but sets are not build. If left and right arguments are constants
+  * constant folding is performed.
   */
 class QueryAnalysisPass final : public IQueryTreePass
 {
