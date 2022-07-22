@@ -80,6 +80,7 @@ public:
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
+    static bool looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
     struct

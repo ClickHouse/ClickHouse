@@ -103,5 +103,5 @@ wait
 readarray -t databases_arr < <(${CLICKHOUSE_CLIENT} -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}_%'")
 for db in "${databases_arr[@]}"
 do
-    $CLICKHOUSE_CLIENT -q "drop database $db"
+    $CLICKHOUSE_CLIENT -q "drop database if exists $db"
 done
