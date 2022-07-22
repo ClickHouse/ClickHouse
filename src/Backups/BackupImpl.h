@@ -55,7 +55,7 @@ public:
 
     const String & getName() const override { return backup_name; }
     OpenMode getOpenMode() const override { return open_mode; }
-    time_t getTimestamp() const override;
+    time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
     Strings listFiles(const String & directory, bool recursive) const override;
     bool hasFiles(const String & directory) const override;

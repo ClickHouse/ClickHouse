@@ -28,51 +28,57 @@ public:
     /// Waits until all tasks have been completed.
     void shutdown();
 
-    /// Starts executing a BACKUP or RESTORE query. Returns UUID of the operation.
-    UUID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
+    /// Backup's or restore's operation ID, can be either passed via SETTINGS id=... or be randomly generated UUID.
+    using OperationID = String;
+
+    /// Starts executing a BACKUP or RESTORE query. Returns ID of the operation.
+    OperationID start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context);
 
     /// Waits until a BACKUP or RESTORE query started by start() is finished.
     /// The function returns immediately if the operation is already finished.
-    void wait(const UUID & backup_or_restore_uuid, bool rethrow_exception = true);
+    void wait(const OperationID & backup_or_restore_id, bool rethrow_exception = true);
 
     /// Information about executing a BACKUP or RESTORE query started by calling start().
     struct Info
     {
+        /// Backup's or restore's operation ID, can be either passed via SETTINGS id=... or be randomly generated UUID.
+        OperationID id;
+
         /// Backup's name, a string like "Disk('backups', 'my_backup')"
         String name;
 
-        UUID uuid;
-
+        /// Status of backup or restore operation.
         BackupStatus status;
         time_t status_changed_time;
 
-        String error_message;
+        /// Set only if there was an error.
         std::exception_ptr exception;
+        String error_message;
     };
 
-    Info getInfo(const UUID & backup_or_restore_uuid) const;
+    Info getInfo(const OperationID & id) const;
     std::vector<Info> getAllInfos() const;
 
 private:
-    UUID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
-
-    void doBackup(const UUID & backup_uuid, const std::shared_ptr<ASTBackupQuery> & backup_query, BackupSettings backup_settings,
+    OperationID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
+    
+    void doBackup(const std::shared_ptr<ASTBackupQuery> & backup_query, const OperationID & backup_id, BackupSettings backup_settings,
                   const BackupInfo & backup_info, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context,
                   ContextMutablePtr mutable_context, bool called_async);
 
-    UUID startRestoring(const ASTPtr & query, ContextMutablePtr context);
+    OperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
+    
+    void doRestore(const std::shared_ptr<ASTBackupQuery> & restore_query, const OperationID & restore_id, const UUID & restore_uuid,
+                   RestoreSettings restore_settings, const BackupInfo & backup_info,
+                   std::shared_ptr<IRestoreCoordination> restore_coordination, ContextMutablePtr context, bool called_async);
 
-    void doRestore(const UUID & restore_uuid, const std::shared_ptr<ASTBackupQuery> & restore_query, RestoreSettings restore_settings,
-                   const BackupInfo & backup_info, std::shared_ptr<IRestoreCoordination> restore_coordination, ContextMutablePtr context,
-                   bool called_async);
-
-    void addInfo(const UUID & uuid, const String & name, BackupStatus status);
-    void setStatus(const UUID & uuid, BackupStatus status);
+    void addInfo(const OperationID & id, const String & name, BackupStatus status);
+    void setStatus(const OperationID & id, BackupStatus status);
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
 
-    std::unordered_map<UUID, Info> infos;
+    std::unordered_map<OperationID, Info> infos;
     std::condition_variable status_changed;
     std::atomic<size_t> num_active_backups = 0;
     std::atomic<size_t> num_active_restores = 0;

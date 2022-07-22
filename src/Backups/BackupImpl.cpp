@@ -232,12 +232,6 @@ void BackupImpl::close()
     coordination.reset();
 }
 
-time_t BackupImpl::getTimestamp() const
-{
-    std::lock_guard lock{mutex};
-    return timestamp;
-}
-
 void BackupImpl::writeBackupMetadata()
 {
     assert(!is_internal_backup);

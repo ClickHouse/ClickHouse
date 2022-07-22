@@ -122,12 +122,12 @@ def test_concurrent_backups_on_same_node():
 
     assert_eq_with_retry(
         node0,
-        f"SELECT status FROM system.backups WHERE status == 'MAKING_BACKUP' AND uuid IN {ids_list}",
+        f"SELECT status FROM system.backups WHERE status == 'MAKING_BACKUP' AND id IN {ids_list}",
         "",
     )
 
     assert node0.query(
-        f"SELECT status, error FROM system.backups WHERE uuid IN {ids_list}"
+        f"SELECT status, error FROM system.backups WHERE id IN {ids_list}"
     ) == TSV([["BACKUP_COMPLETE", ""]] * num_concurrent_backups)
 
     for backup_name in backup_names:
@@ -156,13 +156,13 @@ def test_concurrent_backups_on_different_nodes():
     for i in range(num_concurrent_backups):
         assert_eq_with_retry(
             nodes[i],
-            f"SELECT status FROM system.backups WHERE status == 'MAKING_BACKUP' AND uuid = '{ids[i]}'",
+            f"SELECT status FROM system.backups WHERE status == 'MAKING_BACKUP' AND id = '{ids[i]}'",
             "",
         )
 
     for i in range(num_concurrent_backups):
         assert nodes[i].query(
-            f"SELECT status, error FROM system.backups WHERE uuid = '{ids[i]}'"
+            f"SELECT status, error FROM system.backups WHERE id = '{ids[i]}'"
         ) == TSV([["BACKUP_COMPLETE", ""]])
 
     for i in range(num_concurrent_backups):
@@ -244,14 +244,14 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     for node in nodes:
         assert_eq_with_retry(
             node,
-            f"SELECT status from system.backups WHERE uuid IN {ids_list} AND (status == 'MAKING_BACKUP')",
+            f"SELECT status from system.backups WHERE id IN {ids_list} AND (status == 'MAKING_BACKUP')",
             "",
         )
 
     for node in nodes:
         assert_eq_with_retry(
             node,
-            f"SELECT status, error from system.backups WHERE uuid IN {ids_list} AND (status == 'FAILED_TO_BACKUP')",
+            f"SELECT status, error from system.backups WHERE id IN {ids_list} AND (status == 'FAILED_TO_BACKUP')",
             "",
         )
 
@@ -259,7 +259,7 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     for node in nodes:
         for id in ids:
             backup_name = node.query(
-                f"SELECT name FROM system.backups WHERE uuid='{id}' FORMAT RawBLOB"
+                f"SELECT name FROM system.backups WHERE id='{id}' FORMAT RawBLOB"
             ).strip()
             if backup_name:
                 backup_names[id] = backup_name

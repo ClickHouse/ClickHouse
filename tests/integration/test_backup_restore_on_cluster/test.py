@@ -404,7 +404,7 @@ def test_replicated_database_async():
 
     assert_eq_with_retry(
         node1,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["BACKUP_COMPLETE", ""]]),
     )
 
@@ -418,7 +418,7 @@ def test_replicated_database_async():
 
     assert_eq_with_retry(
         node1,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["RESTORED", ""]]),
     )
 
@@ -462,7 +462,7 @@ def test_async_backups_to_same_destination(interface, on_cluster):
     for i in range(len(nodes)):
         assert_eq_with_retry(
             nodes[i],
-            f"SELECT status FROM system.backups WHERE uuid='{ids[i]}' AND status == 'MAKING_BACKUP'",
+            f"SELECT status FROM system.backups WHERE id='{ids[i]}' AND status == 'MAKING_BACKUP'",
             "",
         )
 
@@ -471,7 +471,7 @@ def test_async_backups_to_same_destination(interface, on_cluster):
             int(
                 nodes[i]
                 .query(
-                    f"SELECT count() FROM system.backups WHERE uuid='{ids[i]}' AND status == 'BACKUP_COMPLETE'"
+                    f"SELECT count() FROM system.backups WHERE id='{ids[i]}' AND status == 'BACKUP_COMPLETE'"
                 )
                 .strip()
             )
@@ -483,7 +483,7 @@ def test_async_backups_to_same_destination(interface, on_cluster):
         for i in range(len(nodes)):
             print(
                 nodes[i].query(
-                    f"SELECT status, error FROM system.backups WHERE uuid='{ids[i]}'"
+                    f"SELECT status, error FROM system.backups WHERE id='{ids[i]}'"
                 )
             )
 
@@ -817,12 +817,12 @@ def test_stop_other_host_during_backup(kill):
 
     assert_eq_with_retry(
         node1,
-        f"SELECT status FROM system.backups WHERE uuid='{id}' AND status == 'MAKING_BACKUP'",
+        f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'MAKING_BACKUP'",
         "",
         retry_count=100,
     )
 
-    status = node1.query(f"SELECT status FROM system.backups WHERE uuid='{id}'").strip()
+    status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
 
     if kill:
         assert status in ["BACKUP_COMPLETE", "FAILED_TO_BACKUP"]
