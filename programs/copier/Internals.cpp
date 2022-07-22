@@ -212,7 +212,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     if (primary_key_size > sorting_key_size)
         throw Exception("Primary key must be a prefix of the sorting key, but its length: "
                         + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
-                        ErrorCodes::BAD_ARGUMENTS);
+                    ErrorCodes::BAD_ARGUMENTS);
 
     Names primary_key_columns;
     NameSet primary_key_columns_set;
