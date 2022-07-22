@@ -1091,8 +1091,6 @@ struct ConvertThroughParsing
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
-    // using ToFieldType = typename ToDataType::FieldType;
-
     static bool isAllRead(ReadBuffer & in)
     {
         /// In case of FixedString, skip zero bytes at end.

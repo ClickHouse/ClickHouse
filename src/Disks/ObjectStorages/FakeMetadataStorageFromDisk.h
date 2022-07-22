@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
@@ -65,12 +66,6 @@ private:
     const FakeMetadataStorageFromDisk & metadata_storage;
 
     std::vector<MetadataOperationPtr> operations;
-    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
-
-    void addOperation(MetadataOperationPtr && operation);
-
-    void rollback(size_t until_pos);
-
 public:
     FakeMetadataStorageFromDiskTransaction(
         const FakeMetadataStorageFromDisk & metadata_storage_, DiskPtr disk_)
@@ -82,7 +77,7 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
-    void commit() final;
+    void commit() final {}
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
