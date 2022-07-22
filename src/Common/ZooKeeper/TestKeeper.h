@@ -92,7 +92,7 @@ public:
 
     DB::KeeperApiVersion getApiVersion() override
     {
-        return KeeperApiVersion::V0;
+        return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
     }
 
     struct Node

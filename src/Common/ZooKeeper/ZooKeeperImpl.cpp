@@ -1,4 +1,3 @@
-#include "Common/ZooKeeper/IKeeper.h"
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
@@ -1079,7 +1078,7 @@ void ZooKeeper::initApiVersion()
     get(keeper_api_version_path, std::move(callback), {});
     if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
     {
-        LOG_TRACE(&Poco::Logger::get("ZooKeeper"), "Failed to get API version: timeout");
+        LOG_TRACE(log, "Failed to get API version: timeout");
         return;
     }
 
@@ -1087,7 +1086,7 @@ void ZooKeeper::initApiVersion()
 
     if (response.error != Coordination::Error::ZOK)
     {
-        LOG_TRACE(&Poco::Logger::get("ZooKeeper"), "Failed to get API version");
+        LOG_TRACE(log, "Failed to get API version");
         return;
     }
 
@@ -1095,7 +1094,7 @@ void ZooKeeper::initApiVersion()
     DB::ReadBufferFromOwnString buf(response.data);
     DB::readIntText(keeper_version, buf);
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
-    LOG_TRACE(&Poco::Logger::get("ZooKeeper"), "Detected server's API version: {}", keeper_api_version);
+    LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
 }
 
 
@@ -1215,7 +1214,7 @@ void ZooKeeper::list(
     WatchCallback watch)
 {
     std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-    if (keeper_api_version < Coordination::KeeperApiVersion::V1)
+    if (keeper_api_version < Coordination::KeeperApiVersion::WITH_FILTERED_LIST)
     {
         if (list_request_type != ListRequestType::ALL)
             throw Exception("Filtered list request type cannot be used because it's not supported by the server", Error::ZBADARGUMENTS);

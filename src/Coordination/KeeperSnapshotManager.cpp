@@ -193,7 +193,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.snapshot_container_size - data_for_system_paths.size(), out);
+    writeBinary(snapshot.snapshot_container_size - child_system_paths_with_data.size(), out);
     size_t counter = 0;
     for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
     {
@@ -201,7 +201,10 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 
         // write only the root system path because of digest
         if (isChildSystemPath(path.toView()))
+        {
+            ++it;
             continue;
+        }
 
         const auto & node = it->value;
 
