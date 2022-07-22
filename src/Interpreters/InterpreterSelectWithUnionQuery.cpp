@@ -335,7 +335,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 0,
                 result_header.getNames(),
                 false,
-                settings.optimize_distinct_in_order);
+                settings.optimize_distinct_in_order,
+                settings.optimize_distinct_in_order_memory_usage);
 
             query_plan.addStep(std::move(distinct_step));
         }
