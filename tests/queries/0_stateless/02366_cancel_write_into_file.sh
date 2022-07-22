@@ -13,8 +13,7 @@ done
 
 sleep 2
 
-$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02366_') sync" | grep "finished" -c
-
+$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02366_') sync" > /dev/null
 for i in $(seq 1 10);
 do
     $CLICKHOUSE_CLIENT --query_id="02366_$i" -q "insert into function file('02366_data_$i.jsonl') select range(number % 1000) from numbers(100000) settings output_format_parallel_formatting=0" 2> /dev/null &
@@ -22,4 +21,4 @@ done
 
 sleep 2
 
-$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02366_') sync" | grep "finished" -c
+$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02366_') sync" > /dev/null
