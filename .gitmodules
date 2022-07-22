@@ -280,3 +280,6 @@
 [submodule "contrib/base-x"]
 	path = contrib/base-x
 	url = https://github.com/ClickHouse/base-x.git
+[submodule "contrib/c-ares"]
+	path = contrib/c-ares
+	url = https://github.com/ClickHouse/c-ares
