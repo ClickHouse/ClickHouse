@@ -63,7 +63,7 @@ protected:
     /// Set decompression mode: Synchronous/Asynchronous/SoftwareFallback.
     /// The mode is "Synchronous" by default.
     /// flushAsynchronousDecompressRequests must be called subsequently once set "Asynchronous" mode.
-    void setDecompressMode(ICompressionCodec::CodecMode mode);
+    void setDecompressMode(ICompressionCodec::CodecMode mode) const;
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.

@@ -308,7 +308,7 @@ void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
         codec->flushAsynchronousDecompressRequests();
 }
 
-void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode)
+void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode) const
 {
     if (codec)
         codec->setDecompressMode(mode);
