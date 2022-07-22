@@ -38,14 +38,12 @@ public:
         return "KeeperMap";
     }
 
-private:
-    zkutil::ZooKeeperPtr & getClient()
-    {
-        if (zookeeper_client->expired())
-            zookeeper_client = zookeeper_client->startNewSession();
+    static NamesAndTypesList getNamesAndTypes();
 
-        return zookeeper_client;
-    }
+    zkutil::ZooKeeperPtr & getClient();
+
+    const std::string & rootKeeperPath() const;
+private:
 
     std::string keeper_path;
     zkutil::ZooKeeperPtr zookeeper_client;
