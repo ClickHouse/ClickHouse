@@ -62,7 +62,8 @@ void DistinctSortedChunkTransform::initChunkProcessing(const Columns & input_col
         data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));
 }
 
-size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data)
+size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(
+    IColumn::Filter & filter, const size_t range_begin, const size_t range_end, const bool clear_data)
 {
     size_t count = 0;
     switch (data.type)
@@ -84,7 +85,7 @@ size_t DistinctSortedChunkTransform::ordinaryDistinctOnRange(IColumn::Filter & f
 
 template <typename Method>
 size_t DistinctSortedChunkTransform::buildFilterForRange(
-    Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data)
+    Method & method, IColumn::Filter & filter, const size_t range_begin, const size_t range_end, const bool clear_data)
 {
     typename Method::State state(other_columns, other_columns_sizes, nullptr);
     if (clear_data)
@@ -93,11 +94,11 @@ size_t DistinctSortedChunkTransform::buildFilterForRange(
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)
     {
-        auto emplace_result = state.emplaceKey(method.data, i, data.string_pool);
+        const auto emplace_result = state.emplaceKey(method.data, i, data.string_pool);
 
         /// emit the record if there is no such key in the current set, skip otherwise
         filter[i] = emplace_result.isInserted();
-        if (filter[i])
+        if (emplace_result.isInserted())
             ++count;
     }
     return count;
@@ -106,7 +107,7 @@ size_t DistinctSortedChunkTransform::buildFilterForRange(
 void DistinctSortedChunkTransform::saveLatestKey(const size_t row_pos)
 {
     prev_chunk_latest_key.clear();
-    for (auto const & col : sorted_columns)
+    for (const auto & col : sorted_columns)
     {
         prev_chunk_latest_key.emplace_back(col->cloneEmpty());
         prev_chunk_latest_key.back()->insertFrom(*col, row_pos);
@@ -224,6 +225,12 @@ void DistinctSortedChunkTransform::transform(Chunk & chunk)
         // set where next range start
         range_begin = range_end;
     }
+    /// if there is no any new rows in this chunk, just skip it
+    // if (output_rows)
+    // {
+    //     chunk.clear();
+    //     return;
+    // }
 
     saveLatestKey(chunk_rows - 1);
 
