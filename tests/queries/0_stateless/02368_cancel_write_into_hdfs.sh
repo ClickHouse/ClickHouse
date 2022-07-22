@@ -13,7 +13,7 @@ done
 
 sleep 2
 
-$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02368_') sync" | grep "finished" -c
+$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02368_') sync" > /dev/null
 
 for i in $(seq 1 10);
 do
@@ -22,4 +22,4 @@ done
 
 sleep 2
 
-$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02368_') sync" | grep "finished" -c
+$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02368_') sync" > /dev/null
