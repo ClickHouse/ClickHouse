@@ -532,6 +532,12 @@ inline bool isBool(const DataTypePtr & data_type)
     return data_type->getName() == "Bool";
 }
 
+inline bool isAggregateFunction(const DataTypePtr & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isAggregateFunction();
+}
+
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
