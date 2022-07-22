@@ -27,9 +27,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
+using OperationID = BackupsWorker::OperationID;
 namespace Stage = BackupCoordinationStage;
 
 namespace
@@ -92,6 +93,17 @@ namespace
         }
     }
 
+    bool isFinalStatus(BackupStatus status)
+    {
+        return (status == BackupStatus::BACKUP_COMPLETE) || (status == BackupStatus::FAILED_TO_BACKUP) || (status == BackupStatus::RESTORED)
+            || (status == BackupStatus::FAILED_TO_RESTORE);
+    }
+
+    bool isErrorStatus(BackupStatus status)
+    {
+        return (status == BackupStatus::FAILED_TO_BACKUP) || (status == BackupStatus::FAILED_TO_RESTORE);
+    }
+
     /// Used to change num_active_backups.
     size_t getNumActiveBackupsChange(BackupStatus status)
     {
@@ -115,7 +127,7 @@ BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threa
 }
 
 
-UUID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context)
+OperationID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutablePtr context)
 {
     const ASTBackupQuery & backup_query = typeid_cast<const ASTBackupQuery &>(*backup_or_restore_query);
     if (backup_query.kind == ASTBackupQuery::Kind::BACKUP)
@@ -125,14 +137,17 @@ UUID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutable
 }
 
 
-UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & context)
+OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & context)
 {
     auto backup_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto backup_settings = BackupSettings::fromBackupQuery(*backup_query);
 
     if (!backup_settings.backup_uuid)
         backup_settings.backup_uuid = UUIDHelpers::generateV4();
-    UUID backup_uuid = *backup_settings.backup_uuid;
+
+    OperationID backup_id = backup_settings.id;
+    if (backup_id.empty())
+        backup_id = toString(*backup_settings.backup_uuid);
 
     std::shared_ptr<IBackupCoordination> backup_coordination;
 
@@ -149,7 +164,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
         auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
 
         if (!backup_settings.internal)
-            addInfo(backup_uuid, backup_info.toString(), BackupStatus::MAKING_BACKUP);
+            addInfo(backup_id, backup_info.toString(), BackupStatus::MAKING_BACKUP);
 
         /// Prepare context to use.
         ContextPtr context_in_use = context;
@@ -165,10 +180,11 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
         if (backup_settings.async)
         {
             backups_thread_pool.scheduleOrThrowOnError(
-                [this, backup_uuid, backup_query, backup_settings, backup_info, backup_coordination, context_in_use, mutable_context] {
+                [this, backup_query, backup_id, backup_settings, backup_info, backup_coordination, context_in_use, mutable_context]
+                {
                     doBackup(
-                        backup_uuid,
                         backup_query,
+                        backup_id,
                         backup_settings,
                         backup_info,
                         backup_coordination,
@@ -180,8 +196,8 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
         else
         {
             doBackup(
-                backup_uuid,
                 backup_query,
+                backup_id,
                 backup_settings,
                 backup_info,
                 backup_coordination,
@@ -190,13 +206,13 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
                 /* called_async= */ false);
         }
 
-        return backup_uuid;
+        return backup_id;
     }
     catch (...)
     {
         /// Something bad happened, the backup has not built.
         if (!backup_settings.internal)
-            setStatus(backup_uuid, BackupStatus::FAILED_TO_BACKUP);
+            setStatus(backup_id, BackupStatus::FAILED_TO_BACKUP);
         sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);
         throw;
     }
@@ -204,8 +220,8 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
 
 
 void BackupsWorker::doBackup(
-    const UUID & backup_uuid,
     const std::shared_ptr<ASTBackupQuery> & backup_query,
+    const OperationID & backup_id,
     BackupSettings backup_settings,
     const BackupInfo & backup_info,
     std::shared_ptr<IBackupCoordination> backup_coordination,
@@ -240,7 +256,7 @@ void BackupsWorker::doBackup(
             if (backup_settings.coordination_zk_path.empty())
             {
                 String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
-                backup_settings.coordination_zk_path = root_zk_path + "/backup-" + toString(backup_uuid);
+                backup_settings.coordination_zk_path = root_zk_path + "/backup-" + toString(*backup_settings.backup_uuid);
             }
         }
 
@@ -259,7 +275,7 @@ void BackupsWorker::doBackup(
         backup_create_params.password = backup_settings.password;
         backup_create_params.is_internal_backup = backup_settings.internal;
         backup_create_params.backup_coordination = backup_coordination;
-        backup_create_params.backup_uuid = backup_uuid;
+        backup_create_params.backup_uuid = backup_settings.backup_uuid;
         BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
         /// Write the backup.
@@ -309,7 +325,7 @@ void BackupsWorker::doBackup(
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_info.toString());
         if (!backup_settings.internal)
-            setStatus(backup_uuid, BackupStatus::BACKUP_COMPLETE);
+            setStatus(backup_id, BackupStatus::BACKUP_COMPLETE);
     }
     catch (...)
     {
@@ -318,7 +334,7 @@ void BackupsWorker::doBackup(
         {
             tryLogCurrentException(log, fmt::format("Failed to make {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_info.toString()));
             if (!backup_settings.internal)
-                setStatus(backup_uuid, BackupStatus::FAILED_TO_BACKUP);
+                setStatus(backup_id, BackupStatus::FAILED_TO_BACKUP);
             sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);
         }
         else
@@ -330,11 +346,16 @@ void BackupsWorker::doBackup(
 }
 
 
-UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr context)
+OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr context)
 {
     auto restore_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
+
     UUID restore_uuid = UUIDHelpers::generateV4();
+
+    OperationID restore_id = restore_settings.id;
+    if (restore_id.empty())
+        restore_id = toString(restore_uuid);
 
     std::shared_ptr<IRestoreCoordination> restore_coordination;
 
@@ -350,7 +371,7 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
     {
         auto backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         if (!restore_settings.internal)
-            addInfo(restore_uuid, backup_info.toString(), BackupStatus::RESTORING);
+            addInfo(restore_id, backup_info.toString(), BackupStatus::RESTORING);
 
         /// Prepare context to use.
         ContextMutablePtr context_in_use = context;
@@ -365,10 +386,11 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
         if (restore_settings.async)
         {
             backups_thread_pool.scheduleOrThrowOnError(
-                [this, restore_uuid, restore_query, restore_settings, backup_info, restore_coordination, context_in_use] {
+                [this, restore_query, restore_id, restore_uuid, restore_settings, backup_info, restore_coordination, context_in_use] {
                     doRestore(
-                        restore_uuid,
                         restore_query,
+                        restore_id,
+                        restore_uuid,
                         restore_settings,
                         backup_info,
                         restore_coordination,
@@ -379,8 +401,9 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
         else
         {
             doRestore(
-                restore_uuid,
                 restore_query,
+                restore_id,
+                restore_uuid,
                 restore_settings,
                 backup_info,
                 restore_coordination,
@@ -388,13 +411,13 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 /* called_async= */ false);
         }
 
-        return restore_uuid;
+        return restore_id;
     }
     catch (...)
     {
         /// Something bad happened, the backup has not built.
         if (!restore_settings.internal)
-            setStatus(restore_uuid, BackupStatus::FAILED_TO_RESTORE);
+            setStatus(restore_id, BackupStatus::FAILED_TO_RESTORE);
         sendCurrentExceptionToCoordination(restore_coordination, restore_settings.host_id);
         throw;
     }
@@ -402,8 +425,9 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
 
 
 void BackupsWorker::doRestore(
-    const UUID & restore_uuid,
     const std::shared_ptr<ASTBackupQuery> & restore_query,
+    const OperationID & restore_id,
+    const UUID & restore_uuid,
     RestoreSettings restore_settings,
     const BackupInfo & backup_info,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
@@ -508,7 +532,7 @@ void BackupsWorker::doRestore(
 
         LOG_INFO(log, "Restored from {} {} successfully", (restore_settings.internal ? "internal backup" : "backup"), backup_info.toString());
         if (!restore_settings.internal)
-            setStatus(restore_uuid, BackupStatus::RESTORED);
+            setStatus(restore_id, BackupStatus::RESTORED);
     }
     catch (...)
     {
@@ -517,7 +541,7 @@ void BackupsWorker::doRestore(
         {
             tryLogCurrentException(log, fmt::format("Failed to restore from {} {}", (restore_settings.internal ? "internal backup" : "backup"), backup_info.toString()));
             if (!restore_settings.internal)
-                setStatus(restore_uuid, BackupStatus::FAILED_TO_RESTORE);
+                setStatus(restore_id, BackupStatus::FAILED_TO_RESTORE);
             sendCurrentExceptionToCoordination(restore_coordination, restore_settings.host_id);
         }
         else
@@ -529,62 +553,78 @@ void BackupsWorker::doRestore(
 }
 
 
-void BackupsWorker::addInfo(const UUID & uuid, const String & name, BackupStatus status)
+void BackupsWorker::addInfo(const OperationID & id, const String & name, BackupStatus status)
 {
     Info info;
-    info.uuid = uuid;
+    info.id = id;
     info.name = name;
     info.status = status;
     info.status_changed_time = time(nullptr);
 
     std::lock_guard lock{infos_mutex};
-    bool inserted = infos.try_emplace(uuid, std::move(info)).second;
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup's UUID={} is already in use", uuid);
 
+    auto it = infos.find(id);
+    if (it != infos.end())
+    {
+        /// It's better not allow to overwrite the current status if it's in progress.
+        auto current_status = it->second.status;
+        if (!isFinalStatus(current_status))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot start a backup or restore: it's id='{}' is already in use", id);
+    }
+
+    infos[id] = std::move(info);
+    
     num_active_backups += getNumActiveBackupsChange(status);
     num_active_restores += getNumActiveRestoresChange(status);
 }
 
 
-void BackupsWorker::setStatus(const UUID & uuid, BackupStatus status)
+void BackupsWorker::setStatus(const String & id, BackupStatus status)
 {
     std::lock_guard lock{infos_mutex};
-    auto it = infos.find(uuid);
+    auto it = infos.find(id);
     if (it == infos.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup's UUID={}", uuid);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup's id={}", id);
 
     auto & info = it->second;
     auto old_status = info.status;
+
     info.status = status;
     info.status_changed_time = time(nullptr);
+
+    if (isErrorStatus(status))
+    {
+        info.error_message = getCurrentExceptionMessage(false);
+        info.exception = std::current_exception();
+    }
+
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
 }
 
 
-void BackupsWorker::wait(const UUID & backup_or_restore_uuid, bool rethrow_exception)
+void BackupsWorker::wait(const OperationID & id, bool rethrow_exception)
 {
     std::unique_lock lock{infos_mutex};
     status_changed.wait(lock, [&]
     {
-        auto it = infos.find(backup_or_restore_uuid);
+        auto it = infos.find(id);
         if (it == infos.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup's UUID={}", backup_or_restore_uuid);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup's id={}", id);
         const auto & info = it->second;
         auto current_status = info.status;
-        if (rethrow_exception && ((current_status == BackupStatus::FAILED_TO_BACKUP) || (current_status == BackupStatus::FAILED_TO_RESTORE)))
+        if (rethrow_exception && isErrorStatus(current_status))
             std::rethrow_exception(info.exception);
-        return (current_status == BackupStatus::BACKUP_COMPLETE) || (current_status == BackupStatus::RESTORED);
+        return isFinalStatus(current_status);
     });
 }
 
-BackupsWorker::Info BackupsWorker::getInfo(const UUID & backup_or_restore_uuid) const
+BackupsWorker::Info BackupsWorker::getInfo(const OperationID & id) const
 {
     std::lock_guard lock{infos_mutex};
-    auto it = infos.find(backup_or_restore_uuid);
+    auto it = infos.find(id);
     if (it == infos.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup's UUID={}", backup_or_restore_uuid);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup's id={}", id);
     return it->second;
 }
 
@@ -599,14 +639,14 @@ std::vector<BackupsWorker::Info> BackupsWorker::getAllInfos() const
 
 void BackupsWorker::shutdown()
 {
-    bool has_active_backups_or_restores = (num_active_backups || num_active_restores);
-    if (has_active_backups_or_restores)
+    bool has_active_backups_and_restores = (num_active_backups || num_active_restores);
+    if (has_active_backups_and_restores)
         LOG_INFO(log, "Waiting for {} backups and {} restores to be finished", num_active_backups, num_active_restores);
 
     backups_thread_pool.wait();
     restores_thread_pool.wait();
 
-    if (has_active_backups_or_restores)
+    if (has_active_backups_and_restores)
         LOG_INFO(log, "All backup and restore tasks have finished");
 }
 

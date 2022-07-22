@@ -309,7 +309,7 @@ def test_async():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["BACKUP_COMPLETE", ""]]),
     )
 
@@ -323,7 +323,7 @@ def test_async():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["RESTORED", ""]]),
     )
 
@@ -347,16 +347,16 @@ def test_async_backups_to_same_destination(interface):
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status FROM system.backups WHERE uuid IN ['{id1}', '{id2}'] AND status == 'MAKING_BACKUP'",
+        f"SELECT status FROM system.backups WHERE id IN ['{id1}', '{id2}'] AND status == 'MAKING_BACKUP'",
         "",
     )
 
     assert instance.query(
-        f"SELECT status, error FROM system.backups WHERE uuid='{id1}'"
+        f"SELECT status, error FROM system.backups WHERE id='{id1}'"
     ) == TSV([["BACKUP_COMPLETE", ""]])
 
     assert (
-        instance.query(f"SELECT status FROM system.backups WHERE uuid='{id2}'")
+        instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
         == "FAILED_TO_BACKUP\n"
     )
 
@@ -758,7 +758,7 @@ def test_system_users_async():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["BACKUP_COMPLETE", ""]]),
     )
 
@@ -770,7 +770,7 @@ def test_system_users_async():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["RESTORED", ""]]),
     )
 
@@ -882,6 +882,50 @@ def test_restore_partition():
     assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
         [[2, "2"], [3, "3"], [12, "12"], [13, "13"], [22, "22"], [23, "23"]]
     )
+
+
+def test_operation_id():
+    create_and_fill_table(n=30)
+
+    backup_name = new_backup_name()
+    
+    [id, status] = instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='first' ASYNC"
+    ).split("\t")
+    
+    assert id == "first"
+    assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
+
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status, error FROM system.backups WHERE id='first'",
+        TSV([["BACKUP_COMPLETE", ""]]),
+    )
+
+    instance.query("DROP TABLE test.table")
+
+    [id, status] = instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='second' ASYNC"
+    ).split("\t")
+
+    assert id == "second"
+    assert status == "RESTORING\n" or status == "RESTORED\n"
+
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status, error FROM system.backups WHERE id='second'",
+        TSV([["RESTORED", ""]]),
+    )
+
+    # Reuse the same ID again
+    instance.query("DROP TABLE test.table")
+
+    [id, status] = instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='first'"
+    ).split("\t")
+    
+    assert id == "first"
+    assert status == "RESTORED\n"
 
 
 def test_mutation():

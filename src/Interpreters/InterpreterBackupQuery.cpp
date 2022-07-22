@@ -19,14 +19,14 @@ namespace
 {
     Block getResultRow(const BackupsWorker::Info & info)
     {
-        auto column_uuid = ColumnUUID::create();
+        auto column_id = ColumnString::create();
         auto column_status = ColumnInt8::create();
 
-        column_uuid->insert(info.uuid);
+        column_id->insert(info.id);
         column_status->insert(static_cast<Int8>(info.status));
 
         Block res_columns;
-        res_columns.insert(0, {std::move(column_uuid), std::make_shared<DataTypeUUID>(), "uuid"});
+        res_columns.insert(0, {std::move(column_id), std::make_shared<DataTypeString>(), "id"});
         res_columns.insert(1, {std::move(column_status), std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues()), "status"});
 
         return res_columns;
@@ -36,9 +36,9 @@ namespace
 BlockIO InterpreterBackupQuery::execute()
 {
     auto & backups_worker = context->getBackupsWorker();
-    auto uuid = backups_worker.start(query_ptr, context);
+    auto id = backups_worker.start(query_ptr, context);
 
-    auto info = backups_worker.getInfo(uuid);
+    auto info = backups_worker.getInfo(id);
     if (info.exception)
         std::rethrow_exception(info.exception);
 
