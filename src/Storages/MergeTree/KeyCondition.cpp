@@ -1146,18 +1146,12 @@ bool KeyCondition::transformConstantWithValidFunctions(
 
             if (is_valid_chain)
             {
-                /// Here we cast constant to the input type.
-                /// It is not clear, why this works in general.
-                /// I can imagine the case when expression like `column < const` is legal,
-                /// but `type(column)` and `type(const)` are of different types,
-                /// and const cannot be casted to column type.
-                /// (There could be `superType(type(column), type(const))` which is used for comparison).
-                ///
-                /// However, looks like this case newer happenes (I could not find such).
-                /// Let's assume that any two comparable types are castable to each other.
                 auto const_type = cur_node->result_type;
                 auto const_column = out_type->createColumnConst(1, out_value);
-                auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
+                auto const_value = (*castColumnAccurateOrNull({const_column, out_type, ""}, const_type))[0];
+
+                if (const_value.isNull())
+                    return false;
 
                 while (!chain.empty())
                 {
