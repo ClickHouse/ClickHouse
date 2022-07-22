@@ -488,10 +488,10 @@ void BackupsWorker::addInfo(const UUID & uuid, bool internal, const String & bac
     info.status = status;
     info.status_changed_time = time(nullptr);
     info.internal = internal;
-    
+
     std::lock_guard lock{infos_mutex};
     infos[{uuid, internal}] = std::move(info);
-    
+
     num_active_backups += getNumActiveBackupsChange(status);
     num_active_restores += getNumActiveRestoresChange(status);
 }
@@ -503,7 +503,7 @@ void BackupsWorker::setStatus(const UUID & uuid, bool internal, BackupStatus sta
     auto it = infos.find({uuid, internal});
     if (it == infos.end())
         return;
-    
+
     auto & info = it->second;
     auto old_status = info.status;
     info.status = status;
@@ -552,10 +552,10 @@ void BackupsWorker::shutdown()
     bool has_active_backups_or_restores = (num_active_backups || num_active_restores);
     if (has_active_backups_or_restores)
         LOG_INFO(log, "Waiting for {} backups and {} restores to be finished", num_active_backups, num_active_restores);
-    
+
     backups_thread_pool.wait();
     restores_thread_pool.wait();
-    
+
     if (has_active_backups_or_restores)
         LOG_INFO(log, "All backup and restore tasks have finished");
 }

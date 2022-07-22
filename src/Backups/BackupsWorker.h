@@ -59,13 +59,13 @@ public:
 
 private:
     std::pair<UUID, bool> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
-    
+
     void doBackup(const UUID & backup_uuid, const std::shared_ptr<ASTBackupQuery> & backup_query, BackupSettings backup_settings,
                   const BackupInfo & backup_info, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context,
                   ContextMutablePtr mutable_context, bool called_async);
 
     std::pair<UUID, bool> startRestoring(const ASTPtr & query, ContextMutablePtr context);
-    
+
     void doRestore(const UUID & restore_uuid, const std::shared_ptr<ASTBackupQuery> & restore_query, RestoreSettings restore_settings,
                    const BackupInfo & backup_info, std::shared_ptr<IRestoreCoordination> restore_coordination, ContextMutablePtr context,
                    bool called_async);
