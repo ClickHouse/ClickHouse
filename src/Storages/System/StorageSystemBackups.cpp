@@ -20,7 +20,6 @@ NamesAndTypesList StorageSystemBackups::getNamesAndTypes()
         {"status", std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues())},
         {"status_changed_time", std::make_shared<DataTypeDateTime>()},
         {"error", std::make_shared<DataTypeString>()},
-        {"internal", std::make_shared<DataTypeUInt8>()},
     };
     return names_and_types;
 }
@@ -34,7 +33,6 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_status = assert_cast<ColumnInt8 &>(*res_columns[column_index++]);
     auto & column_status_changed_time = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]);
     auto & column_error = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_internal = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]);
 
     auto add_row = [&](const BackupsWorker::Info & info)
     {
@@ -43,7 +41,6 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
         column_status.insertValue(static_cast<Int8>(info.status));
         column_status_changed_time.insertValue(info.status_changed_time);
         column_error.insertData(info.error_message.data(), info.error_message.size());
-        column_internal.insertValue(info.internal);
     };
 
     for (const auto & entry : context->getBackupsWorker().getAllInfos())

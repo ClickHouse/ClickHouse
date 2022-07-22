@@ -39,9 +39,9 @@ namespace
 BlockIO InterpreterBackupQuery::execute()
 {
     auto & backups_worker = context->getBackupsWorker();
-    auto [uuid, internal] = backups_worker.start(query_ptr, context);
+    auto uuid = backups_worker.start(query_ptr, context);
     BlockIO res_io;
-    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(backups_worker.getInfo(uuid, internal))));
+    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(backups_worker.getInfo(uuid))));
     return res_io;
 }
 
