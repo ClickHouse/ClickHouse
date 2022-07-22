@@ -323,25 +323,30 @@ void LocalServer::setupUsers()
     auto & access_control = global_context->getAccessControl();
     access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
     access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
-    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
+    if (config().has("config-file") || fs::exists("config.xml"))
     {
         String config_path = config().getString("config-file","");
         bool has_user_directories = config().has("user_directories");
         const auto config_dir = std::filesystem::path{config_path}.remove_filename().string();
         String users_config_path = config().getString("users_config","");
-        if (users_config_path.empty())
+        if (users_config_path.empty() && !has_user_directories)
+            users_config = getConfigurationFromXMLString(minimal_default_user_xml);
+        else
         {
-            if (!has_user_directories)
-                users_config_path = config_path;
-        }
-        if (has_user_directories)
-           users_config_path = config().getString("user_directories.users_xml.path","");
+            if (users_config_path.empty())
+            {
+                if (!has_user_directories)
+                    users_config_path = config_path;
+            }
+            if (has_user_directories)
+                users_config_path = config().getString("user_directories.users_xml.path","");
 
-        if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
-            users_config_path = config_dir + users_config_path;
-        ConfigProcessor config_processor(users_config_path);
-        const auto loaded_config = config_processor.loadConfig();
-        users_config = loaded_config.configuration;
+            if (std::filesystem::path{users_config_path}.is_relative() && std::filesystem::exists(config_dir + users_config_path))
+                users_config_path = config_dir + users_config_path;
+            ConfigProcessor config_processor(users_config_path);
+            const auto loaded_config = config_processor.loadConfig();
+            users_config = loaded_config.configuration;
+        }
     }
     else
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
