@@ -25,13 +25,21 @@ def start_cluster():
 
 
 def test_select_aggregate_alias_column(start_cluster):
-    node1.query("create table tab (x UInt64, y String, z Nullable(Int64)) engine = Memory")
-    node2.query("create table tab (x UInt64, y String, z Nullable(Int64)) engine = Memory")
+    node1.query(
+        "create table tab (x UInt64, y String, z Nullable(Int64)) engine = Memory"
+    )
+    node2.query(
+        "create table tab (x UInt64, y String, z Nullable(Int64)) engine = Memory"
+    )
     node1.query("insert into tab values (1, 'a', null)")
     node2.query("insert into tab values (1, 'a', null)")
 
-    node1.query("select count(), count(1), count(x), count(y), count(z) from remote('node{1,2}', default, tab)")
-    node2.query("select count(), count(1), count(x), count(y), count(z) from remote('node{1,2}', default, tab)")
+    node1.query(
+        "select count(), count(1), count(x), count(y), count(z) from remote('node{1,2}', default, tab)"
+    )
+    node2.query(
+        "select count(), count(1), count(x), count(y), count(z) from remote('node{1,2}', default, tab)"
+    )
 
     node1.query("drop table tab")
     node2.query("drop table tab")
