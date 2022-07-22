@@ -5,8 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-echo "<?xml version="1.0"?>
-<clickhouse>
+echo "<clickhouse>
     <logger>
         <level>trace</level>
         <console>true</console>
