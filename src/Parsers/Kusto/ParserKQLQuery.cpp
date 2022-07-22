@@ -11,6 +11,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
+#include <Parsers/Kusto/ParserKQLPrint.h>
 namespace DB
 {
 
@@ -120,6 +121,17 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     operation_pos.push_back(std::make_pair("table",pos));
     String table_name(pos->begin,pos->end);
+
+    if (table_name == "print")
+    {
+        ++pos;
+        if (!ParserKQLPrint().parse(pos, select_expression_list, expected))
+            return false;
+
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
+
+        return true;
+    }
 
     ++pos;
     while (!pos->isEnd() && pos->type != TokenType::Semicolon)

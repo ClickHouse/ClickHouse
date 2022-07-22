@@ -585,7 +585,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "Customers | project indexof('abcdefg','cde', 2) ",
             "SELECT position('abcdefg', 'cde', 3) - 1\nFROM Customers"
-
+        },
+        {
+            "print x=1, s=strcat('Hello', ', ', 'World!')",
+            "SELECT\n    1 AS x,\n    concat('Hello', ', ', 'World!') AS s"
         }
 })));
 
