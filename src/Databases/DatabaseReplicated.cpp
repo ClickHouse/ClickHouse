@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
 }
 
+static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
 static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
@@ -305,7 +306,7 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     current_zookeeper->createAncestors(zookeeper_path);
 
     Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, REPLICATED_DATABASE_MARK, zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/counter", "", zkutil::CreateMode::Persistent));
@@ -331,6 +332,38 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     __builtin_unreachable();
 }
 
+bool DatabaseReplicated::looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path)
+{
+    Coordination::Stat stat;
+    String maybe_database_mark;
+    if (!current_zookeeper->tryGet(path, maybe_database_mark, &stat))
+        return false;
+    if (maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK))
+        return true;
+    if (maybe_database_mark.empty())
+        return false;
+
+    /// Old versions did not have REPLICATED_DATABASE_MARK. Check specific nodes exist and add mark.
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCheckRequest(path + "/log", -1));
+    ops.emplace_back(zkutil::makeCheckRequest(path + "/replicas", -1));
+    ops.emplace_back(zkutil::makeCheckRequest(path + "/counter", -1));
+    ops.emplace_back(zkutil::makeCheckRequest(path + "/metadata", -1));
+    ops.emplace_back(zkutil::makeCheckRequest(path + "/max_log_ptr", -1));
+    ops.emplace_back(zkutil::makeCheckRequest(path + "/logs_to_keep", -1));
+    ops.emplace_back(zkutil::makeSetRequest(path, REPLICATED_DATABASE_MARK, stat.version));
+    Coordination::Responses responses;
+    auto res = current_zookeeper->tryMulti(ops, responses);
+    if (res == Coordination::Error::ZOK)
+        return true;
+
+    /// Recheck database mark (just in case of concurrent update).
+    if (!current_zookeeper->tryGet(path, maybe_database_mark, &stat))
+        return false;
+
+    return maybe_database_mark.starts_with(REPLICATED_DATABASE_MARK);
+}
+
 void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper)
 {
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
@@ -347,6 +380,10 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 
 void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
+    if (!looksLikeReplicatedDatabasePath(current_zookeeper, zookeeper_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add new database replica: provided path {} "
+                        "already contains some data and it does not look like Replicated database path.", zookeeper_path);
+
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
     auto host_id = getHostID(getContext(), db_uuid);
 
