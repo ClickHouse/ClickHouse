@@ -33,6 +33,12 @@ $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a,
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by on the same columns -> pre-distinct and final distinct optimization'"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b from distinct_in_order_explain order by a, b" | eval $FIND_DISTINCT
 
+$CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix  and order by column in distinct but non-primary key prefix -> pre-distinct and final distinct optimization'"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b, c from distinct_in_order_explain order by c settings optimize_distinct_in_order_memory_usage=0" | eval $FIND_DISTINCT
+
+$CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix  and order by column in distinct but non-primary key prefix, optimize memory usage -> pre-distinct and final distinct optimization'"
+$CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, b, c from distinct_in_order_explain order by c settings optimize_distinct_in_order_memory_usage=1" | eval $FIND_DISTINCT
+
 $CLICKHOUSE_CLIENT -q "select '-- distinct with primary key prefix and order by on column _not_ in distinct -> pre-distinct optimization only'"
 $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select distinct a, c from distinct_in_order_explain order by b" | eval $FIND_DISTINCT
 

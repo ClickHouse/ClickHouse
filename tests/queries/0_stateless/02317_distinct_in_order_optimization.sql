@@ -50,7 +50,7 @@ drop table if exists distinct_cardinality_low sync;
 drop table if exists distinct_in_order sync;
 drop table if exists ordinary_distinct sync;
 CREATE TABLE distinct_cardinality_low (low UInt64, medium UInt64, high UInt64) ENGINE MergeTree() ORDER BY (low, medium);
-INSERT INTO distinct_cardinality_low SELECT number % 1e2, number % 1e4, number % 1e6 FROM numbers_mt(1e8);
+INSERT INTO distinct_cardinality_low SELECT number % 1e1, number % 1e3, number % 1e5 FROM numbers_mt(1e6);
 create table distinct_in_order (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
 insert into distinct_in_order select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=1;
 create table ordinary_distinct (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
