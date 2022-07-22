@@ -47,7 +47,7 @@ local_opts=(
     "--config-file=$CUR_DIR/config.xml"
     "--send_logs_level=none")
 
-${CLICKHOUSE_LOCAL} "${local_opts[@]}" --query 'Select 1' | grep -v -e 'Processing configuration file'
+${CLICKHOUSE_LOCAL} "${local_opts[@]}" --query 'Select 1' |& grep -v -e 'Processing configuration file'
 
 rm -rf $CUR_DIR/users.xml
 rm -rf $CUR_DIR/config.xml
