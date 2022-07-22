@@ -109,8 +109,9 @@ public:
         return this->getName() == rhs.getName();
     }
 
-    DataTypePtr getStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
+        /// Return normalized state type: count()
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});
@@ -259,8 +260,9 @@ public:
         return this->getName() == rhs.getName();
     }
 
-    DataTypePtr getStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
+        /// Return normalized state type: count()
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
             AggregateFunctionFactory::instance().get(getName(), {}, {}, properties), DataTypes{}, Array{});

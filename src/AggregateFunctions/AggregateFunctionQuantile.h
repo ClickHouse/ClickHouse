@@ -116,8 +116,9 @@ public:
             && this->haveEqualArgumentTypes(rhs);
     }
 
-    DataTypePtr getStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
+        /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
         AggregateFunctionProperties properties;
         return std::make_shared<DataTypeAggregateFunction>(
