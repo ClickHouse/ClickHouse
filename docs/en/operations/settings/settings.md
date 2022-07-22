@@ -2626,7 +2626,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 1800.
+Default value: 180.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -2637,7 +2637,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 1800.
+Default value: 180.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -3328,6 +3328,15 @@ Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
+
+## compatibility {#compatibility}
+
+This setting changes other settings according to provided ClickHouse version.
+If a behaviour in ClickHouse was changed by using a different default value for some setting, this compatibility setting allows you to use default values from previous versions for all the settings that were not set by the user.
+
+This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
+
+Disabled by default.
 
 # Format settings {#format-settings}
 
