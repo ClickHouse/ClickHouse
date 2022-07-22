@@ -38,10 +38,10 @@ public:
     /// Information about executing a BACKUP or RESTORE query started by calling start().
     struct Info
     {
-        UUID uuid;
-
         /// Backup's name, a string like "Disk('backups', 'my_backup')"
-        String backup_name;
+        String name;
+
+        UUID uuid;
 
         BackupStatus status;
         time_t status_changed_time;
@@ -66,7 +66,7 @@ private:
                    const BackupInfo & backup_info, std::shared_ptr<IRestoreCoordination> restore_coordination, ContextMutablePtr context,
                    bool called_async);
 
-    void addInfo(const UUID & uuid, const String & backup_name, BackupStatus status);
+    void addInfo(const UUID & uuid, const String & name, BackupStatus status);
     void setStatus(const UUID & uuid, BackupStatus status);
 
     ThreadPool backups_thread_pool;

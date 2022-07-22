@@ -127,7 +127,7 @@ def test_concurrent_backups_on_same_node():
     )
 
     assert node0.query(
-        f"SELECT status, error FROM system.backups WHERE uuid IN {ids_list} AND NOT internal"
+        f"SELECT status, error FROM system.backups WHERE uuid IN {ids_list}"
     ) == TSV([["BACKUP_COMPLETE", ""]] * num_concurrent_backups)
 
     for backup_name in backup_names:
@@ -162,7 +162,7 @@ def test_concurrent_backups_on_different_nodes():
 
     for i in range(num_concurrent_backups):
         assert nodes[i].query(
-            f"SELECT status, error FROM system.backups WHERE uuid = '{ids[i]}' AND NOT internal"
+            f"SELECT status, error FROM system.backups WHERE uuid = '{ids[i]}'"
         ) == TSV([["BACKUP_COMPLETE", ""]])
 
     for i in range(num_concurrent_backups):
@@ -259,7 +259,7 @@ def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     for node in nodes:
         for id in ids:
             backup_name = node.query(
-                f"SELECT backup_name FROM system.backups WHERE uuid='{id}' FORMAT RawBLOB"
+                f"SELECT name FROM system.backups WHERE uuid='{id}' FORMAT RawBLOB"
             ).strip()
             if backup_name:
                 backup_names[id] = backup_name
