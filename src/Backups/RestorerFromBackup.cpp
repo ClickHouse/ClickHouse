@@ -154,7 +154,7 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
 {
     LOG_TRACE(log, "{}", toUpperFirst(new_stage));
     current_stage = new_stage;
-    
+
     if (restore_coordination)
     {
         restore_coordination->setStage(restore_settings.host_id, new_stage, message);

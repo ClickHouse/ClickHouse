@@ -15,7 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
-} 
+}
 
 
 BackupCoordinationStageSync::BackupCoordinationStageSync(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, Poco::Logger * log_)
@@ -42,7 +42,7 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
     auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
         throw zkutil::KeeperException(code, alive_node_path);
-       
+
     zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
     zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
 }
