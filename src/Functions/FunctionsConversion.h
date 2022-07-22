@@ -324,9 +324,28 @@ struct ConvertImpl
                     }
                     else
                     {
-                        for (size_t i = 0; i < input_rows_count; ++i)
+                        if constexpr (std::is_same_v<FromDataType, DataTypeUInt64> && std::is_same_v<ToDataType, DataTypeFloat32>)
                         {
-                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            /// Turns out that when ClickHouse is compiled with AVX1 or AVX2 instructions, Clang's autovectorizer produces
+                            /// code for UInt64-to-Float23 conversion which is only ~50% as fast as scalar code. Interestingly, scalar code
+                            /// is equally fast than code compiled for SSE4.2, so we might as well disable vectorization. This situation
+                            /// may change with AVX512 which has a dediated instruction for that usecase (_mm512_cvtepi64_ps).
+#if defined(__x86_64__)
+#  ifdef __clang__
+#    pragma clang loop vectorize(disable) interleave(disable)
+#  endif
+#endif
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            }
+                        }
+                        else
+                        {
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            }
                         }
                     }
                 }
