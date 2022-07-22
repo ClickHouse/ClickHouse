@@ -6,7 +6,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Coordination/KeeperConstants.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/pathUtils.h>
 

@@ -283,7 +283,7 @@ private:
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
 
-    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::V0};
+    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
 };
 
 }

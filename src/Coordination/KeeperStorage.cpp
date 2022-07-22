@@ -244,39 +244,41 @@ void KeeperStorage::initializeSystemNodes()
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
 
-    // insert root system path
-    Node system_node;
-    system_node.setData("");
-    container.insertOrReplace(keeper_system_path, system_node);
-    // store digest for the empty node because we won't update
-    // its stats
-    addDigest(system_node, keeper_system_path);
+    // insert root system path if it isn't already inserted
+    if (container.find(keeper_system_path) == container.end())
+    {
+        Node system_node;
+        container.insert(keeper_system_path, system_node);
+        // store digest for the empty node because we won't update
+        // its stats
+        addDigest(system_node, keeper_system_path);
 
-    // update root and the digest based on it
-    auto current_root_it = container.find("/");
-    assert(current_root_it != container.end());
-    removeDigest(current_root_it->value, "/");
-    auto updated_root_it = container.updateValue(
-        "/",
-        [](auto & node)
-        {
-            ++node.stat.numChildren;
-            node.addChild(keeper_system_path);
-        }
-    );
-    addDigest(updated_root_it->value, "/");
+        // update root and the digest based on it
+        auto current_root_it = container.find("/");
+        assert(current_root_it != container.end());
+        removeDigest(current_root_it->value, "/");
+        auto updated_root_it = container.updateValue(
+            "/",
+            [](auto & node)
+            {
+                ++node.stat.numChildren;
+                node.addChild(getBaseName(keeper_system_path));
+            }
+        );
+        addDigest(updated_root_it->value, "/");
+    }
 
     // insert child system nodes
-    for (const auto & [path, data] : data_for_system_paths)
+    for (const auto & [path, data] : child_system_paths_with_data)
     {
         assert(keeper_api_version_path.starts_with(keeper_system_path));
         Node child_system_node;
-        system_node.setData(data);
+        child_system_node.setData(data);
         auto [map_key, _] = container.insert(std::string{path}, child_system_node);
         /// Take child path from key owned by map.
         auto child_path = getBaseName(map_key->getKey());
         container.updateValue(
-            parentPath(child_path),
+            parentPath(StringRef(path)),
             [child_path](auto & parent)
             {
                 // don't update stats so digest is okay
@@ -920,16 +922,6 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
                 response.error = result;
                 return response_ptr;
             }
-        }
-
-        // We cannot store the node because the result should be connected to the binary itself
-        // this way we avoid incorrect results when we read a snapshot from older Keeper that can have
-        // lower API version
-        if (request.path == Coordination::keeper_api_version_path)
-        {
-            response.data = std::to_string(static_cast<uint8_t>(Coordination::current_keeper_api_version));
-            response.error = Coordination::Error::ZOK;
-            return response_ptr;
         }
 
         auto & container = storage.container;
