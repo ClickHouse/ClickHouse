@@ -29,6 +29,8 @@
 #include <Interpreters/HashJoin.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Storages/BatchParquetFileSource.h>
+
 
 
 
@@ -88,30 +90,30 @@ static void BM_MergeTreeRead(benchmark::State& state) {
     auto int32_type = std::make_shared<DB::DataTypeInt32>();
     auto double_type = std::make_shared<DB::DataTypeFloat64>();
     const auto * type_string = "columns format version: 1\n"
-                         "4 columns:\n"
-                            //    "`l_partkey` Int64\n"
-                            //    "`l_suppkey` Int64\n"
-                            //    "`l_linenumber` Int32\n"
-                         "`l_quantity` Float64\n"
+                               "16 columns:\n"
+                               "`l_orderkey` Int64\n"
+                               "`l_partkey` Int64\n"
+                               "`l_suppkey` Int64\n"
+                               "`l_linenumber` Int32\n"
+                               "`l_quantity` Float64\n"
                                "`l_extendedprice` Float64\n"
                                "`l_discount` Float64\n"
-                            //    "`l_tax` Float64\n"
-                        //        "`l_returnflag` String\n"
-                        //  "`l_linestatus` String\n"
+                               "`l_tax` Float64\n"
+                                                              "`l_returnflag` String\n"
+                                                              "`l_linestatus` String\n"
                                "`l_shipdate` Date\n"
-                            //    "`l_commitdate` Date\n"
-                            //    "`l_receiptdate` Date\n"
-                            //    "`l_shipinstruct` String\n"
-                            //    "`l_shipmode` String\n"
-                            //    "`l_comment` String\n"
-                               ;
+                               "`l_commitdate` Date\n"
+                               "`l_receiptdate` Date\n"
+                                   "`l_shipinstruct` String\n"
+                                   "`l_shipmode` String\n"
+                                   "`l_comment` String\n";
     auto names_and_types_list = NamesAndTypesList::parse(type_string);
     metadata = local_engine::buildMetaData(names_and_types_list, global_context);
     auto param = DB::MergeTreeData::MergingParams();
     auto settings = local_engine::buildMergeTreeSettings();
 
     local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
-                                                           "home/saber/Documents/data/mergetree",
+                                                           "home/admin1/Documents/data/tpch/mergetree/lineitem",
                                                            *metadata,
                                                            false,
                                                            global_context,
@@ -149,6 +151,61 @@ static void BM_MergeTreeRead(benchmark::State& state) {
         {
             sum+= chunk.getNumRows();
         }
+    }
+}
+
+static void BM_ParquetRead(benchmark::State& state) {
+
+
+    const auto * type_string = "columns format version: 1\n"
+                               "16 columns:\n"
+                               "`l_orderkey` Int64\n"
+                               "`l_partkey` Int64\n"
+                               "`l_suppkey` Int64\n"
+                               "`l_linenumber` Int32\n"
+                               "`l_quantity` Float64\n"
+                               "`l_extendedprice` Float64\n"
+                               "`l_discount` Float64\n"
+                               "`l_tax` Float64\n"
+                               "`l_returnflag` String\n"
+                               "`l_linestatus` String\n"
+                               "`l_shipdate` Date\n"
+                               "`l_commitdate` Date\n"
+                               "`l_receiptdate` Date\n"
+                               "`l_shipinstruct` String\n"
+                               "`l_shipmode` String\n"
+                               "`l_comment` String\n";
+    auto names_and_types_list = NamesAndTypesList::parse(type_string);
+    ColumnsWithTypeAndName columns;
+    for (const auto & item : names_and_types_list)
+    {
+        ColumnWithTypeAndName col;
+        col.column = item.type->createColumn();
+        col.type = item.type;
+        col.name = item.name;
+        columns.emplace_back(std::move(col));
+    }
+    auto header = Block(std::move(columns));
+
+    for (auto _: state)
+    {
+        auto files = std::make_shared<FilesInfo>();
+        files->files = {
+            "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
+            "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00001-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
+            "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00002-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
+        };
+        auto builder = std::make_unique<QueryPipelineBuilder>();
+        builder->init(Pipe(std::make_shared<BatchParquetFileSource>(files, header, SerializedPlanParser::global_context)));
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+        auto executor = PullingPipelineExecutor(pipeline);
+        auto result = header.cloneEmpty();
+        size_t total_rows = 0;
+        while (executor.pull(result))
+        {
+            total_rows += result.rows();
+        }
+        std::cerr << "rows:" << total_rows << std::endl;
     }
 }
 
@@ -1387,10 +1444,12 @@ static void BM_JoinTest(benchmark::State& state) {
 
 // BENCHMARK(BM_TestDecompress)->Arg(0)->Arg(1)->Arg(2)->Arg(3)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
 
-BENCHMARK(BM_JoinTest)->Unit(benchmark::kMillisecond)->Iterations(10)->Repetitions(250)->ComputeStatistics("80%", quantile);
+//BENCHMARK(BM_JoinTest)->Unit(benchmark::kMillisecond)->Iterations(10)->Repetitions(250)->ComputeStatistics("80%", quantile);
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Unit(benchmark::kMillisecond)->Iterations(40);
-// BENCHMARK(BM_MergeTreeRead)->Arg(2)->Unit(benchmark::kMillisecond)->Iterations(50)->Repetitions(6)->ComputeStatistics("80%", quantile);
+ BENCHMARK(BM_MergeTreeRead)->Arg(10)->Unit(benchmark::kMillisecond)->Iterations(10)->Repetitions(5);
+ BENCHMARK(BM_ParquetRead)->Unit(benchmark::kMillisecond)->Iterations(10)->Repetitions(5);
+
 //BENCHMARK(BM_ShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
 //BENCHMARK(BM_HashShuffleSplitter)->Args({2, 0})->Args({2, 1})->Args({2, 2})->Unit(benchmark::kMillisecond)->Iterations(1);
 //BENCHMARK(BM_ShuffleReader)->Unit(benchmark::kMillisecond)->Iterations(10);

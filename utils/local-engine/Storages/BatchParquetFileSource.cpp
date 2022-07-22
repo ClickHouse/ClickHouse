@@ -63,7 +63,10 @@ DB::Chunk BatchParquetFileSource::generate()
         {
             auto current_file = files_info->next_file_to_read.fetch_add(1);
             if (current_file >= files_info->files.size())
+            {
+                finished_generate = true;
                 return {};
+            }
 
             current_path = files_info->files[current_file];
 
@@ -82,8 +85,6 @@ DB::Chunk BatchParquetFileSource::generate()
         {
             return chunk;
         }
-
-        finished_generate = true;
 
         /// Close file prematurely if stream was ended.
         reader.reset();

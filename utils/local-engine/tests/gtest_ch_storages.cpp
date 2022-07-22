@@ -143,25 +143,29 @@ TEST(TestBatchParquetFileSource, local_file)
 {
     auto builder = std::make_unique<QueryPipelineBuilder>();
     auto files = std::make_shared<FilesInfo>();
-    files->files = {"file:///home/saber/Downloads/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet"};
+    files->files = {
+        "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00000-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
+        "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00001-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
+        "file:///home/admin1/Documents/data/tpch/parquet/lineitem/part-00002-f83d0a59-2bff-41bc-acde-911002bf1b33-c000.snappy.parquet",
+    };
 
     const auto * type_string = "columns format version: 1\n"
-                               "15 columns:\n"
-                               "`l_partkey` Int64\n"
-                               "`l_suppkey` Int64\n"
-                               "`l_linenumber` Int32\n"
-                               "`l_quantity` Float64\n"
-                               "`l_extendedprice` Float64\n"
+                               "2 columns:\n"
+//                               "`l_partkey` Int64\n"
+//                               "`l_suppkey` Int64\n"
+//                               "`l_linenumber` Int32\n"
+//                               "`l_quantity` Float64\n"
+//                               "`l_extendedprice` Float64\n"
                                "`l_discount` Float64\n"
-                               "`l_tax` Float64\n"
-                               "`l_returnflag` String\n"
-                               "`l_linestatus` String\n"
-                               "`l_shipdate` Date\n"
-                               "`l_commitdate` Date\n"
-                               "`l_receiptdate` Date\n"
-                               "`l_shipinstruct` String\n"
-                               "`l_shipmode` String\n"
-                               "`l_comment` String\n";
+                               "`l_tax` Float64\n";
+//                               "`l_returnflag` String\n"
+//                               "`l_linestatus` String\n"
+//                               "`l_shipdate` Date\n"
+//                               "`l_commitdate` Date\n"
+//                               "`l_receiptdate` Date\n"
+//                               "`l_shipinstruct` String\n"
+//                               "`l_shipmode` String\n"
+//                               "`l_comment` String\n";
     auto names_and_types_list = NamesAndTypesList::parse(type_string);
     ColumnsWithTypeAndName columns;
     for (const auto & item : names_and_types_list)
@@ -187,9 +191,8 @@ TEST(TestBatchParquetFileSource, local_file)
         total_rows += result.rows();
         is_first = false;
     }
-
-    ASSERT_TRUE(total_rows > 0);
     std::cerr << "rows:" << total_rows << std::endl;
+    ASSERT_TRUE(total_rows == 59986052);
 }
 
 
