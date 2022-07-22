@@ -95,26 +95,26 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
-extern const Event RejectedInserts;
-extern const Event DelayedInserts;
-extern const Event DelayedInsertsMilliseconds;
-extern const Event InsertedWideParts;
-extern const Event InsertedCompactParts;
-extern const Event InsertedInMemoryParts;
-extern const Event MergedIntoWideParts;
-extern const Event MergedIntoCompactParts;
-extern const Event MergedIntoInMemoryParts;
+    extern const Event RejectedInserts;
+    extern const Event DelayedInserts;
+    extern const Event DelayedInsertsMilliseconds;
+    extern const Event InsertedWideParts;
+    extern const Event InsertedCompactParts;
+    extern const Event InsertedInMemoryParts;
+    extern const Event MergedIntoWideParts;
+    extern const Event MergedIntoCompactParts;
+    extern const Event MergedIntoInMemoryParts;
 }
 
 namespace CurrentMetrics
 {
-extern const Metric DelayedInserts;
+    extern const Metric DelayedInserts;
 }
 
 
 namespace
 {
-constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
+    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
 }
 
 
@@ -186,7 +186,7 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
     if (!is_correct_sample_condition)
         throw Exception(
             "Invalid sampling column type in storage parameters: " + sampling_column_type->getName()
-                + ". Must be one unsigned integer type",
+            + ". Must be one unsigned integer type",
             ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 }
 
@@ -336,7 +336,7 @@ MergeTreeData::MergeTreeData(
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part', 'min_bytes_for_wide_part', "
-                         "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
+            "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
 
 #if !USE_ROCKSDB
     if (use_metadata_cache)
@@ -415,7 +415,7 @@ void MergeTreeData::checkProperties(
     size_t primary_key_size = new_primary_key.column_names.size();
     if (primary_key_size > sorting_key_size)
         throw Exception("Primary key must be a prefix of the sorting key, but its length: "
-                            + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
+            + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
                         ErrorCodes::BAD_ARGUMENTS);
 
     NameSet primary_key_columns_set;
@@ -429,8 +429,8 @@ void MergeTreeData::checkProperties(
             const String & pk_column = new_primary_key.column_names[i];
             if (pk_column != sorting_key_column)
                 throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
-                                    + toString(i) + " is " + sorting_key_column +", not " + pk_column,
-                                ErrorCodes::BAD_ARGUMENTS);
+                    + toString(i) + " is " + sorting_key_column +", not " + pk_column,
+                ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
@@ -477,13 +477,13 @@ void MergeTreeData::checkProperties(
             {
                 if (!added_columns.contains(col) || deleted_columns.contains(col))
                     throw Exception("Existing column " + backQuoteIfNeed(col) + " is used in the expression that was "
-                                                                                "added to the sorting key. You can add expressions that use only the newly added columns",
-                                    ErrorCodes::BAD_ARGUMENTS);
+                        "added to the sorting key. You can add expressions that use only the newly added columns",
+                    ErrorCodes::BAD_ARGUMENTS);
 
                 if (new_metadata.columns.getDefaults().contains(col))
                     throw Exception("Newly added column " + backQuoteIfNeed(col) + " has a default expression, so adding "
-                                                                                   "expressions that use it to the sorting key is forbidden",
-                                    ErrorCodes::BAD_ARGUMENTS);
+                       "expressions that use it to the sorting key is forbidden",
+                    ErrorCodes::BAD_ARGUMENTS);
             }
         }
     }
@@ -499,8 +499,8 @@ void MergeTreeData::checkProperties(
 
             if (indices_names.find(index.name) != indices_names.end())
                 throw Exception(
-                    "Index with name " + backQuote(index.name) + " already exists",
-                    ErrorCodes::LOGICAL_ERROR);
+                "Index with name " + backQuote(index.name) + " already exists",
+                ErrorCodes::LOGICAL_ERROR);
 
             indices_names.insert(index.name);
         }
@@ -514,8 +514,8 @@ void MergeTreeData::checkProperties(
         {
             if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(
-                    "Projection with name " + backQuote(projection.name) + " already exists",
-                    ErrorCodes::LOGICAL_ERROR);
+                "Projection with name " + backQuote(projection.name) + " already exists",
+                ErrorCodes::LOGICAL_ERROR);
 
             projections_names.insert(projection.name);
         }
@@ -533,21 +533,21 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & new_metadata, 
 namespace
 {
 
-    ExpressionActionsPtr getCombinedIndicesExpression(
-        const KeyDescription & key,
-        const IndicesDescription & indices,
-        const ColumnsDescription & columns,
-        ContextPtr context)
-    {
-        ASTPtr combined_expr_list = key.expression_list_ast->clone();
+ExpressionActionsPtr getCombinedIndicesExpression(
+    const KeyDescription & key,
+    const IndicesDescription & indices,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
-        for (const auto & index : indices)
-            for (const auto & index_expr : index.expression_list_ast->children)
-                combined_expr_list->children.push_back(index_expr->clone());
+    for (const auto & index : indices)
+        for (const auto & index_expr : index.expression_list_ast->children)
+            combined_expr_list->children.push_back(index_expr->clone());
 
-        auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
-        return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
-    }
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
+    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+}
 
 }
 
@@ -725,7 +725,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             {
                 if (!typeid_cast<const DataTypeInt8 *>(column.type.get()))
                     throw Exception("Sign column (" + sign_column + ") for storage " + storage + " must have type Int8."
-                                                                                                 " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
+                            " Provided column of type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
@@ -752,9 +752,9 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             {
                 if (!column.type->canBeUsedAsVersion())
                     throw Exception("The column " + version_column +
-                                        " cannot be used as a version column for storage " + storage +
-                                        " because it is of type " + column.type->getName() +
-                                        " (must be of an integer type or of type Date/DateTime/DateTime64)", ErrorCodes::BAD_TYPE_OF_FIELD);
+                        " cannot be used as a version column for storage " + storage +
+                        " because it is of type " + column.type->getName() +
+                        " (must be of an integer type or of type Date/DateTime/DateTime64)", ErrorCodes::BAD_TYPE_OF_FIELD);
                 miss_column = false;
                 break;
             }
@@ -792,7 +792,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
             if (!names_intersection.empty())
                 throw Exception("Columns: " + boost::algorithm::join(names_intersection, ", ") +
-                                    " listed both in columns to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
+                        " listed both in columns to sum and in partition key. That is not allowed.", ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -995,9 +995,9 @@ void MergeTreeData::loadDataPartsFromDisk(
     }
     assert(threads_queue.empty());
     assert(std::all_of(threads_parts.begin(), threads_parts.end(), [](const std::vector<std::pair<String, DiskPtr>> & parts)
-                       {
-                           return !parts.empty();
-                       }));
+   {
+       return !parts.empty();
+   }));
 
     size_t suspicious_broken_parts = 0;
     size_t suspicious_broken_parts_bytes = 0;
@@ -1023,9 +1023,9 @@ void MergeTreeData::loadDataPartsFromDisk(
             /// NOTE: getBytesOnDisk() cannot be used here, since it maybe zero of checksums.txt will not exist
             size_t size_of_part = data_part_storage->calculateTotalSizeOnDisk();
             LOG_WARNING(log,
-                        "Detaching stale part {}{} (size: {}), which should have been deleted after a move. "
-                        "That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.",
-                        getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
+                "Detaching stale part {}{} (size: {}), which should have been deleted after a move. "
+                "That can only happen after unclean restart of ClickHouse after move of a part having an operation blocking that stale copy of part.",
+                getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
             std::lock_guard loading_lock(mutex);
             broken_parts_to_detach.push_back(part);
             ++suspicious_broken_parts;
@@ -1061,10 +1061,10 @@ void MergeTreeData::loadDataPartsFromDisk(
             size_t size_of_part = data_part_storage->calculateTotalSizeOnDisk();
 
             LOG_ERROR(log,
-                      "Detaching broken part {}{} (size: {}). "
-                      "If it happened after update, it is likely because of backward incompability. "
-                      "You need to resolve this manually",
-                      getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
+              "Detaching broken part {}{} (size: {}). "
+              "If it happened after update, it is likely because of backward incompability. "
+              "You need to resolve this manually",
+              getFullPathOnDisk(part_disk_ptr), part_name, formatReadableSizeWithBinarySuffix(size_of_part));
             std::lock_guard loading_lock(mutex);
             broken_parts_to_detach.push_back(part);
             ++suspicious_broken_parts;

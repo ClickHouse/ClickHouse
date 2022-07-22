@@ -22,8 +22,8 @@
 
 namespace zkutil
 {
-class ZooKeeper;
-using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
 }
 
 namespace DB
