@@ -126,6 +126,20 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!create.attach && !context->getSettingsRef().allow_deprecated_database_ordinary)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                             "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
+
+        /// Before 20.7 metadata/db_name.sql file might absent and Ordinary database was attached if there's metadata/db_name/ dir.
+        /// Between 20.7 and 22.7 metadata/db_name.sql was created in this case as well.
+        /// Since 20.7 `default` database is created with Atomic engine on the very first server run.
+        /// The problem is that if server crashed during the very first run and metadata/db_name/ -> store/whatever symlink was created
+        /// then it's considered as Ordinary database. And it even works somehow
+        /// until background task tries to remove onused dir from store/...
+        if (fs::is_symlink(metadata_path))
+            throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Metadata directory {} for Ordinary database {} is a symbolic link to {}. "
+                            "It may be a result of manual intervention, crash on very first server start or a bug. "
+                            "Database cannot be attached (it's kind of protection from potential data loss). "
+                            "Metadata directory must not be a symlink and must contain tables metadata files itself. "
+                            "You have to resolve this manually.",
+                            metadata_path, database_name, fs::read_symlink(metadata_path).string());
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
     }
 
