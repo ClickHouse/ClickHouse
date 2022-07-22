@@ -84,8 +84,8 @@ TEST(DateLUTTest, makeDayNumTest)
     EXPECT_EQ(-25567, lut.makeDayNum(1900, 1, 1));
     EXPECT_EQ(-16436, lut.makeDayNum(1925, 1, 1));
     EXPECT_EQ(0, lut.makeDayNum(1970, 1, 1));
-    EXPECT_EQ(120894, lut.makeDayNum(2300, 12, 31));
-    EXPECT_EQ(120894, lut.makeDayNum(2500, 12, 25));
+    EXPECT_EQ(120529, lut.makeDayNum(2300, 12, 31));
+    EXPECT_EQ(120529, lut.makeDayNum(2500, 12, 25));
 }
 
 
