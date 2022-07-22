@@ -10,15 +10,16 @@ from github import Github
 from env_helper import (
     RUNNER_TEMP,
     GITHUB_WORKSPACE,
-    GITHUB_REPOSITORY,
-    GITHUB_SERVER_URL,
 )
 from s3_helper import S3Helper
-from pr_info import PRInfo, SKIP_SIMPLE_CHECK_LABEL
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status, get_commit
+from commit_status_helper import (
+    post_commit_status,
+    fail_simple_check,
+)
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -124,17 +125,6 @@ if __name__ == "__main__":
     )
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
-    if state == "error":
-        if SKIP_SIMPLE_CHECK_LABEL not in pr_info.labels:
-            url = (
-                f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
-                "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
-            )
-            commit = get_commit(gh, pr_info.sha)
-            commit.create_status(
-                context="Simple Check",
-                description=f"{NAME} failed",
-                state="failed",
-                target_url=url,
-            )
+    if state in ["error", "failure"]:
+        fail_simple_check(gh, pr_info, f"{NAME} failed")
         sys.exit(1)
