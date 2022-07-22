@@ -229,8 +229,8 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
             String pk_column = primary_key_expr_list->children[i]->getColumnName();
             if (pk_column != sorting_key_column)
                 throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
-                    + toString(i) + " is " + sorting_key_column +", not " + pk_column,
-                ErrorCodes::BAD_ARGUMENTS);
+                                    + toString(i) + " is " + sorting_key_column +", not " + pk_column,
+                                ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);

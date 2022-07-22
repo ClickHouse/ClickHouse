@@ -416,7 +416,7 @@ void MergeTreeData::checkProperties(
     if (primary_key_size > sorting_key_size)
         throw Exception("Primary key must be a prefix of the sorting key, but its length: "
             + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
-                        ErrorCodes::BAD_ARGUMENTS);
+                ErrorCodes::BAD_ARGUMENTS);
 
     NameSet primary_key_columns_set;
 
@@ -430,7 +430,7 @@ void MergeTreeData::checkProperties(
             if (pk_column != sorting_key_column)
                 throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
                     + toString(i) + " is " + sorting_key_column +", not " + pk_column,
-                ErrorCodes::BAD_ARGUMENTS);
+                    ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
@@ -478,12 +478,12 @@ void MergeTreeData::checkProperties(
                 if (!added_columns.contains(col) || deleted_columns.contains(col))
                     throw Exception("Existing column " + backQuoteIfNeed(col) + " is used in the expression that was "
                         "added to the sorting key. You can add expressions that use only the newly added columns",
-                    ErrorCodes::BAD_ARGUMENTS);
+                        ErrorCodes::BAD_ARGUMENTS);
 
                 if (new_metadata.columns.getDefaults().contains(col))
                     throw Exception("Newly added column " + backQuoteIfNeed(col) + " has a default expression, so adding "
-                       "expressions that use it to the sorting key is forbidden",
-                    ErrorCodes::BAD_ARGUMENTS);
+                        "expressions that use it to the sorting key is forbidden",
+                        ErrorCodes::BAD_ARGUMENTS);
             }
         }
     }
@@ -499,8 +499,8 @@ void MergeTreeData::checkProperties(
 
             if (indices_names.find(index.name) != indices_names.end())
                 throw Exception(
-                "Index with name " + backQuote(index.name) + " already exists",
-                ErrorCodes::LOGICAL_ERROR);
+                        "Index with name " + backQuote(index.name) + " already exists",
+                        ErrorCodes::LOGICAL_ERROR);
 
             indices_names.insert(index.name);
         }
@@ -514,8 +514,8 @@ void MergeTreeData::checkProperties(
         {
             if (projections_names.find(projection.name) != projections_names.end())
                 throw Exception(
-                "Projection with name " + backQuote(projection.name) + " already exists",
-                ErrorCodes::LOGICAL_ERROR);
+                        "Projection with name " + backQuote(projection.name) + " already exists",
+                        ErrorCodes::LOGICAL_ERROR);
 
             projections_names.insert(projection.name);
         }
