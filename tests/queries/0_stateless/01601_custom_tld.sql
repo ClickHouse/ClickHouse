@@ -1,3 +1,5 @@
+-- { echo }
+
 select '-- no-tld';
 -- even if there is no TLD, 2-nd level by default anyway
 -- FIXME: make this behavior optional (so that TLD for host never changed, either empty or something real)
