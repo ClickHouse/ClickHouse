@@ -2,6 +2,7 @@
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

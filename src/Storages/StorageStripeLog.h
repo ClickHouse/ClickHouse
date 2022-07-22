@@ -20,7 +20,7 @@ using BackupPtr = std::shared_ptr<const IBackup>;
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public IStorage
+class StorageStripeLog final : public IStorage, public WithMutableContext
 {
 friend class StripeLogSource;
 friend class StripeLogSink;
@@ -34,7 +34,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         bool attach,
-        size_t max_compress_block_size_);
+        ContextMutablePtr context_);
 
     ~StorageStripeLog() override;
 
@@ -44,16 +44,16 @@ public:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        ContextPtr local_context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) override;
+    CheckResults checkData(const ASTPtr & query, ContextPtr ocal_context) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }

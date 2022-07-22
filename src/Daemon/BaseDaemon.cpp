@@ -298,7 +298,7 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = thread_ptr->getQueryId().toString();
+            query_id = std::string(thread_ptr->getQueryId());
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {

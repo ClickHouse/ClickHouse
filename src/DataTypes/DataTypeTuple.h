@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <optional>
 
 
 namespace DB
@@ -62,6 +63,7 @@ public:
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
+    std::optional<size_t> tryGetPositionByName(const String & name) const;
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
