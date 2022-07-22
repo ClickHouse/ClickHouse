@@ -301,7 +301,7 @@ def test_async():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     backup_name = new_backup_name()
-    [id, _, status] = instance.query(
+    [id, status] = instance.query(
         f"BACKUP TABLE test.table TO {backup_name} ASYNC"
     ).split("\t")
 
@@ -315,7 +315,7 @@ def test_async():
 
     instance.query("DROP TABLE test.table")
 
-    [id, _, status] = instance.query(
+    [id, status] = instance.query(
         f"RESTORE TABLE test.table FROM {backup_name} ASYNC"
     ).split("\t")
 

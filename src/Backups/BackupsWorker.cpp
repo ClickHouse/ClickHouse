@@ -529,11 +529,11 @@ void BackupsWorker::doRestore(
 }
 
 
-void BackupsWorker::addInfo(const UUID & uuid, const String & backup_name, BackupStatus status)
+void BackupsWorker::addInfo(const UUID & uuid, const String & name, BackupStatus status)
 {
     Info info;
     info.uuid = uuid;
-    info.backup_name = backup_name;
+    info.name = name;
     info.status = status;
     info.status_changed_time = time(nullptr);
 
