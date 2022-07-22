@@ -39,8 +39,8 @@ String getQuotedTable(const DatabaseAndTableName & db_and_table)
 
 // Creates AST representing 'ENGINE = Distributed(cluster, db, table, [sharding_key])
 std::shared_ptr<ASTStorage> createASTStorageDistributed(
-        const String & cluster_name, const String & database, const String & table,
-        const ASTPtr & sharding_key_ast)
+    const String & cluster_name, const String & database, const String & table,
+    const ASTPtr & sharding_key_ast)
 {
     auto args = std::make_shared<ASTExpressionList>();
     args->children.emplace_back(std::make_shared<ASTLiteral>(cluster_name));
@@ -91,8 +91,8 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     if (!endsWith(engine.name, "MergeTree"))
     {
         throw Exception(
-                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                ErrorCodes::BAD_ARGUMENTS);
+            "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+            ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (isExtendedDefinitionStorage(storage_ast))
@@ -202,7 +202,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
 
     const auto sorting_key_expr_list = extractKeyExpressionList(sorting_key_ast);
     const auto primary_key_expr_list = primary_key_ast
-                           ? extractKeyExpressionList(primary_key_ast) : sorting_key_expr_list->clone();
+        ? extractKeyExpressionList(primary_key_ast) : sorting_key_expr_list->clone();
 
     /// Maybe we have to handle VersionedCollapsing engine separately. But in our case in looks pointless.
 
@@ -211,8 +211,8 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
 
     if (primary_key_size > sorting_key_size)
         throw Exception("Primary key must be a prefix of the sorting key, but its length: "
-                        + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
-                    ErrorCodes::BAD_ARGUMENTS);
+                            + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
+                        ErrorCodes::BAD_ARGUMENTS);
 
     Names primary_key_columns;
     NameSet primary_key_columns_set;
@@ -251,8 +251,8 @@ bool isReplicatedTableEngine(const ASTPtr & storage_ast)
     {
         String storage_str = queryToString(storage_ast);
         throw Exception(
-                "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
-                ErrorCodes::BAD_ARGUMENTS);
+            "Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
+            ErrorCodes::BAD_ARGUMENTS);
     }
 
     return startsWith(engine.name, "Replicated");

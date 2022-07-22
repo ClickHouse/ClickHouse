@@ -1070,7 +1070,7 @@ void IMergeTreeDataPart::loadRowsCount()
                 /// In last mark we actually written less or equal rows than stored in last mark of index granularity
                 if (rows_in_column - index_granularity_without_last_mark > last_possibly_incomplete_mark_rows)
                 {
-                    throw Exception(
+                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Column {} has rows count {} in last mark according to size in memory "
                         "and size of single value, but index granularity in part {} in last mark has {} rows which is less than in column",
