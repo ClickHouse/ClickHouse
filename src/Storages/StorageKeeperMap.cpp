@@ -7,6 +7,12 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
+#include "Parsers/ASTExpressionList.h"
+#include "Parsers/ASTFunction.h"
+#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include "Parsers/ASTSelectQuery.h"
+#include "Storages/MergeTree/IMergeTreeDataPart.h"
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -45,7 +51,6 @@ StorageKeeperMap::StorageKeeperMap(std::string_view keeper_path_, ContextPtr con
                 throw Exception("keeper_path is invalid, contains subsequent '/'", ErrorCodes::BAD_ARGUMENTS);
 
             auto path = keeper_path.substr(0, cur_pos);
-            LOG_TRACE(&Poco::Logger::get("StorageKeeperMap"), "Creating root path {}", path);
             auto status = getClient()->tryCreate(path, "", zkutil::CreateMode::Persistent);
             if (status != Coordination::Error::ZOK && status != Coordination::Error::ZNODEEXISTS)
                 throw zkutil::KeeperException(status, path);
@@ -104,6 +109,17 @@ public:
     }
 };
 
+enum class FilterType
+{
+    EXACT = 0
+};
+
+struct KeyFilter
+{
+    std::string filter;
+    FilterType type;
+};
+
 class StorageKeeperMapSource : public ISource
 {
     StorageKeeperMap & storage;
@@ -111,57 +127,90 @@ class StorageKeeperMapSource : public ISource
     size_t current_idx = 0;
     Block sample_block;
     Names column_names;
+    bool has_value_column{false};
     size_t max_block_size;
+    std::optional<KeyFilter> filter;
+
+    Chunk generateSingleKey()
+    {
+        assert(filter && filter->type == FilterType::EXACT);
+        static bool processed = false;
+
+        if (processed)
+            return {};
+
+        auto zookeeper = storage.getClient();
+
+        std::string value;
+        auto path = fmt::format("{}/{}", storage.rootKeeperPath(), filter->filter);
+        auto res = zookeeper->tryGet(path, value);
+        if (!res)
+            return {};
+
+        MutableColumns columns(sample_block.cloneEmptyColumns());
+        insertRowForKey(columns, filter->filter, value);
+        processed = true;
+
+        return Chunk{std::move(columns), 1};
+    }
+
+    bool insertRowForKey(MutableColumns & columns, const std::string & key, const std::string & value)
+    {
+
+        for (size_t column_index = 0; column_index < column_names.size(); ++column_index)
+        {
+            if (column_names[column_index] == "key")
+                assert_cast<ColumnString &>(*columns[column_index]).insertData(key.data(), key.size());
+            else if (column_names[column_index] == "value")
+                assert_cast<ColumnString &>(*columns[column_index]).insertData(value.data(), value.size());
+        }
+        return true;
+    }
 
 public:
-    StorageKeeperMapSource(const Block & sample_block_, StorageKeeperMap & storage_, size_t max_block_size_)
+    StorageKeeperMapSource(const Block & sample_block_, StorageKeeperMap & storage_, size_t max_block_size_, std::optional<KeyFilter> filter_)
         : ISource(sample_block_)
         , storage(storage_)
         , sample_block(sample_block_.cloneEmpty())
         , column_names(sample_block_.getNames())
         , max_block_size(max_block_size_)
+        , filter(std::move(filter_))
     {
+        has_value_column = std::any_of(column_names.begin(), column_names.end(), [](const auto & name) { return name == "value"; });
+
+        // TODO(antonio2368): Do it lazily in generate
+        if (!filter || filter->type != FilterType::EXACT)
+        {
+            auto zookeeper = storage.getClient();
+            keys = zookeeper->getChildren(storage.rootKeeperPath());
+        }
     }
 
     std::string getName() const override { return "StorageKeeperMapSource"; }
 
-    Status prepare() override
-    {
-        auto zookeeper = storage.getClient();
-        keys = zookeeper->getChildren(storage.rootKeeperPath());
-        return ISource::prepare();
-    }
-
     Chunk generate() override
     {
+        if (filter && filter->type == FilterType::EXACT)
+            return generateSingleKey();
+
         auto zookeeper = storage.getClient();
 
         MutableColumns columns(sample_block.cloneEmptyColumns());
         size_t num_rows = 0;
-        while (num_rows < max_block_size && current_idx != keys.size())
+        for (; num_rows < max_block_size && current_idx != keys.size(); ++current_idx)
         {
             const auto & key = keys[current_idx];
-            std::optional<std::string> value;
-            for (size_t column_index = 0; column_index < column_names.size(); ++column_index)
+            std::string value;
+            if (has_value_column)
             {
-                if (column_names[column_index] == "key")
-                    assert_cast<ColumnString &>(*columns[column_index]).insertData(key.data(), key.size());
-                else if (column_names[column_index] == "value")
-                {
-                    if (!value)
-                    {
-                        auto path = fmt::format("{}/{}", storage.rootKeeperPath(), key);
-                        std::string maybe_value;
-                        auto res = zookeeper->tryGet(path, maybe_value);
-                        value = res ? std::move(maybe_value) : "";
-                    }
-
-                    assert_cast<ColumnString &>(*columns[column_index]).insertData(value->data(), value->size());
-                }
+                auto path = fmt::format("{}/{}", storage.rootKeeperPath(), key);
+                auto res = zookeeper->tryGet(path, value);
+                if (!res)
+                    continue;
             }
 
-            ++num_rows;
-            ++current_idx;
+            if (insertRowForKey(columns, key, value))
+                ++num_rows;
         }
 
         if (num_rows == 0)
@@ -171,11 +220,44 @@ public:
     }
 };
 
+std::optional<KeyFilter> tryGetKeyFilter(const IAST & elem, const ContextPtr context)
+{
+    const auto * function = elem.as<ASTFunction>();
+    if (!function)
+        return std::nullopt;
+
+    if (function->name != "equals")
+        return std::nullopt;
+
+    const auto & args = function->arguments->as<ASTExpressionList &>();
+    const ASTIdentifier * ident;
+    ASTPtr value;
+    if ((ident = args.children.at(0)->as<ASTIdentifier>()))
+        value = args.children.at(1);
+    else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
+        value = args.children.at(0);
+    else
+        return std::nullopt;
+
+    if (ident->name() != "key")
+        return std::nullopt;
+
+    auto evaluated = evaluateConstantExpressionAsLiteral(value, context);
+    const auto * literal = evaluated->as<ASTLiteral>();
+    if (!literal)
+        return std::nullopt;
+
+    if (literal->value.getType() != Field::Types::String)
+        return std::nullopt;
+
+    return KeyFilter{literal->value.safeGet<std::string>(), FilterType::EXACT};
+}
+
 Pipe StorageKeeperMap::read(
     const Names & column_names,
     const StorageSnapshotPtr & /*storage_snapshot*/,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
@@ -186,7 +268,12 @@ Pipe StorageKeeperMap::read(
         sample_block.insert({std::make_shared<DataTypeString>(), column_name});
     }
 
-    return Pipe(std::make_shared<StorageKeeperMapSource>(sample_block, *this, max_block_size));
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    std::optional<KeyFilter> key_filter;
+    if (select.where())
+        key_filter = tryGetKeyFilter(*select.where(), context);
+
+    return Pipe(std::make_shared<StorageKeeperMapSource>(sample_block, *this, max_block_size, std::move(key_filter)));
 }
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/)
