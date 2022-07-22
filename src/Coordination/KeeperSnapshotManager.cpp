@@ -145,6 +145,16 @@ namespace
     }
 }
 
+namespace
+{
+
+bool isChildSystemPath(const std::string_view path)
+{
+    auto [first_it, second_it] = std::mismatch(path.begin(), path.end(), keeper_system_path.begin(), keeper_system_path.end());
+    return first_it != path.end() && *first_it == '/' && second_it == keeper_system_path.end();
+}
+
+}
 
 void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out)
 {
@@ -183,11 +193,16 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.snapshot_container_size, out);
+    writeBinary(snapshot.snapshot_container_size - data_for_system_paths.size(), out);
     size_t counter = 0;
     for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
     {
         const auto & path = it->key;
+
+        // write only the root system path because of digest
+        if (isChildSystemPath(path.toView()))
+            continue;
+
         const auto & node = it->value;
 
         /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
