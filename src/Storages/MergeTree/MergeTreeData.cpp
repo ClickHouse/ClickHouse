@@ -6187,7 +6187,7 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
 
     auto disks = getStoragePolicy()->getDisks();
 
-    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path, format_version);
+    return Unfreezer(local_context).unfreezePartitionsFromTableDirectory(matcher, backup_name, disks, backup_path);
 }
 
 bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const

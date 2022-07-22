@@ -104,7 +104,7 @@ String FreezeMetaData::getFileName(const String & path)
 BlockIO Unfreezer::unfreeze(const String & backup_name)
 {
     LOG_DEBUG(log, "Unfreezing backup {}", escapeForFileName(backup_name));
-    auto disks_map = local_context_->getDisksMap();
+    auto disks_map = local_context->getDisksMap();
     Disks disks;
     for (auto & [name, disk]: disks_map)
     {
@@ -128,7 +128,7 @@ BlockIO Unfreezer::unfreeze(const String & backup_name)
                 {
                     auto table_directory = prefix_directory / table_it->name();
                     auto current_result_info = unfreezePartitionsFromTableDirectory(
-                        [](const String &) { return true; }, backup_name, {disk}, table_directory, std::nullopt);
+                        [](const String &) { return true; }, backup_name, {disk}, table_directory);
                     for (auto & command_result : current_result_info)
                     {
                         command_result.command_type = "SYSTEM UNFREEZE";
@@ -172,7 +172,7 @@ bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const Strin
     return false;
 }
 
-PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory, std::optional<MergeTreeDataFormatVersion> format_version)
+PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory)
 {
     PartitionCommandsResultInfo result;
 
@@ -184,13 +184,8 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
         for (auto it = disk->iterateDirectory(table_directory); it->isValid(); it->next())
         {
             const auto & partition_directory = it->name();
-            
-            int count_underscores = std::count_if(partition_directory.begin(), partition_directory.end(), []( char c ){return c =='_';});
-            if ((format_version.has_value() && format_version == 0) || count_underscores == 4) {
-                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Can not complete unfreeze query because part directory name is obsolete: " + partition_directory);
-            }
 
-            /// For format_version == 1, partition ID is prefix of part directory name: <partition id>_<rest of part directory name>
+            /// Partition ID is prefix of part directory name: <partition id>_<rest of part directory name>
             auto found = partition_directory.find('_');
             if (found == std::string::npos)
                 continue;
@@ -201,7 +196,7 @@ PartitionCommandsResultInfo Unfreezer::unfreezePartitionsFromTableDirectory(Merg
 
             const auto & path = it->path();
 
-            bool keep_shared = removeFreezedPart(disk, path, partition_directory, local_context_, zookeeper_);
+            bool keep_shared = removeFreezedPart(disk, path, partition_directory, local_context, zookeeper);
 
             result.push_back(PartitionCommandResultInfo{
                 .partition_id = partition_id,
