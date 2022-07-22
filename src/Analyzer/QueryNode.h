@@ -122,6 +122,8 @@ public:
         return QueryTreeNodeType::QUERY;
     }
 
+    String getName() const override;
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
     bool isEqualImpl(const IQueryTreeNode & rhs) const override;
@@ -147,7 +149,7 @@ private:
     static constexpr size_t having_child_index = 6;
     static constexpr size_t order_by_child_index = 7;
     static constexpr size_t limit_child_index = 8;
-    static constexpr size_t children_size = where_child_index + 1;
+    static constexpr size_t children_size = limit_child_index + 1;
 };
 
 }
