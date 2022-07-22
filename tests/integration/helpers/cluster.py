@@ -237,6 +237,18 @@ def enable_consistent_hash_plugin(rabbitmq_id):
     return p.returncode == 0
 
 
+def extract_test_name(base_path):
+    """Extracts the name of the test based to a path to its test*.py file
+    Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
+    """
+    name = p.basename(base_path)
+    if name == "test.py":
+        name = ""
+    elif name.startswith("test_") and name.endswith(".py"):
+        name = name[len("test_") : (len(name) - len(".py"))]
+    return name
+
+
 def get_instances_dir():
     if (
         "INTEGRATION_TESTS_RUN_ID" in os.environ
@@ -274,7 +286,7 @@ class ClickHouseCluster:
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
-        self.name = name if name is not None else ""
+        self.name = name if name is not None else extract_test_name(base_path)
 
         self.base_config_dir = base_config_dir or os.environ.get(
             "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
@@ -373,6 +385,7 @@ class ClickHouseCluster:
         self.with_jdbc_bridge = False
         self.with_nginx = False
         self.with_hive = False
+        self.with_coredns = False
 
         self.with_minio = False
         self.minio_dir = os.path.join(self.instances_dir, "minio")
@@ -415,6 +428,8 @@ class ClickHouseCluster:
         self.schema_registry_host = "schema-registry"
         self.schema_registry_port = get_free_port()
         self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
+
+        self.coredns_host = "coredns"
 
         # available when with_kerberozed_kafka == True
         self.kerberized_kafka_host = "kerberized_kafka1"
@@ -1090,6 +1105,25 @@ class ClickHouseCluster:
         ]
         return self.base_mongo_cmd
 
+    def setup_coredns_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_coredns = True
+        env_variables["COREDNS_CONFIG_DIR"] = instance.path + "/" + "coredns_config"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_coredns.yml")]
+        )
+
+        self.base_coredns_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_coredns.yml"),
+        ]
+
+        return self.base_coredns_cmd
+
     def setup_meili_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_meili = True
         env_variables["MEILI_HOST"] = self.meili_host
@@ -1253,6 +1287,7 @@ class ClickHouseCluster:
         with_cassandra=False,
         with_jdbc_bridge=False,
         with_hive=False,
+        with_coredns=False,
         hostname=None,
         env_variables=None,
         image="clickhouse/integration-test",
@@ -1337,6 +1372,7 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
+            with_coredns=with_coredns,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -1501,6 +1537,11 @@ class ClickHouseCluster:
                     )
                 )
 
+        if with_coredns and not self.with_coredns:
+            cmds.append(
+                self.setup_coredns_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
         if with_meili and not self.with_meili:
             cmds.append(
                 self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -1615,6 +1656,16 @@ class ClickHouseCluster:
         handle = self.docker_client.containers.get(docker_id)
         return list(handle.attrs["NetworkSettings"]["Networks"].values())[0][
             "IPAddress"
+        ]
+
+    def get_instance_global_ipv6(self, instance_name):
+        logging.debug("get_instance_ip instance_name={}".format(instance_name))
+        docker_id = self.get_instance_docker_id(instance_name)
+        # for cont in self.docker_client.containers.list():
+        # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
+        handle = self.docker_client.containers.get(docker_id)
+        return list(handle.attrs["NetworkSettings"]["Networks"].values())[0][
+            "GlobalIPv6Address"
         ]
 
     def get_container_id(self, instance_name):
@@ -2441,6 +2492,12 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
+            if self.with_coredns and self.base_coredns_cmd:
+                logging.debug("Setup coredns")
+                run_and_check(self.base_coredns_cmd + common_opts)
+                self.up_called = True
+                time.sleep(10)
+
             if self.with_meili and self.base_meili_cmd:
                 logging.debug("Setup MeiliSearch")
                 run_and_check(self.base_meili_cmd + common_opts)
@@ -2779,6 +2836,7 @@ class ClickHouseInstance:
         with_azurite,
         with_jdbc_bridge,
         with_hive,
+        with_coredns,
         with_cassandra,
         server_bin_path,
         odbc_bridge_bin_path,
@@ -2862,6 +2920,8 @@ class ClickHouseInstance:
         self.with_cassandra = with_cassandra
         self.with_jdbc_bridge = with_jdbc_bridge
         self.with_hive = with_hive
+        self.with_coredns = with_coredns
+        self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -2943,7 +3003,12 @@ class ClickHouseInstance:
         ignore_error=False,
         query_id=None,
     ):
-        logging.debug("Executing query %s on %s", sql, self.name)
+        sql_for_log = ""
+        if len(sql) > 1000:
+            sql_for_log = sql[:1000]
+        else:
+            sql_for_log = sql
+        logging.debug("Executing query %s on %s", sql_for_log, self.name)
         return self.client.query(
             sql,
             stdin=stdin,
@@ -3764,6 +3829,11 @@ class ClickHouseInstance:
         if self.with_kerberized_kafka or self.with_kerberized_hdfs:
             shutil.copytree(
                 self.kerberos_secrets_dir, p.abspath(p.join(self.path, "secrets"))
+            )
+
+        if self.with_coredns:
+            shutil.copytree(
+                self.coredns_config_dir, p.abspath(p.join(self.path, "coredns_config"))
             )
 
         # Copy config.d configs
