@@ -127,12 +127,13 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     {
         if (part && part->isProjectionPart())
         {
-            data.reportBrokenPart(part->getParentPart()->name);
+            auto parent_part = part->getParentPart()->shared_from_this();
+            data.reportBrokenPart(parent_part);
         }
+        else if (part)
+            data.reportBrokenPart(part);
         else
-        {
-            data.reportBrokenPart(part_name);
-        }
+            LOG_TRACE(log, "Part {} was not found, do not report it as broken", part_name);
     };
 
     try

@@ -157,6 +157,7 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (base-x-cmake base-x)
+add_contrib(c-ares-cmake c-ares)
 add_contrib (qpl-cmake qpl)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
