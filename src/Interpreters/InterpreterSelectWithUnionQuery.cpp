@@ -280,7 +280,6 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
 
 void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 {
-    // auto num_distinct_union = optimizeUnionList();
     size_t num_plans = nested_interpreters.size();
     const Settings & settings = context->getSettingsRef();
 
