@@ -27,11 +27,6 @@
 #include <Dictionaries/DictionaryHelpers.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric Write;
-}
-
 namespace ProfileEvents
 {
     extern const Event FileOpen;
