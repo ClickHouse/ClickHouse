@@ -591,7 +591,7 @@ private:
 
     QueryTreeNodePtr resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
-    void resolveLambda(QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope);
+    void resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope);
 
     void resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope);
 
@@ -603,7 +603,7 @@ private:
 
     void resolveQueryFrom(QueryTreeNodePtr & from_node, IdentifierResolveScope & scope);
 
-    void resolveQuery(QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
+    void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 
     /// Query analyzer context
     ContextPtr context;
@@ -1824,6 +1824,22 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
                     IdentifierResolveScope lambda_scope(expression_node, &scope /*parent_scope*/);
                     resolveLambda(lambda_expression_to_resolve, {node}, lambda_scope);
                     auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
+
+                    if (auto * lambda_list_node_result = lambda_expression_to_resolve_typed.getExpression()->as<ListNode>())
+                    {
+                        auto & lambda_list_node_result_nodes = lambda_list_node_result->getNodes();
+                        size_t lambda_list_node_result_nodes_size = lambda_list_node_result->getNodes().size();
+
+                        if (lambda_list_node_result_nodes_size != 1)
+                            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                            "Lambda in APPLY transformer {} resolved as list node with size {}. Expected 1. In scope {}",
+                            apply_transformer->formatASTForErrorMessage(),
+                            lambda_list_node_result_nodes_size,
+                            scope.scope_node->formatASTForErrorMessage());
+
+                        lambda_expression_to_resolve_typed.getExpression() = lambda_list_node_result_nodes[0];
+                    }
+
                     node = lambda_expression_to_resolve_typed.getExpression();
                 }
                 else if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::FUNCTION)
@@ -1948,6 +1964,8 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
   * This function modified lambda_node during resolve. It is caller responsibility to clone lambda before resolve
   * if it is needed for later use.
   *
+  * Lambda expression can be resolved into list node. It is caller responsibility to handle it properly.
+  *
   * lambda_node - node that must have LambdaNode type.
   * arguments - lambda arguments.
   * scope - lambda scope. It is client responsibility to create it.
@@ -1960,7 +1978,7 @@ QueryTreeNodePtr QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, 
   * 5. Resolve lambda body expression.
   * 6. Deregister lambda from lambdas in resolve process.
   */
-void QueryAnalyzer::resolveLambda(QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_node, const QueryTreeNodes & lambda_arguments, IdentifierResolveScope & scope)
 {
     auto & lambda = lambda_node->as<LambdaNode &>();
     auto & lambda_arguments_nodes = lambda.getArguments().getNodes();
@@ -1988,7 +2006,7 @@ void QueryAnalyzer::resolveLambda(QueryTreeNodePtr & lambda_node, const QueryTre
     /// Initialize aliases in lambda scope
     ScopeAliasVisitorMatcher::Data data{scope};
     ScopeAliasVisitorMatcher::Visitor visitor(data);
-    visitor.visit(lambda_node);
+    visitor.visit(lambda.getExpression());
 
     /** Replace lambda arguments with new arguments.
       * Additionally validate that there are no aliases with same name as lambda arguments.
@@ -2025,16 +2043,6 @@ void QueryAnalyzer::resolveLambda(QueryTreeNodePtr & lambda_node, const QueryTre
       * After that lambda is resolved, because its expression node is resolved.
       */
     resolveExpressionNode(lambda.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-    /** TODO: Lambda body can be resolved in expression list. And for standalone lambdas it will work.
-      * TODO: It can potentially be resolved into table or another lambda.
-      * Example: WITH (x -> untuple(x)) AS lambda SELECT untuple(compound_expression).
-      */
-    // if (lambda.getExpression()->getNodeType() == QueryTreeNodeType::LIST)
-    //     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-    //         "Lambda {} expression body cannot contain list of expressions. In scope {}",
-    //         lambda_node->formatASTForErrorMessage(),
-    //         scope.scope_node->formatASTForErrorMessage());
 
     lambdas_in_resolve_process.erase(lambda_node.get());
 }
@@ -2290,7 +2298,7 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
             size_t function_data_type_arguments_size = function_data_type_argument_types.size();
             if (function_data_type_arguments_size != lambda_arguments_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Function {} function data type for lambda argument wiht index {} arguments size mismatch. Actual {}. Expected {}. In scope {}",
+                    "Function {} function data type for lambda argument with index {} arguments size mismatch. Actual {}. Expected {}. In scope {}",
                     function_name,
                     function_data_type_arguments_size,
                     lambda_arguments_size,
@@ -2309,6 +2317,20 @@ void QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveSc
 
             IdentifierResolveScope lambda_scope(lambda_to_resolve, &scope /*parent_scope*/);
             resolveLambda(lambda_to_resolve, lambda_arguments, lambda_scope);
+
+            if (auto * lambda_list_node_result = lambda_to_resolve_typed.getExpression()->as<ListNode>())
+            {
+                auto & lambda_list_node_result_nodes = lambda_list_node_result->getNodes();
+                size_t lambda_list_node_result_nodes_size = lambda_list_node_result->getNodes().size();
+
+                if (lambda_list_node_result_nodes_size != 1)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Lambda as function argument resolved as list node with size {}. Expected 1. In scope {}",
+                        lambda_list_node_result_nodes_size,
+                        lambda_to_resolve->formatASTForErrorMessage());
+
+                lambda_to_resolve_typed.getExpression() = lambda_list_node_result_nodes[0];
+            }
 
             argument_types[function_lambda_argument_index] = std::make_shared<DataTypeFunction>(function_data_type_argument_types, lambda_to_resolve->getResultType());
             argument_columns[function_lambda_argument_index].type = argument_types[function_lambda_argument_index];
@@ -2795,7 +2817,7 @@ void QueryAnalyzer::resolveQueryFrom(QueryTreeNodePtr & from_node, IdentifierRes
   * 5. Remove WITH section from query.
   * 6. Validate nodes with duplicate aliases.
   */
-void QueryAnalyzer::resolveQuery(QueryTreeNodePtr & query_node, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
 
