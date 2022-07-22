@@ -335,7 +335,7 @@ else
         || echo -e 'Backward compatibility check: Test script failed\tFAIL' >> /test_output/test_results.tsv
     rm -rf tmp_stress_output
 
-    clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables"
+    clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||:
 
     stop
     mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.backward.stress.log
