@@ -320,29 +320,6 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
 
-def test_postgresql_fetch_tables(started_cluster):
-    conn = get_postgres_conn(
-        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
-    )
-    cursor = conn.cursor()
-
-    cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
-    cursor.execute("CREATE SCHEMA test_schema")
-    cursor.execute("CREATE TABLE test_schema.table1 (a integer)")
-    cursor.execute("CREATE TABLE test_schema.table2 (a integer)")
-    cursor.execute("CREATE TABLE table3 (a integer)")
-
-    node1.query(
-        "CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')"
-    )
-
-    assert node1.query("SHOW TABLES FROM postgres_database") == "table3\n"
-    assert not node1.contains_in_log("PostgreSQL table table1 does not exist")
-
-    cursor.execute(f"DROP TABLE table3")
-    cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
-
-
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
