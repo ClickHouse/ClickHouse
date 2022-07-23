@@ -513,7 +513,7 @@ void LocalServer::processConfig()
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::LOCAL);
 
-    size_t query_cache_size_in_bytes = config().getUInt64("query_cache_size_in_bytes", 1 * (1ULL << 30));
+    size_t query_cache_size_in_bytes = config().getUInt64("query_cache_size_in_bytes", 1 * (1ULL << 20));
     global_context->setQueryCache(query_cache_size_in_bytes);
 
     tryInitPath();
