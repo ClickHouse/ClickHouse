@@ -264,8 +264,11 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
         return;
     }
 
+    auto builder = cloned_part->data_part_storage->getBuilder();
     /// Don't remove new directory but throw an error because it may contain part which is currently in use.
-    cloned_part->renameTo(active_part->name, false);
+    cloned_part->renameTo(active_part->name, false, builder);
+
+    builder->commit();
 
     /// TODO what happen if server goes down here?
     data->swapActivePart(cloned_part);

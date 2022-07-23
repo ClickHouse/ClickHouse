@@ -20,6 +20,7 @@ CamelCase
 CapnProto
 CentOS
 ClickHouse
+ClickHouse's
 Config
 Contrib
 Ctrl
@@ -121,6 +122,7 @@ SATA
 SERIALIZABLE
 SIMD
 SMALLINT
+SQLInsert
 SQLSTATE
 SSSE
 Schemas
@@ -411,6 +413,7 @@ simdjson
 skippingerrors
 sparsehash
 sql
+sqlinsert
 src
 stacktraces
 statbox
@@ -468,6 +471,7 @@ uuid
 variadic
 varint
 vectorized
+vectorscan
 wchc
 wchs
 webpage

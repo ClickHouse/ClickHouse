@@ -3,13 +3,9 @@
 
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <DataTypes/DataTypeString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
-#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
@@ -17,6 +13,7 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
@@ -95,10 +92,13 @@ StorageExternalDistributed::StorageExternalDistributed(
                 postgres_conf.set(configuration);
                 postgres_conf.addresses = addresses;
 
+                const auto & settings = context->getSettingsRef();
                 auto pool = std::make_shared<postgres::PoolWithFailover>(
                     postgres_conf,
-                    context->getSettingsRef().postgresql_connection_pool_size,
-                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+                    settings.postgresql_connection_pool_size,
+                    settings.postgresql_connection_pool_wait_timeout,
+                    POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+                    settings.postgresql_connection_pool_auto_close_connection);
 
                 shard = std::make_shared<StoragePostgreSQL>(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
                 break;
@@ -229,7 +229,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
         if (engine_args.size() < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine ExternalDistributed must have at least 2 arguments: engine_name, named_collection and/or description");
 
-        auto engine_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        auto engine_name = checkAndGetLiteralArgument<String>(engine_args[0], "engine_name");
         StorageExternalDistributed::ExternalStorageEngine table_engine;
         if (engine_name == "URL")
             table_engine = StorageExternalDistributed::ExternalStorageEngine::URL;
@@ -256,7 +256,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
+                        cluster_description = checkAndGetLiteralArgument<String>(value, "cluster_description");
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table engine URL", name);
@@ -271,11 +271,11 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (auto & engine_arg : engine_args)
                     engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-                cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.format = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+                cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
+                configuration.format = checkAndGetLiteralArgument<String>(engine_args[2], "format");
                 configuration.compression_method = "auto";
                 if (engine_args.size() == 4)
-                    configuration.compression_method = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+                    configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[3], "compression_method");
             }
 
 
@@ -302,7 +302,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
+                        cluster_description = checkAndGetLiteralArgument<String>(value, "cluster_description");
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table function URL", name);
@@ -320,11 +320,11 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                         "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-                cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+                cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
+                configuration.database = checkAndGetLiteralArgument<String>(engine_args[2], "database");
+                configuration.table = checkAndGetLiteralArgument<String>(engine_args[3], "table");
+                configuration.username = checkAndGetLiteralArgument<String>(engine_args[4], "username");
+                configuration.password = checkAndGetLiteralArgument<String>(engine_args[5], "password");
             }
 
 

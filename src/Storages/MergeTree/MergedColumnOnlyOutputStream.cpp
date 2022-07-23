@@ -39,7 +39,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,
-        std::move(writer_settings),
+        writer_settings,
         index_granularity);
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
@@ -81,9 +81,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
 
     for (const String & removed_file : removed_files)
     {
-        /// Can be called multiple times, don't need to remove file twice
-        if (data_part_storage_builder->exists(removed_file))
-            data_part_storage_builder->removeFile(removed_file);
+        data_part_storage_builder->removeFileIfExists(removed_file);
 
         if (all_checksums.files.contains(removed_file))
             all_checksums.files.erase(removed_file);

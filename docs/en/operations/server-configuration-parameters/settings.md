@@ -45,7 +45,7 @@ Configuration template:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
+-   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
 -   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table.md#create-query-general-purpose-codecs).
 
 You can configure multiple `<case>` sections.
@@ -192,6 +192,35 @@ Hard limit is configured via system tools
 Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
 
 Default value: `480` (8 minute).
+
+## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+If some subdirectory is not used by clickhouse-server and this directory was not modified for last
+`database_catalog_unused_dir_hide_timeout_sec` seconds, the task will "hide" this directory by 
+removing all access rights. It also works for directories that clickhouse-server does not
+expect to see inside `store/`. Zero means "immediately".
+
+Default value: `3600` (1 hour).
+
+## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+If some subdirectory is not used by clickhouse-server and it was previousely "hidden" 
+(see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec)) 
+and this directory was not modified for last
+`database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory. 
+It also works for directories that clickhouse-server does not
+expect to see inside `store/`. Zero means "never".
+
+Default value: `2592000` (30 days).
+
+## database_catalog_unused_dir_cleanup_period_sec {#database_catalog_unused_dir_cleanup_period_sec}
+
+Parameter of a task that cleans up garbage from `store/` directory.
+Sets scheduling period of the task. Zero means "never".
+
+Default value: `86400` (1 day).
 
 ## default_database {#default-database}
 

@@ -14,7 +14,10 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status
+from commit_status_helper import (
+    post_commit_status,
+    fail_simple_check,
+)
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -219,4 +222,5 @@ if __name__ == "__main__":
         if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
+            fail_simple_check(gh, pr_info, f"{NAME} failed")
             sys.exit(1)

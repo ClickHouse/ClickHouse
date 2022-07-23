@@ -448,17 +448,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            // bool all_args_are_const = true;
-
-            // for (const auto & argument : arguments)
-            //     if (typeid_cast<const ColumnConst *>(argument.column.get()) == nullptr)
-            //         all_args_are_const = false;
-
             res_column.column = node->function->execute(arguments, res_column.type, 0, true);
-
-            // if (!all_args_are_const)
-            //     res_column.column = res_column.column->convertToFullColumnIfConst();
-
             break;
         }
 
@@ -1786,7 +1776,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
             actions->inputs.push_back(input);
         }
 
-        actions->index.push_back(input);
+        /// We should not add result_predicate into the index for the second time.
+        if (input->result_name != result_predicate->result_name)
+            actions->index.push_back(input);
     }
 
     return actions;
@@ -1840,13 +1832,14 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
         if (can_remove_filter)
         {
             /// If filter column is not needed, remove it from index.
-            for (auto i = index.begin(); i != index.end(); ++i)
+            std::erase_if(index, [&](const Node * node) { return node == predicate; });
+
+            /// At the very end of this method we'll call removeUnusedActions() with allow_remove_inputs=false,
+            /// so we need to manually remove predicate if it is an input node.
+            if (predicate->type == ActionType::INPUT)
             {
-                if (*i == predicate)
-                {
-                    index.erase(i);
-                    break;
-                }
+                std::erase_if(inputs, [&](const Node * node) { return node == predicate; });
+                nodes.remove_if([&](const Node & node) { return &node == predicate; });
             }
         }
         else

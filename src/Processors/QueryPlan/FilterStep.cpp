@@ -46,25 +46,6 @@ FilterStep::FilterStep(
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
-void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
-{
-    Block out_header = std::move(output_stream->header);
-    if (keep_header)
-        out_header = FilterTransform::transformHeader(
-            input_stream.header,
-            *actions_dag,
-            filter_column_name,
-            remove_filter_column);
-
-    output_stream = createOutputStream(
-            input_stream,
-            std::move(out_header),
-            getDataStreamTraits());
-
-    input_streams.clear();
-    input_streams.emplace_back(std::move(input_stream));
-}
-
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
@@ -123,5 +104,14 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
     auto expression = std::make_shared<ExpressionActions>(actions_dag);
     map.add("Expression", expression->toTree());
 }
+
+void FilterStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(),
+        FilterTransform::transformHeader(input_streams.front().header, *actions_dag, filter_column_name, remove_filter_column),
+        getDataStreamTraits());
+}
+
 
 }
