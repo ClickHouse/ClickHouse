@@ -587,7 +587,8 @@ public:
                 s3_configuration_.rw_settings,
                 std::nullopt,
                 DBMS_DEFAULT_BUFFER_SIZE,
-                threadPoolCallbackRunner(IOThreadPool::get())),
+                threadPoolCallbackRunner(IOThreadPool::get()),
+                context->getWriteSettings()),
             compression_method,
             3);
         writer

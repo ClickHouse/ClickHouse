@@ -23,7 +23,7 @@ class IMetadataStorage;
 /// interface. This transaction is more like "batch operation" than real "transaction".
 ///
 /// But for better usability we can get MetadataStorage interface and use some read methods.
-struct IMetadataTransaction : private boost::noncopyable
+class IMetadataTransaction : private boost::noncopyable
 {
 public:
     virtual void commit() = 0;
@@ -43,7 +43,7 @@ public:
 
     virtual void createDirectory(const std::string & path) = 0;
 
-    virtual void createDicrectoryRecursive(const std::string & path) = 0;
+    virtual void createDirectoryRecursive(const std::string & path) = 0;
 
     virtual void removeDirectory(const std::string & path) = 0;
 
@@ -85,11 +85,15 @@ using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 /// small amounts of data (strings).
 class IMetadataStorage : private boost::noncopyable
 {
+friend class MetadataStorageFromDiskTransaction;
+
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
-    /// General purpose functions (similar to Disk)
+    /// Get metadata root path.
     virtual const std::string & getPath() const = 0;
+
+    /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool exists(const std::string & path) const = 0;
 
@@ -119,9 +123,11 @@ public:
     /// Read multiple metadata files into strings and return mapping from file_path -> metadata
     virtual std::unordered_map<std::string, std::string> getSerializedMetadata(const std::vector<String> & file_paths) const = 0;
 
-    /// Return [(object_storage_path, size_in_bytes), ...] for metadata path
-    /// object_storage_path is a full path to the blob.
-    virtual PathsWithSize getObjectStoragePaths(const std::string & path) const = 0;
+    /// Return object information (absolute_path, bytes_size, ...) for metadata path.
+    /// object_storage_path is absolute.
+    virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
+
+    virtual std::string getObjectStorageRootPath() const = 0;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;

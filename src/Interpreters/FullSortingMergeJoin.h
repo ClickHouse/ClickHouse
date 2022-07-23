@@ -95,7 +95,7 @@ public:
     }
 
     /// Left and right streams have the same priority and are processed simultaneously
-    virtual JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
+    JoinPipelineType pipelineType() const override { return JoinPipelineType::YShaped; }
 
 private:
     std::shared_ptr<TableJoin> table_join;

@@ -234,7 +234,7 @@ void DatabaseCatalog::shutdownImpl()
     view_dependencies.clear();
 }
 
-bool DatabaseCatalog::isPredefinedDatabase(const std::string_view & database_name)
+bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
 {
     return database_name == TEMPORARY_DATABASE || database_name == SYSTEM_DATABASE || database_name == INFORMATION_SCHEMA
         || database_name == INFORMATION_SCHEMA_UPPERCASE;
@@ -403,10 +403,11 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
-    NOEXCEPT_SCOPE;
-    UUID db_uuid = database->getUUID();
-    if (db_uuid != UUIDHelpers::Nil)
-        addUUIDMapping(db_uuid, database, nullptr);
+    NOEXCEPT_SCOPE({
+        UUID db_uuid = database->getUUID();
+        if (db_uuid != UUIDHelpers::Nil)
+            addUUIDMapping(db_uuid, database, nullptr);
+    });
 }
 
 

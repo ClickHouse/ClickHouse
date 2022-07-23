@@ -29,6 +29,7 @@ select 1 = multiMatchAny(materialize(''), ['']);
 select 0 = multiMatchAny(materialize(''), ['some string']);
 select 1 = multiMatchAny(materialize('abc'), ['']);
 select 1 = multiMatchAny(materialize('abc'), ['']) from system.numbers limit 10;
+select 0 = multiMatchAny(materialize('abc'), []::Array(String)) from system.numbers limit 5;
 
 select 0 = multiMatchAny(materialize('abc'), ['defgh']);
 select 0 = multiMatchAny(materialize('abc'), ['defg']);
@@ -77,6 +78,7 @@ select 1 = multiMatchAny(materialize('abcdef'), ['a......', 'a.....']) from syst
 select 0 = multiMatchAny(materialize('aaaa'), ['.*aa.*aaa.*', 'aaaaaa{2}', '\(aa\){3}']) from system.numbers limit 10;
 select 1 = multiMatchAny(materialize('abc'), ['a\0d']) from system.numbers limit 10;
 
+select 0 = multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), []::Array(String)) from system.numbers limit 5;
 select 1 = multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), ['google', 'unian1']) from system.numbers limit 10;
 select 2 = multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), ['google1', 'unian']) from system.numbers limit 10;
 select 0 != multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), ['.*goo.*', '.*yan.*']) from system.numbers limit 10;
@@ -86,6 +88,7 @@ SELECT multiMatchAny(materialize('/odezhda-dlya-bega/'), ['/odezhda-dlya-bega/',
 SELECT 1 = multiMatchAny('фабрикант', ['f[ae]b[ei]rl', 'ф[иаэе]б[еэи][рпл]', 'афиукд', 'a[ft],th', '^ф[аиеэ]?б?[еэи]?$', 'берлик', 'fab', 'фа[беьв]+е?[рлко]']);
 
 -- All indices tests
+SELECT [] = multiMatchAllIndices(materialize('Butterbrot!'), []::Array(String)) from system.numbers limit 5;
 SELECT [1, 2] = arraySort(multiMatchAllIndices(materialize('gogleuedeuniangoogle'), ['.*goo.*', '.*yan.*'])) from system.numbers limit 5;
 SELECT [1, 3] = arraySort(multiMatchAllIndices(materialize('gogleuedeuniangoogle'), ['.*goo.*', 'neverexisted', '.*yan.*'])) from system.numbers limit 5;
 SELECT [] = multiMatchAllIndices(materialize('gogleuedeuniangoogle'), ['neverexisted', 'anotherone', 'andanotherone']) from system.numbers limit 5;
@@ -124,6 +127,7 @@ select 1 = multiMatchAny(materialize(''), materialize(['']));
 select 0 = multiMatchAny(materialize(''), materialize(['some string']));
 select 1 = multiMatchAny(materialize('abc'), materialize(['']));
 select 1 = multiMatchAny(materialize('abc'), materialize([''])) from system.numbers limit 10;
+select 0 = multiMatchAny(materialize('abc'), materialize([]::Array(String))) from system.numbers limit 5;
 
 select 0 = multiMatchAny(materialize('abc'), materialize(['defgh']));
 select 0 = multiMatchAny(materialize('abc'), materialize(['defg']));
@@ -172,6 +176,7 @@ select 1 = multiMatchAny(materialize('abcdef'), materialize(['a......', 'a.....'
 select 0 = multiMatchAny(materialize('aaaa'), materialize(['.*aa.*aaa.*', 'aaaaaa{2}', '\(aa\){3}'])) from system.numbers limit 10;
 select 1 = multiMatchAny(materialize('abc'), materialize(['a\0d'])) from system.numbers limit 10;
 
+select 0 = multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), materialize([]::Array(String))) from system.numbers limit 5;
 select 1 = multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), materialize(['google', 'unian1'])) from system.numbers limit 10;
 select 2 = multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), materialize(['google1', 'unian'])) from system.numbers limit 10;
 select 0 != multiMatchAnyIndex(materialize('gogleuedeuniangoogle'), materialize(['.*goo.*', '.*yan.*'])) from system.numbers limit 10;
@@ -181,6 +186,7 @@ SELECT multiMatchAny(materialize('/odezhda-dlya-bega/'), materialize(['/odezhda-
 SELECT 1 = multiMatchAny(materialize('фабрикант'), materialize(['f[ae]b[ei]rl', 'ф[иаэе]б[еэи][рпл]', 'афиукд', 'a[ft],th', '^ф[аиеэ]?б?[еэи]?$', 'берлик', 'fab', 'фа[беьв]+е?[рлко]']));
 
 -- All indices tests
+SELECT [] = multiMatchAllIndices(materialize('Butterbrot!'), materialize([]::Array(String))) from system.numbers limit 5;
 SELECT [1, 2] = arraySort(multiMatchAllIndices(materialize('gogleuedeuniangoogle'), materialize(['.*goo.*', '.*yan.*']))) from system.numbers limit 5;
 SELECT [1, 3] = arraySort(multiMatchAllIndices(materialize('gogleuedeuniangoogle'), materialize(['.*goo.*', 'neverexisted', '.*yan.*']))) from system.numbers limit 5;
 SELECT [] = multiMatchAllIndices(materialize('gogleuedeuniangoogle'), materialize(['neverexisted', 'anotherone', 'andanotherone'])) from system.numbers limit 5;
