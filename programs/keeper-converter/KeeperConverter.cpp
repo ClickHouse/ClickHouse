@@ -39,7 +39,10 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
     try
     {
-        DB::KeeperStorage storage(500, "", true, false);
+        auto keeper_context = std::make_shared<KeeperContext>();
+        keeper_context->digest_enabled = true;
+
+        DB::KeeperStorage storage(500, "", keeper_context, false);
 
         DB::deserializeKeeperStorageFromSnapshotsDir(storage, options["zookeeper-snapshots-dir"].as<std::string>(), logger);
         storage.initializeSystemNodes();
@@ -48,7 +51,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(storage.getZXID(), 1, std::make_shared<nuraft::cluster_config>());
         DB::KeeperStorageSnapshot snapshot(&storage, snapshot_meta);
 
-        DB::KeeperSnapshotManager manager(options["output-dir"].as<std::string>(), 1);
+        DB::KeeperSnapshotManager manager(options["output-dir"].as<std::string>(), 1, keeper_context);
         auto snp = manager.serializeSnapshotToBuffer(snapshot);
         auto path = manager.serializeSnapshotBufferToDisk(*snp, storage.getZXID());
         std::cout << "Snapshot serialized to path:" << path << std::endl;

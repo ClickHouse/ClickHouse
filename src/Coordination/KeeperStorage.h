@@ -9,6 +9,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Coordination/KeeperContext.h>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -336,13 +337,13 @@ public:
 
     Digest getNodesDigest(bool committed) const;
 
-    const bool digest_enabled;
+    KeeperContextPtr keeper_context;
 
     const String superdigest;
 
     bool initialized{false};
 
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_, bool initialize_system_nodes = true);
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
 
     void initializeSystemNodes();
 
