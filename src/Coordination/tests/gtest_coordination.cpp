@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include "Common/ZooKeeper/IKeeper.h"
 
+#include "Coordination/KeeperContext.h"
 #include "Coordination/KeeperStorage.h"
 #include "Core/Defines.h"
 #include "IO/WriteHelpers.h"
@@ -63,7 +64,10 @@ struct CompressionParam
 };
 
 class CoordinationTest : public ::testing::TestWithParam<CompressionParam>
-{};
+{
+protected:
+    DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>();
+};
 
 TEST_P(CoordinationTest, BuildTest)
 {
@@ -1083,9 +1087,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 {
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, keeper_context, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "", true);
+    DB::KeeperStorage storage(500, "", keeper_context);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -1131,9 +1135,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
 {
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, keeper_context, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "", true);
+    DB::KeeperStorage storage(500, "", keeper_context);
     storage.getSessionID(130);
 
     for (size_t i = 0; i < 50; ++i)
@@ -1172,9 +1176,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
 {
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, keeper_context, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "", true);
+    DB::KeeperStorage storage(500, "", keeper_context);
     storage.getSessionID(130);
 
     for (size_t j = 1; j <= 5; ++j)
@@ -1211,8 +1215,8 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
 {
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
-    DB::KeeperStorage storage(500, "", true);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, keeper_context, params.enable_compression);
+    DB::KeeperStorage storage(500, "", keeper_context);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1264,8 +1268,8 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
 {
     auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
-    DB::KeeperStorage storage(500, "", true);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, keeper_context, params.enable_compression);
+    DB::KeeperStorage storage(500, "", keeper_context);
     for (size_t i = 0; i < 50; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
@@ -1304,7 +1308,7 @@ nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t ses
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
-void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint64_t total_logs, bool enable_compression)
+void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint64_t total_logs, bool enable_compression, Coordination::KeeperContextPtr keeper_context)
 {
     using namespace Coordination;
     using namespace DB;
@@ -1314,7 +1318,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context);
     state_machine->init();
     DB::KeeperLogStore changelog("./logs", settings->rotate_log_storage_interval, true, enable_compression);
     changelog.init(state_machine->last_commit_index() + 1, settings->reserved_log_items);
@@ -1355,7 +1359,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     }
 
     SnapshotsQueue snapshots_queue1{1};
-    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, "./snapshots", settings);
+    auto restore_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue1, "./snapshots", settings, keeper_context);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % settings->snapshot_distance);
 
@@ -1397,63 +1401,63 @@ TEST_P(CoordinationTest, TestStateMachineAndLogStore)
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 37, params.enable_compression);
+        testLogAndStateMachine(settings, 37, params.enable_compression, keeper_context);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 11, params.enable_compression);
+        testLogAndStateMachine(settings, 11, params.enable_compression, keeper_context);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 10;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 40, params.enable_compression);
+        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 20;
         settings->rotate_log_storage_interval = 30;
-        testLogAndStateMachine(settings, 40, params.enable_compression);
+        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 0;
         settings->rotate_log_storage_interval = 10;
-        testLogAndStateMachine(settings, 40, params.enable_compression);
+        testLogAndStateMachine(settings, 40, params.enable_compression, keeper_context);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 1;
         settings->reserved_log_items = 1;
         settings->rotate_log_storage_interval = 32;
-        testLogAndStateMachine(settings, 32, params.enable_compression);
+        testLogAndStateMachine(settings, 32, params.enable_compression, keeper_context);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 10;
         settings->reserved_log_items = 7;
         settings->rotate_log_storage_interval = 1;
-        testLogAndStateMachine(settings, 33, params.enable_compression);
+        testLogAndStateMachine(settings, 33, params.enable_compression, keeper_context);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 37;
         settings->reserved_log_items = 1000;
         settings->rotate_log_storage_interval = 5000;
-        testLogAndStateMachine(settings, 33, params.enable_compression);
+        testLogAndStateMachine(settings, 33, params.enable_compression, keeper_context);
     }
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
         settings->snapshot_distance = 37;
         settings->reserved_log_items = 1000;
         settings->rotate_log_storage_interval = 5000;
-        testLogAndStateMachine(settings, 45, params.enable_compression);
+        testLogAndStateMachine(settings, 45, params.enable_compression, keeper_context);
     }
 }
 
@@ -1467,7 +1471,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
 
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings, keeper_context);
     state_machine->init();
 
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
@@ -1634,9 +1638,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     auto params = GetParam();
 
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, keeper_context, params.enable_compression);
 
-    DB::KeeperStorage storage(500, "", true);
+    DB::KeeperStorage storage(500, "", keeper_context);
     addNode(storage, "/hello", "world", 1);
     addNode(storage, "/hello/somepath", "somedata", 3);
     storage.session_id_counter = 5;
@@ -1652,7 +1656,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     manager.serializeSnapshotBufferToDisk(*buf, 2);
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin" + params.extension));
 
-    DB::KeeperSnapshotManager new_manager("./snapshots", 3, !params.enable_compression);
+    DB::KeeperSnapshotManager new_manager("./snapshots", 3, keeper_context, !params.enable_compression);
 
     auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
 
@@ -1786,9 +1790,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotEqual)
     std::optional<UInt128> snapshot_hash;
     for (size_t i = 0; i < 15; ++i)
     {
-        DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
+        DB::KeeperSnapshotManager manager("./snapshots", 3, keeper_context, params.enable_compression);
 
-        DB::KeeperStorage storage(500, "", true);
+        DB::KeeperStorage storage(500, "", keeper_context);
         addNode(storage, "/hello", "");
         for (size_t j = 0; j < 5000; ++j)
         {
@@ -1859,7 +1863,7 @@ TEST_P(CoordinationTest, TestUncommittedStateBasicCrud)
     using namespace DB;
     using namespace Coordination;
 
-    DB::KeeperStorage storage{500, "", true};
+    DB::KeeperStorage storage{500, "", keeper_context};
 
     constexpr std::string_view path = "/test";
 
@@ -1976,7 +1980,7 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     using namespace DB;
     using namespace Coordination;
 
-    KeeperStorage storage{500, "", true};
+    KeeperStorage storage{500, "", keeper_context};
 
     int64_t zxid = 0;
 
@@ -2126,7 +2130,7 @@ TEST_P(CoordinationTest, TestDurableState)
 TEST_P(CoordinationTest, TestCurrentApiVersion)
 {
     using namespace Coordination;
-    KeeperStorage storage{500, "", true};
+    KeeperStorage storage{500, "", keeper_context};
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = DB::keeper_api_version_path;
     auto responses = storage.processRequest(request, 0, std::nullopt, true, true);

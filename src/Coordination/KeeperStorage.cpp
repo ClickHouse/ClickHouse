@@ -228,8 +228,8 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
 }
 
 KeeperStorage::KeeperStorage(
-    int64_t tick_time_ms, const String & superdigest_, const bool digest_enabled_, const bool initialize_system_nodes)
-    : session_expiry_queue(tick_time_ms), digest_enabled(digest_enabled_), superdigest(superdigest_)
+    int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
+    : session_expiry_queue(tick_time_ms), keeper_context(keeper_context_), superdigest(superdigest_)
 {
     Node root_node;
     container.insert("/", root_node);
@@ -807,6 +807,9 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
 
             path_created += seq_num_str.str();
         }
+
+        if (storage.uncommitted_state.getNode(path_created))
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
 
         if (path_created.starts_with(keeper_system_path))
         {
@@ -1807,7 +1810,7 @@ KeeperStorageRequestProcessorsFactory::KeeperStorageRequestProcessorsFactory()
 
 UInt64 KeeperStorage::calculateNodesDigest(UInt64 current_digest, const std::vector<Delta> & new_deltas) const
 {
-    if (!digest_enabled)
+    if (!keeper_context->digest_enabled)
         return current_digest;
 
     std::unordered_map<std::string, std::shared_ptr<Node>> updated_nodes;
@@ -1901,7 +1904,7 @@ void KeeperStorage::preprocessRequest(
     TransactionInfo transaction{.zxid = new_last_zxid};
     uint64_t new_digest = getNodesDigest(false).value;
     SCOPE_EXIT({
-        if (digest_enabled)
+        if (keeper_context->digest_enabled)
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
@@ -2101,7 +2104,7 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
 
 KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const
 {
-    if (!digest_enabled)
+    if (!keeper_context->digest_enabled)
         return {.version = DigestVersion::NO_DIGEST};
 
     if (committed || uncommitted_transactions.empty())
@@ -2112,13 +2115,13 @@ KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const
 
 void KeeperStorage::removeDigest(const Node & node, const std::string_view path)
 {
-    if (digest_enabled)
+    if (keeper_context->digest_enabled)
         nodes_digest -= node.getDigest(path);
 }
 
 void KeeperStorage::addDigest(const Node & node, const std::string_view path)
 {
-    if (digest_enabled)
+    if (keeper_context->digest_enabled)
     {
         node.invalidateDigestCache();
         nodes_digest += node.getDigest(path);
