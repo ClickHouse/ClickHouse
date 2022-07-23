@@ -42,6 +42,7 @@ void registerTableFunctions()
     registerTableFunctionJDBC(factory);
 
     registerTableFunctionView(factory);
+    registerTableFunctionViewIfPermitted(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

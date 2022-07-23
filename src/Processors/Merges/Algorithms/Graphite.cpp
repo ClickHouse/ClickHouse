@@ -71,11 +71,11 @@ static const Graphite::Pattern undef_pattern =
         .type = undef_pattern.TypeUndef,
 };
 
-inline static const Patterns & selectPatternsForMetricType(const Graphite::Params & params, const StringRef path)
+inline static const Patterns & selectPatternsForMetricType(const Graphite::Params & params, std::string_view path)
 {
     if (params.patterns_typed)
     {
-        std::string_view path_view = path.toView();
+        std::string_view path_view = path;
         if (path_view.find("?"sv) == path_view.npos)
             return params.patterns_plain;
         else
@@ -89,7 +89,7 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
 
 Graphite::RollupRule selectPatternForPath(
         const Graphite::Params & params,
-        StringRef path)
+        std::string_view path)
 {
     const Graphite::Pattern * first_match = &undef_pattern;
 
@@ -119,7 +119,7 @@ Graphite::RollupRule selectPatternForPath(
         }
         else
         {
-            if (pattern.regexp->match(path.data, path.size))
+            if (pattern.regexp->match(path.data(), path.size()))
             {
                 /// General pattern with matched path
                 if (pattern.type == pattern.TypeAll)
