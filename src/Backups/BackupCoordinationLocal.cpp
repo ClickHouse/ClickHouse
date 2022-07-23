@@ -17,12 +17,16 @@ void BackupCoordinationLocal::setStatus(const String &, const String &, const St
 {
 }
 
-Strings BackupCoordinationLocal::setStatusAndWait(const String &, const String &, const String &, const Strings &)
+void BackupCoordinationLocal::setErrorStatus(const String &, const Exception &)
+{
+}
+
+Strings BackupCoordinationLocal::waitStatus(const Strings &, const String &)
 {
     return {};
 }
 
-Strings BackupCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const String &, const Strings &, UInt64)
+Strings BackupCoordinationLocal::waitStatusFor(const Strings &, const String &, UInt64)
 {
     return {};
 }

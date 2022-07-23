@@ -2,6 +2,7 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Common/FileCache_fwd.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
@@ -29,13 +30,13 @@ friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & remote_fs_root_path_,
+        const String & object_storage_root_path_,
         const String & log_name,
-        MetadataStoragePtr && metadata_storage_,
-        ObjectStoragePtr && object_storage_,
+        MetadataStoragePtr metadata_storage_,
+        ObjectStoragePtr object_storage_,
         DiskType disk_type_,
         bool send_metadata_,
-        uint64_t thread_pool_size);
+        uint64_t thread_pool_size_);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
@@ -50,9 +51,9 @@ public:
 
     const String & getPath() const override { return metadata_storage->getPath(); }
 
-    PathsWithSize getObjectStoragePaths(const String & local_path) const override;
+    StoredObjects getStorageObjects(const String & local_path) const override;
 
-    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithRemotePaths> & paths_map) override;
+    void getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map) override;
 
     std::string getCacheBasePath() const override
     {
@@ -104,7 +105,6 @@ public:
 
     String getUniqueId(const String & path) const override;
 
-    bool checkObjectExists(const String & path) const;
     bool checkUniqueId(const String & id) const override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
@@ -163,6 +163,11 @@ public:
     void syncRevision(UInt64 revision) override;
 
     UInt64 getRevision() const override;
+
+    DiskObjectStoragePtr createDiskObjectStorage(const String & name_) override;
+
+    bool supportsCache() const override;
+
 private:
 
     /// Create actual disk object storage transaction for operations
@@ -170,7 +175,7 @@ private:
     DiskTransactionPtr createObjectStorageTransaction();
 
     const String name;
-    const String remote_fs_root_path;
+    const String object_storage_root_path;
     Poco::Logger * log;
 
     const DiskType disk_type;
@@ -184,9 +189,12 @@ private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
 
     const bool send_metadata;
+    size_t threadpool_size;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
+
+using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
 
 class DiskObjectStorageReservation final : public IReservation
 {
@@ -210,7 +218,7 @@ public:
     ~DiskObjectStorageReservation() override;
 
 private:
-    std::shared_ptr<DiskObjectStorage> disk;
+    DiskObjectStoragePtr disk;
     UInt64 size;
     UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;

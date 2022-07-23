@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <unistd.h>
 
@@ -60,6 +60,8 @@ public:
     size_t getFileSize() override;
 
     void setProgressCallback(ContextPtr context);
+
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.

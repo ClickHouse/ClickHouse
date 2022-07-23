@@ -26,20 +26,27 @@ void RestoreCoordinationRemote::createRootNodes()
     zookeeper->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
 }
 
+
 void RestoreCoordinationRemote::setStatus(const String & current_host, const String & new_status, const String & message)
 {
     status_sync.set(current_host, new_status, message);
 }
 
-Strings RestoreCoordinationRemote::setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts)
+void RestoreCoordinationRemote::setErrorStatus(const String & current_host, const Exception & exception)
 {
-    return status_sync.setAndWait(current_host, new_status, message, all_hosts);
+    status_sync.setError(current_host, exception);
 }
 
-Strings RestoreCoordinationRemote::setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms)
+Strings RestoreCoordinationRemote::waitStatus(const Strings & all_hosts, const String & status_to_wait)
 {
-    return status_sync.setAndWaitFor(current_host, new_status, message, all_hosts, timeout_ms);
+    return status_sync.wait(all_hosts, status_to_wait);
 }
+
+Strings RestoreCoordinationRemote::waitStatusFor(const Strings & all_hosts, const String & status_to_wait, UInt64 timeout_ms)
+{
+    return status_sync.waitFor(all_hosts, status_to_wait, timeout_ms);
+}
+
 
 bool RestoreCoordinationRemote::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
 {
