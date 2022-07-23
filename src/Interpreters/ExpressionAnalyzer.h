@@ -281,6 +281,7 @@ struct ExpressionAnalysisResult
         bool second_stage,
         bool only_types,
         const FilterDAGInfoPtr & filter_info,
+        const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
         const Block & source_header);
 
     /// Filter for row-level security.
@@ -403,7 +404,7 @@ private:
 
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
-    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
+    ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -411,6 +412,8 @@ private:
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
     void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
+
+    void appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
