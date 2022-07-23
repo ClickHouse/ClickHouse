@@ -4,6 +4,7 @@
 #include <iostream>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
+#include <Common/TargetSpecific.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -15,8 +16,20 @@
 #include <tmmintrin.h>
 #endif
 
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
+
 #ifdef __aarch64__
 #include <arm_neon.h>
+#endif
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+static inline UInt16 LZ4_readLE16(const void* mem_ptr)
+{
+        const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
+        return static_cast<UInt16>(p[0]) + (p[1] << 8);
+}
 #endif
 
 namespace LZ4
@@ -403,10 +416,65 @@ inline void copyOverlap32(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift4[offset];
 }
 
+DECLARE_AVX512VBMI_SPECIFIC_CODE(
+inline void copyOverlap32Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
+    static constexpr UInt8 __attribute__((__aligned__(32))) masks[] =
+    {
+        0,  1,  2,  2,  4,  2,  2,  4,  8,  5,  2, 10,  8,  6,  4,  2, 16, 15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  /* offset=0, shift amount index. */
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  /* offset=1 */
+        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,
+        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,
+        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,  0,  1,  2,  3,  4,  5,  6,  7,  8,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,  0,  1,  2,  3,  4,  5,  6,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,  0,  1,  2,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,  0,
+    };
+
+    _mm256_storeu_si256(reinterpret_cast<__m256i *>(op),
+        _mm256_permutexvar_epi8(
+            _mm256_load_si256(reinterpret_cast<const __m256i *>(masks) + offset),
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(match))));
+    match += masks[offset];
+}
+) /// DECLARE_AVX512VBMI_SPECIFIC_CODE
+
 
 template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
 template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
 template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32(op, match, offset); }
+template <> void inline copyOverlap<32, true>(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
+#if USE_MULTITARGET_CODE
+    TargetSpecific::AVX512VBMI::copyOverlap32Shuffle(op, match, offset);
+#else
+    copyOverlap32(op, match, offset);
+#endif
+}
 
 
 /// See also https://stackoverflow.com/a/30669632
@@ -501,7 +569,11 @@ bool NO_INLINE decompressImpl(
 
         /// Get match offset.
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        size_t offset = LZ4_readLE16(ip);
+#else
         size_t offset = unalignedLoad<UInt16>(ip);
+#endif
         ip += 2;
         const UInt8 * match = op - offset;
 
@@ -578,7 +650,13 @@ bool decompress(
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
     {
-        size_t best_variant = statistics.select();
+        size_t variant_size = 4;
+#if USE_MULTITARGET_CODE && !defined(MEMORY_SANITIZER)
+        /// best_variant == 4 only valid when AVX512VBMI available
+        if (isArchSupported(DB::TargetArch::AVX512VBMI))
+            variant_size = 5;
+#endif
+        size_t best_variant = statistics.select(variant_size);
 
         /// Run the selected method and measure time.
 
@@ -592,6 +670,8 @@ bool decompress(
             success = decompressImpl<8, true>(source, dest, source_size, dest_size);
         if (best_variant == 3)
             success = decompressImpl<32, false>(source, dest, source_size, dest_size);
+        if (best_variant == 4)
+            success = decompressImpl<32, true>(source, dest, source_size, dest_size);
 
         watch.stop();
 

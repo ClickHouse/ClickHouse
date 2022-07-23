@@ -5,7 +5,6 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-#include <Core/Settings.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
@@ -26,7 +25,7 @@ namespace ErrorCodes
 using IdentifierNameSet = std::set<String>;
 
 class WriteBuffer;
-
+using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
