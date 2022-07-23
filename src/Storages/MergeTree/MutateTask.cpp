@@ -170,14 +170,15 @@ getColumnsForNewDataPart(
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
     ColumnsDescription part_columns(source_part->getColumns());
-    const auto all_virtual_columns = source_part->storage.getVirtuals();
+    NamesAndTypesList system_columns;
+    if (source_part->supportLightweightDeleteMutate())
+        system_columns.push_back(LightweightDeleteDescription::filter_column);
 
-    /// Preserve virtual columns that have persisted values in the source_part
-/// TODO: only allow LWD mask to be overridden!
-    for (const auto & virtual_column : all_virtual_columns)
+    /// Preserve system columns that have persisted values in the source_part
+    for (const auto & column : system_columns)
     {
-        if (part_columns.has(virtual_column.name) && !storage_columns.contains(virtual_column.name))
-            storage_columns.emplace_back(virtual_column);
+        if (part_columns.has(column.name) && !storage_columns.contains(column.name))
+            storage_columns.emplace_back(column);
     }
 
     /// All commands are validated in AlterCommand so we don't care about order
@@ -187,11 +188,10 @@ getColumnsForNewDataPart(
         {
             for (const auto & [column_name, _] : command.column_to_update_expression)
             {
-                /// Allow to update and persist values of virtual column
-/// TODO: only allow LWD mask to be overridden!
-                auto virtual_column = all_virtual_columns.tryGetByName(column_name);
-                if (virtual_column && !storage_columns.contains(column_name))
-                    storage_columns.emplace_back(column_name, virtual_column->type);
+                /// Allow to update and persist values of system column
+                auto column = system_columns.tryGetByName(column_name);
+                if (column && !storage_columns.contains(column_name))
+                    storage_columns.emplace_back(column_name, column->type);
             }
         }
 
