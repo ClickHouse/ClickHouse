@@ -29,17 +29,21 @@ env
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
-  if [ -z "$SANITIZER" ]; then
-    # We need to check if clickhouse-diagnostics is fine and build it
-    (
-      cd /build/programs/diagnostics
-      make test-no-docker
-      GOARCH="${DEB_ARCH}" CGO_ENABLED=0 make VERSION="$VERSION_STRING" build
-      mv clickhouse-diagnostics ..
-    )
-  else
-    echo -e "#!/bin/sh\necho 'Not implemented for this type of package'" > /build/programs/clickhouse-diagnostics
-    chmod +x /build/programs/clickhouse-diagnostics
+  # NOTE: this is for backward compatibility with previous releases,
+  # that does not diagnostics tool (only script).
+  if [ -d /build/programs/diagnostics ]; then
+    if [ -z "$SANITIZER" ]; then
+      # We need to check if clickhouse-diagnostics is fine and build it
+      (
+        cd /build/programs/diagnostics
+        make test-no-docker
+        GOARCH="${DEB_ARCH}" CGO_ENABLED=0 make VERSION="$VERSION_STRING" build
+        mv clickhouse-diagnostics ..
+      )
+    else
+      echo -e "#!/bin/sh\necho 'Not implemented for this type of package'" > /build/programs/clickhouse-diagnostics
+      chmod +x /build/programs/clickhouse-diagnostics
+    fi
   fi
 fi
 
