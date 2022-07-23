@@ -37,3 +37,5 @@ t_light	4	4_5_5_1_10	1
 1
 1000	-2
 1005	-2
+----Test lighweight delete is disabled if table has projections-----
+500.5	500.5	1000

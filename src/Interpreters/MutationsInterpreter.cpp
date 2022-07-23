@@ -352,7 +352,11 @@ static void validateUpdateColumns(
 
         /// Allow to override value of lightweight delete filter virtual column
         if (!found && column_name == LightweightDeleteDescription::filter_column.name)
+        {
+            if (!storage->supportsLightweightDelete())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             found = true;
+        }
 
         if (!found)
         {
