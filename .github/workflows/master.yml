@@ -108,7 +108,7 @@ jobs:
       - name: Style Check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 style_check.py
+          python3 style_check.py --no-push
       - name: Cleanup
         if: always()
         run: |

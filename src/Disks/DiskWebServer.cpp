@@ -74,7 +74,6 @@ void DiskWebServer::initialize(const String & uri_path) const
             if (file_data.type == FileType::Directory)
             {
                 directories_to_load.push_back(file_path);
-                // file_path = fs::path(file_path) / "";
             }
 
             file_path = file_path.substr(url.size());
