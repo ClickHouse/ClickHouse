@@ -196,8 +196,6 @@ private:
     void executePutInCache(QueryPlan & query_plan);
     bool executeReadFromCache(QueryPlan & query_plan);
 
-    String generateFilterActions(ActionsDAGPtr & actions, const Names & prerequisite_columns = {}) const;
-
     enum class Modificator
     {
         ROLLUP = 0,
@@ -223,6 +221,9 @@ private:
     /// For row-level security.
     ASTPtr row_policy_filter;
     FilterDAGInfoPtr filter_info;
+
+    /// For additional_filter setting.
+    FilterDAGInfoPtr additional_filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 

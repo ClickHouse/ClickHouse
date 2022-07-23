@@ -11,12 +11,16 @@ void RestoreCoordinationLocal::setStatus(const String &, const String &, const S
 {
 }
 
-Strings RestoreCoordinationLocal::setStatusAndWait(const String &, const String &, const String &, const Strings &)
+void RestoreCoordinationLocal::setErrorStatus(const String &, const Exception &)
+{
+}
+
+Strings RestoreCoordinationLocal::waitStatus(const Strings &, const String &)
 {
     return {};
 }
 
-Strings RestoreCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const String &, const Strings &, UInt64)
+Strings RestoreCoordinationLocal::waitStatusFor(const Strings &, const String &, UInt64)
 {
     return {};
 }

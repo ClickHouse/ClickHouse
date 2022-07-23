@@ -3,6 +3,7 @@
 #include <Common/FileCacheFactory.h>
 #include <Common/IFileCache.h>
 #include <Common/FileCacheSettings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
