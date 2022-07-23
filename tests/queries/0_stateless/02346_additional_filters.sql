@@ -30,6 +30,7 @@ select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filt
 select * from remote('127.0.0.{1,2}', system.one) settings additional_table_filters={'system.one' : 'dummy != 0'};
 
 select * from system.numbers limit 5;
+select * from system.numbers as t limit 5 settings additional_table_filters={'t' : 'number % 2 != 0'};
 select * from system.numbers limit 5 settings additional_table_filters={'system.numbers' : 'number != 3'};
 select * from system.numbers limit 5 settings additional_table_filters={'system.numbers':'number != 3','table_1':'x!=2'};
 select * from (select number from system.numbers limit 5 union all select x from table_1) order by number settings additional_table_filters={'system.numbers':'number != 3','table_1':'x!=2'};
