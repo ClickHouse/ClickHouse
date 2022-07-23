@@ -5,4 +5,4 @@ sidebar_position: 82
 
 # Что нового в ClickHouse?
 
-Планы развития вкратце изложены [здесь](https://github.com/ClickHouse/ClickHouse/issues/17623), а новости по предыдущим релизам подробно описаны в [журнале изменений](./changelog/).
+Планы развития вкратце изложены [здесь](https://github.com/ClickHouse/ClickHouse/issues/32513), а новости по предыдущим релизам подробно описаны в [журнале изменений](./changelog/).

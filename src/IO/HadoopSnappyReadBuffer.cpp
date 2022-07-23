@@ -5,7 +5,7 @@
 #include <sys/types.h>
 #include <memory>
 #include <string>
-#include <string.h>
+#include <cstring>
 
 #include <snappy-c.h>
 

@@ -236,7 +236,7 @@ String MonitorCommand::run()
     print(ret, "key_arena_size", state_machine.getKeyArenaSize());
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
     print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
 #endif

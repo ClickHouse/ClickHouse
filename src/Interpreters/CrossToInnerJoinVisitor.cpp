@@ -18,11 +18,14 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -36,7 +39,10 @@ struct JoinedElement
         : element(table_element)
     {
         if (element.table_join)
+        {
             join = element.table_join->as<ASTTableJoin>();
+            original_kind = join->kind;
+        }
     }
 
     void checkTableName(const DatabaseAndTableWithAlias & table, const String & current_database) const
@@ -57,6 +63,8 @@ struct JoinedElement
         if (join && join->kind == ASTTableJoin::Kind::Comma)
             join->kind = ASTTableJoin::Kind::Cross;
     }
+
+    ASTTableJoin::Kind getOriginalKind() const { return original_kind; }
 
     bool rewriteCrossToInner(ASTPtr on_expression)
     {
@@ -80,6 +88,8 @@ struct JoinedElement
 private:
     const ASTTablesInSelectQueryElement & element;
     ASTTableJoin * join = nullptr;
+
+    ASTTableJoin::Kind original_kind;
 };
 
 bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
@@ -232,11 +242,33 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
         auto asts_to_join_on = moveExpressionToJoinOn(select.where(), joined_tables, data.tables_with_columns, data.aliases);
         for (size_t i = 1; i < joined_tables.size(); ++i)
         {
+            auto & joined = joined_tables[i];
+            if (joined.tableJoin()->kind != ASTTableJoin::Kind::Cross)
+                continue;
+
+            String query_before = queryToString(*joined.tableJoin());
+            bool rewritten = false;
             const auto & expr_it = asts_to_join_on.find(i);
             if (expr_it != asts_to_join_on.end())
             {
-                if (joined_tables[i].rewriteCrossToInner(makeOnExpression(expr_it->second)))
-                    data.done = true;
+                ASTPtr on_expr = makeOnExpression(expr_it->second);
+                if (rewritten = joined.rewriteCrossToInner(on_expr); rewritten)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, queryToString(*joined.tableJoin()));
+                }
+            }
+
+            if (joined.getOriginalKind() == ASTTableJoin::Kind::Comma &&
+                data.cross_to_inner_join_rewrite > 1 &&
+                !rewritten)
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Failed to rewrite comma join to INNER. "
+                    "Please, try to simplify WHERE section "
+                    "or set the setting `cross_to_inner_join_rewrite` to 1 to allow slow CROSS JOIN for this case "
+                    "(cannot rewrite '{} WHERE {}' to INNER JOIN)",
+                    query_before, queryToString(select.where()));
             }
         }
     }

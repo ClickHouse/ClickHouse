@@ -47,9 +47,9 @@ public:
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupWriter> writer_,
         const ContextPtr & context_,
-        const std::optional<UUID> & backup_uuid_ = {},
         bool is_internal_backup_ = false,
-        const String & coordination_zk_path_ = {});
+        const std::shared_ptr<IBackupCoordination> & coordination_ = {},
+        const std::optional<UUID> & backup_uuid_ = {});
 
     ~BackupImpl() override;
 
@@ -57,7 +57,8 @@ public:
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override;
     UUID getUUID() const override { return *uuid; }
-    Strings listFiles(const String & prefix, const String & terminator) const override;
+    Strings listFiles(const String & directory, bool recursive) const override;
+    bool hasFiles(const String & directory) const override;
     bool fileExists(const String & file_name) const override;
     bool fileExists(const SizeAndChecksum & size_and_checksum) const override;
     UInt64 getFileSize(const String & file_name) const override;
@@ -73,14 +74,27 @@ private:
     using FileInfo = IBackupCoordination::FileInfo;
     class BackupEntryFromBackupImpl;
 
-    void open();
+    void open(const ContextPtr & context);
     void close();
+
+    /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata();
     void readBackupMetadata();
+
+    /// Checks that a new backup doesn't exist yet.
+    void checkBackupDoesntExist() const;
+
+    /// Lock file named ".lock" and containing the UUID of a backup is used to own the place where we're writing the backup.
+    /// Thus it will not be allowed to put any other backup to the same place (even if the BACKUP command is executed on a different node).
+    void createLockFile();
+    bool checkLockFile(bool throw_if_failed) const;
+    void removeLockFile();
+
+    void removeAllFilesAfterFailure();
+
     String getArchiveNameWithSuffix(const String & suffix) const;
     std::shared_ptr<IArchiveReader> getArchiveReader(const String & suffix) const;
     std::shared_ptr<IArchiveWriter> getArchiveWriter(const String & suffix);
-    void removeAllFilesAfterFailure();
 
     const String backup_name;
     const ArchiveParams archive_params;
@@ -90,7 +104,6 @@ private:
     std::shared_ptr<IBackupReader> reader;
     const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
-    ContextPtr context;
 
     mutable std::mutex mutex;
     std::optional<UUID> uuid;
@@ -102,7 +115,10 @@ private:
     mutable std::unordered_map<String /* archive_suffix */, std::shared_ptr<IArchiveReader>> archive_readers;
     std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
     String current_archive_suffix;
+    String lock_file_name;
+    size_t num_files_written = 0;
     bool writing_finalized = false;
+    const Poco::Logger * log;
 };
 
 }

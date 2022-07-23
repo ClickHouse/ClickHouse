@@ -9,10 +9,10 @@
 #include "hasLinuxCapability.h"
 #include <base/unaligned.h>
 
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <sys/socket.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
@@ -21,6 +21,7 @@
 
 #if defined(__clang__)
     #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+    #pragma clang diagnostic ignored "-Wnested-anon-types"
 #endif
 
 /// Basic idea is motivated by "iotop" tool.

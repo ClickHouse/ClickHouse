@@ -9,7 +9,7 @@ std::string errnoToString(int code, int the_errno)
     char buf[buf_size];
 #ifndef _GNU_SOURCE
     int rc = strerror_r(the_errno, buf, buf_size);
-#ifdef __APPLE__
+#ifdef OS_DARWIN
     if (rc != 0 && rc != EINVAL)
 #else
     if (rc != 0)

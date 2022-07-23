@@ -156,7 +156,7 @@ MongoDBSource::MongoDBSource(
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
     UInt64 max_block_size_)
-    : SourceWithProgress(sample_block.cloneEmpty())
+    : ISource(sample_block.cloneEmpty())
     , connection(connection_)
     , cursor{std::move(cursor_)}
     , max_block_size{max_block_size_}

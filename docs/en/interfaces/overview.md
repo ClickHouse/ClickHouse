@@ -5,7 +5,7 @@ keywords: [clickhouse, network, interfaces, http, tcp, grpc, command-line, clien
 description: ClickHouse provides three network interfaces
 ---
 
-# Interfaces {#interfaces}
+# Interfaces
 
 ClickHouse provides three network interfaces (they can be optionally wrapped in TLS for additional security):
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 set -e
 
@@ -30,15 +29,19 @@ EOF
 
 function alter_thread()
 {
+    trap 'exit' INT
+
     ALTERS[0]="ALTER TABLE mv MODIFY QUERY SELECT v FROM src;"
     ALTERS[1]="ALTER TABLE mv MODIFY QUERY SELECT v * 2 as v FROM src;"
 
-    $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
-    sleep 0.$RANDOM
+    while true; do
+        $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTERS[$RANDOM % 2]}"
+        sleep "$(echo 0.$RANDOM)";
+    done
 }
 
-export -f alter_thread
-clickhouse_client_loop_timeout 10 alter_thread &
+export -f alter_thread;
+timeout 10 bash -c alter_thread &
 
 for _ in {1..100}; do
     # Retry (hopefully retriable (deadlock avoided)) errors.

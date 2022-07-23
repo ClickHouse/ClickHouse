@@ -11,19 +11,19 @@ In this section we discuss regular functions. For aggregate functions, see the s
 
 \* - There is a third type of function that the ‘arrayJoin’ function belongs to; table functions can also be mentioned separately.\*
 
-## Strong Typing {#strong-typing}
+## Strong Typing
 
 In contrast to standard SQL, ClickHouse has strong typing. In other words, it does not make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
 
-## Common Subexpression Elimination {#common-subexpression-elimination}
+## Common Subexpression Elimination
 
 All expressions in a query that have the same AST (the same record or same result of syntactic parsing) are considered to have identical values. Such expressions are concatenated and executed once. Identical subqueries are also eliminated this way.
 
-## Types of Results {#types-of-results}
+## Types of Results
 
 All functions return a single return as the result (not several values, and not zero values). The type of result is usually defined only by the types of arguments, not by the values. Exceptions are the tupleElement function (the a.N operator), and the toFixedString function.
 
-## Constants {#constants}
+## Constants
 
 For simplicity, certain functions can only work with constants for some arguments. For example, the right argument of the LIKE operator must be a constant.
 Almost all functions return a constant for constant arguments. The exception is functions that generate random numbers.
@@ -32,18 +32,18 @@ A constant expression is also considered a constant (for example, the right half
 
 Functions can be implemented in different ways for constant and non-constant arguments (different code is executed). But the results for a constant and for a true column containing only the same value should match each other.
 
-## NULL Processing {#null-processing}
+## NULL Processing
 
 Functions have the following behaviors:
 
 -   If at least one of the arguments of the function is `NULL`, the function result is also `NULL`.
 -   Special behavior that is specified individually in the description of each function. In the ClickHouse source code, these functions have `UseDefaultImplementationForNulls=false`.
 
-## Constancy {#constancy}
+## Constancy
 
 Functions can’t change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
 
-## Higher-order functions, `->` operator and lambda(params, expr) function {#higher-order-functions}
+## Higher-order functions, `->` operator and lambda(params, expr) function
 
 Higher-order functions can only accept lambda functions as their functional argument. To pass a lambda function to a higher-order function use `->` operator. The left side of the arrow has a formal parameter, which is any ID, or multiple formal parameters – any IDs in a tuple. The right side of the arrow has an expression that can use these formal parameters, as well as any table columns.
 
@@ -58,11 +58,11 @@ A lambda function that accepts multiple arguments can also be passed to a higher
 
 For some functions the first argument (the lambda function) can be omitted. In this case, identical mapping is assumed.
 
-## SQL User Defined Functions {#user-defined-functions}
+## SQL User Defined Functions
 
 Custom functions from lambda expressions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
 
-## Executable User Defined Functions {#executable-user-defined-functions}
+## Executable User Defined Functions
 ClickHouse can call any external executable program or script to process data.
 
 The configuration of executable user defined functions can be located in one or more xml-files. The path to the configuration is specified in the [user_defined_executable_functions_config](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_defined_executable_functions_config) parameter.
@@ -174,22 +174,24 @@ Result:
 Creating `test_function_sum_json` with named arguments and format [JSONEachRow](../../interfaces/formats.md#jsoneachrow) using XML configuration.
 File test_function.xml.
 ```xml
-<function>
-    <type>executable</type>
-    <name>test_function_sum_json</name>
-    <return_type>UInt64</return_type>
-    <return_name>result_name</return_name>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_1</name>
-    </argument>
-    <argument>
-        <type>UInt64</type>
-        <name>argument_2</name>
-    </argument>
-    <format>JSONEachRow</format>
-    <command>test_function_sum_json.py</command>
-</function>
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_json</name>
+        <return_type>UInt64</return_type>
+        <return_name>result_name</return_name>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_1</name>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+            <name>argument_2</name>
+        </argument>
+        <format>JSONEachRow</format>
+        <command>test_function_sum_json.py</command>
+    </function>
+</functions>
 ```
 
 Script file inside `user_scripts` folder `test_function_sum_json.py`.
@@ -224,16 +226,60 @@ Result:
 └──────────────────────────────┘
 ```
 
-## Error Handling {#error-handling}
+Executable user defined functions can take constant parameters configured in `command` setting (works only for user defined functions with `executable` type).
+File test_function_parameter_python.xml.
+```xml
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_parameter_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+    </function>
+</functions>
+```
+
+Script file inside `user_scripts` folder `test_function_parameter_python.py`.
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+Query:
+
+``` sql
+SELECT test_function_parameter_python(1)(2);
+```
+
+Result:
+
+``` text
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
+```
+
+## Error Handling
 
 Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
 
-## Evaluation of Argument Expressions {#evaluation-of-argument-expressions}
+## Evaluation of Argument Expressions
 
 In almost all programming languages, one of the arguments might not be evaluated for certain operators. This is usually the operators `&&`, `||`, and `?:`.
 But in ClickHouse, arguments of functions (operators) are always evaluated. This is because entire parts of columns are evaluated at once, instead of calculating each row separately.
 
-## Performing Functions for Distributed Query Processing {#performing-functions-for-distributed-query-processing}
+## Performing Functions for Distributed Query Processing
 
 For distributed query processing, as many stages of query processing as possible are performed on remote servers, and the rest of the stages (merging intermediate results and everything after that) are performed on the requestor server.
 

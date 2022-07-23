@@ -6,3 +6,4 @@ $dir/check-typos
 $dir/check-whitespaces -n
 $dir/check-duplicate-includes.sh
 $dir/shellcheck-run.sh
+$dir/check-doc-aspell

@@ -12,30 +12,36 @@ $CLICKHOUSE_CLIENT -q "insert into mt values (3)"
 
 function thread_insert()
 {
-    $CLICKHOUSE_CLIENT -q "insert into mt values (rand())";
+    while true; do
+        $CLICKHOUSE_CLIENT -q "insert into mt values (rand())";
+    done
 }
 
 function thread_detach_attach()
 {
-    $CLICKHOUSE_CLIENT -q "alter table mt detach partition id 'all'";
-    $CLICKHOUSE_CLIENT -q "alter table mt attach partition id 'all'";
+    while true; do
+        $CLICKHOUSE_CLIENT -q "alter table mt detach partition id 'all'";
+        $CLICKHOUSE_CLIENT -q "alter table mt attach partition id 'all'";
+    done
 }
 
 function thread_drop_detached()
 {
-    $CLICKHOUSE_CLIENT --allow_drop_detached -q "alter table mt drop detached partition id 'all'";
+    while true; do
+        $CLICKHOUSE_CLIENT --allow_drop_detached -q "alter table mt drop detached partition id 'all'";
+    done
 }
 
-export -f thread_insert
-export -f thread_detach_attach
-export -f thread_drop_detached
+export -f thread_insert;
+export -f thread_detach_attach;
+export -f thread_drop_detached;
 
 TIMEOUT=10
 
-clickhouse_client_loop_timeout $TIMEOUT thread_insert &
-clickhouse_client_loop_timeout $TIMEOUT thread_detach_attach 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT thread_detach_attach 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT thread_drop_detached 2> /dev/null &
+timeout $TIMEOUT bash -c thread_insert &
+timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
+timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
+timeout $TIMEOUT bash -c thread_drop_detached 2> /dev/null &
 
 wait
 

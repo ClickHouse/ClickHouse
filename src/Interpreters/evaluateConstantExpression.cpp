@@ -31,11 +31,21 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static std::pair<Field, std::shared_ptr<const IDataType>> getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
+{
+    auto type = applyVisitor(FieldToDataType(), literal->value);
+    /// In case of Array field nested fields can have different types.
+    /// Example: Array [1, 2.3] will have 2 fields with types UInt64 and Float64
+    /// when result type is Array(Float64).
+    /// So, we need to convert this field to the result type.
+    Field res = convertFieldToType(literal->value, *type);
+    return {res, type};
+}
 
-std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, ContextPtr context)
+std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
-        return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
+        return getFieldAndDataTypeFromLiteral(literal);
 
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
 
@@ -54,7 +64,10 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(ast);
 
-    if (context->getSettingsRef().normalize_function_names)
+    /// Notice: function name normalization is disabled when it's a secondary query, because queries are either
+    /// already normalized on initiator node, or not normalized and should remain unnormalized for
+    /// compatibility.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
     String name = ast->getColumnName();
@@ -63,7 +76,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     /// AST potentially could be transformed to literal during TreeRewriter analyze.
     /// For example if we have SQL user defined function that return literal AS subquery.
     if (ASTLiteral * literal = ast->as<ASTLiteral>())
-        return std::make_pair(literal->value, applyVisitor(FieldToDataType(), literal->value));
+        return getFieldAndDataTypeFromLiteral(literal);
 
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
@@ -92,7 +105,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 }
 
 
-ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
@@ -100,7 +113,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr conte
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
-ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const ContextPtr & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
         return std::make_shared<ASTLiteral>(id->name());
@@ -108,7 +121,7 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, Cont
     return evaluateConstantExpressionAsLiteral(node, context);
 }
 
-ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr context)
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const ContextPtr & context)
 {
     ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(node, context);
     auto & literal = res->as<ASTLiteral &>();

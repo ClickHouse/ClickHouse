@@ -627,7 +627,7 @@ namespace
         void executeQuery();
 
         void processInput();
-        void initializeBlockInputStream(const Block & header);
+        void initializePipeline(const Block & header);
         void createExternalTables();
 
         void generateOutput();
@@ -848,6 +848,7 @@ namespace
         {
             logs_queue = std::make_shared<InternalTextLogsQueue>();
             logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+            logs_queue->setSourceRegexp(settings.send_logs_source_regexp);
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
             CurrentThread::setFatalErrorCallback([this]{ onFatalError(); });
         }
@@ -920,7 +921,7 @@ namespace
             if (context != query_context)
                 throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
             input_function_is_used = true;
-            initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -967,7 +968,7 @@ namespace
 
         /// This is significant, because parallel parsing may be used.
         /// So we mustn't touch the input stream from other thread.
-        initializeBlockInputStream(io.pipeline.getHeader());
+        initializePipeline(io.pipeline.getHeader());
 
         PushingPipelineExecutor executor(io.pipeline);
         executor.start();
@@ -982,7 +983,7 @@ namespace
         executor.finish();
     }
 
-    void Call::initializeBlockInputStream(const Block & header)
+    void Call::initializePipeline(const Block & header)
     {
         assert(!read_buffer);
         read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
@@ -1047,10 +1048,7 @@ namespace
         auto source = query_context->getInputFormat(
             input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
 
-        QueryPipelineBuilder builder;
-        builder.init(Pipe(source));
-
-        pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+        pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
@@ -1482,7 +1480,7 @@ namespace
 
     void Call::addProgressToResult()
     {
-        auto values = progress.fetchAndResetPiecewiseAtomically();
+        auto values = progress.fetchValuesAndResetPiecewiseAtomically();
         if (!values.read_rows && !values.read_bytes && !values.total_rows_to_read && !values.written_rows && !values.written_bytes)
             return;
         auto & grpc_progress = *result.mutable_progress();
@@ -1575,14 +1573,14 @@ namespace
                 auto & log_entry = *result.add_logs();
                 log_entry.set_time(column_time.getElement(row));
                 log_entry.set_time_microseconds(column_time_microseconds.getElement(row));
-                StringRef query_id = column_query_id.getDataAt(row);
-                log_entry.set_query_id(query_id.data, query_id.size);
+                std::string_view query_id = column_query_id.getDataAt(row).toView();
+                log_entry.set_query_id(query_id.data(), query_id.size());
                 log_entry.set_thread_id(column_thread_id.getElement(row));
                 log_entry.set_level(static_cast<::clickhouse::grpc::LogsLevel>(column_level.getElement(row)));
-                StringRef source = column_source.getDataAt(row);
-                log_entry.set_source(source.data, source.size);
-                StringRef text = column_text.getDataAt(row);
-                log_entry.set_text(text.data, text.size);
+                std::string_view source = column_source.getDataAt(row).toView();
+                log_entry.set_source(source.data(), source.size());
+                std::string_view text = column_text.getDataAt(row).toView();
+                log_entry.set_text(text.data(), text.size());
             }
         }
     }

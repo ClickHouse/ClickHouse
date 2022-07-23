@@ -76,7 +76,7 @@ export CLICKHOUSE_PORT_POSTGRESQL=${CLICKHOUSE_PORT_POSTGRESQL:="9005"}
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=keeper_server.tcp_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 
-export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
+export CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:=$(echo "${CLICKHOUSE_CLIENT}" | sed 's/--secure //' | sed 's/'"--port=${CLICKHOUSE_PORT_TCP}"'//g; s/$/'"--secure --port=${CLICKHOUSE_PORT_TCP_SECURE}"'/g')}
 
 # Add database and log comment to url params
 if [ -v CLICKHOUSE_URL_PARAMS ]
@@ -130,36 +130,22 @@ function clickhouse_client_removed_host_parameter()
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
-function clickhouse_client_timeout()
+function wait_for_queries_to_finish()
 {
-    local timeout=$1 && shift
-    timeout -s INT "$timeout" "$@"
-}
-# Helper function to stop the clickhouse-client after SIGINT properly.
-function clickhouse_client_loop_timeout()
-{
-    local timeout=$1 && shift
-
-    local cmd
-    cmd="$(printf '%q ' "$@")"
-
-    timeout -s INT "$timeout" bash -c "trap 'STOP_THE_LOOP=1' INT; while true; do [ ! -v STOP_THE_LOOP ] || break; $cmd; done"
-}
-# wait for queries to be finished
-function clickhouse_test_wait_queries()
-{
-    local timeout=${1:-"600"} && shift
-    local query_id="wait-$CLICKHOUSE_TEST_UNIQUE_NAME"
-    local query="SELECT count() FROM system.processes WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id != '$query_id'"
-    local i=0
-    (( timeout*=2 ))
-    while [[ "$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=$query_id" --data-binary "$query")" != "0" ]]; do
-        sleep 0.5
-
-        (( ++i ))
-        if [[ $i -gt $timeout ]]; then
-            echo "clickhouse_test_wait_queries: timeout exceeded"
-            exit 1
+    # Wait for all queries to finish (query may still be running if thread is killed by timeout)
+    num_tries=0
+    while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
+        sleep 0.5;
+        num_tries=$((num_tries+1))
+        if [ $num_tries -eq 20 ]; then
+            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%' FORMAT Vertical"
+            break
         fi
     done
+}
+
+function random_str()
+{
+    local n=$1 && shift
+    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }

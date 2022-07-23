@@ -12,6 +12,7 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
+#include "DNSPTRResolverProvider.h"
 
 namespace ProfileEvents
 {
@@ -83,25 +84,8 @@ static void splitHostAndPort(const std::string & host_and_port, std::string & ou
         throw Exception("Port must be numeric", ErrorCodes::BAD_ARGUMENTS);
 }
 
-static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
+static DNSResolver::IPAddresses hostByName(const std::string & host)
 {
-    Poco::Net::IPAddress ip;
-
-    /// NOTE:
-    /// - Poco::Net::DNS::resolveOne(host) doesn't work for IP addresses like 127.0.0.2
-    /// - Poco::Net::IPAddress::tryParse() expect hex string for IPv6 (without brackets)
-    if (host.starts_with('['))
-    {
-        assert(host.ends_with(']'));
-        if (Poco::Net::IPAddress::tryParse(host.substr(1, host.size() - 2), ip))
-            return DNSResolver::IPAddresses(1, ip);
-    }
-    else
-    {
-        if (Poco::Net::IPAddress::tryParse(host, ip))
-            return DNSResolver::IPAddresses(1, ip);
-    }
-
     /// Family: AF_UNSPEC
     /// AI_ALL is required for checking if client is allowed to connect from an address
     auto flags = Poco::Net::DNS::DNS_HINT_AI_V4MAPPED | Poco::Net::DNS::DNS_HINT_AI_ALL;
@@ -131,16 +115,41 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     return addresses;
 }
 
-static String reverseResolveImpl(const Poco::Net::IPAddress & address)
+static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 {
-    Poco::Net::SocketAddress sock_addr(address, 0);
+    Poco::Net::IPAddress ip;
 
-    /// Resolve by hand, because Poco::Net::DNS::hostByAddress(...) does getaddrinfo(...) after getnameinfo(...)
-    char host[1024];
-    int err = getnameinfo(sock_addr.addr(), sock_addr.length(), host, sizeof(host), nullptr, 0, NI_NAMEREQD);
-    if (err)
-        throw Exception("Cannot getnameinfo(" + address.toString() + "): " + gai_strerror(err), ErrorCodes::DNS_ERROR);
-    return host;
+    /// NOTE:
+    /// - Poco::Net::DNS::resolveOne(host) doesn't work for IP addresses like 127.0.0.2
+    /// - Poco::Net::IPAddress::tryParse() expect hex string for IPv6 (without brackets)
+    if (host.starts_with('['))
+    {
+        assert(host.ends_with(']'));
+        if (Poco::Net::IPAddress::tryParse(host.substr(1, host.size() - 2), ip))
+            return DNSResolver::IPAddresses(1, ip);
+    }
+    else
+    {
+        if (Poco::Net::IPAddress::tryParse(host, ip))
+            return DNSResolver::IPAddresses(1, ip);
+    }
+
+    DNSResolver::IPAddresses addresses = hostByName(host);
+
+    return addresses;
+}
+
+static Strings reverseResolveImpl(const Poco::Net::IPAddress & address)
+{
+    auto ptr_resolver = DB::DNSPTRResolverProvider::get();
+
+    if (address.family() == Poco::Net::IPAddress::Family::IPv4)
+    {
+        return ptr_resolver->resolve(address.toString());
+    } else
+    {
+        return ptr_resolver->resolve_v6(address.toString());
+    }
 }
 
 struct DNSResolver::Impl
@@ -208,7 +217,27 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, U
     return  Poco::Net::SocketAddress(impl->cache_host(host).front(), port);
 }
 
-String DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)
+std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std::string & host, UInt16 port)
+{
+    if (Poco::Net::IPAddress ip; Poco::Net::IPAddress::tryParse(host, ip))
+        return std::vector<Poco::Net::SocketAddress>{{ip, port}};
+
+    std::vector<Poco::Net::SocketAddress> addresses;
+
+    if (!impl->disable_cache)
+        addToNewHosts(host);
+
+    std::vector<Poco::Net::IPAddress> ips = impl->disable_cache ? hostByName(host) : impl->cache_host(host);
+    auto ips_end = std::unique(ips.begin(), ips.end());
+
+    addresses.reserve(ips_end - ips.begin());
+    for (auto ip = ips.begin(); ip != ips_end; ++ip)
+        addresses.emplace_back(*ip, port);
+
+    return addresses;
+}
+
+Strings DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)
 {
     if (impl->disable_cache)
         return reverseResolveImpl(address);
