@@ -44,9 +44,17 @@ namespace
     }
 
 
-    AccessRights addImplicitAccessRights(const AccessRights & access)
+    AccessRights addImplicitAccessRights(const AccessRights & access, const AccessControl & access_control)
     {
-        auto modifier = [&](const AccessFlags & flags, const AccessFlags & min_flags_with_children, const AccessFlags & max_flags_with_children, std::string_view database, std::string_view table, std::string_view column) -> AccessFlags
+        AccessFlags max_flags;
+
+        auto modifier = [&](const AccessFlags & flags,
+                            const AccessFlags & min_flags_with_children,
+                            const AccessFlags & max_flags_with_children,
+                            std::string_view database,
+                            std::string_view table,
+                            std::string_view column,
+                            bool /* grant_option */) -> AccessFlags
         {
             size_t level = !database.empty() + !table.empty() + !column.empty();
             AccessFlags res = flags;
@@ -115,17 +123,80 @@ namespace
                 res |= show_databases;
             }
 
+            max_flags |= res;
+
             return res;
         };
 
         AccessRights res = access;
         res.modifyFlags(modifier);
-        res.modifyFlagsWithGrantOption(modifier);
 
-        /// Anyone has access to the "system" and "information_schema" database.
-        res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+        /// If "select_from_system_db_requires_grant" is enabled we provide implicit grants only for a few tables in the system database.
+        if (access_control.doesSelectFromSystemDatabaseRequireGrant())
+        {
+            const char * always_accessible_tables[] = {
+                /// Constant tables
+                "one",
+
+                /// "numbers", "numbers_mt", "zeros", "zeros_mt" were excluded because they can generate lots of values and
+                /// that can decrease performance in some cases.
+
+                "contributors",
+                "licenses",
+                "time_zones",
+                "collations",
+
+                "formats",
+                "privileges",
+                "data_type_families",
+                "table_engines",
+                "table_functions",
+                "aggregate_function_combinators",
+
+                "functions", /// Can contain user-defined functions
+
+                /// The following tables hide some rows if the current user doesn't have corresponding SHOW privileges.
+                "databases",
+                "tables",
+                "columns",
+
+                /// Specific to the current session
+                "settings",
+                "current_roles",
+                "enabled_roles",
+                "quota_usage"
+            };
+
+            for (const auto * table_name : always_accessible_tables)
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
+
+            if (max_flags.contains(AccessType::SHOW_USERS))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
+
+            if (max_flags.contains(AccessType::SHOW_ROLES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "roles");
+
+            if (max_flags.contains(AccessType::SHOW_ROW_POLICIES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "row_policies");
+
+            if (max_flags.contains(AccessType::SHOW_SETTINGS_PROFILES))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "settings_profiles");
+
+            if (max_flags.contains(AccessType::SHOW_QUOTAS))
+                res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
+        }
+        else
+        {
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
+        }
+
+        /// If "select_from_information_schema_requires_grant" is enabled we don't provide implicit grants for the information_schema database.
+        if (!access_control.doesSelectFromInformationSchemaRequireGrant())
+        {
+            res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
+            res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
+        }
+
         return res;
     }
 
@@ -247,7 +318,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 void ContextAccess::calculateAccessRights() const
 {
     access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
-    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access));
+    access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
 
     if (trace_log)
     {
@@ -342,7 +413,7 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
         auto full_access = std::shared_ptr<ContextAccess>(new ContextAccess);
         full_access->is_full_access = true;
         full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*full_access->access));
+        full_access->access_with_implicit = full_access->access;
         return full_access;
     }();
     return res;
@@ -413,7 +484,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     };
 
     if (is_full_access)
-        return access_granted();
+        return true;
 
     if (user_was_dropped)
         return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
@@ -422,7 +493,7 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         flags &= ~AccessType::CLUSTER;
 
     if (!flags)
-        return access_granted();
+        return true;
 
     /// Access to temporary tables is controlled in an unusual way, not like normal tables.
     /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,

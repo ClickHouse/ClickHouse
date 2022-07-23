@@ -27,7 +27,7 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MergeListEntry & merge_
     prev_untracked_memory = current_thread->untracked_memory;
     current_thread->untracked_memory = merge_list_entry->untracked_memory;
 
-    prev_query_id = current_thread->getQueryId().toString();
+    prev_query_id = std::string(current_thread->getQueryId());
     current_thread->setQueryId(merge_list_entry->query_id);
 }
 
