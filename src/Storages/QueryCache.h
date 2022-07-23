@@ -5,7 +5,7 @@
 #include <Common/LRUCache.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
-
+#include <Core/Settings.h>
 
 namespace DB
 {
