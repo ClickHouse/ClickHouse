@@ -108,7 +108,7 @@ jobs:
       - name: Style Check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 style_check.py
+          python3 style_check.py --no-push
       - name: Cleanup
         if: always()
         run: |
@@ -2902,7 +2902,7 @@ jobs:
 #############################################################################################
 #################################### PERFORMANCE TESTS ######################################
 #############################################################################################
-  PerformanceComparison0:
+  PerformanceComparisonX86-0:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -2940,7 +2940,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison1:
+  PerformanceComparisonX86-1:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -2978,7 +2978,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison2:
+  PerformanceComparisonX86-2:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3016,7 +3016,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison3:
+  PerformanceComparisonX86-3:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3096,10 +3096,10 @@ jobs:
       - IntegrationTestsTsan1
       - IntegrationTestsTsan2
       - IntegrationTestsTsan3
-      - PerformanceComparison0
-      - PerformanceComparison1
-      - PerformanceComparison2
-      - PerformanceComparison3
+      - PerformanceComparisonX86-0
+      - PerformanceComparisonX86-1
+      - PerformanceComparisonX86-2
+      - PerformanceComparisonX86-3
       - CompatibilityCheck
       - ASTFuzzerTestDebug
       - ASTFuzzerTestAsan

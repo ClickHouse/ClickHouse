@@ -20,9 +20,9 @@ using namespace DB;
 
 static SharedContextHolder shared_context = Context::createShared();
 
-std::vector<StringRef> loadMetrics(const std::string & metrics_file)
+std::vector<std::string_view> loadMetrics(const std::string & metrics_file)
 {
-    std::vector<StringRef> metrics;
+    std::vector<std::string_view> metrics;
 
     FILE * stream;
     char * line = nullptr;
@@ -47,7 +47,7 @@ std::vector<StringRef> loadMetrics(const std::string & metrics_file)
             }
             if (l > 0)
             {
-                metrics.push_back(StringRef(strdup(line), l));
+                metrics.emplace_back(std::string_view(strdup(line), l));
             }
         }
     }
@@ -80,7 +80,7 @@ void bench(const std::string & config_path, const std::string & metrics_file, si
     Graphite::Params params;
     setGraphitePatternsFromConfig(context, "graphite_rollup", params);
 
-    std::vector<StringRef> metrics = loadMetrics(metrics_file);
+    std::vector<std::string_view> metrics = loadMetrics(metrics_file);
 
     std::vector<double> durations(metrics.size());
     size_t j, i;
@@ -99,15 +99,15 @@ void bench(const std::string & config_path, const std::string & metrics_file, si
 
             if (j == 0 && verbose)
             {
-                std::cout << metrics[i].data << ": rule with regexp '" << rule.second->regexp_str << "' found\n";
+                std::cout << metrics[i].data() << ": rule with regexp '" << rule.second->regexp_str << "' found\n";
             }
         }
     }
 
     for (i = 0; i < metrics.size(); i++)
     {
-        std::cout << metrics[i].data << " " << durations[i] / n << " ns\n";
-        free(const_cast<void *>(static_cast<const void *>(metrics[i].data)));
+        std::cout << metrics[i].data() << " " << durations[i] / n << " ns\n";
+        free(const_cast<void *>(static_cast<const void *>(metrics[i].data())));
     }
 }
 
