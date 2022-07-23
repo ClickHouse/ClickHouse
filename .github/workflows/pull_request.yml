@@ -345,51 +345,6 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  # BuilderBinGCC:
-  #   needs: [DockerHubPush, FastTest, StyleCheck]
-  #   runs-on: [self-hosted, builder]
-  #   steps:
-  #     - name: Set envs
-  #       run: |
-  #         cat >> "$GITHUB_ENV" << 'EOF'
-  #         TEMP_PATH=${{runner.temp}}/build_check
-  #         IMAGES_PATH=${{runner.temp}}/images_path
-  #         REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-  #         CACHES_PATH=${{runner.temp}}/../ccaches
-  #         BUILD_NAME=binary_gcc
-  #         EOF
-  #     - name: Download changed images
-  #       uses: actions/download-artifact@v2
-  #       with:
-  #         name: changed_images
-  #         path: ${{ runner.temp }}/images_path
-  #     - name: Clear repository
-  #       run: |
-  #         sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-  #     - name: Check out repository code
-  #       uses: actions/checkout@v2
-  #     - name: Build
-  #       run: |
-  #         git -C "$GITHUB_WORKSPACE" submodule sync --recursive
-  #         git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
-  #         sudo rm -fr "$TEMP_PATH"
-  #         mkdir -p "$TEMP_PATH"
-  #         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-  #         cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
-  #     - name: Upload build URLs to artifacts
-  #       if: ${{ success() || failure() }}
-  #       uses: actions/upload-artifact@v2
-  #       with:
-  #         name: ${{ env.BUILD_URLS }}
-  #         path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
-  #     - name: Cleanup
-  #       if: always()
-  #       run: |
-  #         # shellcheck disable=SC2046
-  #         docker kill $(docker ps -q) ||:
-  #         # shellcheck disable=SC2046
-  #         docker rm -f $(docker ps -a -q) ||:
-  #         sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAarch64:
     needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
@@ -2974,42 +2929,6 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  # UnitTestsReleaseGCC:
-  #   needs: [BuilderBinGCC]
-  #   runs-on: [self-hosted, fuzzer-unit-tester]
-  #   steps:
-  #     - name: Set envs
-  #       run: |
-  #         cat >> "$GITHUB_ENV" << 'EOF'
-  #         TEMP_PATH=${{runner.temp}}/unit_tests_asan
-  #         REPORTS_PATH=${{runner.temp}}/reports_dir
-  #         CHECK_NAME=Unit tests (release-gcc)
-  #         REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
-  #         EOF
-  #     - name: Download json reports
-  #       uses: actions/download-artifact@v2
-  #       with:
-  #         path: ${{ env.REPORTS_PATH }}
-  #     - name: Clear repository
-  #       run: |
-  #         sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-  #     - name: Check out repository code
-  #       uses: actions/checkout@v2
-  #     - name: Unit test
-  #       run: |
-  #         sudo rm -fr "$TEMP_PATH"
-  #         mkdir -p "$TEMP_PATH"
-  #         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-  #         cd "$REPO_COPY/tests/ci"
-  #         python3 unit_tests_check.py "$CHECK_NAME"
-  #     - name: Cleanup
-  #       if: always()
-  #       run: |
-  #         # shellcheck disable=SC2046
-  #         docker kill $(docker ps -q) ||:
-  #         # shellcheck disable=SC2046
-  #         docker rm -f $(docker ps -a -q) ||:
-  #         sudo rm -fr "$TEMP_PATH"
   UnitTestsTsan:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
