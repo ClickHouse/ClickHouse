@@ -94,3 +94,17 @@ CHECK TABLE t_large;
 SELECT * FROM t_large WHERE a in (1,1000,1005,50000) order by a;
 
 DROP TABLE  t_large;
+
+SELECT '----Test lighweight delete is disabled if table has projections-----';
+
+CREATE TABLE t_proj(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0;
+
+ALTER TABLE t_proj ADD PROJECTION p_1 (SELECT avg(a), avg(b), count());
+
+INSERT INTO t_proj SELECT number + 1, number + 1  FROM numbers(1000);
+
+DELETE FROM t_proj WHERE a < 100; -- { serverError NOT_IMPLEMENTED }
+
+SELECT avg(a), avg(b), count() FROM t_proj;
+
+DROP TABLE t_proj;

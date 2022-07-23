@@ -119,6 +119,11 @@ public:
         return !parts.empty() && parts.front()->hasLightweightDelete();
     }
 
+    bool supportsLightweightDelete() const override
+    {
+        return !parts.empty() && parts.front()->supportLightweightDeleteMutate();
+    }
+
 private:
     const MergeTreeData::DataPartsVector parts;
     const MergeTreeData & storage;

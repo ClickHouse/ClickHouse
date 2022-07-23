@@ -4496,6 +4496,17 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
+bool MergeTreeData::supportsLightweightDelete() const
+{
+    auto lock = lockParts();
+    for (const auto & part : data_parts_by_info)
+    {
+        if (!part->supportLightweightDeleteMutate())
+            return false;
+    }
+    return true;
+}
+
 MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     ProjectionPartsVector res;
