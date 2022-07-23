@@ -43,7 +43,8 @@ protected:
 private:
     void initChunkProcessing(const Columns & input_columns);
     std::pair<size_t, size_t> continueWithPrevRange(size_t chunk_rows, IColumn::Filter & filter);
-    size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data);
+    template<bool clear_data>
+    size_t ordinaryDistinctOnRange(IColumn::Filter & filter, size_t range_begin, size_t range_end);
     inline void saveLatestKey(size_t row_pos);
     inline bool isLatestKeyFromPrevChunk(size_t row_pos) const;
     inline bool isKey(size_t key_pos, size_t row_pos) const;
@@ -51,7 +52,7 @@ private:
     inline size_t getRangeEnd(size_t range_begin, size_t range_end, Predicate pred) const;
 
     template <typename Method>
-    size_t buildFilterForRange(Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end, bool clear_data);
+    size_t buildFilterForRange(Method & method, IColumn::Filter & filter, size_t range_begin, size_t range_end);
 
 
     ClearableSetVariants data;
