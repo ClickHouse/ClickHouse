@@ -58,6 +58,8 @@ struct Stat
     int32_t dataLength{0}; /// NOLINT
     int32_t numChildren{0}; /// NOLINT
     int64_t pzxid{0};
+
+    bool operator==(const Stat &) const = default;
 };
 
 enum class Error : int32_t

@@ -808,8 +808,11 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             path_created += seq_num_str.str();
         }
 
-        if (storage.uncommitted_state.getNode(path_created))
-            return {KeeperStorage::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
+        if (path_created.starts_with(keeper_system_path))
+        {
+            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), "Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
+            return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        }
 
         if (getBaseName(path_created).size == 0)
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
