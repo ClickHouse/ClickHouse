@@ -281,7 +281,7 @@ Most probably some of the builds will fail at first times. This is due to the fa
 
 ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
 ```
--DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1
 ```
 
 Note that the split build has several drawbacks:

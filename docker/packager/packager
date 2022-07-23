@@ -261,8 +261,7 @@ def parse_env_variables(
 
     if split_binary:
         cmake_flags.append(
-            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 "
-            "-DCLICKHOUSE_SPLIT_BINARY=1"
+            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1"
         )
         # We can't always build utils because it requires too much space, but
         # we have to build them at least in some way in CI. The split build is
