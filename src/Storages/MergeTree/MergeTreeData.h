@@ -440,6 +440,8 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
+    bool supportsLightweightDelete() const override;
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
