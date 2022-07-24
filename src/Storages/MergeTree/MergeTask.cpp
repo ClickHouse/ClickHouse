@@ -598,7 +598,6 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
 
     const auto & projections = global_ctx->metadata_snapshot->getProjections();
-    // tasks_for_projections.reserve(projections.size());
 
     for (const auto & projection : projections)
     {

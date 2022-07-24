@@ -836,7 +836,7 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseFromString(const std::string_view & str)
+inline T parseFromString(std::string_view str)
 {
     return parse<T>(str.data(), str.size());
 }
@@ -1238,7 +1238,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field);
 
 
 /** Read serialized exception.
@@ -1338,7 +1338,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSizeSuffix(const std::string_view & s)
+inline T parseWithSizeSuffix(std::string_view s)
 {
     return parseWithSizeSuffix<T>(s.data(), s.size());
 }
