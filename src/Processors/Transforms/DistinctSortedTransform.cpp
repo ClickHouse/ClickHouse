@@ -143,16 +143,23 @@ ColumnRawPtrs DistinctSortedTransform::getClearingColumns(const ColumnRawPtrs & 
 {
     ColumnRawPtrs clearing_hint_columns;
     clearing_hint_columns.reserve(description.size());
-    for (const auto & sort_column_description : description)
+    try
     {
-        const auto * sort_column_ptr = header.getByName(sort_column_description.column_name).column.get();
-        const auto it = std::find(key_columns.cbegin(), key_columns.cend(), sort_column_ptr);
-        if (it != key_columns.cend()) /// if found in key_columns
-            clearing_hint_columns.emplace_back(sort_column_ptr);
-        else
-            return clearing_hint_columns; /// We will use common prefix of sort description and requested DISTINCT key.
+        const size_t max_num_of_clearing_columns = std::min(description.size(), column_positions.size());
+        for (size_t i = 0; i < max_num_of_clearing_columns; ++i)
+        {
+            const auto pos = header.getPositionByName(description[i].column_name); // can throw
+            if (std::find(begin(column_positions), end(column_positions), pos) == column_positions.end())
+                break;
+
+            clearing_hint_columns.emplace_back(key_columns[pos]);
+        }
+        return clearing_hint_columns;
     }
-    return clearing_hint_columns;
+    catch (const Exception &)
+    {
+        return clearing_hint_columns;
+    }
 }
 
 bool DistinctSortedTransform::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m)
