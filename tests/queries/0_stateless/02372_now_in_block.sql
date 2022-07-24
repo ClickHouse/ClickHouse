@@ -1,1 +1,1 @@
-SELECT count() FROM (SELECT DISTINCT nowInBlock() FROM system.numbers LIMIT 2);
+SELECT count() FROM (SELECT DISTINCT nowInBlock(), nowInBlock('Pacific/Pitcairn') FROM system.numbers LIMIT 2);
