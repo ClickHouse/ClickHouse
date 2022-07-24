@@ -25,7 +25,7 @@ from ssh import SSHKey
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Style Check (actions)"
+NAME = "Style Check"
 
 
 def process_result(result_folder):
