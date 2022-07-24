@@ -147,7 +147,7 @@ inline bool isPunctuationASCII(char c)
 }
 
 
-inline bool isValidIdentifier(const std::string_view & str)
+inline bool isValidIdentifier(std::string_view str)
 {
     return !str.empty()
         && isValidIdentifierBegin(str[0])
