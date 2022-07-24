@@ -1,6 +1,6 @@
 ---
-sidebar_position: 67
-sidebar_label: "Функции для шифрования"
+toc_priority: 67
+toc_title: "Функции для шифрования"
 ---
 
 # Функции шифрования {#encryption-functions}

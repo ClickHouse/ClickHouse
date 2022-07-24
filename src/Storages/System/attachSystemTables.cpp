@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
-#include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
@@ -69,9 +68,6 @@
 #include <Storages/System/StorageSystemUserDirectories.h>
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
-#include <Storages/System/StorageSystemTransactions.h>
-#include <Storages/System/StorageSystemFilesystemCache.h>
-#include <Storages/System/StorageSystemRemoteDataPaths.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -79,7 +75,6 @@
 
 #if USE_ROCKSDB
 #include <Storages/RocksDB/StorageSystemRocksDB.h>
-#include <Storages/System/StorageSystemMergeTreeMetadataCache.h>
 #endif
 
 
@@ -129,13 +124,11 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices");
     attach<StorageSystemLicenses>(context, system_database, "licenses");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
-    attach<StorageSystemBackups>(context, system_database, "backups");
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
-    attach<StorageSystemMergeTreeMetadataCache>(context, system_database, "merge_tree_metadata_cache");
 #endif
 }
 
@@ -166,14 +159,9 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemReplicatedFetches>(context, system_database, "replicated_fetches");
     attach<StorageSystemPartMovesBetweenShards>(context, system_database, "part_moves_between_shards");
     attach<StorageSystemAsynchronousInserts>(context, system_database, "asynchronous_inserts");
-    attach<StorageSystemFilesystemCache>(context, system_database, "filesystem_cache");
-    attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
 
     if (has_zookeeper)
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");
-
-    if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
-        attach<StorageSystemTransactions>(context, system_database, "transactions");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

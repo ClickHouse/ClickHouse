@@ -22,8 +22,7 @@ class DistinctSortedTransform : public ISimpleTransform
 {
 public:
     /// Empty columns_ means all columns.
-    DistinctSortedTransform(
-        Block header_, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
+    DistinctSortedTransform(const Block & header, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
 
     String getName() const override { return "DistinctSortedTransform"; }
 
@@ -34,7 +33,7 @@ private:
     ColumnRawPtrs getKeyColumns(const Chunk & chunk) const;
     /// When clearing_columns changed, we can clean HashSet to memory optimization
     /// clearing_columns is a left-prefix of SortDescription exists in key_columns
-    ColumnRawPtrs getClearingColumns(const ColumnRawPtrs & key_columns) const;
+    ColumnRawPtrs getClearingColumns(const Chunk & chunk, const ColumnRawPtrs & key_columns) const;
     static bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m);
 
     /// return true if has new data
@@ -47,7 +46,6 @@ private:
         size_t rows,
         ClearableSetVariants & variants) const;
 
-    Block header;
     SortDescription description;
 
     struct PreviousChunk

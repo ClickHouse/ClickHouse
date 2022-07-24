@@ -56,8 +56,6 @@ private:
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
-    /// system.processors_profile_log
-    bool profile_processors = false;
 
     std::atomic_bool cancelled = false;
 

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 39
-sidebar_label: USER
+toc_priority: 39
+toc_title: USER
 ---
 
 # CREATE USER {#create-user-statement}
@@ -52,9 +52,9 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 -   `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
 -   `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
-:::warning    
-ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
-:::
+!!! info "Warning"
+    ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
+
 
 ## GRANTEES Clause {#grantees}
 

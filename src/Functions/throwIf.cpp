@@ -131,10 +131,8 @@ public:
                     message.value_or("Value passed to '" + getName() + "' function is non zero"));
             }
 
-            size_t result_size = in_untyped->size();
-
             /// We return non constant to avoid constant folding.
-            return ColumnUInt8::create(result_size, 0);
+            return ColumnUInt8::create(in_data.size(), 0);
         }
 
         return nullptr;

@@ -1,21 +1,16 @@
 ---
-sidebar_position: 65
-sidebar_label: Build on Mac OS X
-description: How to build ClickHouse on Mac OS X
+toc_priority: 65
+toc_title: Build on Mac OS X
 ---
 
-# How to Build ClickHouse on Mac OS X 
+# How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-:::info You don't have to build ClickHouse yourself!
-You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start). Follow **macOS (Intel)** or **macOS (Apple silicon)** installation instructions.
-:::
+!!! info "You don't have to build ClickHouse yourself"
+    You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start).
+    Follow `macOS (Intel)` or `macOS (Apple silicon)` installation instructions.
 
 Build should work on x86_64 (Intel) and arm64 (Apple silicon) based macOS 10.15 (Catalina) and higher with Homebrew's vanilla Clang.
-It is always recommended to use vanilla `clang` compiler. 
-
-:::note
-It is possible to use XCode's `apple-clang` or `gcc`, but it's strongly discouraged.
-:::
+It is always recommended to use vanilla `clang` compiler. It is possible to use XCode's `apple-clang` or `gcc` but it's strongly discouraged.
 
 ## Install Homebrew {#install-homebrew}
 
@@ -94,9 +89,8 @@ cmake --build . --config RelWithDebInfo
 
 If you intend to run `clickhouse-server`, make sure to increase the system’s maxfiles variable.
 
-:::note    
-You’ll need to use sudo.
-:::
+!!! info "Note"
+    You’ll need to use sudo.
 
 To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the following content:
 

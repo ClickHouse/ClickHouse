@@ -129,17 +129,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.one_line
             ? orderBy()->formatImpl(s, state, frame)
             : orderBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-
-        if (interpolate())
-        {
-            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTERPOLATE" << (s.hilite ? hilite_none : "");
-            if (!interpolate()->children.empty())
-            {
-                s.ostr << " (";
-                interpolate()->formatImpl(s, state, frame);
-                s.ostr << " )";
-            }
-        }
     }
 
     if (limitByLength())
@@ -405,7 +394,7 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         else
             children[it->second] = ast;
     }
-    else if (positions.contains(expr))
+    else if (positions.count(expr))
     {
         size_t pos = positions[expr];
         children.erase(children.begin() + pos);
@@ -418,7 +407,7 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 
 ASTPtr & ASTSelectQuery::getExpression(Expression expr)
 {
-    if (!positions.contains(expr))
+    if (!positions.count(expr))
         throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
     return children[positions[expr]];
 }

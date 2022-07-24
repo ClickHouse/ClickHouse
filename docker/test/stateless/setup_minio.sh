@@ -41,7 +41,6 @@ sleep 5
 ./mc admin user add clickminio test testtest
 ./mc admin policy set clickminio readwrite user=test
 ./mc mb clickminio/test
-./mc policy set public clickminio/test
 
 
 # Upload data to Minio. By default after unpacking all tests will in

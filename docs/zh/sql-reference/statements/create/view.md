@@ -1,6 +1,6 @@
 ---
-sidebar_position: 37
-sidebar_label: VIEW
+toc_priority: 37
+toc_title: VIEW
 ---
 
 # CREATE VIEW {#create-view}
@@ -62,7 +62,7 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 
 视图看起来与普通表相同。 例如，它们列在1SHOW TABLES1查询的结果中。
 
-删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop#drop-view). `DROP TABLE`也适用于视图。
+删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). `DROP TABLE`也适用于视图。
 
 ## Live View (实验性) {#live-view}
 

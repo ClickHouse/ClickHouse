@@ -1,11 +1,11 @@
 ---
-sidebar_position: 26
-sidebar_label: "Клиентские библиотеки от сторонних разработчиков"
+toc_priority: 26
+toc_title: "Клиентские библиотеки от сторонних разработчиков"
 ---
 
 # Клиентские библиотеки от сторонних разработчиков {#klientskie-biblioteki-ot-storonnikh-razrabotchikov}
 
-:::danger "Disclaimer"
+!!! warning "Disclaimer"
     Яндекс не поддерживает перечисленные ниже библиотеки и не проводит тщательного тестирования для проверки их качества.
 
 -   Python:

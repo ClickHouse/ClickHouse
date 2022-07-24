@@ -322,9 +322,8 @@ def process_benchmark_results(args):
     required_keys = {
         "dbms": ["result"],
         "hardware": ["result", "system", "system_full", "kind"],
-        "versions": ["version", "system"],
     }
-    for benchmark_kind in ["dbms", "hardware", "versions"]:
+    for benchmark_kind in ["dbms", "hardware"]:
         results = []
         results_root = os.path.join(benchmark_root, benchmark_kind, "results")
         for result in sorted(os.listdir(results_root)):

@@ -29,6 +29,7 @@ struct SettingsProfilesInfo;
 class SettingsChanges;
 class AccessControl;
 class IAST;
+struct IAccessEntity;
 using ASTPtr = std::shared_ptr<IAST>;
 
 
@@ -69,8 +70,10 @@ public:
     using Params = ContextAccessParams;
     const Params & getParams() const { return params; }
 
-    /// Returns the current user. The function can return nullptr.
+    /// Returns the current user. Throws if user is nullptr.
     UserPtr getUser() const;
+    /// Same as above, but can return nullptr.
+    UserPtr tryGetUser() const;
     String getUserName() const;
     std::optional<UUID> getUserID() const { return getParams().user_id; }
 
@@ -152,6 +155,11 @@ public:
     bool hasAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
     bool hasAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
 
+    /// Checks if a grantee is allowed for the current user, throws an exception if not.
+    void checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const;
+    /// Checks if grantees are allowed for the current user, throws an exception if not.
+    void checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const;
+
     /// Makes an instance of ContextAccess which provides full access to everything
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
@@ -212,6 +220,7 @@ private:
     mutable Poco::Logger * trace_log = nullptr;
     mutable UserPtr user;
     mutable String user_name;
+    mutable bool user_was_dropped = false;
     mutable scope_guard subscription_for_user_change;
     mutable std::shared_ptr<const EnabledRoles> enabled_roles;
     mutable scope_guard subscription_for_roles_changes;

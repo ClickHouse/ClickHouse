@@ -7,6 +7,7 @@
 #include <base/logger_useful.h>
 #include <Common/LocalDateTime.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/ShellCommand.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -14,10 +15,12 @@
 
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 
 
 namespace DB
@@ -48,15 +51,9 @@ namespace
                 command,
                 user_scripts_path);
 
-        if (!FS::exists(script_path))
+        if (!std::filesystem::exists(std::filesystem::path(script_path)))
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Executable file {} does not exist inside user scripts folder {}",
-                command,
-                user_scripts_path);
-
-        if (!FS::canExecute(script_path))
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Executable file {} is not executable inside user scripts folder {}",
                 command,
                 user_scripts_path);
 

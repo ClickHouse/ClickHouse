@@ -84,7 +84,7 @@ void TraceCollector::run()
         {
             uintptr_t addr = 0;
             readPODBinary(addr, in);
-            trace.emplace_back(static_cast<UInt64>(addr));
+            trace.emplace_back(UInt64(addr));
         }
 
         TraceType trace_type;
@@ -103,8 +103,8 @@ void TraceCollector::run()
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
 
-            UInt64 time = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
-            UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
+            UInt64 time = UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+            UInt64 time_in_microseconds = UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
             TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size};
             trace_log->add(element);
         }

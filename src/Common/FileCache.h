@@ -25,7 +25,6 @@ namespace DB
 class IFileCache : private boost::noncopyable
 {
 friend class FileSegment;
-friend struct FileSegmentsHolder;
 
 public:
     using Key = UInt128;
@@ -33,7 +32,9 @@ public:
 
     IFileCache(
         const String & cache_base_path_,
-        const FileCacheSettings & cache_settings_);
+        size_t max_size_,
+        size_t max_element_size_,
+        size_t max_file_segment_size_);
 
     virtual ~IFileCache() = default;
 
@@ -42,9 +43,7 @@ public:
 
     virtual void remove(const Key & key) = 0;
 
-    virtual void remove(bool force_remove_unreleasable) = 0;
-
-    static bool isReadOnly();
+    static bool shouldBypassCache();
 
     /// Cache capacity in bytes.
     size_t capacity() const { return max_size; }
@@ -54,10 +53,6 @@ public:
     String getPathInLocalCache(const Key & key, size_t offset);
 
     String getPathInLocalCache(const Key & key);
-
-    const String & getBasePath() const { return cache_base_path; }
-
-    virtual std::vector<String> tryGetCachePaths(const Key & key) = 0;
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -71,21 +66,6 @@ public:
      * it is guaranteed that these file segments are not removed from cache.
      */
     virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
-
-    /**
-     * Segments in returned list are ordered in ascending order and represent a full contiguous
-     * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
-     *
-     * If file segment has state EMPTY, then it is also marked as "detached". E.g. it is "detached"
-     * from cache (not owned by cache), and as a result will never change it's state and will be destructed
-     * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
-     * it's state (and become DOWNLOADED).
-     */
-    virtual FileSegmentsHolder get(const Key & key, size_t offset, size_t size) = 0;
-
-    virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) = 0;
-
-    virtual FileSegments getSnapshot() const = 0;
 
     /// For debug.
     virtual String dumpStructure(const Key & key) = 0;
@@ -131,23 +111,15 @@ class LRUFileCache final : public IFileCache
 public:
     LRUFileCache(
         const String & cache_base_path_,
-        const FileCacheSettings & cache_settings_);
+        size_t max_size_,
+        size_t max_element_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS,
+        size_t max_file_segment_size_ = REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
 
     FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) override;
-
-    FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
-
-    FileSegments getSnapshot() const override;
-
-    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size) override;
 
     void initialize() override;
 
     void remove(const Key & key) override;
-
-    void remove(bool force_remove_unreleasable) override;
-
-    std::vector<String> tryGetCachePaths(const Key & key) override;
 
 private:
     using FileKeyAndOffset = std::pair<Key, size_t>;
@@ -219,15 +191,10 @@ private:
 
     size_t availableSize() const { return max_size - current_size; }
 
-    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
+    void loadCacheInfoIntoMemory();
 
-    FileSegments splitRangeIntoCells(
-        const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
-
-    String dumpStructureImpl(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
-
-    void fillHolesWithEmptyFileSegments(
-        FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, std::lock_guard<std::mutex> & cache_lock);
+    FileSegments splitRangeIntoEmptyCells(
+        const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
 public:
     struct Stat
@@ -241,7 +208,6 @@ public:
     Stat getStat();
 
     String dumpStructure(const Key & key_) override;
-    void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
 };
 
 }

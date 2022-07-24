@@ -1,6 +1,6 @@
 ---
-sidebar_position: 48
-sidebar_label: Bit
+toc_priority: 48
+toc_title: Bit
 ---
 
 # Bit Functions {#bit-functions}

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 48
-sidebar_label: Date32
+toc_priority: 48
+toc_title: Date32
 ---
 
 # Date32 {#data_type-datetime32}

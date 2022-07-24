@@ -62,9 +62,6 @@ public:
     template <bool use_flags, bool multiple_disjuncts, typename T>
     void setUsed(const T & f);
 
-    template <bool use_flags, bool multiple_disjunct>
-    void setUsed(const Block * block, size_t row_num, size_t offset);
-
     template <bool use_flags, bool multiple_disjuncts, typename T>
     bool getUsed(const T & f);
 

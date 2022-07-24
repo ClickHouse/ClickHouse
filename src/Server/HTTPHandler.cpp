@@ -669,7 +669,7 @@ void HTTPHandler::processQuery(
         if (name.empty())
             return true;
 
-        if (reserved_param_names.contains(name))
+        if (reserved_param_names.count(name))
             return true;
 
         for (const String & suffix : reserved_param_suffixes)
@@ -922,7 +922,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
 
-    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
+    session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP);
     SCOPE_EXIT({ session.reset(); });
     std::optional<CurrentThread::QueryScope> query_scope;
 
@@ -1063,7 +1063,7 @@ PredefinedQueryHandler::PredefinedQueryHandler(
 
 bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
 {
-    if (receive_params.contains(key))
+    if (receive_params.count(key))
     {
         context->setQueryParameter(key, value);
         return true;

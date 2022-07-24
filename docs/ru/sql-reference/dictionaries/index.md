@@ -1,6 +1,7 @@
 ---
-sidebar_label: "Словари"
-sidebar_position: 35
+toc_folder_title: "Словари"
+toc_priority: 35
+toc_title: "Введение"
 ---
 
 # Словари {#slovari}

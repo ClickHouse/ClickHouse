@@ -18,7 +18,7 @@ struct PipelineResourcesHolder
     PipelineResourcesHolder();
     PipelineResourcesHolder(PipelineResourcesHolder &&) noexcept;
     ~PipelineResourcesHolder();
-    /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
+    /// Custom mode assignment does not destroy data from lhs. It appends data from rhs to lhs.
     PipelineResourcesHolder& operator=(PipelineResourcesHolder &&) noexcept;
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.

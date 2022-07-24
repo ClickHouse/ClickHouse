@@ -346,16 +346,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
             break;
         }
-        case Type::DROP_FILESYSTEM_CACHE:
-        {
-            ParserLiteral path_parser;
-            ASTPtr ast;
-            if (path_parser.parse(pos, ast, expected))
-                res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
-            if (ParserKeyword{"FORCE"}.ignore(pos, expected))
-                res->force_removal = true;
-            break;
-        }
 
         default:
         {

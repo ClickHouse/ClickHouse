@@ -66,7 +66,7 @@ public:
     bool hasUnreadData() const;
 
     // for streaming reading (like in Kafka) we need to restore initial state of the buffer
-    // without recreating the buffer.
+    // w/o recreating the buffer.
     void reset();
 
 private:

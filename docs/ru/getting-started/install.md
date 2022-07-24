@@ -1,6 +1,6 @@
 ---
-sidebar_position: 11
-sidebar_label: "Установка"
+toc_priority: 11
+toc_title: "Установка"
 ---
 
 # Установка {#ustanovka}
@@ -24,37 +24,15 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu. Для установки пакетов выполните:
 
 ``` bash
-sudo apt-get install -y apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you've set up a password.
+{% include 'install/deb.sh' %}
 ```
 
 <details markdown="1">
 
 <summary>Устаревший способ установки deb-пакетов</summary>
-
 ``` bash
-sudo apt-get install apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb https://repo.clickhouse.com/deb/stable/ main/" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+{% include 'install/deb_repo.sh' %}
 ```
-
 </details>
 
 Чтобы использовать различные [версии ClickHouse](../faq/operations/production.md) в зависимости от ваших потребностей, вы можете заменить `stable` на `lts` или `testing`.
@@ -68,10 +46,10 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 -   `clickhouse-client` — Создает символические ссылки для `clickhouse-client` и других клиентских инструментов и устанавливает конфигурационные файлы `clickhouse-client`.
 -   `clickhouse-common-static-dbg` — Устанавливает исполняемые файлы ClickHouse собранные с отладочной информацией.
 
-    :::note "Внимание"
+!!! attention "Внимание"
     Если вам нужно установить ClickHouse определенной версии, вы должны установить все пакеты одной версии:
     `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
-    :::
+
 ### Из RPM пакетов {#from-rpm-packages}
 
 Команда ClickHouse в Яндексе рекомендует использовать официальные предкомпилированные `rpm` пакеты для CentOS, RedHat и всех остальных дистрибутивов Linux, основанных на rpm.
@@ -79,28 +57,15 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 Сначала нужно подключить официальный репозиторий:
 
 ``` bash
-sudo yum install -y yum-utils
-sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
-sudo yum install -y clickhouse-server clickhouse-client
-
-sudo /etc/init.d/clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+{% include 'install/rpm.sh' %}
 ```
 
 <details markdown="1">
 
 <summary>Устаревший способ установки rpm-пакетов</summary>
-
 ``` bash
-sudo yum install yum-utils
-sudo rpm --import https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/clickhouse.repo
-sudo yum install clickhouse-server clickhouse-client
-
-sudo /etc/init.d/clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+{% include 'install/rpm_repo.sh' %}
 ```
-
 </details>
 
 Для использования наиболее свежих версий нужно заменить `stable` на `testing` (рекомендуется для тестовых окружений). Также иногда доступен `prestable`.
@@ -121,52 +86,14 @@ sudo yum install clickhouse-server clickhouse-client
 После этого архивы нужно распаковать и воспользоваться скриптами установки. Пример установки самой свежей версии:
 
 ``` bash
-LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
-    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
-export LATEST_VERSION
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz"
-
-tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
-sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
-
-tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
-sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
-
-tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
-sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
-sudo /etc/init.d/clickhouse-server start
-
-tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
-sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
+{% include 'install/tgz.sh' %}
 ```
 
 <details markdown="1">
 
 <summary>Устаревший способ установки из архивов tgz</summary>
-
 ``` bash
-export LATEST_VERSION=$(curl -s https://repo.clickhouse.com/tgz/stable/ | \
-    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz
-
-tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
-sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
-
-tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
-
-tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
-sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
-sudo /etc/init.d/clickhouse-server start
-
-tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
-sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
+{% include 'install/tgz_repo.sh' %}
 ```
 </details>
 
@@ -266,10 +193,9 @@ SELECT 1
 
 1 rows in set. Elapsed: 0.003 sec.
 
-
 :)
 ```
 
 **Поздравляем, система работает!**
 
-Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](tutorial.md).
+Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](./tutorial.md).

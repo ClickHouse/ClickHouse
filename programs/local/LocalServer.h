@@ -46,8 +46,6 @@ protected:
 
     void processConfig() override;
 
-    void updateLoggerLevel(const String & logs_level) override;
-
 private:
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument

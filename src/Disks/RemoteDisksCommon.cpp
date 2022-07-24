@@ -2,7 +2,6 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/FileCache.h>
-#include <Common/FileCacheSettings.h>
 
 namespace DB
 {
@@ -65,23 +64,18 @@ FileCachePtr getCachePtrForDisk(
     if (!fs::exists(cache_base_path))
         fs::create_directories(cache_base_path);
 
+    LOG_INFO(&Poco::Logger::get("Disk(" + name + ")"), "Disk registered with cache path: {}", cache_base_path);
+
     auto metadata_path = getDiskMetadataPath(name, config, config_prefix, context);
     if (metadata_path == cache_base_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata path and cache base path must be different: {}", metadata_path);
 
-    FileCacheSettings file_cache_settings;
-    file_cache_settings.loadFromConfig(config, config_prefix);
+    size_t max_cache_size = config.getUInt64(config_prefix + ".data_cache_max_size", 1024*1024*1024);
+    size_t max_cache_elements = config.getUInt64(config_prefix + ".data_cache_max_elements", REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS);
+    size_t max_file_segment_size = config.getUInt64(config_prefix + ".max_file_segment_size", REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE);
 
-    auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings);
+    auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, max_cache_size, max_cache_elements, max_file_segment_size);
     cache->initialize();
-
-    auto * log = &Poco::Logger::get("Disk(" + name + ")");
-    LOG_INFO(log, "Disk registered with cache path: {}. Cache size: {}, max cache elements size: {}, max_file_segment_size: {}",
-             cache_base_path,
-             file_cache_settings.max_size ? toString(file_cache_settings.max_size) : "UNLIMITED",
-             file_cache_settings.max_elements ? toString(file_cache_settings.max_elements) : "UNLIMITED",
-             file_cache_settings.max_file_segment_size);
-
     return cache;
 }
 

@@ -27,6 +27,7 @@
 #include <base/logger_useful.h>
 #include <algorithm>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 
@@ -168,7 +169,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
 
     for (auto & column : columns_from_joined_table)
     {
-        if (joined_columns.contains(column.name))
+        if (joined_columns.count(column.name))
             continue;
 
         joined_columns.insert(column.name);
@@ -178,7 +179,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
 
         /// Also qualify unusual column names - that does not look like identifiers.
 
-        if (left_table_columns.contains(column.name) || !isValidIdentifierBegin(column.name.at(0)))
+        if (left_table_columns.count(column.name) || !isValidIdentifierBegin(column.name.at(0)))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;
@@ -280,7 +281,7 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
 
     forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
-        if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
+        if (required_keys.count(right_key_name) && !required_right_keys.has(right_key_name))
         {
             const auto & right_key = right_table_keys.getByName(right_key_name);
             required_right_keys.insert(right_key);
@@ -328,6 +329,21 @@ NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
 
 void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns, bool correct_nullability)
 {
+    addJoinedColumnsAndCorrectTypesImpl(left_columns, correct_nullability);
+}
+
+void TableJoin::addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & left_columns, bool correct_nullability)
+{
+    addJoinedColumnsAndCorrectTypesImpl(left_columns, correct_nullability);
+}
+
+template <typename TColumns>
+void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, bool correct_nullability)
+{
+    static_assert(std::is_same_v<typename TColumns::value_type, ColumnWithTypeAndName> ||
+                  std::is_same_v<typename TColumns::value_type, NameAndTypePair>);
+
+    constexpr bool has_column = std::is_same_v<typename TColumns::value_type, ColumnWithTypeAndName>;
     for (auto & col : left_columns)
     {
         if (hasUsing())
@@ -342,15 +358,26 @@ void TableJoin::addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns
             inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage());
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
+            {
                 col.type = it->second;
+                if constexpr (has_column)
+                    col.column = nullptr;
+            }
         }
 
         if (correct_nullability && leftBecomeNullable(col.type))
+        {
             col.type = JoinCommon::convertTypeToNullable(col.type);
+            if constexpr (has_column)
+                col.column = nullptr;
+        }
     }
 
     for (const auto & col : correctedColumnsAddedByJoin())
-        left_columns.emplace_back(col.name, col.type);
+        if constexpr (has_column)
+            left_columns.emplace_back(nullptr, col.type, col.name);
+        else
+            left_columns.emplace_back(col.name, col.type);
 }
 
 bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const

@@ -20,7 +20,7 @@ void ApplyWithGlobalVisitor::visit(ASTSelectQuery & select, const std::map<Strin
         }
         for (const auto & with_alias : exprs)
         {
-            if (!current_names.contains(with_alias.first))
+            if (!current_names.count(with_alias.first))
                 with->children.push_back(with_alias.second->clone());
         }
     }

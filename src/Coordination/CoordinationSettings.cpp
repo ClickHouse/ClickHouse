@@ -37,7 +37,7 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
 }
 
 
-const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr";
+const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro";
 
 KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
     : server_id(NOT_EXIST)
@@ -82,8 +82,8 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
         write_int(tcp_port_secure);
     }
 
-    writeText("four_letter_word_allow_list=", buf);
-    writeText(four_letter_word_allow_list, buf);
+    writeText("four_letter_word_white_list=", buf);
+    writeText(four_letter_word_white_list, buf);
     buf.write('\n');
 
     writeText("log_storage_path=", buf);
@@ -99,20 +99,20 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     writeText("max_requests_batch_size=", buf);
     write_int(coordination_settings->max_requests_batch_size);
     writeText("min_session_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->min_session_timeout_ms));
+    write_int(uint64_t(coordination_settings->min_session_timeout_ms));
     writeText("session_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->session_timeout_ms));
+    write_int(uint64_t(coordination_settings->session_timeout_ms));
     writeText("operation_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->operation_timeout_ms));
+    write_int(uint64_t(coordination_settings->operation_timeout_ms));
     writeText("dead_session_check_period_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->dead_session_check_period_ms));
+    write_int(uint64_t(coordination_settings->dead_session_check_period_ms));
 
     writeText("heart_beat_interval_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->heart_beat_interval_ms));
+    write_int(uint64_t(coordination_settings->heart_beat_interval_ms));
     writeText("election_timeout_lower_bound_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->election_timeout_lower_bound_ms));
+    write_int(uint64_t(coordination_settings->election_timeout_lower_bound_ms));
     writeText("election_timeout_upper_bound_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->election_timeout_upper_bound_ms));
+    write_int(uint64_t(coordination_settings->election_timeout_upper_bound_ms));
 
     writeText("reserved_log_items=", buf);
     write_int(coordination_settings->reserved_log_items);
@@ -122,9 +122,9 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     writeText("auto_forwarding=", buf);
     write_bool(coordination_settings->auto_forwarding);
     writeText("shutdown_timeout=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->shutdown_timeout));
+    write_int(uint64_t(coordination_settings->shutdown_timeout));
     writeText("startup_timeout=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings->startup_timeout));
+    write_int(uint64_t(coordination_settings->startup_timeout));
 
     writeText("raft_logs_level=", buf);
     writeText(coordination_settings->raft_logs_level.toString(), buf);
@@ -177,11 +177,7 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
         ret->super_digest = config.getString("keeper_server.superdigest");
     }
 
-    ret->four_letter_word_allow_list = config.getString(
-        "keeper_server.four_letter_word_allow_list",
-        config.getString("keeper_server.four_letter_word_white_list",
-                         DEFAULT_FOUR_LETTER_WORD_CMD));
-
+    ret->four_letter_word_white_list = config.getString("keeper_server.four_letter_word_white_list", DEFAULT_FOUR_LETTER_WORD_CMD);
 
     ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
     ret->snapshot_storage_path = getSnapshotsPathFromConfig(config, standalone_keeper_);

@@ -1,5 +1,5 @@
 ---
-sidebar_position: 106
+toc_priority: 106
 ---
 
 # argMax {#agg-function-argmax}

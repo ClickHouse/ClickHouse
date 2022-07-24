@@ -201,7 +201,7 @@ def test_secure_insert_sync():
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
 
 
-# INSERT without initial_user
+# INSERT w/o initial_user
 #
 # Buffer() flush happens with global context, that does not have user
 # And so Context::user/ClientInfo::current_user/ClientInfo::initial_user will be empty

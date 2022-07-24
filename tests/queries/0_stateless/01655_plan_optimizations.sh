@@ -196,12 +196,3 @@ $CLICKHOUSE_CLIENT -q "
     select a, b from (
         select number + 1 as a, number + 2 as b from numbers(2) union all select number + 1 as b, number + 2 as a from numbers(2)
     ) where a != 1 settings enable_optimize_predicate_expression = 0"
-
-echo "> function calculation should be done after sorting and limit (if possible)"
-echo "> Expression should be divided into two subexpressions and only one of them should be moved after Sorting"
-$CLICKHOUSE_CLIENT -q "
-    explain actions = 1 select number as n, sipHash64(n) from numbers(100) order by number + 1 limit 5" |
-    sed 's/^ *//g' | grep -o "^ *\(Expression (.*Before ORDER BY.*)\|Sorting\|FUNCTION \w\+\)"
-echo "> this query should be executed without throwing an exception"
-$CLICKHOUSE_CLIENT -q "
-    select throwIf(number = 5) from (select * from numbers(10)) order by number limit 1"

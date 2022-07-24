@@ -154,17 +154,17 @@ void LocalConnection::sendQuery(
     catch (const Exception & e)
     {
         state->io.onException();
-        state->exception.reset(e.clone());
+        state->exception.emplace(e);
     }
     catch (const std::exception & e)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+        state->exception.emplace(Exception::CreateFromSTDTag{}, e);
     }
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
@@ -201,6 +201,9 @@ void LocalConnection::finishQuery()
 {
     next_packet_type = Protocol::Server::EndOfStream;
 
+    if (!state)
+        return;
+
     if (state->executor)
     {
         state->executor.reset();
@@ -216,7 +219,6 @@ void LocalConnection::finishQuery()
 
     state->io.onFinish();
     state.reset();
-    last_sent_snapshots.clear();
 }
 
 bool LocalConnection::poll(size_t)
@@ -260,17 +262,17 @@ bool LocalConnection::poll(size_t)
         catch (const Exception & e)
         {
             state->io.onException();
-            state->exception.reset(e.clone());
+            state->exception.emplace(e);
         }
         catch (const std::exception & e)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+            state->exception.emplace(Exception::CreateFromSTDTag{}, e);
         }
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state->exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
     }
 
@@ -320,21 +322,6 @@ bool LocalConnection::poll(size_t)
         {
             next_packet_type = Protocol::Server::ProfileInfo;
             state->profile_info = state->executor->getProfileInfo();
-            return true;
-        }
-    }
-
-    if (state->is_finished && !state->sent_profile_events)
-    {
-        state->sent_profile_events = true;
-
-        if (send_profile_events && state->executor)
-        {
-            Block block;
-            state->after_send_profile_events.restart();
-            next_packet_type = Protocol::Server::ProfileEvents;
-            getProfileEvents(block);
-            state->block.emplace(std::move(block));
             return true;
         }
     }
@@ -434,7 +421,7 @@ Packet LocalConnection::receivePacket()
         }
         case Protocol::Server::Exception:
         {
-            packet.exception.reset(state->exception->clone());
+            packet.exception = std::make_unique<Exception>(*state->exception);
             next_packet_type.reset();
             break;
         }

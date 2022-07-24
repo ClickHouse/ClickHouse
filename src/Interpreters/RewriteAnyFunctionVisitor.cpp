@@ -89,7 +89,7 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
         return;
 
     /// We have rewritten this function. Just unwrap its argument.
-    if (data.rewritten.contains(ast.get()))
+    if (data.rewritten.count(ast.get()))
     {
         func_arguments[0]->setAlias(func.alias);
         ast = func_arguments[0];

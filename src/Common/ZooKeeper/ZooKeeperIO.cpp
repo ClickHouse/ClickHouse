@@ -40,7 +40,7 @@ void write(bool x, WriteBuffer & out)
 
 void write(const std::string & s, WriteBuffer & out)
 {
-    write(static_cast<int32_t>(s.size()), out);
+    write(int32_t(s.size()), out);
     out.write(s.data(), s.size());
 }
 

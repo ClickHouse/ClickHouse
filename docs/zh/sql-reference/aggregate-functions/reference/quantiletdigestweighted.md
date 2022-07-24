@@ -1,5 +1,5 @@
 ---
-sidebar_position: 208
+toc_priority: 208
 ---
 
 # quantileTDigestWeighted {#quantiletdigestweighted}

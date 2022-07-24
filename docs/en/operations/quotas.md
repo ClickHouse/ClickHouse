@@ -1,6 +1,6 @@
 ---
-sidebar_position: 51
-sidebar_label: Quotas
+toc_priority: 51
+toc_title: Quotas
 ---
 
 # Quotas {#quotas}
@@ -101,7 +101,7 @@ Quotas can use the “quota key” feature to report on resources for multiple k
 <web_global>
     <!-- keyed – The quota_key "key" is passed in the query parameter,
             and the quota is tracked separately for each key value.
-        For example, you can pass a username as the key,
+        For example, you can pass a username of your service as the key,
             so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 

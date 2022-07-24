@@ -240,8 +240,7 @@ template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type
 
 // For enum types, use the field type that corresponds to their underlying type.
 template <typename T>
-requires std::is_enum_v<T>
-struct NearestFieldTypeImpl<T>
+struct NearestFieldTypeImpl<T, std::enable_if_t<std::is_enum_v<T>>>
 {
     using Type = NearestFieldType<std::underlying_type_t<T>>;
 };
@@ -670,8 +669,7 @@ private:
     }
 
     template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    void assignString(const CharT * data, size_t size)
+    std::enable_if_t<sizeof(CharT) == 1> assignString(const CharT * data, size_t size)
     {
         assert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
@@ -706,8 +704,7 @@ private:
     }
 
     template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    void create(const CharT * data, size_t size)
+    std::enable_if_t<sizeof(CharT) == 1> create(const CharT * data, size_t size)
     {
         new (&storage) String(reinterpret_cast<const char *>(data), size);
         which = Types::String;

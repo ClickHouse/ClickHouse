@@ -46,8 +46,8 @@ select '-------toStartOfSecond---------';
 select toStartOfSecond(x1) from t1; -- { serverError 43 }
 select '-------toStartOfMinute---------';
 select toStartOfMinute(x1) from t1; -- { serverError 43 }
-select '-------toStartOfFiveMinutes---------';
-select toStartOfFiveMinutes(x1) from t1; -- { serverError 43 }
+select '-------toStartOfFiveMinute---------';
+select toStartOfFiveMinute(x1) from t1; -- { serverError 43 }
 select '-------toStartOfTenMinutes---------';
 select toStartOfTenMinutes(x1) from t1; -- { serverError 43 }
 select '-------toStartOfFifteenMinutes---------';

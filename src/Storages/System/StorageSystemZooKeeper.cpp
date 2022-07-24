@@ -279,10 +279,10 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
         if (!prefix.empty())
         {
             // Remove nodes that do not match specified prefix
-            std::erase_if(nodes, [&prefix, &path_part] (const String & node)
+            nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&prefix, &path_part] (const String & node)
             {
                 return (path_part + '/' + node).substr(0, prefix.size()) != prefix;
-            });
+            }), nodes.end());
         }
 
         std::vector<std::future<Coordination::GetResponse>> futures;

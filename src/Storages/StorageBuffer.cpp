@@ -203,7 +203,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
         /// TODO: Find a way to support projections for StorageBuffer
         query_info.ignore_projections = true;
         const auto & destination_metadata = destination->getInMemoryMetadataPtr();
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata), query_info);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -248,7 +248,7 @@ void StorageBuffer::read(
         auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
-        auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
+        auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot);
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [metadata_snapshot, destination_metadata_snapshot](const String& column_name)
         {

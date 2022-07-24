@@ -145,7 +145,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 
         for (const String & partition_name : existing_partitions_names)
         {
-            if (!task_table.enabled_partitions_set.contains(partition_name))
+            if (!task_table.enabled_partitions_set.count(partition_name))
             {
                 LOG_INFO(log, "Partition {} will not be processed, since it is not in enabled_partitions of {}", partition_name, task_table.table_id);
             }
@@ -933,7 +933,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     /// Process each partition that is present in cluster
     for (const String & partition_name : task_table.ordered_partition_names)
     {
-        if (!task_table.cluster_partitions.contains(partition_name))
+        if (!task_table.cluster_partitions.count(partition_name))
             throw Exception("There are no expected partition " + partition_name + ". It is a bug", ErrorCodes::LOGICAL_ERROR);
 
         ClusterPartition & cluster_partition = task_table.cluster_partitions[partition_name];
@@ -953,10 +953,10 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
         for (const TaskShardPtr & shard : task_table.all_shards)
         {
             /// Does shard have a node with current partition?
-            if (!shard->partition_tasks.contains(partition_name))
+            if (shard->partition_tasks.count(partition_name) == 0)
             {
                 /// If not, did we check existence of that partition previously?
-                if (!shard->checked_partitions.contains(partition_name))
+                if (shard->checked_partitions.count(partition_name) == 0)
                 {
                     auto check_shard_has_partition = [&] () { return checkShardHasPartition(timeouts, *shard, partition_name); };
                     bool has_partition = retry(check_shard_has_partition);

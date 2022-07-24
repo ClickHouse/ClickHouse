@@ -24,6 +24,7 @@ struct AsynchronousMetricLogElement
 {
     UInt16 event_date;
     time_t event_time;
+    Decimal64 event_time_microseconds;
     std::string metric_name;
     double value;
 
@@ -31,17 +32,6 @@ struct AsynchronousMetricLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-
-    /// Returns the list of columns as in CREATE TABLE statement or nullptr.
-    /// If it's not nullptr, this list of columns will be used to create the table.
-    /// Otherwise the list will be constructed from LogElement::getNamesAndTypes and LogElement::getNamesAndAliases.
-    static const char * getCustomColumnList()
-    {
-        return "event_date Date CODEC(Delta(2), ZSTD), "
-               "event_time DateTime CODEC(Delta(4), ZSTD), "
-               "metric LowCardinality(String) CODEC(ZSTD), "
-               "value Float64 CODEC(Gorilla, ZSTD(3))";
-    }
 };
 
 class AsynchronousMetricLog : public SystemLog<AsynchronousMetricLogElement>
@@ -50,9 +40,6 @@ public:
     using SystemLog<AsynchronousMetricLogElement>::SystemLog;
 
     void addValues(const AsynchronousMetricValues &);
-
-    /// This table is usually queried for fixed metric name.
-    static const char * getDefaultOrderBy() { return "(metric, event_date, event_time)"; }
 };
 
 }

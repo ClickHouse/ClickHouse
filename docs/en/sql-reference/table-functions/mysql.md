@@ -1,6 +1,6 @@
 ---
-sidebar_position: 42
-sidebar_label: mysql
+toc_priority: 42
+toc_title: mysql
 ---
 
 # mysql {#mysql}
@@ -55,9 +55,8 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 
 A table object with the same columns as the original MySQL table.
 
-:::note    
-In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
-:::
+!!! info "Note"
+    In the `INSERT` query to distinguish table function `mysql(...)` from table name with column names list, you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 
 **Examples**
 

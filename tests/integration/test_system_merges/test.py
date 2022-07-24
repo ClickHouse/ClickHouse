@@ -124,7 +124,7 @@ def test_merge_simple(started_cluster, replicated):
 
         assert (
             node_check.query(
-                "SELECT * FROM system.merges WHERE table = '{name}' and progress < 1".format(
+                "SELECT * FROM system.merges WHERE table = '{name}'".format(
                     name=table_name
                 )
             )

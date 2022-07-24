@@ -43,6 +43,8 @@ class MemoryTracker;
 // is killed to free memory.
 struct OvercommitTracker : boost::noncopyable
 {
+    explicit OvercommitTracker(std::mutex & global_mutex_);
+
     void setMaxWaitTime(UInt64 wait_time);
 
     bool needToStopQuery(MemoryTracker * tracker);
@@ -52,12 +54,8 @@ struct OvercommitTracker : boost::noncopyable
     virtual ~OvercommitTracker() = default;
 
 protected:
-    explicit OvercommitTracker(std::mutex & global_mutex_);
-
     virtual void pickQueryToExcludeImpl() = 0;
 
-    // This mutex is used to disallow concurrent access
-    // to picked_tracker and cancelation_state variables.
     mutable std::mutex overcommit_m;
     mutable std::condition_variable cv;
 
@@ -76,8 +74,6 @@ protected:
     MemoryTracker * picked_tracker;
     QueryCancelationState cancelation_state;
 
-    virtual Poco::Logger * getLogger() = 0;
-
 private:
 
     void pickQueryToExclude()
@@ -89,11 +85,6 @@ private:
         }
     }
 
-    // Global mutex which is used in ProcessList to synchronize
-    // insertion and deletion of queries.
-    // OvercommitTracker::pickQueryToExcludeImpl() implementations
-    // require this mutex to be locked, because they read list (or sublist)
-    // of queries.
     std::mutex & global_mutex;
 };
 
@@ -112,10 +103,8 @@ struct UserOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override final;
 
-    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessListForUser * user_process_list;
-    Poco::Logger * logger = &Poco::Logger::get("UserOvercommitTracker");
 };
 
 struct GlobalOvercommitTracker : OvercommitTracker
@@ -127,8 +116,6 @@ struct GlobalOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override final;
 
-    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessList * process_list;
-    Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
 };

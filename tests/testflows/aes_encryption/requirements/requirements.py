@@ -429,7 +429,7 @@ RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_ValuesFormat = Requirement(
         "of the `encrypt` function where\n"
         "the `key_length` SHALL specifies the length of the key and SHALL accept\n"
         "`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n"
-        "mode and SHALL accept [CBC], [CFB128], or [OFB] as well as\n"
+        "mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as\n"
         "[CTR] and [GCM] as the values. For example, `aes-256-ofb`.\n"
         "\n"
     ),
@@ -467,6 +467,9 @@ RQ_SRS008_AES_Encrypt_Function_Parameters_Mode_Values = Requirement(
         "[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n"
         "of the `encrypt` function:\n"
         "\n"
+        "* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n"
         "* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n"
         "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n"
         "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n"
@@ -639,6 +642,9 @@ RQ_SRS008_AES_Encrypt_Function_NonGCMMode_KeyAndInitializationVector_Length = Re
         "[ClickHouse] SHALL return an error when the `encrypt` function is called with the following parameter values\n"
         "when using non-GCM modes\n"
         "\n"
+        "* `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified\n"
+        "* `aes-192-ecb` mode and `key` is not 24 bytes or `iv` or `aad` is specified\n"
+        "* `aes-256-ecb` mode and `key` is not 32 bytes or `iv` or `aad` is specified\n"
         "* `aes-128-cbc` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
         "* `aes-192-cbc` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
         "* `aes-256-cbc` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
@@ -784,7 +790,7 @@ RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_ValuesFormat = Requirement(
         "of the `decrypt` function where\n"
         "the `key_length` SHALL specifies the length of the key and SHALL accept\n"
         "`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n"
-        "mode and SHALL accept [CBC], [CFB128], or [OFB] as well as\n"
+        "mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as\n"
         "[CTR] and [GCM] as the values. For example, `aes-256-ofb`.\n"
         "\n"
     ),
@@ -822,6 +828,9 @@ RQ_SRS008_AES_Decrypt_Function_Parameters_Mode_Values = Requirement(
         "[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n"
         "of the `decrypt` function:\n"
         "\n"
+        "* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n"
         "* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n"
         "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n"
         "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n"
@@ -996,6 +1005,9 @@ RQ_SRS008_AES_Decrypt_Function_NonGCMMode_KeyAndInitializationVector_Length = Re
         "[ClickHouse] SHALL return an error when the `decrypt` function is called with the following parameter values\n"
         "when using non-GCM modes\n"
         "\n"
+        "* `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified\n"
+        "* `aes-192-ecb` mode and `key` is not 24 bytes or `iv` or `aad` is specified\n"
+        "* `aes-256-ecb` mode and `key` is not 32 bytes or `iv` or `aad` is specified\n"
         "* `aes-128-cbc` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
         "* `aes-192-cbc` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
         "* `aes-256-cbc` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified\n"
@@ -1142,7 +1154,7 @@ RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_ValuesFormat = Requirement(
         "of the `aes_encrypt_mysql` function where\n"
         "the `key_length` SHALL specifies the length of the key and SHALL accept\n"
         "`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n"
-        "mode and SHALL accept [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.\n"
+        "mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.\n"
         "\n"
     ),
     link=None,
@@ -1179,6 +1191,9 @@ RQ_SRS008_AES_MySQL_Encrypt_Function_Parameters_Mode_Values = Requirement(
         "[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n"
         "of the `aes_encrypt_mysql` function:\n"
         "\n"
+        "* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n"
         "* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n"
         "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n"
         "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n"
@@ -1377,6 +1392,9 @@ RQ_SRS008_AES_MySQL_Encrypt_Function_Mode_KeyAndInitializationVector_Length = Re
     description=(
         "[ClickHouse] SHALL return an error when the `aes_encrypt_mysql` function is called with the following parameter values\n"
         "\n"
+        "* `aes-128-ecb` mode and `key` is less than 16 bytes or `iv` is specified\n"
+        "* `aes-192-ecb` mode and `key` is less than 24 bytes or `iv` is specified\n"
+        "* `aes-256-ecb` mode and `key` is less than 32 bytes or `iv` is specified\n"
         "* `aes-128-cbc` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
         "* `aes-192-cbc` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
         "* `aes-256-cbc` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
@@ -1498,7 +1516,7 @@ RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Mode_ValuesFormat = Requirement(
         "of the `aes_decrypt_mysql` function where\n"
         "the `key_length` SHALL specifies the length of the key and SHALL accept\n"
         "`128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption\n"
-        "mode and SHALL accept [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.\n"
+        "mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.\n"
         "\n"
     ),
     link=None,
@@ -1535,6 +1553,9 @@ RQ_SRS008_AES_MySQL_Decrypt_Function_Parameters_Mode_Values = Requirement(
         "[ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter\n"
         "of the `aes_decrypt_mysql` function:\n"
         "\n"
+        "* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key\n"
+        "* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key\n"
+        "* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key\n"
         "* `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key\n"
         "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key\n"
         "* `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key\n"
@@ -1733,6 +1754,9 @@ RQ_SRS008_AES_MySQL_Decrypt_Function_Mode_KeyAndInitializationVector_Length = Re
     description=(
         "[ClickHouse] SHALL return an error when the `aes_decrypt_mysql` function is called with the following parameter values\n"
         "\n"
+        "* `aes-128-ecb` mode and `key` is less than 16 bytes or `iv` is specified\n"
+        "* `aes-192-ecb` mode and `key` is less than 24 bytes or `iv` is specified\n"
+        "* `aes-256-ecb` mode and `key` is less than 32 bytes or `iv` is specified\n"
         "* `aes-128-cbc` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes\n"
         "* `aes-192-cbc` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes\n"
         "* `aes-256-cbc` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes\n"
@@ -2582,7 +2606,7 @@ version: 1.0
 of the `encrypt` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [CBC], [CFB128], or [OFB] as well as
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as
 [CTR] and [GCM] as the values. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.Encrypt.Function.Parameters.Mode.Value.Invalid
@@ -2598,6 +2622,9 @@ version: 1.0
 [ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter
 of the `encrypt` function:
 
+* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key
+* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key
+* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key
 * `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key
@@ -2671,6 +2698,9 @@ version: 1.0
 [ClickHouse] SHALL return an error when the `encrypt` function is called with the following parameter values
 when using non-GCM modes
 
+* `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified
+* `aes-192-ecb` mode and `key` is not 24 bytes or `iv` or `aad` is specified
+* `aes-256-ecb` mode and `key` is not 32 bytes or `iv` or `aad` is specified
 * `aes-128-cbc` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified
 * `aes-192-cbc` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified
 * `aes-256-cbc` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified
@@ -2741,7 +2771,7 @@ version: 1.0
 of the `decrypt` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [CBC], [CFB128], or [OFB] as well as
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB] as well as
 [CTR] and [GCM] as the values. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.Decrypt.Function.Parameters.Mode.Value.Invalid
@@ -2757,6 +2787,9 @@ version: 1.0
 [ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter
 of the `decrypt` function:
 
+* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key
+* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key
+* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key
 * `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key
@@ -2832,6 +2865,9 @@ version: 1.0
 [ClickHouse] SHALL return an error when the `decrypt` function is called with the following parameter values
 when using non-GCM modes
 
+* `aes-128-ecb` mode and `key` is not 16 bytes or `iv` or `aad` is specified
+* `aes-192-ecb` mode and `key` is not 24 bytes or `iv` or `aad` is specified
+* `aes-256-ecb` mode and `key` is not 32 bytes or `iv` or `aad` is specified
 * `aes-128-cbc` mode and `key` is not 16 bytes or if specified `iv` is not 16 bytes or `aad` is specified
 * `aes-192-cbc` mode and `key` is not 24 bytes or if specified `iv` is not 16 bytes or `aad` is specified
 * `aes-256-cbc` mode and `key` is not 32 bytes or if specified `iv` is not 16 bytes or `aad` is specified
@@ -2903,7 +2939,7 @@ version: 1.0
 of the `aes_encrypt_mysql` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.MySQL.Encrypt.Function.Parameters.Mode.Value.Invalid
 version: 1.0
@@ -2918,6 +2954,9 @@ version: 1.0
 [ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter
 of the `aes_encrypt_mysql` function:
 
+* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key
+* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key
+* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key
 * `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key
@@ -3006,6 +3045,9 @@ version: 1.0
 
 [ClickHouse] SHALL return an error when the `aes_encrypt_mysql` function is called with the following parameter values
 
+* `aes-128-ecb` mode and `key` is less than 16 bytes or `iv` is specified
+* `aes-192-ecb` mode and `key` is less than 24 bytes or `iv` is specified
+* `aes-256-ecb` mode and `key` is less than 32 bytes or `iv` is specified
 * `aes-128-cbc` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes
 * `aes-192-cbc` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes
 * `aes-256-cbc` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes
@@ -3063,7 +3105,7 @@ version: 1.0
 of the `aes_decrypt_mysql` function where
 the `key_length` SHALL specifies the length of the key and SHALL accept
 `128`, `192`, or `256` as the values and the `mode` SHALL specify the block encryption
-mode and SHALL accept [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.
+mode and SHALL accept [ECB], [CBC], [CFB128], or [OFB]. For example, `aes-256-ofb`.
 
 #### RQ.SRS008.AES.MySQL.Decrypt.Function.Parameters.Mode.Value.Invalid
 version: 1.0
@@ -3078,6 +3120,9 @@ version: 1.0
 [ClickHouse] SHALL support the following [AES] block encryption modes as the value for the `mode` parameter
 of the `aes_decrypt_mysql` function:
 
+* `aes-128-ecb` that SHALL use [ECB] block mode encryption with 128 bit key
+* `aes-192-ecb` that SHALL use [ECB] block mode encryption with 192 bit key
+* `aes-256-ecb` that SHALL use [ECB] block mode encryption with 256 bit key
 * `aes-128-cbc` that SHALL use [CBC] block mode encryption with 128 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 192 bit key
 * `aes-192-cbc` that SHALL use [CBC] block mode encryption with 256 bit key
@@ -3166,6 +3211,9 @@ version: 1.0
 
 [ClickHouse] SHALL return an error when the `aes_decrypt_mysql` function is called with the following parameter values
 
+* `aes-128-ecb` mode and `key` is less than 16 bytes or `iv` is specified
+* `aes-192-ecb` mode and `key` is less than 24 bytes or `iv` is specified
+* `aes-256-ecb` mode and `key` is less than 32 bytes or `iv` is specified
 * `aes-128-cbc` mode and `key` is less than 16 bytes or if specified `iv` is less than 16 bytes
 * `aes-192-cbc` mode and `key` is less than 24 bytes or if specified `iv` is less than 16 bytes
 * `aes-256-cbc` mode and `key` is less than 32 bytes or if specified `iv` is less than 16 bytes
@@ -3201,6 +3249,7 @@ version: 1.0
 [GCM]: https://en.wikipedia.org/wiki/Galois/Counter_Mode
 [CTR]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Counter_(CTR)
 [CBC]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_block_chaining_(CBC)
+[ECB]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Electronic_codebook_(ECB)
 [CFB]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_feedback_(CFB)
 [CFB128]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_feedback_(CFB)
 [OFB]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Output_feedback_(OFB)

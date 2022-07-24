@@ -56,7 +56,7 @@ private:
     /// The name of the nested function, including combinators (i.e. *If)
     ///
     /// getName() from the nested_function cannot be used because in case of *If combinator
-    /// with Nullable argument nested_function will point to the function without combinator.
+    /// with Nullable argument nested_function will point to the function w/o combinator.
     /// (I.e. sumIf(Nullable, 1) -> sum()), and distributed query processing will fail.
     ///
     /// And nested_function cannot point to the function with *If since
@@ -225,7 +225,7 @@ public:
             throw Exception("Logical error: single argument is passed to AggregateFunctionIfNullVariadic", ErrorCodes::LOGICAL_ERROR);
 
         if (number_of_arguments > MAX_ARGS)
-            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(MAX_ARGS),
+            throw Exception("Maximum number of arguments for aggregate function with Nullable types is " + toString(size_t(MAX_ARGS)),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
@@ -359,7 +359,7 @@ private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag, null_is_skipped>>;
 
-    static constexpr size_t MAX_ARGS = 8;
+    enum { MAX_ARGS = 8 };
     size_t number_of_arguments = 0;
     std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
 };

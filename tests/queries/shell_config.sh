@@ -19,9 +19,9 @@ export CLICKHOUSE_TEST_UNIQUE_NAME="${CLICKHOUSE_TEST_NAME}_${CLICKHOUSE_DATABAS
 [ -v CLICKHOUSE_PORT_TCP ] && CLICKHOUSE_BENCHMARK_OPT0+=" --port=${CLICKHOUSE_PORT_TCP} "
 [ -v CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL ] && CLICKHOUSE_CLIENT_OPT0+=" --send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL} "
 [ -v CLICKHOUSE_DATABASE ] && CLICKHOUSE_CLIENT_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
-[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_CLIENT_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
+[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_CLIENT_OPT0+=" --log_comment='${CLICKHOUSE_LOG_COMMENT}' "
 [ -v CLICKHOUSE_DATABASE ] && CLICKHOUSE_BENCHMARK_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
-[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_BENCHMARK_OPT0+=" --log_comment $(printf '%q' ${CLICKHOUSE_LOG_COMMENT}) "
+[ -v CLICKHOUSE_LOG_COMMENT ] && CLICKHOUSE_BENCHMARK_OPT0+=" --log_comment='${CLICKHOUSE_LOG_COMMENT}' "
 
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
 # client
@@ -128,38 +128,4 @@ function clickhouse_client_removed_host_parameter()
     # removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
-}
-
-function clickhouse_client_timeout()
-{
-    local timeout=$1 && shift
-    timeout -s INT "$timeout" "$@"
-}
-# Helper function to stop the clickhouse-client after SIGINT properly.
-function clickhouse_client_loop_timeout()
-{
-    local timeout=$1 && shift
-
-    local cmd
-    cmd="$(printf '%q ' "$@")"
-
-    timeout -s INT "$timeout" bash -c "trap 'STOP_THE_LOOP=1' INT; while true; do [ ! -v STOP_THE_LOOP ] || break; $cmd; done"
-}
-# wait for queries to be finished
-function clickhouse_test_wait_queries()
-{
-    local timeout=${1:-"600"} && shift
-    local query_id="wait-$CLICKHOUSE_TEST_UNIQUE_NAME"
-    local query="SELECT count() FROM system.processes WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id != '$query_id'"
-    local i=0
-    (( timeout*=2 ))
-    while [[ "$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=$query_id" --data-binary "$query")" != "0" ]]; do
-        sleep 0.5
-
-        (( ++i ))
-        if [[ $i -gt $timeout ]]; then
-            echo "clickhouse_test_wait_queries: timeout exceeded"
-            exit 1
-        fi
-    done
 }

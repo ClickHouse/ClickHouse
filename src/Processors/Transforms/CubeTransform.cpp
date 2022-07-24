@@ -45,7 +45,7 @@ Chunk CubeTransform::generate()
         consumed_chunks.clear();
 
         auto num_rows = cube_chunk.getNumRows();
-        mask = (static_cast<UInt64>(1) << keys.size()) - 1;
+        mask = (UInt64(1) << keys.size()) - 1;
 
         current_columns = cube_chunk.getColumns();
         current_zero_columns.clear();

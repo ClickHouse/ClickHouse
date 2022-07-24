@@ -10,7 +10,6 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
-#include <Disks/IDisk.h>
 
 
 namespace DB
@@ -24,7 +23,6 @@ class StorageStripeLog final : public shared_ptr_helper<StorageStripeLog>, publi
 {
     friend class StripeLogSource;
     friend class StripeLogSink;
-    friend class StripeLogRestoreTask;
     friend struct shared_ptr_helper<StorageStripeLog>;
 
 public:
@@ -52,9 +50,8 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
 
-    bool hasDataToBackup() const override { return true; }
-    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
-    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
+    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
 protected:
     StorageStripeLog(

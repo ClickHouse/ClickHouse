@@ -1,6 +1,6 @@
 ---
-sidebar_position: 41
-sidebar_label: CHECK
+toc_priority: 41
+toc_title: CHECK
 ---
 
 # CHECK TABLE Statement {#check-table}

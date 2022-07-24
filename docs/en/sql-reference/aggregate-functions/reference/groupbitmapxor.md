@@ -1,5 +1,5 @@
 ---
-sidebar_position: 131
+toc_priority: 131
 ---
 
 # groupBitmapXor {#groupbitmapxor}

@@ -83,20 +83,9 @@ size_t extractMaskNumericImpl(
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls)
 {
-    if constexpr (!column_is_short)
-    {
-        if (data.size() != mask.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a full data column is not equal to the size of a mask");
-    }
-
     size_t ones_count = 0;
     size_t data_index = 0;
-
-    size_t mask_size = mask.size();
-    size_t data_size = data.size();
-
-    size_t i = 0;
-    for (; i != mask_size && data_index != data_size; ++i)
+    for (size_t i = 0; i != mask.size(); ++i)
     {
         // Change mask only where value is 1.
         if (!mask[i])
@@ -129,13 +118,6 @@ size_t extractMaskNumericImpl(
 
         mask[i] = value;
     }
-
-    if constexpr (column_is_short)
-    {
-        if (data_index != data_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of a short column is not equal to the number of ones in a mask");
-    }
-
     return ones_count;
 }
 

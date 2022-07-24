@@ -1,6 +1,6 @@
 ---
-sidebar_position: 40
-sidebar_label:  Integrations
+toc_folder_title: Integrations
+toc_priority: 1
 ---
 
 # Table Engines for Integrations {#table-engines-for-integrations}

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 48
-sidebar_label: Access Control and Account Management
+toc_priority: 48
+toc_title: Access Control and Account Management
 ---
 
 # Access Control and Account Management {#access-control}
@@ -24,9 +24,8 @@ You can configure access entities using:
 
 We recommend using SQL-driven workflow. Both of the configuration methods work simultaneously, so if you use the server configuration files for managing accounts and access rights, you can smoothly switch to SQL-driven workflow.
 
-:::warning    
-You can’t manage the same access entity by both configuration methods simultaneously.
-:::
+!!! note "Warning"
+    You can’t manage the same access entity by both configuration methods simultaneously.
 
 To see all users, roles, profiles, etc. and all their grants use [SHOW ACCESS](../sql-reference/statements/show.md#show-access-statement) statement.
 
@@ -102,9 +101,8 @@ Privileges can be granted to a role by the [GRANT](../sql-reference/statements/g
 
 Row policy is a filter that defines which of the rows are available to a user or a role. Row policy contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 
-:::warning    
-Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
-:::
+!!! note "Warning"
+    Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
 
 Management queries:
 

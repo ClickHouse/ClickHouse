@@ -1,6 +1,6 @@
 ---
-sidebar_position: 19
-sidebar_label: gRPC Interface
+toc_priority: 19
+toc_title: gRPC Interface
 ---
 
 # gRPC Interface {#grpc-interface}

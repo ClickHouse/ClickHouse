@@ -147,6 +147,11 @@ find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.
     grep -vP $EXCLUDE_DIRS |
     xargs yamllint --config-file=$ROOT_PATH/.yamllint
 
+# Machine translation to Russian is strictly prohibited
+find $ROOT_PATH/docs/ru -name '*.md' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -F 'machine_translated: true'
+
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
 find $ROOT_PATH/tests/queries -iname '*fail*' |
     grep -vP $EXCLUDE_DIRS |

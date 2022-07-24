@@ -28,6 +28,7 @@ struct User : public IAccessEntity
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<User>(); }
     static constexpr const auto TYPE = AccessEntityType::USER;
     AccessEntityType getType() const override { return TYPE; }
+    void setName(const String & name_) override;
 };
 
 using UserPtr = std::shared_ptr<const User>;

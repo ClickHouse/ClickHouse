@@ -31,9 +31,9 @@ namespace
         return (Util::encodeDoubleSHA1(password) == password_double_sha1);
     }
 
-    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256, const String & salt)
+    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256)
     {
-        return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
+        return Util::encodeSHA256(password) == password_sha256;
     }
 
     bool checkPasswordDoubleSHA1MySQL(const std::string_view & scramble, const std::string_view & scrambled_password, const Digest & password_double_sha1)
@@ -132,7 +132,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 return checkPasswordPlainText(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::SHA256_PASSWORD:
-                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary(), auth_data.getSalt());
+                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 return checkPasswordDoubleSHA1(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());

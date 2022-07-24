@@ -16,30 +16,30 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-#include <Common/config.h>
-#include <Common/hex.h>
-#if USE_SSL
-#     include <openssl/crypto.h>
-#     include <openssl/rand.h>
-#endif
+
 
 namespace DB
 {
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"RENAME TO"}.ignore(pos, expected))
                 return false;
 
-            return parseUserName(pos, expected, new_name);
+            String maybe_new_name;
+            if (!parseUserName(pos, expected, maybe_new_name))
+                return false;
+
+            new_name.emplace(std::move(maybe_new_name));
+            return true;
         });
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, bool id_mode, AuthenticationData & auth_data)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -104,22 +104,14 @@ namespace
             }
 
             String value;
-            String parsed_salt;
             boost::container::flat_set<String> common_names;
             if (expect_password || expect_hash)
             {
                 ASTPtr ast;
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
-                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
 
-                if (id_mode && expect_hash)
-                {
-                    if (ParserKeyword{"SALT"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
-                    {
-                        parsed_salt = ast->as<const ASTLiteral &>().value.safeGet<String>();
-                    }
-                }
+                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
             }
             else if (expect_ldap_server_name)
             {
@@ -154,34 +146,6 @@ namespace
             }
 
             auth_data = AuthenticationData{*type};
-            if (auth_data.getType() == AuthenticationType::SHA256_PASSWORD)
-            {
-                if (!parsed_salt.empty())
-                {
-                    auth_data.setSalt(parsed_salt);
-                }
-                else if (expect_password)
-                {
-#if USE_SSL
-                    ///generate and add salt here
-                    ///random generator FIPS complaint
-                    uint8_t key[32];
-                    RAND_bytes(key, sizeof(key));
-                    String salt;
-                    salt.resize(sizeof(key) * 2);
-                    char * buf_pos = salt.data();
-                    for (uint8_t k : key)
-                    {
-                        writeHexByteUppercase(k, buf_pos);
-                        buf_pos += 2;
-                    }
-                    value.append(salt);
-                    auth_data.setSalt(salt);
-#else
-                    ///if USE_SSL is not defined, Exception thrown later
-#endif
-                }
-            }
             if (expect_password)
                 auth_data.setPassword(value);
             else if (expect_hash)
@@ -418,7 +382,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
     auto names_ref = names->names;
 
-    String new_name;
+    std::optional<String> new_name;
     std::optional<AuthenticationData> auth_data;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -434,7 +398,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!auth_data)
         {
             AuthenticationData new_auth_data;
-            if (parseAuthenticationData(pos, expected, attach_mode, new_auth_data))
+            if (parseAuthenticationData(pos, expected, new_auth_data))
             {
                 auth_data = std::move(new_auth_data);
                 continue;
@@ -474,7 +438,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (alter)
         {
-            if (new_name.empty() && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
+            if (!new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
                 continue;
 
             if (parseHosts(pos, expected, "ADD", new_hosts))

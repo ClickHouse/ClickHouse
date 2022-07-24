@@ -1,5 +1,5 @@
 ---
-sidebar_label: JOIN
+toc_title: JOIN
 ---
 
 # JOIN Clause {#select-join}
@@ -36,9 +36,8 @@ Additional join types available in ClickHouse:
 -   `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
 -   `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
-:::note    
-When [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
-:::
+!!! note "Note"
+    When [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 
 ## Settings {#join-settings}
 
@@ -64,9 +63,8 @@ Rows are joined if the whole complex condition is met. If the conditions are not
 
 The `OR` operator inside the `ON` clause works using the hash join algorithm — for each `OR` argument with join keys for `JOIN`, a separate hash table is created, so memory consumption and query execution time grow linearly with an increase in the number of expressions `OR` of the `ON` clause.
 
-:::note    
-If a condition refers columns from different tables, then only the equality operator (`=`) is supported so far.
-:::
+!!! note "Note"
+    If a condition refers columns from different tables, then only the equality operator (`=`) is supported so far.
 
 **Example**
 
@@ -199,9 +197,8 @@ For example, consider the following tables:
 
 `ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can’t be joined.
 
-:::note    
-`ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
-:::
+!!! note "Note"
+    `ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 
 ## Distributed JOIN {#global-join}
 

@@ -538,7 +538,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
-        if (required_right_keys.contains(column.name))
+        if (required_right_keys.count(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
 
     JoinCommon::createMissedColumns(right_columns_to_add);

@@ -27,7 +27,7 @@ struct ReadSettings;
 *
 * We pass either `memory` or `prefetch_buffer` through all this chain and return it back.
 */
-class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase, public WithFileSize
+class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
@@ -50,8 +50,6 @@ public:
     void setReadUntilEnd() override;
 
     String getInfoForLog() override;
-
-    std::optional<size_t> getFileSize() override;
 
 private:
     bool nextImpl() override;

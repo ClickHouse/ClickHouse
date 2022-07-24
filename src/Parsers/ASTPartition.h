@@ -15,7 +15,6 @@ public:
     size_t fields_count = 0;
 
     String id;
-    bool all = false;
 
     String getID(char) const override;
     ASTPtr clone() const override;

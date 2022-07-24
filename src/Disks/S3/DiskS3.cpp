@@ -18,11 +18,8 @@
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/FileCacheFactory.h>
-#include <Common/FileCache.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -59,6 +56,52 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
+
+/// Helper class to collect keys into chunks of maximum size (to prepare batch requests to AWS API)
+/// see https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+class S3PathKeeper : public RemoteFSPathKeeper
+{
+public:
+    using Chunk = Aws::Vector<Aws::S3::Model::ObjectIdentifier>;
+    using Chunks = std::list<Chunk>;
+
+    explicit S3PathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
+
+    void addPath(const String & path) override
+    {
+        if (chunks.empty() || chunks.back().size() >= chunk_limit)
+        {
+            /// add one more chunk
+            chunks.push_back(Chunks::value_type());
+            chunks.back().reserve(chunk_limit);
+        }
+        Aws::S3::Model::ObjectIdentifier obj;
+        obj.SetKey(path);
+        chunks.back().push_back(obj);
+    }
+
+    void removePaths(Fn<void(Chunk &&)> auto && remove_chunk_func)
+    {
+        for (auto & chunk : chunks)
+            remove_chunk_func(std::move(chunk));
+    }
+
+    static String getChunkKeys(const Chunk & chunk)
+    {
+        String res;
+        for (const auto & obj : chunk)
+        {
+            const auto & key = obj.GetKey();
+            if (!res.empty())
+                res.append(", ");
+            res.append(key.c_str(), key.size());
+        }
+        return res;
+    }
+
+private:
+    Chunks chunks;
+};
 
 template <typename Result, typename Error>
 void throwIfError(Aws::Utils::Outcome<Result, Error> & response)
@@ -109,7 +152,6 @@ DiskS3::DiskS3(
     String name_,
     String bucket_,
     String s3_root_path_,
-    String version_id_,
     DiskPtr metadata_disk_,
     FileCachePtr cache_,
     ContextPtr context_,
@@ -117,43 +159,37 @@ DiskS3::DiskS3(
     GetDiskSettings settings_getter_)
     : IDiskRemote(name_, s3_root_path_, metadata_disk_, std::move(cache_), "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
-    , version_id(std::move(version_id_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
     , context(context_)
 {
 }
 
-void DiskS3::removeFromRemoteFS(const std::vector<String> & paths)
+RemoteFSPathKeeperPtr DiskS3::createFSPathKeeper() const
 {
     auto settings = current_settings.get();
+    return std::make_shared<S3PathKeeper>(settings->objects_chunk_size_to_delete);
+}
 
-    size_t chunk_size_limit = settings->objects_chunk_size_to_delete;
-    size_t current_position = 0;
-    while (current_position < paths.size())
-    {
-        std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
-        String keys;
-        for (; current_position < paths.size() && current_chunk.size() < chunk_size_limit; ++current_position)
+void DiskS3::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
+{
+    auto settings = current_settings.get();
+    auto * s3_paths_keeper = dynamic_cast<S3PathKeeper *>(fs_paths_keeper.get());
+
+    if (s3_paths_keeper)
+        s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
         {
-            Aws::S3::Model::ObjectIdentifier obj;
-            obj.SetKey(paths[current_position]);
-            current_chunk.push_back(obj);
-
-            if (!keys.empty())
-                keys += ", ";
-            keys += paths[current_position];
-        }
-
-        LOG_TRACE(log, "Remove AWS keys {}", keys);
-        Aws::S3::Model::Delete delkeys;
-        delkeys.SetObjects(current_chunk);
-        Aws::S3::Model::DeleteObjectsRequest request;
-        request.SetBucket(bucket);
-        request.SetDelete(delkeys);
-        auto outcome = settings->client->DeleteObjects(request);
-        logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
-    }
+            String keys = S3PathKeeper::getChunkKeys(chunk);
+            LOG_TRACE(log, "Remove AWS keys {}", keys);
+            Aws::S3::Model::Delete delkeys;
+            delkeys.SetObjects(chunk);
+            Aws::S3::Model::DeleteObjectsRequest request;
+            request.SetBucket(bucket);
+            request.SetDelete(delkeys);
+            auto outcome = settings->client->DeleteObjects(request);
+            // Do not throw here, continue deleting other chunks
+            logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
+        });
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
@@ -190,16 +226,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
 
     ReadSettings disk_read_settings{read_settings};
     if (cache)
-    {
-        if (IFileCache::isReadOnly())
-            disk_read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-
         disk_read_settings.remote_fs_cache = cache;
-    }
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        settings->client, bucket, version_id, metadata.remote_fs_root_path, metadata.remote_fs_objects,
-        settings->s3_settings.max_single_read_retries, disk_read_settings);
+        path, settings->client, bucket, metadata,
+        settings->s3_max_single_read_retries, disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
@@ -213,7 +244,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     }
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & write_settings)
+std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     auto settings = current_settings.get();
 
@@ -233,25 +264,49 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_name);
 
-    bool cache_on_write = cache
-        && fs::path(path).extension() != ".tmp"
-        && write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getSettings(getCacheBasePath()).cache_on_write_operations;
+    ScheduleFunc schedule = [pool = &getThreadPoolWriter(), thread_group = CurrentThread::getGroup()](auto callback)
+    {
+        pool->scheduleOrThrow([callback = std::move(callback), thread_group]()
+        {
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+
+                /// After we detached from the thread_group, parent for memory_tracker inside ThreadStatus will be reset to it's parent.
+                /// Typically, it may be changes from Process to User.
+                /// Usually it could be ok, because thread pool task is executed before user-level memory tracker is destroyed.
+                /// However, thread could stay alive inside the thread pool, and it's ThreadStatus as well.
+                /// When, finally, we destroy the thread (and the ThreadStatus),
+                /// it can use memory tracker in the ~ThreadStatus in order to alloc/free untracked_memory,\
+                /// and by this time user-level memory tracker may be already destroyed.
+                ///
+                /// As a work-around, reset memory tracker to total, which is always alive.
+                CurrentThread::get().memory_tracker.setParent(&total_memory_tracker);
+            );
+            callback();
+        });
+    };
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
         bucket,
-        fs::path(remote_fs_root_path) / blob_name,
-        settings->s3_settings,
+        remote_fs_root_path + blob_name,
+        settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
+        settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size, threadPoolCallbackRunner(getThreadPoolWriter()), cache_on_write ? cache : nullptr);
+        buf_size, std::move(schedule));
 
     auto create_metadata_callback = [this, path, blob_name, mode] (size_t count)
     {
         readOrCreateUpdateAndStoreMetadata(path, mode, false, [blob_name, count] (Metadata & metadata) { metadata.addObject(blob_name, count); return true; });
     };
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(create_metadata_callback), fs::path(remote_fs_root_path) / blob_name);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS>(std::move(s3_buffer), std::move(create_metadata_callback), path);
 }
 
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
@@ -294,7 +349,10 @@ void DiskS3::createFileOperationObject(const String & operation_name, UInt64 rev
         settings->client,
         bucket,
         remote_fs_root_path + key,
-        settings->s3_settings,
+        settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
+        settings->s3_max_single_part_upload_size,
         metadata);
 
     buffer.write('0');
@@ -356,8 +414,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         settings->client,
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
-        version_id,
-        settings->s3_settings.max_single_read_retries,
+        settings->s3_max_single_read_retries,
         context->getReadSettings());
 
     readIntText(version, buffer);
@@ -373,7 +430,10 @@ void DiskS3::saveSchemaVersion(const int & version)
         settings->client,
         bucket,
         remote_fs_root_path + SCHEMA_VERSION_OBJECT,
-        settings->s3_settings);
+        settings->s3_min_upload_part_size,
+        settings->s3_upload_part_size_multiply_factor,
+        settings->s3_upload_part_size_multiply_parts_count_threshold,
+        settings->s3_max_single_part_upload_size);
 
     writeIntText(version, buffer);
     buffer.finalize();
@@ -606,7 +666,7 @@ void DiskS3::copyObjectMultipartImpl(const String & src_bucket, const String & s
 
     std::vector<String> part_tags;
 
-    size_t upload_part_size = settings->s3_settings.min_upload_part_size;
+    size_t upload_part_size = settings->s3_min_upload_part_size;
     for (size_t position = 0, part_number = 1; position < size; ++part_number, position += upload_part_size)
     {
         Aws::S3::Model::UploadPartCopyRequest part_request;
@@ -758,7 +818,7 @@ void DiskS3::restore()
         bool cleanup_s3 = information.source_bucket != bucket || information.source_path != remote_fs_root_path;
         for (const auto & root : data_roots)
             if (exists(root))
-                removeSharedRecursive(root + '/', !cleanup_s3, {});
+                removeSharedRecursive(root + '/', !cleanup_s3);
 
         restoreFiles(information);
         restoreFileOperations(information);
@@ -1034,14 +1094,22 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
-    const S3Settings::ReadWriteSettings & s3_settings_,
+    size_t s3_max_single_read_retries_,
+    size_t s3_min_upload_part_size_,
+    size_t s3_upload_part_size_multiply_factor_,
+    size_t s3_upload_part_size_multiply_parts_count_threshold_,
+    size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
     bool send_metadata_,
     int thread_pool_size_,
     int list_object_keys_size_,
     int objects_chunk_size_to_delete_)
     : client(client_)
-    , s3_settings(s3_settings_)
+    , s3_max_single_read_retries(s3_max_single_read_retries_)
+    , s3_min_upload_part_size(s3_min_upload_part_size_)
+    , s3_upload_part_size_multiply_factor(s3_upload_part_size_multiply_factor_)
+    , s3_upload_part_size_multiply_parts_count_threshold(s3_upload_part_size_multiply_parts_count_threshold_)
+    , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , send_metadata(send_metadata_)
     , thread_pool_size(thread_pool_size_)

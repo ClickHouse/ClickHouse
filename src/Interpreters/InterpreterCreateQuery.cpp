@@ -8,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
-#include <Common/atomicRename.h>
+#include <Common/renameat2.h>
 #include <Common/hex.h>
 
 #include <Core/Defines.h>
@@ -54,7 +54,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/ObjectUtils.h>
-#include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -481,21 +480,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             {
                 column_type = makeNullable(column_type);
             }
-            else if (!hasNullable(column_type) &&
-                     col_decl.default_specifier == "DEFAULT" &&
-                     col_decl.default_expression &&
-                     col_decl.default_expression->as<ASTLiteral>() &&
-                     col_decl.default_expression->as<ASTLiteral>()->value.isNull())
-            {
-                if (column_type->lowCardinality())
-                {
-                    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
-                    assert(low_cardinality_type);
-                    column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
-                }
-                else
-                    column_type = makeNullable(column_type);
-            }
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
         }
@@ -524,9 +508,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
                 default_expr_list->children.emplace_back(
                     setAlias(
-                        col_decl.default_specifier == "EPHEMERAL" ? /// can be ASTLiteral::value NULL
-                            std::make_shared<ASTLiteral>(data_type_ptr->getDefault()) :
-                            col_decl.default_expression->clone(),
+                        col_decl.default_expression->clone(),
                         tmp_column_name));
             }
             else
@@ -554,11 +536,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.default_expression)
         {
-            ASTPtr default_expr =
-                col_decl.default_specifier == "EPHEMERAL" && col_decl.default_expression->as<ASTLiteral>()->value.isNull() ?
-                    std::make_shared<ASTLiteral>(DataTypeFactory::instance().get(col_decl.type)->getDefault()) :
-                    col_decl.default_expression->clone();
-
+            ASTPtr default_expr = col_decl.default_expression->clone();
             if (col_decl.type)
                 column.type = name_type_it->type;
             else
@@ -985,7 +963,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 create.setDatabase(database_name);
                 guard->releaseTableLock();
-                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
             }
         }
 
@@ -1010,6 +988,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
+
+        /// Compatibility setting which should be enabled by default on attach
+        /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
+        getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
     }
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
@@ -1071,38 +1053,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
-    /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id)
-    {
-        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
-            {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
-            getContext()
-        ))
-        {
-            Block input_block = InterpreterSelectWithUnionQuery(
-                create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
-
-            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-
-            ColumnsWithTypeAndName input_columns;
-            ColumnsWithTypeAndName output_columns;
-            for (const auto & input_column : input_block)
-            {
-                if (const auto * output_column = output_block.findByName(input_column.name))
-                {
-                    input_columns.push_back(input_column.cloneEmpty());
-                    output_columns.push_back(output_column->cloneEmpty());
-                }
-            }
-
-            ActionsDAG::makeConvertingActions(
-                input_columns,
-                output_columns,
-                ActionsDAG::MatchColumnsMode::Position
-            );
-        }
-    }
-
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
@@ -1117,7 +1067,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             assertOrSetUUID(create, database);
             guard->releaseTableLock();
-            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
     }
 
@@ -1234,10 +1184,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// old instance of the storage. For example, AsynchronousMetrics may cause ATTACH to fail,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
-        if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
-            database->waitDetachedTableNotInUse(create.uuid);
-        else
+        bool throw_if_table_in_use = getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously;
+        if (throw_if_table_in_use)
             database->checkDetachedTableNotInUse(create.uuid);
+        else
+            database->waitDetachedTableNotInUse(create.uuid);
     }
 
     StoragePtr res;
@@ -1503,9 +1454,7 @@ BlockIO InterpreterCreateQuery::execute()
     if (!create.cluster.empty())
     {
         prepareOnClusterQuery(create, getContext(), create.cluster);
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
     }
 
     getContext()->checkAccess(getRequiredAccess());

@@ -40,9 +40,8 @@ public:
 
     ~QueryPipeline();
 
-    /// pulling or completed
-    explicit QueryPipeline(Pipe pipe);
     /// pulling
+    explicit QueryPipeline(Pipe pipe);
     explicit QueryPipeline(std::shared_ptr<ISource> source);
     /// pushing
     explicit QueryPipeline(Chain chain);

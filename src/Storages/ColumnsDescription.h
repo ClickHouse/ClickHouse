@@ -91,7 +91,7 @@ struct ColumnDescription
 
 
 /// Description of multiple table columns (in CREATE TABLE for example).
-class ColumnsDescription : public IHints<1, ColumnsDescription>
+class ColumnsDescription
 {
 public:
     ColumnsDescription() = default;
@@ -149,11 +149,7 @@ public:
     {
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
-        {
-            String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
-            appendHintsMessage(exception_message, column_name);
-            throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
-        }
+            throw Exception("Cannot find column " + column_name + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
 
         removeSubcolumns(it->name);
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
@@ -200,8 +196,6 @@ public:
         return columns.empty();
     }
 
-    std::vector<String> getAllRegisteredNames() const override;
-
     /// Keep the sequence of columns and allow to lookup by name.
     using ColumnsContainer = boost::multi_index_container<
         ColumnDescription,
@@ -217,14 +211,6 @@ public:
 
 private:
     ColumnsContainer columns;
-
-    /// Subcolumns are not nested columns.
-    ///
-    /// Example of subcolumns:
-    /// - .size0 for Array
-    /// - .null  for Nullable
-    ///
-    /// While nested columns have form like foo.bar
     SubcolumnsContainter subcolumns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);

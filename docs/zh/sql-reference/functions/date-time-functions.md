@@ -227,7 +227,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 
 -   [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) 服务器配置选项。
 
-## toStartOfFiveMinutes {#tostartoffiveminutes}
+## toStartOfFiveMinute {#tostartoffiveminute}
 
 将DateTime以五分钟为单位向前取整到最接近的时间点。
 

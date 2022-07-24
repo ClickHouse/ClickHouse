@@ -1,5 +1,5 @@
 ---
-sidebar_position: 208
+toc_priority: 208
 ---
 
 # quantileTDigestWeighted {#quantiletdigestweighted}
@@ -12,9 +12,8 @@ The result depends on the order of running the query, and is nondeterministic.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
 
-:::note    
-Using `quantileTDigestWeighted` [is not recommended for tiny data sets](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) and can lead to significat error. In this case, consider possibility of using [`quantileTDigest`](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md) instead.
-:::
+!!! note "Note"
+    Using `quantileTDigestWeighted` [is not recommended for tiny data sets](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) and can lead to significat error. In this case, consider possibility of using [`quantileTDigest`](../../../sql-reference/aggregate-functions/reference/quantiletdigest.md) instead.
 
 **Syntax**
 

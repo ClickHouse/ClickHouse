@@ -148,13 +148,13 @@
     <!-- <interserver_https_port>9010</interserver_https_port> -->
 
     <!-- Hostname that is used by other replicas to request this server.
-         If not specified, then it is determined analogous to 'hostname -f' command.
+         If not specified, than it is determined analogous to 'hostname -f' command.
          This setting could be used to switch replication to another network interface
          (the server may be connected to multiple networks via multiple addresses)
       -->
 
     <!--
-    <interserver_http_host>example.clickhouse.com</interserver_http_host>
+    <interserver_http_host>example.yandex.ru</interserver_http_host>
     -->
 
     <!-- You can specify credentials for authenthication between replicas.
@@ -596,14 +596,14 @@
 
          To install and run JDBC bridge in background:
          * [Debian/Ubuntu]
-           export MVN_URL=https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/
+           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
            export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
            wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
            apt install --no-install-recommends -f ./clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
            clickhouse-jdbc-bridge &
 
          * [CentOS/RHEL]
-           export MVN_URL=https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/
+           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
            export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
            wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
            yum localinstall -y clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
@@ -765,14 +765,14 @@
     -->
     <!--<remote_url_allow_hosts>-->
         <!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
-            Example: "clickhouse.com", "clickhouse.com." and "www.clickhouse.com" are different hosts.
+            Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
                     If port is explicitly specified in URL, the host:port is checked as a whole.
                     If host specified here without port, any port with this host allowed.
-                    "clickhouse.com" -> "clickhouse.com:443", "clickhouse.com:80" etc. is allowed, but "clickhouse.com:80" -> only "clickhouse.com:80" is allowed.
+                    "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
             If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
             If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
             Host should be specified using the host xml tag:
-                    <host>clickhouse.com</host>
+                    <host>yandex.ru</host>
         -->
 
         <!-- Regular expression can be specified. RE2 engine is used for regexps.
@@ -1030,26 +1030,25 @@
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </crash_log>
 
-    <!-- Session log. Stores user log in (successful or not) and log out events.
-
-        Note: session log has known security issues and should not be used in production.
-    -->
-    <!-- <session_log>
+    <!-- Session log. Stores user log in (successful or not) and log out events. -->
+    <session_log>
         <database>system</database>
         <table>session_log</table>
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </session_log> -->
+    </session_log>
 
-    <!-- Profiling on Processors level. -->
-    <processors_profile_log>
-        <database>system</database>
-        <table>processors_profile_log</table>
+    <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
+         See https://clickhouse.com/docs/en/dicts/internal_dicts/
+    -->
 
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </processors_profile_log>
+    <!-- Path to file with region hierarchy. -->
+    <!-- <path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file> -->
+
+    <!-- Path to directory with files containing names of regions -->
+    <!-- <path_to_regions_names_files>/opt/geo/</path_to_regions_names_files> -->
+
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
@@ -1295,10 +1294,4 @@
         </tables>
     </rocksdb>
     -->
-
-    <!-- Uncomment if enable merge tree metadata cache -->
-    <merge_tree_metadata_cache>
-        <lru_cache_size>268435456</lru_cache_size>
-        <continue_if_corrupted>true</continue_if_corrupted>
-    </merge_tree_metadata_cache>
 </clickhouse>

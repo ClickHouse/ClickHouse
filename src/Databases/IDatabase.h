@@ -289,6 +289,12 @@ public:
         throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Whether the contained tables should be written to a backup.
+    virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(ContextPtr context) const
+    {
+        return getTablesIterator(context); /// By default we backup each table.
+    }
+
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
 
@@ -328,10 +334,6 @@ public:
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
-
-    /// Returns true if the backup of the database is hollow, which means it doesn't contain
-    /// any tables which can be stored to a backup.
-    virtual bool hasTablesToBackup() const { return false; }
 
     virtual ~IDatabase() = default;
 

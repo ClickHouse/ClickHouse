@@ -1,11 +1,11 @@
 ---
-sidebar_label: Air Traffic Data
-description: The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. 
+toc_priority: 20
+toc_title: OpenSky
 ---
 
-# Crowdsourced air traffic data from The OpenSky Network 2020
+# Crowdsourced air traffic data from The OpenSky Network 2020 {#opensky}
 
-The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic.
+"The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic".
 
 Source: https://zenodo.org/record/5092942#.YRBCyTpRXYd
 

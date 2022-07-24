@@ -1,9 +1,9 @@
 ---
-sidebar_position: 46
-sidebar_label: Troubleshooting
+toc_priority: 46
+toc_title: Troubleshooting
 ---
 
-# Troubleshooting 
+# Troubleshooting {#troubleshooting}
 
 -   [Installation](#troubleshooting-installation-errors)
 -   [Connecting to the server](#troubleshooting-accepts-no-connections)
@@ -15,7 +15,7 @@ sidebar_label: Troubleshooting
 ### You Cannot Get Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Check firewall settings.
--   If you cannot access the repository for any reason, download packages as described in the [install guide](../getting-started/install.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
+-   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting-started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
 

@@ -649,7 +649,7 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
             if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
             {
                 /// bucket_count() - Returns table size, that includes empty and deleted
-                /// size()         - Returns table size, without empty and deleted
+                /// size()         - Returns table size, w/o empty and deleted
                 /// and since this is sparsehash, empty cells should not be significant,
                 /// and since items cannot be removed from the dictionary, deleted is also not important.
                 bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));

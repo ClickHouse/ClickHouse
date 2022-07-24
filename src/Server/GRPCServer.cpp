@@ -868,7 +868,7 @@ namespace
         query_text = std::move(*(query_info.mutable_query()));
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
-        ParserQuery parser(end, settings.allow_settings_after_format_in_insert);
+        ParserQuery parser(end);
         ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
 
         /// Choose input format.
@@ -956,13 +956,7 @@ namespace
             if (!insert_query)
                 throw Exception("Query requires data to insert, but it is not an INSERT query", ErrorCodes::NO_DATA_TO_INSERT);
             else
-            {
-                const auto & settings = query_context->getSettingsRef();
-                if (settings.throw_if_no_data_to_insert)
-                    throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
-                else
-                    return;
-            }
+                throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
         }
 
         /// This is significant, because parallel parsing may be used.

@@ -651,18 +651,18 @@ struct ParseMACImpl
       */
     static UInt64 parse(const char * pos)
     {
-        return (static_cast<UInt64>(unhex(pos[0])) << 44)
-               | (static_cast<UInt64>(unhex(pos[1])) << 40)
-               | (static_cast<UInt64>(unhex(pos[3])) << 36)
-               | (static_cast<UInt64>(unhex(pos[4])) << 32)
-               | (static_cast<UInt64>(unhex(pos[6])) << 28)
-               | (static_cast<UInt64>(unhex(pos[7])) << 24)
-               | (static_cast<UInt64>(unhex(pos[9])) << 20)
-               | (static_cast<UInt64>(unhex(pos[10])) << 16)
-               | (static_cast<UInt64>(unhex(pos[12])) << 12)
-               | (static_cast<UInt64>(unhex(pos[13])) << 8)
-               | (static_cast<UInt64>(unhex(pos[15])) << 4)
-               | (static_cast<UInt64>(unhex(pos[16])));
+        return (UInt64(unhex(pos[0])) << 44)
+               | (UInt64(unhex(pos[1])) << 40)
+               | (UInt64(unhex(pos[3])) << 36)
+               | (UInt64(unhex(pos[4])) << 32)
+               | (UInt64(unhex(pos[6])) << 28)
+               | (UInt64(unhex(pos[7])) << 24)
+               | (UInt64(unhex(pos[9])) << 20)
+               | (UInt64(unhex(pos[10])) << 16)
+               | (UInt64(unhex(pos[12])) << 12)
+               | (UInt64(unhex(pos[13])) << 8)
+               | (UInt64(unhex(pos[15])) << 4)
+               | (UInt64(unhex(pos[16])));
     }
 
     static constexpr auto name = "MACStringToNum";
@@ -678,12 +678,12 @@ struct ParseOUIImpl
       */
     static UInt64 parse(const char * pos)
     {
-        return (static_cast<UInt64>(unhex(pos[0])) << 20)
-               | (static_cast<UInt64>(unhex(pos[1])) << 16)
-               | (static_cast<UInt64>(unhex(pos[3])) << 12)
-               | (static_cast<UInt64>(unhex(pos[4])) << 8)
-               | (static_cast<UInt64>(unhex(pos[6])) << 4)
-               | (static_cast<UInt64>(unhex(pos[7])));
+        return (UInt64(unhex(pos[0])) << 20)
+               | (UInt64(unhex(pos[1])) << 16)
+               | (UInt64(unhex(pos[3])) << 12)
+               | (UInt64(unhex(pos[4])) << 8)
+               | (UInt64(unhex(pos[6])) << 4)
+               | (UInt64(unhex(pos[7])));
     }
 
     static constexpr auto name = "MACStringToOUI";
@@ -895,9 +895,9 @@ private:
         if (bits_to_keep >= 8 * sizeof(UInt32))
             return { src, src };
         if (bits_to_keep == 0)
-            return { static_cast<UInt32>(0), static_cast<UInt32>(-1) };
+            return { UInt32(0), UInt32(-1) };
 
-        UInt32 mask = static_cast<UInt32>(-1) << (8 * sizeof(UInt32) - bits_to_keep);
+        UInt32 mask = UInt32(-1) << (8 * sizeof(UInt32) - bits_to_keep);
         UInt32 lower = src & mask;
         UInt32 upper = lower | ~mask;
 

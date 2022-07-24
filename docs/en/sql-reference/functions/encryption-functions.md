@@ -1,6 +1,6 @@
 ---
-sidebar_position: 67
-sidebar_label: Encryption
+toc_priority: 67
+toc_title: Encryption
 ---
 
 # Encryption functions {#encryption-functions}

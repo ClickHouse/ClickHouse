@@ -1,5 +1,5 @@
 ---
-sidebar_label: EXCEPT
+toc_title: EXCEPT
 ---
 
 # EXCEPT Clause {#except-clause}

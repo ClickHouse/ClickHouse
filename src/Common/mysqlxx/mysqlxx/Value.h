@@ -259,8 +259,7 @@ namespace details
 {
 // To avoid stack overflow when converting to type with no appropriate c-tor,
 // resulting in endless recursive calls from `Value::get<T>()` to `Value::operator T()` to `Value::get<T>()` to ...
-template <typename T>
-requires std::is_constructible_v<T, Value>
+template <typename T, typename std::enable_if_t<std::is_constructible_v<T, Value>>>
 inline T contructFromValue(const Value & val)
 {
     return T(val);

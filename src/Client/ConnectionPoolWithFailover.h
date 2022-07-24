@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/PoolWithFailoverBase.h>
-#include <Common/GetPriorityForLoadBalancing.h>
 #include <Client/ConnectionPool.h>
 
 #include <chrono>
@@ -110,7 +109,9 @@ private:
 
     GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
 
-    GetPriorityForLoadBalancing get_priority_load_balancing;
+    std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.
+    size_t last_used = 0; /// Last used for round_robin policy.
+    LoadBalancing default_load_balancing;
 };
 
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;

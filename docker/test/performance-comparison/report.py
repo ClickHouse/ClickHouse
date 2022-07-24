@@ -393,6 +393,20 @@ if args.report == "main":
             ]
         )
 
+    unmarked_short_rows = tsvRows("report/unexpected-query-duration.tsv")
+    error_tests += len(unmarked_short_rows)
+    addSimpleTable(
+        "Unexpected Query Duration",
+        ["Problem", 'Marked as "short"?', "Run time, s", "Test", "#", "Query"],
+        unmarked_short_rows,
+    )
+    if unmarked_short_rows:
+        errors_explained.append(
+            [
+                f'<a href="#{currentTableAnchor()}">Some queries have unexpected duration</a>'
+            ]
+        )
+
     def add_partial():
         rows = tsvRows("report/partial-queries-report.tsv")
         if not rows:

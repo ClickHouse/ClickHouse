@@ -1,10 +1,9 @@
-# query_log {#system_tables-query_log}
+# system.query_log {#system_tables-query_log}
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 
-:::note
-This table does not contain the ingested data for `INSERT` queries.
-:::
+!!! note "Note"
+    This table does not contain the ingested data for `INSERT` queries.
 
 You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
 

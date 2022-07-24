@@ -67,7 +67,7 @@ RUN python3 -m pip install \
     dict2xml \
     dicttoxml \
     docker \
-    docker-compose==1.28.2 \
+    docker-compose==1.29.2 \
     grpcio \
     grpcio-tools \
     kafka-python \

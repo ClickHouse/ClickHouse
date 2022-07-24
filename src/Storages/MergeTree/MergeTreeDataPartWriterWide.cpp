@@ -97,7 +97,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
-        if (column_streams.contains(stream_name))
+        if (column_streams.count(stream_name))
             return;
 
         const auto & subtype = substream_path.back().data.type;
@@ -115,8 +115,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             part_path + stream_name, DATA_FILE_EXTENSION,
             part_path + stream_name, marks_file_extension,
             compression_codec,
-            settings.max_compress_block_size,
-            settings.query_write_settings);
+            settings.max_compress_block_size);
     };
 
     ISerialization::SubstreamPath path;
@@ -134,7 +133,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
-        if (is_offsets && offset_columns.contains(stream_name))
+        if (is_offsets && offset_columns.count(stream_name))
             return nullptr;
 
         return &column_streams.at(stream_name)->compressed;
@@ -284,7 +283,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
-        if (is_offsets && offset_columns.contains(stream_name))
+        if (is_offsets && offset_columns.count(stream_name))
             return;
 
         Stream & stream = *column_streams[stream_name];
@@ -323,7 +322,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
-        if (is_offsets && offset_columns.contains(stream_name))
+        if (is_offsets && offset_columns.count(stream_name))
             return;
 
         column_streams[stream_name]->compressed.nextIfAtEnd();
@@ -363,7 +362,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
         if (granule.mark_on_start)
         {
-            if (last_non_written_marks.contains(name))
+            if (last_non_written_marks.count(name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "We have to add new mark for column, but already have non written mark. Current mark {}, total marks {}, offset {}", getCurrentMark(), index_granularity.getMarksCount(), rows_written_in_last_mark);
             last_non_written_marks[name] = getCurrentMarksForColumn(name_and_type, offset_columns, serialize_settings.path);
         }

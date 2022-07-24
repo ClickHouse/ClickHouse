@@ -85,10 +85,10 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
         {
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
             {
-                if (options->changes.contains("is_null"))
+                if (options->changes.count("is_null"))
                     is_nullable = options->changes.at("is_null")->as<ASTLiteral>()->value.safeGet<UInt64>();
 
-                if (options->changes.contains("is_unsigned"))
+                if (options->changes.count("is_unsigned"))
                     is_unsigned = options->changes.at("is_unsigned")->as<ASTLiteral>()->value.safeGet<UInt64>();
             }
         }
@@ -150,18 +150,18 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
 
     ColumnsDescription columns_description;
 
-    /// FIXME: we could write it like auto [a, b] = std::tuple(x, y),
-    /// but this produce endless recursion in gcc-11, and leads to SIGSEGV
-    /// (see git blame for details).
-    auto column_name_and_type = columns_name_and_type.begin();
-    auto declare_column_ast = columns_definition->children.begin();
-    for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
+    for (
+        auto [column_name_and_type, declare_column_ast] = std::tuple{columns_name_and_type.begin(), columns_definition->children.begin()};
+        column_name_and_type != columns_name_and_type.end();
+        column_name_and_type++,
+        declare_column_ast++
+    )
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();
         String comment;
         if (declare_column->column_options)
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
-                if (options->changes.contains("comment"))
+                if (options->changes.count("comment"))
                     comment = options->changes.at("comment")->as<ASTLiteral>()->value.safeGet<String>();
 
         ColumnDescription column_description(column_name_and_type->name, column_name_and_type->type);
@@ -238,7 +238,7 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
                 if (const auto & function = index_expression->as<ASTFunction>())
                 {
                     /// column_name(int64 literal)
-                    if (columns_name_set.contains(function->name) && function->arguments->children.size() == 1)
+                    if (columns_name_set.count(function->name) && function->arguments->children.size() == 1)
                     {
                         const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
 
@@ -276,13 +276,13 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
         {
             if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
             {
-                if (options->changes.contains("unique_key"))
+                if (options->changes.count("unique_key"))
                     unique_keys->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(declare_column->name));
 
-                if (options->changes.contains("primary_key"))
+                if (options->changes.count("primary_key"))
                     primary_keys->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(declare_column->name));
 
-                if (options->changes.contains("auto_increment"))
+                if (options->changes.count("auto_increment"))
                     increment_columns.emplace(declare_column->name);
             }
         }
@@ -325,7 +325,7 @@ static ASTPtr getPartitionPolicy(const NamesAndTypesList & primary_keys)
             return std::make_shared<ASTIdentifier>(column_name);
 
         return makeASTFunction("intDiv", std::make_shared<ASTIdentifier>(column_name),
-           std::make_shared<ASTLiteral>(static_cast<UInt64>(type_max_size / 1000)));
+           std::make_shared<ASTLiteral>(UInt64(type_max_size / 1000)));
     };
 
     ASTPtr best_partition;
@@ -385,10 +385,10 @@ static ASTPtr getOrderByPolicy(
 
         for (const auto & [name, type] : names_and_types)
         {
-            if (order_by_columns_set.contains(name))
+            if (order_by_columns_set.count(name))
                 continue;
 
-            if (increment_columns.contains(name))
+            if (increment_columns.count(name))
             {
                 order_by_columns_set.emplace(name);
                 increment_keys.emplace_back(NameAndTypePair(name, type));
@@ -493,7 +493,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     String sign_column_name = getUniqueColumnName(columns_name_and_type, "_sign");
     String version_column_name = getUniqueColumnName(columns_name_and_type, "_version");
     columns->set(columns->columns, InterpreterCreateQuery::formatColumns(columns_description));
-    columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", static_cast<UInt64>(1)));
+    columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", UInt64(1)));
     columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
 
     /// Add minmax skipping index for _version column.

@@ -14,41 +14,57 @@ done
 
 function rename_thread_1()
 {
-    $CLICKHOUSE_CLIENT -q "RENAME TABLE replica_01108_1 TO replica_01108_1_tmp,
-                                        replica_01108_2 TO replica_01108_2_tmp,
-                                        replica_01108_3 TO replica_01108_3_tmp,
-                                        replica_01108_4 TO replica_01108_4_tmp"
-    sleep 0.$RANDOM
+    while true; do
+        $CLICKHOUSE_CLIENT -q "RENAME TABLE replica_01108_1 TO replica_01108_1_tmp,
+                                            replica_01108_2 TO replica_01108_2_tmp,
+                                            replica_01108_3 TO replica_01108_3_tmp,
+                                            replica_01108_4 TO replica_01108_4_tmp";
+        sleep 0.$RANDOM;
+    done
 }
 
 function rename_thread_2()
 {
-    $CLICKHOUSE_CLIENT -q "RENAME TABLE replica_01108_1_tmp TO replica_01108_2,
-                                        replica_01108_2_tmp TO replica_01108_3,
-                                        replica_01108_3_tmp TO replica_01108_4,
-                                        replica_01108_4_tmp TO replica_01108_1"
-    sleep 0.$RANDOM
+    while true; do
+        $CLICKHOUSE_CLIENT -q "RENAME TABLE replica_01108_1_tmp TO replica_01108_2,
+                                            replica_01108_2_tmp TO replica_01108_3,
+                                            replica_01108_3_tmp TO replica_01108_4,
+                                            replica_01108_4_tmp TO replica_01108_1";
+        sleep 0.$RANDOM;
+    done
 }
 
 function restart_replicas_loop()
 {
-    for i in $(seq 4); do
-        $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA replica_01108_${i}"
-        $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA replica_01108_${i}_tmp"
+    while true; do
+        for i in $(seq 4); do
+            $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA replica_01108_${i}";
+            $CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICA replica_01108_${i}_tmp";
+        done
+        sleep 0.$RANDOM;
     done
-    sleep 0.$RANDOM
+}
+function restart_thread_1()
+{
+    restart_replicas_loop
 }
 
-export -f rename_thread_1
-export -f rename_thread_2
-export -f restart_replicas_loop
+function restart_thread_2()
+{
+    restart_replicas_loop
+}
+
+export -f rename_thread_1;
+export -f rename_thread_2;
+export -f restart_thread_1;
+export -f restart_thread_2;
 
 TIMEOUT=10
 
-clickhouse_client_loop_timeout $TIMEOUT rename_thread_1 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT rename_thread_2 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT restart_replicas_loop 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT restart_replicas_loop 2> /dev/null &
+timeout $TIMEOUT bash -c rename_thread_1 2> /dev/null &
+timeout $TIMEOUT bash -c rename_thread_2 2> /dev/null &
+timeout $TIMEOUT bash -c restart_thread_1 2> /dev/null &
+timeout $TIMEOUT bash -c restart_thread_2 2> /dev/null &
 
 wait
 

@@ -1,6 +1,6 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
-#include <poll.h>
+#include <sys/poll.h>
 
 #include <Common/Stopwatch.h>
 
@@ -125,7 +125,7 @@ public:
             ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
 
             if (-1 == res && errno != EINTR)
-                throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                throwFromErrno("Cannot read from pipe ", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
 
             if (res == 0)
                 break;
@@ -187,7 +187,7 @@ public:
             ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
-                throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+                throwFromErrno("Cannot write into pipe ", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
 
             if (res > 0)
                 bytes_written += res;

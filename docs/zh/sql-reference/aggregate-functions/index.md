@@ -1,6 +1,7 @@
 ---
-sidebar_label: 聚合函数
-sidebar_position: 33
+toc_folder_title: 聚合函数
+toc_priority: 33
+toc_title: 简介
 ---
 
 # 聚合函数 {#aggregate-functions}

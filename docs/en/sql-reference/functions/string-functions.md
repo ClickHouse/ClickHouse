@@ -1,13 +1,12 @@
 ---
-sidebar_position: 40
-sidebar_label: Strings
+toc_priority: 40
+toc_title: Strings
 ---
 
 # Functions for Working with Strings {#functions-for-working-with-strings}
 
-:::note    
-Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [replacing](../../sql-reference/functions/string-replace-functions.md) in strings are described separately.
-:::
+!!! note "Note"
+    Functions for [searching](../../sql-reference/functions/string-search-functions.md) and [replacing](../../sql-reference/functions/string-replace-functions.md) in strings are described separately.
 
 ## empty {#empty}
 

@@ -25,5 +25,3 @@ CREATE TABLE default.mem\n(\n    `n` UInt8\n)\nENGINE = Memory
 CREATE TABLE default.val\n(\n    `n` Int32\n) AS values(\'n int\', 1, 2)
 CREATE TABLE default.val2\n(\n    `n` Int32\n) AS values(\'n int\', 1, 2)
 CREATE TABLE default.log\n(\n    `n` Int32\n)\nENGINE = Log
-CREATE TABLE default.kek\n(\n    `n` Int32\n)\nENGINE = Memory
-CREATE TABLE default.lol\n(\n    `n` Int32\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS min_bytes_for_wide_part = 123, index_granularity = 8192

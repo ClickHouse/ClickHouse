@@ -106,18 +106,6 @@ public:
 
     Names getRequiredColumns() { return required_columns; }
 
-    bool supportsTransactions() const override { return true; }
-
-    /// This is tiny crutch to support reading from localhost replica during distributed query
-    /// Replica need to talk to the initiator through a connection to ask for a next task
-    /// but there will be no connection if we create Interpreter explicitly.
-    /// The other problem is that context is copied inside Interpreter's constructor
-    /// And with this method we can change the internals of cloned one
-    void setMergeTreeReadTaskCallbackAndClientInfo(MergeTreeReadTaskCallback && callback);
-
-    /// It will set shard_num and shard_count to the client_info
-    void setProperClientInfo();
-
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,

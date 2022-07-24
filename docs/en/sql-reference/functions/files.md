@@ -1,6 +1,6 @@
 ---
-sidebar_position: 43
-sidebar_label: Files
+toc_priority: 43
+toc_title: Files
 ---
 
 # Functions for Working with Files {#functions-for-working-with-files}

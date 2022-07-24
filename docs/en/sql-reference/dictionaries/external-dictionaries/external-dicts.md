@@ -1,9 +1,9 @@
 ---
-sidebar_position: 39
-sidebar_label: General Description
+toc_priority: 39
+toc_title: General Description
 ---
 
-# External Dictionaries 
+# External Dictionaries {#dicts-external-dicts}
 
 You can add your own dictionaries from various data sources. The data source for a dictionary can be a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Sources for external dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md)”.
 
@@ -45,9 +45,8 @@ You can [configure](../../../sql-reference/dictionaries/external-dictionaries/ex
 
 [DDL queries for dictionaries](../../../sql-reference/statements/create/dictionary.md) does not require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
 
-:::note    
-You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../../sql-reference/functions/other-functions.md) function). This functionality is not related to external dictionaries.
-:::
+!!! attention "Attention"
+    You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../../sql-reference/functions/other-functions.md) function). This functionality is not related to external dictionaries.
 
 ## See Also {#ext-dicts-see-also}
 

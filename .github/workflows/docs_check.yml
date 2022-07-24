@@ -92,41 +92,9 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/changed_images.json
-  StyleCheck:
-    needs: DockerHubPush
-    runs-on: [self-hosted, style-checker]
-    if: ${{ success() || failure() }}
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{ runner.temp }}/style_check
-          EOF
-      - name: Download changed images
-        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
-        continue-on-error: true
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ env.TEMP_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Style Check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 style_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
-          sudo rm -fr "$TEMP_PATH"
   DocsCheck:
     needs: DockerHubPush
-    runs-on: [self-hosted, func-tester-aarch64]
+    runs-on: [self-hosted, func-tester]
     steps:
       - name: Set envs
         run: |

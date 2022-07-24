@@ -18,7 +18,6 @@
 #include <re2/re2.h>
 #include <Disks/IDiskRemote.h>
 #include <Common/FileCache_fwd.h>
-#include <Storages/StorageS3Settings.h>
 
 
 namespace DB
@@ -29,7 +28,11 @@ struct DiskS3Settings
 {
     DiskS3Settings(
         const std::shared_ptr<Aws::S3::S3Client> & client_,
-        const S3Settings::ReadWriteSettings & s3_settings_,
+        size_t s3_max_single_read_retries_,
+        size_t s3_min_upload_part_size_,
+        size_t s3_upload_part_size_multiply_factor_,
+        size_t s3_upload_part_size_multiply_parts_count_threshold_,
+        size_t s3_max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
         bool send_metadata_,
         int thread_pool_size_,
@@ -37,7 +40,11 @@ struct DiskS3Settings
         int objects_chunk_size_to_delete_);
 
     std::shared_ptr<Aws::S3::S3Client> client;
-    S3Settings::ReadWriteSettings s3_settings;
+    size_t s3_max_single_read_retries;
+    size_t s3_min_upload_part_size;
+    size_t s3_upload_part_size_multiply_factor;
+    size_t s3_upload_part_size_multiply_parts_count_threshold;
+    size_t s3_max_single_part_upload_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
     int thread_pool_size;
@@ -66,7 +73,6 @@ public:
         String name_,
         String bucket_,
         String s3_root_path_,
-        String version_id_,
         DiskPtr metadata_disk_,
         FileCachePtr cache_,
         ContextPtr context_,
@@ -82,10 +88,11 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
+        WriteMode mode) override;
 
-    void removeFromRemoteFS(const std::vector<String> & paths) override;
+    void removeFromRemoteFS(RemoteFSPathKeeperPtr keeper) override;
+
+    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
     void moveFile(const String & from_path, const String & to_path, bool send_metadata);
     void moveFile(const String & from_path, const String & to_path) override;
@@ -97,8 +104,6 @@ public:
     bool isRemote() const override { return true; }
 
     bool supportZeroCopyReplication() const override { return true; }
-
-    bool supportParallelWrite() const override { return true; }
 
     void shutdown() override;
 
@@ -157,8 +162,6 @@ private:
     static String pathToDetached(const String & source_path);
 
     const String bucket;
-
-    const String version_id;
 
     MultiVersion<DiskS3Settings> current_settings;
     /// Gets disk settings from context.

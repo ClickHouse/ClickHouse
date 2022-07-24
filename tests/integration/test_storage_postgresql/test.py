@@ -612,19 +612,6 @@ def test_datetime64(started_cluster):
     assert result.strip() == "1960-01-01 20:00:00.000000"
 
 
-def test_uuid(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("drop table if exists test")
-    cursor.execute("create table test (u uuid)")
-    cursor.execute("""CREATE EXTENSION IF NOT EXISTS "uuid-ossp";""")
-    cursor.execute("insert into test select uuid_generate_v1();")
-
-    result = node1.query(
-        "select toTypeName(u) from postgresql(postgres1, table='test')"
-    )
-    assert result.strip() == "Nullable(UUID)"
-
-
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

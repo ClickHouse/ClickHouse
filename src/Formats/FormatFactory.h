@@ -97,7 +97,7 @@ private:
     /// The checker should return true if format support append.
     using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
-    using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings)>;
+    using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings, ContextPtr context)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
 
     struct Creators
@@ -160,12 +160,12 @@ public:
     SchemaReaderPtr getSchemaReader(
         const String & name,
         ReadBuffer & buf,
-        ContextPtr & context,
+        ContextPtr context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     ExternalSchemaReaderPtr getExternalSchemaReader(
         const String & name,
-        ContextPtr & context,
+        ContextPtr context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);

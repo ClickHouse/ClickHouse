@@ -250,7 +250,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_sample_block(index_sample_block_)
 {
     for (const auto & name : index_sample_block.getNames())
-        if (!key_columns.contains(name))
+        if (!key_columns.count(name))
             key_columns.insert(name);
 
     const auto & select = query.query->as<ASTSelectQuery &>();
@@ -356,11 +356,11 @@ bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
         return true;
 
     if (const auto * identifier = node->as<ASTIdentifier>())
-        return key_columns.contains(identifier->getColumnName());
+        return key_columns.count(identifier->getColumnName()) != 0;
 
     if (auto * func = node->as<ASTFunction>())
     {
-        if (key_columns.contains(func->getColumnName()))
+        if (key_columns.count(func->getColumnName()))
         {
             /// Function is already calculated.
             node = std::make_shared<ASTIdentifier>(func->getColumnName());
@@ -446,7 +446,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
     if (const auto * func = node->as<ASTFunction>())
     {
-        if (key_columns.contains(func->getColumnName()))
+        if (key_columns.count(func->getColumnName()))
             return false;
 
         const ASTs & args = func->arguments->children;

@@ -1,9 +1,9 @@
 ---
-sidebar_position: 33
-sidebar_label: INSERT INTO
+toc_priority: 33
+toc_title: INSERT INTO
 ---
 
-# INSERT INTO Statement 
+## INSERT INTO Statement {#insert}
 
 Inserts data into a table.
 
@@ -88,7 +88,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces)”.
+You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces/index.md#interfaces)”.
 
 ### Constraints {#constraints}
 

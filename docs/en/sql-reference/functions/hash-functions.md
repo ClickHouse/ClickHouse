@@ -1,6 +1,6 @@
 ---
-sidebar_position: 50
-sidebar_label: Hash
+toc_priority: 50
+toc_title: Hash
 ---
 
 # Hash Functions {#hash-functions}

@@ -111,7 +111,7 @@ def test_create_replicated_table(started_cluster):
 
     expected = (
         "CREATE TABLE testdb.replicated_table\\n(\\n    `d` Date,\\n    `k` UInt64,\\n    `i32` Int32\\n)\\n"
-        "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\n"
+        "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')\\n"
         "PARTITION BY toYYYYMM(d)\\nORDER BY k\\nSETTINGS index_granularity = 8192"
     )
     assert_create_query([main_node, dummy_node], "testdb.replicated_table", expected)
@@ -164,7 +164,7 @@ def test_simple_alter_table(started_cluster, engine):
     full_engine = (
         engine
         if not "Replicated" in engine
-        else engine + "(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')"
+        else engine + "(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')"
     )
     expected = (
         "CREATE TABLE {}\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
@@ -191,7 +191,7 @@ def test_simple_alter_table(started_cluster, engine):
     full_engine = (
         engine
         if not "Replicated" in engine
-        else engine + "(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')"
+        else engine + "(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')"
     )
     expected = (
         "CREATE TABLE {}\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
@@ -459,7 +459,7 @@ def test_alters_from_different_replicas(started_cluster):
     expected = (
         "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
         "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n"
-        "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
+        "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
     )
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
@@ -474,7 +474,7 @@ def test_alters_from_different_replicas(started_cluster):
     expected = (
         "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
         "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n"
-        "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
+        "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
     )
 
     # test_snapshot_and_snapshot_recover
@@ -521,7 +521,7 @@ def test_alters_from_different_replicas(started_cluster):
     expected = (
         "CREATE TABLE testdb.concurrent_test\\n(\\n    `CounterID` UInt32,\\n    `StartDate` Date,\\n    `UserID` UInt32,\\n"
         "    `VisitID` UInt32,\\n    `NestedColumn.A` Array(UInt8),\\n    `NestedColumn.S` Array(String),\\n    `ToDrop` UInt32\\n)\\n"
-        "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
+        "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/uuid/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
     )
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
@@ -724,13 +724,7 @@ def test_recover_staled_replica(started_cluster):
         dummy_node.query(
             "SELECT count() FROM system.tables WHERE database='recover_broken_tables'"
         )
-        == f"{test_recover_staled_replica_run}\n"
-    )
-    assert (
-        dummy_node.query(
-            "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'"
-        )
-        == f"{test_recover_staled_replica_run}\n"
+        == f"{2*test_recover_staled_replica_run}\n"
     )
     test_recover_staled_replica_run += 1
     table = dummy_node.query(
@@ -741,12 +735,10 @@ def test_recover_staled_replica(started_cluster):
         == "42\n"
     )
     table = dummy_node.query(
-        "SHOW TABLES FROM recover_broken_replicated_tables LIKE 'rmt5_29_%' LIMIT 1"
+        "SHOW TABLES FROM recover_broken_tables LIKE 'rmt5_29_%' LIMIT 1"
     ).strip()
     assert (
-        dummy_node.query(
-            "SELECT (*,).1 FROM recover_broken_replicated_tables.{}".format(table)
-        )
+        dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table))
         == "42\n"
     )
 

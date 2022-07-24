@@ -82,7 +82,7 @@ bool DatabasePostgreSQL::empty() const
     auto tables_list = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
     for (const auto & table_name : tables_list)
-        if (!detached_or_dropped.contains(table_name))
+        if (!detached_or_dropped.count(table_name))
             return false;
 
     return true;
@@ -102,7 +102,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
         for (const auto & table_name : table_names)
-            if (!detached_or_dropped.contains(table_name))
+            if (!detached_or_dropped.count(table_name))
                 tables[table_name] = fetchTable(table_name, local_context, true);
     }
     catch (...)
@@ -156,7 +156,7 @@ bool DatabasePostgreSQL::isTableExist(const String & table_name, ContextPtr /* c
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (detached_or_dropped.contains(table_name))
+    if (detached_or_dropped.count(table_name))
         return false;
 
     return checkPostgresTable(table_name);
@@ -167,7 +167,7 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    if (!detached_or_dropped.contains(table_name))
+    if (!detached_or_dropped.count(table_name))
         return fetchTable(table_name, local_context, false);
 
     return StoragePtr{};
@@ -176,7 +176,7 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 
 StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr, bool table_checked) const
 {
-    if (!cache_tables || !cached_tables.contains(table_name))
+    if (!cache_tables || !cached_tables.count(table_name))
     {
         if (!table_checked && !checkPostgresTable(table_name))
             return StoragePtr{};
@@ -217,7 +217,7 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
                         "Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL",
                         getTableNameForLogs(table_name), database_name);
 
-    if (!detached_or_dropped.contains(table_name))
+    if (!detached_or_dropped.count(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
                         "Cannot attach PostgreSQL table {} because it already exists",
                         getTableNameForLogs(table_name), database_name);
@@ -237,7 +237,7 @@ StoragePtr DatabasePostgreSQL::detachTable(ContextPtr /* context_ */, const Stri
 {
     std::lock_guard<std::mutex> lock{mutex};
 
-    if (detached_or_dropped.contains(table_name))
+    if (detached_or_dropped.count(table_name))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Cannot detach table {}. It is already dropped/detached", getTableNameForLogs(table_name));
 
     if (!checkPostgresTable(table_name))
@@ -271,7 +271,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
     if (!checkPostgresTable(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot drop table {} because it does not exist", getTableNameForLogs(table_name));
 
-    if (detached_or_dropped.contains(table_name))
+    if (detached_or_dropped.count(table_name))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
@@ -323,7 +323,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
         /// (Tables are cached only after being accessed at least once)
         for (auto iter = cached_tables.begin(); iter != cached_tables.end();)
         {
-            if (!actual_tables.contains(iter->first))
+            if (!actual_tables.count(iter->first))
                 iter = cached_tables.erase(iter);
             else
                 ++iter;
@@ -332,7 +332,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
 
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
-        if (!actual_tables.contains(*iter))
+        if (!actual_tables.count(*iter))
         {
             auto table_name = *iter;
             iter = detached_or_dropped.erase(iter);

@@ -31,7 +31,7 @@
 
 -   对于’dict_name’分层字典，查找’child_id’键是否位于’ancestor_id’内（或匹配’ancestor_id’）。返回UInt8。
 
-## dictGetHierarchy {#dictgethierarchy}
+## 独裁主义 {#dictgethierarchy}
 
 `dictGetHierarchy('dict_name', id)`
 

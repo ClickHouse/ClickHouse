@@ -1,6 +1,6 @@
 ---
-sidebar_position: 28
-sidebar_label: Visual Interfaces
+toc_priority: 28
+toc_title: Visual Interfaces
 ---
 
 # Visual Interfaces from Third-party Developers {#visual-interfaces-from-third-party-developers}

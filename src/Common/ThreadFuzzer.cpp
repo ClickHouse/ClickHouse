@@ -27,7 +27,7 @@
 
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
-#if defined(OS_LINUX) and !defined(USE_MUSL)
+#if defined(OS_LINUX)
     /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
     #if defined(__amd64__)
     #    define GLIBC_SYMVER "GLIBC_2.2.5"

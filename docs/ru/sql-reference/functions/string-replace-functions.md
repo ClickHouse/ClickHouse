@@ -1,6 +1,6 @@
 ---
-sidebar_position: 42
-sidebar_label: "Функции поиска и замены в строках"
+toc_priority: 42
+toc_title: "Функции поиска и замены в строках"
 ---
 
 # Функции поиска и замены в строках {#funktsii-poiska-i-zameny-v-strokakh}

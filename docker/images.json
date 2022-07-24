@@ -149,6 +149,16 @@
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
         "dependent": [
+            "docker/docs/check",
+            "docker/docs/release"
         ]
+    },
+    "docker/docs/check": {
+        "name": "clickhouse/docs-check",
+        "dependent": []
+    },
+    "docker/docs/release": {
+        "name": "clickhouse/docs-release",
+        "dependent": []
     }
 }

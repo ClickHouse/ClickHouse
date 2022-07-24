@@ -18,7 +18,8 @@ struct OpenTelemetrySpan
     Array attribute_names;
     Array attribute_values;
     // I don't understand how Links work, namely, which direction should they
-    // point to, and how they are related with parent_span_id, so no Links for now.
+    // point to, and how they are related with parent_span_id, so no Links for
+    // now.
 };
 
 struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
@@ -31,7 +32,6 @@ struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-    static const char * getCustomColumnList() { return nullptr; }
 };
 
 // OpenTelemetry standartizes some Log data as well, so it's not just

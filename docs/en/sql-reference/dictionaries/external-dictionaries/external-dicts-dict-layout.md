@@ -1,9 +1,9 @@
 ---
-sidebar_position: 41
-sidebar_label: Storing Dictionaries in Memory
+toc_priority: 41
+toc_title: Storing Dictionaries in Memory
 ---
 
-# Storing Dictionaries in Memory 
+# Storing Dictionaries in Memory {#dicts-external-dicts-dict-layout}
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -238,9 +238,8 @@ Example: The table contains discounts for each advertiser in the format:
 
 To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
-:::warning    
-Values of `range_min` and `range_max` should fit in `Int64` type.
-:::
+!!! warning "Warning"
+    Values of `range_min` and `range_max` should fit in `Int64` type.
 
 Example:
 
@@ -408,9 +407,8 @@ Set a large enough cache size. You need to experiment to select the number of ce
 3.  Assess memory consumption using the `system.dictionaries` table.
 4.  Increase or decrease the number of cells until the required memory consumption is reached.
 
-:::warning    
-Do not use ClickHouse as a source, because it is slow to process queries with random reads.
-:::
+!!! warning "Warning"
+    Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
 ### complex_key_cache {#complex-key-cache}
 

@@ -55,8 +55,7 @@ public:
             const std::string & marks_path_,
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
-            size_t max_compress_block_size_,
-            const WriteSettings & query_write_settings);
+            size_t max_compress_block_size_);
 
         String escaped_column_name;
         std::string data_file_extension;

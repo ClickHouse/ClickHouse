@@ -1,6 +1,6 @@
 ---
-sidebar_position: 41
-sidebar_label: "Хранение словарей в памяти"
+toc_priority: 41
+toc_title: "Хранение словарей в памяти"
 ---
 
 # Хранение словарей в памяти {#dicts-external-dicts-dict-layout}
@@ -403,7 +403,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 3.  Оценить потребление оперативной памяти с помощью таблицы `system.dictionaries`.
 4.  Увеличивать/уменьшать количество ячеек до получения требуемого расхода оперативной памяти.
 
-:::danger "Warning"
+!!! warning "Warning"
     Не используйте в качестве источника ClickHouse, поскольку он медленно обрабатывает запросы со случайным чтением.
 
 ### complex_key_cache {#complex-key-cache}

@@ -1,0 +1,1 @@
+../../../en/sql-reference/table-functions/null.md

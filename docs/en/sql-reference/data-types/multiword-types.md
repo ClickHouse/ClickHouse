@@ -1,6 +1,6 @@
 ---
-sidebar_position: 61
-sidebar_label: Multiword Type Names
+toc_priority: 61
+toc_title: Multiword Type Names
 ---
 
 # Multiword Types {#multiword-types}

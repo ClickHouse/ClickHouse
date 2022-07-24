@@ -22,10 +22,12 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         MarkCache * mark_cache_,
         UncompressedCache * uncompressed_cache, size_t file_size_,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+        bool is_low_cardinality_dictionary_)
     : disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
+    , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
     , marks_count(marks_count_)
     , file_size(file_size_)
     , mark_cache(mark_cache_)
@@ -125,6 +127,38 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
     {
         auto right_mark = marks_loader.getMark(right_mark_non_included);
         result_right_offset = right_mark.offset_in_compressed_file;
+
+        bool need_to_check_marks_from_the_right = false;
+
+        /// If the end of range is inside the block, we will need to read it too.
+        if (right_mark.offset_in_decompressed_block > 0)
+        {
+            need_to_check_marks_from_the_right = true;
+        }
+        else if (is_low_cardinality_dictionary)
+        {
+            /// Also, in LowCardinality dictionary several consecutive marks can point to
+            /// the same offset. So to get true bytes offset we have to get first
+            /// non-equal mark.
+            /// Example:
+            ///  Mark 186, points to [2003111, 0]
+            ///  Mark 187, points to [2003111, 0]
+            ///  Mark 188, points to [2003111, 0] <--- for example need to read until 188
+            ///  Mark 189, points to [2003111, 0] <--- not suitable, because have same offset
+            ///  Mark 190, points to [2003111, 0]
+            ///  Mark 191, points to [2003111, 0]
+            ///  Mark 192, points to [2081424, 0] <--- what we are looking for
+            ///  Mark 193, points to [2081424, 0]
+            ///  Mark 194, points to [2081424, 0]
+
+            /// Also, in some cases, when one granule is not-atomically written (which is possible at merges)
+            /// one granule may require reading of two dictionaries which starts from different marks.
+            /// The only correct way is to take offset from at least next different granule from the right one.
+
+            /// Check test_s3_low_cardinality_right_border.
+
+            need_to_check_marks_from_the_right = true;
+        }
 
         /// Let's go to the right and find mark with bigger offset in compressed file
         bool found_bigger_mark = false;

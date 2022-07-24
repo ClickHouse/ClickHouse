@@ -181,7 +181,7 @@ Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 
     Poco::MongoDB::Array::Ptr ids_array(new Poco::MongoDB::Array);
     for (const UInt64 id : ids)
-        ids_array->add(DB::toString(id), static_cast<Int32>(id));
+        ids_array->add(DB::toString(id), Int32(id));
 
     cursor->query().selector().addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
@@ -218,7 +218,7 @@ Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::v
                 case AttributeUnderlyingType::Int32:
                 case AttributeUnderlyingType::Int64:
                 {
-                    key.add(key_attribute.name, static_cast<Int32>(key_columns[attribute_index]->get64(row_idx)));
+                    key.add(key_attribute.name, Int32(key_columns[attribute_index]->get64(row_idx)));
                     break;
                 }
                 case AttributeUnderlyingType::Float32:

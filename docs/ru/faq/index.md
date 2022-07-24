@@ -1,6 +1,7 @@
 ---
-sidebar_label: F.A.Q.
-sidebar_position: 76
+toc_folder_title: F.A.Q.
+toc_hidden: true
+toc_priority: 76
 ---
 
 # ClickHouse F.A.Q. {#clickhouse-f-a-q}

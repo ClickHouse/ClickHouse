@@ -16,28 +16,21 @@ import traceback
 import urllib.parse
 import shlex
 import urllib3
+
+from cassandra.policies import RoundRobinPolicy
+import cassandra.cluster
+import psycopg2
+import pymongo
+import pymysql
 import requests
-
-try:
-    # Please, add modules that required for specific tests only here.
-    # So contributors will be able to run most tests locally
-    # without installing tons of unneeded packages that may be not so easy to install.
-    from cassandra.policies import RoundRobinPolicy
-    import cassandra.cluster
-    import psycopg2
-    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-    import pymongo
-    import pymysql
-    from confluent_kafka.avro.cached_schema_registry_client import (
-        CachedSchemaRegistryClient,
-    )
-except Exception as e:
-    logging.warning(f"Cannot import some modules, some tests may not work: {e}")
-
+from confluent_kafka.avro.cached_schema_registry_client import (
+    CachedSchemaRegistryClient,
+)
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
@@ -47,8 +40,6 @@ import docker
 
 from .client import Client
 from .hdfs_api import HDFSApi
-
-from .config_cluster import *
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -694,19 +685,10 @@ class ClickHouseCluster:
         )
 
         binary_path = self.server_bin_path
-        binary_dir = os.path.dirname(self.server_bin_path)
-
-        # always prefer clickhouse-keeper standalone binary
-        if os.path.exists(os.path.join(binary_dir, "clickhouse-keeper")):
-            binary_path = os.path.join(binary_dir, "clickhouse-keeper")
-            keeper_cmd_prefix = "clickhouse-keeper"
-        else:
-            if binary_path.endswith("-server"):
-                binary_path = binary_path[: -len("-server")]
-            keeper_cmd_prefix = "clickhouse keeper"
+        if binary_path.endswith("-server"):
+            binary_path = binary_path[: -len("-server")]
 
         env_variables["keeper_binary"] = binary_path
-        env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
         env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
@@ -1675,8 +1657,8 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
-                    user=mysql_user,
-                    password=mysql_pass,
+                    user="root",
+                    password="clickhouse",
                     host=self.mysql_ip,
                     port=self.mysql_port,
                 )
@@ -1697,8 +1679,8 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
-                    user=mysql8_user,
-                    password=mysql8_pass,
+                    user="root",
+                    password="clickhouse",
                     host=self.mysql8_ip,
                     port=self.mysql8_port,
                 )
@@ -1722,8 +1704,8 @@ class ClickHouseCluster:
             try:
                 for ip in [self.mysql2_ip, self.mysql3_ip, self.mysql4_ip]:
                     conn = pymysql.connect(
-                        user=mysql_user,
-                        password=mysql_pass,
+                        user="root",
+                        password="clickhouse",
                         host=ip,
                         port=self.mysql_port,
                     )
@@ -1746,9 +1728,9 @@ class ClickHouseCluster:
                 self.postgres_conn = psycopg2.connect(
                     host=self.postgres_ip,
                     port=self.postgres_port,
-                    database=pg_db,
-                    user=pg_user,
-                    password=pg_pass,
+                    database="postgres",
+                    user="postgres",
+                    password="mysecretpassword",
                 )
                 self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres_conn.autocommit = True
@@ -1770,9 +1752,9 @@ class ClickHouseCluster:
                 self.postgres2_conn = psycopg2.connect(
                     host=self.postgres2_ip,
                     port=self.postgres_port,
-                    database=pg_db,
-                    user=pg_user,
-                    password=pg_pass,
+                    database="postgres",
+                    user="postgres",
+                    password="mysecretpassword",
                 )
                 self.postgres2_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres2_conn.autocommit = True
@@ -1786,9 +1768,9 @@ class ClickHouseCluster:
                 self.postgres3_conn = psycopg2.connect(
                     host=self.postgres3_ip,
                     port=self.postgres_port,
-                    database=pg_db,
-                    user=pg_user,
-                    password=pg_pass,
+                    database="postgres",
+                    user="postgres",
+                    password="mysecretpassword",
                 )
                 self.postgres3_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres3_conn.autocommit = True
@@ -1802,9 +1784,9 @@ class ClickHouseCluster:
                 self.postgres4_conn = psycopg2.connect(
                     host=self.postgres4_ip,
                     port=self.postgres_port,
-                    database=pg_db,
-                    user=pg_user,
-                    password=pg_pass,
+                    database="postgres",
+                    user="postgres",
+                    password="mysecretpassword",
                 )
                 self.postgres4_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                 self.postgres4_conn.autocommit = True
@@ -1956,7 +1938,7 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=mongo_pass
+            host="localhost", port=self.mongo_port, user="root", password="clickhouse"
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -1980,8 +1962,8 @@ class ClickHouseCluster:
         )
         minio_client = Minio(
             f"{self.minio_ip}:{self.minio_port}",
-            access_key=minio_access_key,
-            secret_key=minio_secret_key,
+            access_key="minio",
+            secret_key="minio123",
             secure=secure,
             http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
         )  # disable SSL check as we test ClickHouse and not Python library
@@ -2928,8 +2910,7 @@ class ClickHouseInstance:
         else:
             params = params.copy()
 
-        if sql is not None:
-            params["query"] = sql
+        params["query"] = sql
 
         auth = None
         if user and password:
@@ -3500,16 +3481,16 @@ class ClickHouseInstance:
                 "MySQL": {
                     "DSN": "mysql_odbc",
                     "Driver": "/usr/lib/x86_64-linux-gnu/odbc/libmyodbc.so",
-                    "Database": odbc_mysql_db,
-                    "Uid": odbc_mysql_uid,
-                    "Pwd": odbc_mysql_pass,
+                    "Database": "clickhouse",
+                    "Uid": "root",
+                    "Pwd": "clickhouse",
                     "Server": self.cluster.mysql_host,
                 },
                 "PostgreSQL": {
                     "DSN": "postgresql_odbc",
-                    "Database": odbc_psql_db,
-                    "UserName": odbc_psql_user,
-                    "Password": odbc_psql_pass,
+                    "Database": "postgres",
+                    "UserName": "postgres",
+                    "Password": "mysecretpassword",
                     "Port": str(self.cluster.postgres_port),
                     "Servername": self.cluster.postgres_host,
                     "Protocol": "9.3",
@@ -3765,10 +3746,10 @@ class ClickHouseInstance:
         if self.external_dirs:
             for external_dir in self.external_dirs:
                 external_dir_abs_path = p.abspath(
-                    p.join(self.cluster.instances_dir, external_dir.lstrip("/"))
+                    p.join(self.path, external_dir.lstrip("/"))
                 )
                 logging.info(f"external_dir_abs_path={external_dir_abs_path}")
-                os.makedirs(external_dir_abs_path, exist_ok=True)
+                os.mkdir(external_dir_abs_path)
                 external_dirs_volumes += (
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"
                 )

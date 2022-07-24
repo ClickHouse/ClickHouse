@@ -925,11 +925,10 @@ Expression ((Projection + Before ORDER BY))
   Window (Window step for window \'ORDER BY o ASC, number ASC\')
     Sorting (Sorting for window \'ORDER BY o ASC, number ASC\')
       Window (Window step for window \'ORDER BY number ASC\')
-        Expression ((Before window functions + (Projection + Before ORDER BY)) [lifted up part])
-          Sorting (Sorting for window \'ORDER BY number ASC\')
-            Expression ((Before window functions + (Projection + Before ORDER BY)))
-              SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                ReadFromStorage (SystemNumbers)
+        Sorting (Sorting for window \'ORDER BY number ASC\')
+          Expression ((Before window functions + (Projection + Before ORDER BY)))
+            SettingQuotaAndLimits (Set limits and quota after reading from storage)
+              ReadFromStorage (SystemNumbers)
 -- A test case for the sort comparator found by fuzzer.
 SELECT
     max(number) OVER (ORDER BY number DESC NULLS FIRST),

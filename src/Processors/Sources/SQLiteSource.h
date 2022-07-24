@@ -18,7 +18,10 @@ class SQLiteSource : public SourceWithProgress
 using SQLitePtr = std::shared_ptr<sqlite3>;
 
 public:
-    SQLiteSource(SQLitePtr sqlite_db_, const String & query_str_, const Block & sample_block, UInt64 max_block_size_);
+    SQLiteSource(SQLitePtr sqlite_db_,
+                           const String & query_str_,
+                           const Block & sample_block,
+                           UInt64 max_block_size_);
 
     String getName() const override { return "SQLite"; }
 

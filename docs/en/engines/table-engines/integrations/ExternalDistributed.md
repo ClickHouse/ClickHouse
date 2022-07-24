@@ -1,6 +1,6 @@
 ---
-sidebar_position: 12
-sidebar_label: ExternalDistributed
+toc_priority: 12
+toc_title: ExternalDistributed
 ---
 
 # ExternalDistributed {#externaldistributed}
@@ -51,6 +51,3 @@ You can specify any number of shards and any number of replicas for each shard.
 -   [MySQL table engine](../../../engines/table-engines/integrations/mysql.md)
 -   [PostgreSQL table engine](../../../engines/table-engines/integrations/postgresql.md)
 -   [Distributed table engine](../../../engines/table-engines/special/distributed.md)
-
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/ExternalDistributed/) <!--hide-->

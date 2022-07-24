@@ -40,9 +40,9 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
-        return removeOnCluster<ASTDropQuery>(clone(), params.default_database);
+        return removeOnCluster<ASTDropQuery>(clone(), new_database);
     }
 
     virtual QueryKind getQueryKind() const override { return QueryKind::Drop; }

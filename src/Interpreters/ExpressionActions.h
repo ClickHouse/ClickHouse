@@ -233,7 +233,7 @@ struct ExpressionActionsChain : WithContext
         NamesAndTypesList required_columns;
         ColumnsWithTypeAndName result_columns;
 
-        JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, ColumnsWithTypeAndName required_columns_);
+        JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, const ColumnsWithTypeAndName & required_columns_);
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
         void finalize(const NameSet & required_output_) override;

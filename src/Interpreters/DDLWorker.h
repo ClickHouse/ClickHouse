@@ -131,9 +131,6 @@ protected:
     std::optional<String> first_failed_task_name;
     std::list<DDLTaskPtr> current_tasks;
 
-    /// This flag is needed for debug assertions only
-    bool queue_fully_loaded_after_initialization_debug_helper = false;
-
     Coordination::Stat queue_node_stat;
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();

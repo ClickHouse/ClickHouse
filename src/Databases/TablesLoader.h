@@ -104,7 +104,7 @@ private:
 
     DependenciesInfosIter removeResolvedDependency(const DependenciesInfosIter & info_it, TableNames & independent_database_objects);
 
-    void startLoadingIndependentTables(ThreadPool & pool, size_t level);
+    void startLoadingIndependentTables(ThreadPool & pool, size_t level, ContextMutablePtr load_context);
 
     void checkCyclicDependencies() const;
 

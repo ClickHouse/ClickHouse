@@ -32,11 +32,10 @@ struct FormatSettings
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
+    bool use_lowercase_column_name = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
-
-    String column_names_for_schema_inference = "";
 
     enum class DateTimeInputFormat
     {
@@ -79,8 +78,6 @@ struct FormatSettings
         bool low_cardinality_as_dictionary = false;
         bool import_nested = false;
         bool allow_missing_columns = false;
-        bool skip_columns_with_unsupported_types_in_schema_inference = false;
-        bool case_insensitive_column_matching = false;
     } arrow;
 
     struct
@@ -107,7 +104,6 @@ struct FormatSettings
         bool input_format_arrays_as_nested_csv = false;
         String null_representation = "\\N";
         char tuple_delimiter = ',';
-        bool input_format_use_best_effort_in_schema_inference = true;
     } csv;
 
     struct HiveText
@@ -137,7 +133,6 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
-        bool read_bools_as_numbers = true;
     } json;
 
     struct
@@ -145,9 +140,6 @@ struct FormatSettings
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;
-        bool skip_columns_with_unsupported_types_in_schema_inference = false;
-        bool case_insensitive_column_matching = false;
-        std::unordered_set<int> skip_row_groups = {};
     } parquet;
 
     struct Pretty
@@ -214,7 +206,6 @@ struct FormatSettings
         bool crlf_end_of_line = false;
         String null_representation = "\\N";
         bool input_format_enum_as_number = false;
-        bool input_format_use_best_effort_in_schema_inference = true;
     } tsv;
 
     struct
@@ -229,9 +220,6 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
-        bool skip_columns_with_unsupported_types_in_schema_inference = false;
-        bool case_insensitive_column_matching = false;
-        std::unordered_set<int> skip_stripes = {};
     } orc;
 
     /// For capnProto format we should determine how to

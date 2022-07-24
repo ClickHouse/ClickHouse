@@ -1,6 +1,8 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AZURE_BLOB_STORAGE
 

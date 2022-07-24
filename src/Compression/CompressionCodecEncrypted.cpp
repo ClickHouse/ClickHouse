@@ -50,11 +50,11 @@ uint8_t getMethodCode(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
     {
-        return static_cast<uint8_t>(CompressionMethodByte::AES_128_GCM_SIV);
+        return uint8_t(CompressionMethodByte::AES_128_GCM_SIV);
     }
     else if (Method == AES_256_GCM_SIV)
     {
-        return static_cast<uint8_t>(CompressionMethodByte::AES_256_GCM_SIV);
+        return uint8_t(CompressionMethodByte::AES_256_GCM_SIV);
     }
     else
     {

@@ -377,10 +377,9 @@ bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
-        TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
-
         UInt64 pong = 0;
         writeVarUInt(Protocol::Client::Ping, *out);
         out->next();
@@ -406,10 +405,6 @@ bool Connection::ping()
     }
     catch (const Poco::Exception & e)
     {
-        /// Explicitly disconnect since ping() can receive EndOfStream,
-        /// and in this case this ping() will return false,
-        /// while next ping() may return true.
-        disconnect();
         LOG_TRACE(log_wrapper.get(), fmt::runtime(e.displayText()));
         return false;
     }

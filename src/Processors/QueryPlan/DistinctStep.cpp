@@ -15,7 +15,7 @@ static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & d
     /// Now we need to check that distinct_names is a subset of columns.
     std::unordered_set<std::string_view> columns_set(columns.begin(), columns.end());
     for (const auto & name : distinct_names)
-        if (!columns_set.contains(name))
+        if (columns_set.count(name) == 0)
             return false;
 
     return true;

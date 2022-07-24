@@ -57,9 +57,6 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
-    /// Append extra processors for this step.
-    void appendExtraProcessors(const Processors & extra_processors);
-
 protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.
     static void updateDistinctColumns(const Block & res_header, NameSet & distinct_columns);

@@ -1,5 +1,4 @@
 #include <TableFunctions/Hive/TableFunctionHive.h>
-
 #if USE_HIVE
 #include <memory>
 #include <type_traits>

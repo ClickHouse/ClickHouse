@@ -13,11 +13,13 @@ namespace DB
 class StorageMaterializedPostgreSQL;
 struct SettingChange;
 
-class PostgreSQLReplicationHandler : WithContext
+class PostgreSQLReplicationHandler
 {
 friend class TemporaryReplicationSlot;
 
 public:
+    using ConsumerPtr = std::shared_ptr<MaterializedPostgreSQLConsumer>;
+
     PostgreSQLReplicationHandler(
             const String & replication_identifier,
             const String & postgres_database_,
@@ -87,6 +89,8 @@ private:
 
     void consumerFunc();
 
+    ConsumerPtr getConsumer();
+
     StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
     void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
@@ -97,7 +101,10 @@ private:
 
     std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
 
+    void assertInitialized() const;
+
     Poco::Logger * log;
+    ContextPtr context;
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
@@ -134,7 +141,7 @@ private:
     String replication_slot, publication_name;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
-    std::shared_ptr<MaterializedPostgreSQLConsumer> consumer;
+    ConsumerPtr consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task;
     BackgroundSchedulePool::TaskHolder consumer_task;
@@ -146,6 +153,8 @@ private:
     MaterializedStorages materialized_storages;
 
     UInt64 milliseconds_to_wait;
+
+    bool replication_handler_initialized = false;
 };
 
 }

@@ -153,7 +153,7 @@ struct RowRef
         return true;
     }
 
-    bool hasEqualSortColumnsWith(const RowRef & other) const
+    bool hasEqualSortColumnsWith(const RowRef & other)
     {
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
@@ -197,7 +197,7 @@ struct RowRefWithOwnedChunk
         sort_columns = &owned_chunk->sort_columns;
     }
 
-    bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
+    bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other)
     {
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
                                    other.sort_columns->data(), other.row_num);

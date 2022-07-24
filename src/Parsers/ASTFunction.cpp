@@ -166,7 +166,7 @@ ASTPtr ASTFunction::toLiteral() const
   * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
   * With highlighting we make it clearly obvious.
   *
-  * Another case is regexp match. Suppose the user types match(URL, 'www.clickhouse.com'). It often means that the user is unaware that . is a metacharacter.
+  * Another case is regexp match. Suppose the user types match(URL, 'www.yandex.ru'). It often means that the user is unaware that . is a metacharacter.
   */
 static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const IAST::FormatSettings & settings, const char * metacharacters)
 {

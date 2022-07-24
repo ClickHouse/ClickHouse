@@ -38,7 +38,7 @@ public:
 
     FunctionFormatRow(const String & format_name_, ContextPtr context_) : format_name(format_name_), context(context_)
     {
-        if (!FormatFactory::instance().getAllFormats().contains(format_name))
+        if (!FormatFactory::instance().getAllFormats().count(format_name))
             throw Exception("Unknown format " + format_name, ErrorCodes::UNKNOWN_FORMAT);
     }
 

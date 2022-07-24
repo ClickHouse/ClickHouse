@@ -30,7 +30,7 @@ def test_overcommited_is_killed():
 
     responses_A = list()
     responses_B = list()
-    for _ in range(500):
+    for _ in range(100):
         responses_A.append(node.get_query_request(TEST_QUERY_A, user="A"))
         responses_B.append(node.get_query_request(TEST_QUERY_B, user="B"))
 

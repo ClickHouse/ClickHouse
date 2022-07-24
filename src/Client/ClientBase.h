@@ -80,7 +80,7 @@ protected:
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
-        std::unique_ptr<Exception> & current_exception);
+        std::optional<Exception> & current_exception);
 
     static void clearTerminal();
     void showClientVersion();
@@ -95,7 +95,6 @@ protected:
         std::optional<ProgramOptionsDescription> hosts_and_ports_description;
     };
 
-    virtual void updateLoggerLevel(const String &) {}
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
     virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
@@ -112,7 +111,6 @@ private:
     void receiveLogs(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQuery();
-    void cancelQuery();
 
     void onProgress(const Progress & value);
     void onData(Block & block, ASTPtr parsed_query);
@@ -126,9 +124,8 @@ private:
 
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
-                      const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data = false);
-    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_more_data = false);
-    void sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
+                      const ColumnsDescription & columns_description, ASTPtr parsed_query);
+    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
@@ -255,8 +252,6 @@ protected:
 
     QueryProcessingStage::Enum query_processing_stage;
 
-    bool fake_drop = false;
-
     struct HostAndPort
     {
         String host;
@@ -268,8 +263,6 @@ protected:
     bool allow_repeated_settings = false;
 
     bool cancelled = false;
-
-    bool logging_initialized = false;
 };
 
 }

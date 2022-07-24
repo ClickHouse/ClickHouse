@@ -9,7 +9,6 @@
     M(SelectQuery, "Same as Query, but only for SELECT queries.") \
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
     M(AsyncInsertQuery, "Same as InsertQuery, but only for asynchronous INSERT queries.") \
-    M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.") \
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
@@ -111,8 +110,6 @@
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.") \
-    \
-    M(ExecuteShellCommand, "Number of shell command executions.") \
     \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
@@ -286,35 +283,6 @@
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
     \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
-    \
-    M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
-    M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
-    \
-    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCachePut, "Number of rocksdb puts(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks(used for merge tree metadata cache)") \
-    M(MergeTreeMetadataCacheHit, "Number of times the read of meta file was done from MergeTree metadata cache") \
-    M(MergeTreeMetadataCacheMiss, "Number of times the read of meta file was not done from MergeTree metadata cache") \
-    \
-    M(KafkaRebalanceRevocations, "Number of partition revocations (the first stage of consumer group rebalance)") \
-    M(KafkaRebalanceAssignments, "Number of partition assignments (the final stage of consumer group rebalance)") \
-    M(KafkaRebalanceErrors, "Number of failed consumer group rebalances") \
-    M(KafkaMessagesPolled, "Number of Kafka messages polled from librdkafka to ClickHouse") \
-    M(KafkaMessagesRead, "Number of Kafka messages already processed by ClickHouse") \
-    M(KafkaMessagesFailed, "Number of Kafka messages ClickHouse failed to parse") \
-    M(KafkaRowsRead, "Number of rows parsed from Kafka messages") \
-    M(KafkaRowsRejected, "Number of parsed rows which were later rejected (due to rebalances / errors or similar reasons). Those rows will be consumed again after the rebalance.") \
-    M(KafkaDirectReads, "Number of direct selects from Kafka tables since server start") \
-    M(KafkaBackgroundReads, "Number of background reads populating materialized views from Kafka since server start") \
-    M(KafkaCommits, "Number of successful commits of consumed offsets to Kafka (normally should be the same as KafkaBackgroundReads)") \
-    M(KafkaCommitFailures, "Number of failed commits of consumed offsets to Kafka (usually is a sign of some data duplication)") \
-    M(KafkaConsumerErrors, "Number of errors reported by librdkafka during polls") \
-    M(KafkaWrites, "Number of writes (inserts) to Kafka tables ") \
-    M(KafkaRowsWritten, "Number of rows inserted into Kafka tables") \
-    M(KafkaProducerFlushes, "Number of explicit flushes to Kafka producer") \
-    M(KafkaMessagesProduced, "Number of messages produced to Kafka") \
-    M(KafkaProducerErrors, "Number of errors during producing the messages to Kafka") \
     \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \

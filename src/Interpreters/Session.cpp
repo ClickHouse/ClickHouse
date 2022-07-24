@@ -243,7 +243,7 @@ void Session::shutdownNamedSessions()
     NamedSessionsStorage::instance().shutdown();
 }
 
-Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_, bool is_secure)
+Session::Session(const ContextPtr & global_context_, ClientInfo::Interface interface_)
     : auth_id(UUIDHelpers::generateV4()),
       global_context(global_context_),
       interface(interface_),
@@ -251,7 +251,6 @@ Session::Session(const ContextPtr & global_context_, ClientInfo::Interface inter
 {
     prepared_client_info.emplace();
     prepared_client_info->interface = interface_;
-    prepared_client_info->is_secure = is_secure;
 }
 
 Session::~Session()
@@ -396,7 +395,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (user_id && !new_session_context->getUser())
+    if (user_id && !new_session_context->getAccess()->tryGetUser())
         new_session_context->setUser(*user_id);
 
     /// Session context is ready.
@@ -439,11 +438,14 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
     query_context->makeQueryContext();
 
-    LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
-              toString(auth_id),
-              from_session_context ? "session" : "global",
-              user_id ? toString(*user_id) : "<EMPTY>",
-              query_context->getUser() ? query_context->getUser()->getName() : "<NOT SET>");
+    if (auto query_context_user = query_context->getAccess()->tryGetUser())
+    {
+        LOG_DEBUG(log, "{} Creating query context from {} context, user_id: {}, parent context user: {}",
+                  toString(auth_id),
+                  from_session_context ? "session" : "global",
+                  toString(*user_id),
+                  query_context_user->getName());
+    }
 
     /// Copy the specified client info to the new query context.
     auto & res_client_info = query_context->getClientInfo();
@@ -473,12 +475,13 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     query_context->enableRowPoliciesOfInitialUser();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    if (user_id && !query_context->getUser())
+    if (user_id && !query_context->getAccess()->tryGetUser())
         query_context->setUser(*user_id);
 
     /// Query context is ready.
     query_context_created = true;
-    user = query_context->getUser();
+    if (user_id)
+        user = query_context->getUser();
 
     if (!notified_session_log_about_login)
     {

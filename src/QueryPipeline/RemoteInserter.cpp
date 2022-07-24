@@ -78,10 +78,8 @@ RemoteInserter::RemoteInserter(
             /// client's already got this information for remote table. Ignore.
         }
         else
-            throw NetException(
-                ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected Data or Exception, got {})",
-                Protocol::Server::toString(packet.type));
+            throw NetException("Unexpected packet from server (expected Data or Exception, got "
+                + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
 }
 
@@ -133,10 +131,8 @@ void RemoteInserter::onFinish()
             // Do nothing
         }
         else
-            throw NetException(
-                ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected EndOfStream or Exception, got {})",
-                Protocol::Server::toString(packet.type));
+            throw NetException("Unexpected packet from server (expected EndOfStream or Exception, got "
+            + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
     }
 
     finished = true;

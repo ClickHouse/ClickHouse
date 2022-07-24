@@ -1,6 +1,6 @@
 ---
-sidebar_position: 46
-sidebar_label: KILL
+toc_priority: 46
+toc_title: KILL
 ---
 
 # KILL Statements {#kill-statements}

@@ -48,7 +48,6 @@
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
 #include <Backups/BackupFactory.h>
-#include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -69,7 +68,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
-#include <IO/WriteSettings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -87,16 +85,11 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
-#include <Interpreters/TransactionLog.h>
 #include <filesystem>
 
-#if USE_ROCKSDB
-#include <rocksdb/table.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -135,7 +128,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -181,7 +173,6 @@ struct ContextSharedPart
     String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path;                           /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path;                               /// Path to the directory with user provided scripts.
-    String user_defined_path;                               /// Path to the directory with user defined objects.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
@@ -285,13 +276,6 @@ struct ContextSharedPart
 
     Context::ConfigReloadCallback config_reload_callback;
 
-    bool is_server_completely_started = false;
-
-#if USE_ROCKSDB
-    /// Global merge tree metadata cache, stored in rocksdb.
-    MergeTreeMetadataCachePtr merge_tree_metadata_cache;
-#endif
-
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>())
         , global_overcommit_tracker(&process_list)
@@ -354,9 +338,6 @@ struct ContextSharedPart
 
         Session::shutdownNamedSessions();
 
-        /// Waiting for current backups/restores to be finished. This must be done before `DatabaseCatalog::shutdown()`.
-        BackupsWorker::instance().shutdown();
-
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
@@ -373,8 +354,6 @@ struct ContextSharedPart
             moves_executor->wait();
         if (common_executor)
             common_executor->wait();
-
-        TransactionLog::shutdownIfAny();
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
@@ -431,18 +410,9 @@ struct ContextSharedPart
             trace_collector.reset();
             /// Stop zookeeper connection
             zookeeper.reset();
-
-#if USE_ROCKSDB
-            /// Shutdown merge tree metadata cache
-            if (merge_tree_metadata_cache)
-            {
-                merge_tree_metadata_cache->shutdown();
-                merge_tree_metadata_cache.reset();
-            }
-#endif
         }
 
-        /// Can be removed without context lock
+        /// Can be removed w/o context lock
         delete_system_logs.reset();
         delete_embedded_dictionaries.reset();
         delete_external_dictionaries_loader.reset();
@@ -503,8 +473,6 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
 
 void Context::initGlobal()
 {
-    assert(!global_context_instance);
-    global_context_instance = shared_from_this();
     DatabaseCatalog::init(shared_from_this());
 }
 
@@ -587,12 +555,6 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
-String Context::getUserDefinedPath() const
-{
-    auto lock = getLock();
-    return shared->user_defined_path;
-}
-
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -638,9 +600,6 @@ void Context::setPath(const String & path)
 
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
-
-    if (shared->user_defined_path.empty())
-        shared->user_defined_path = shared->path + "user_defined/";
 }
 
 VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
@@ -693,12 +652,6 @@ void Context::setUserScriptsPath(const String & path)
 {
     auto lock = getLock();
     shared->user_scripts_path = path;
-}
-
-void Context::setUserDefinedPath(const String & path)
-{
-    auto lock = getLock();
-    shared->user_defined_path = path;
 }
 
 void Context::addWarningMessage(const String & msg)
@@ -959,10 +912,10 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
-const Block * Context::tryGetSpecialScalar(const String & name) const
+const Block * Context::tryGetLocalScalar(const String & name) const
 {
-    auto it = special_scalars.find(name);
-    if (special_scalars.end() == it)
+    auto it = local_scalars.find(name);
+    if (local_scalars.end() == it)
         return nullptr;
     return &it->second;
 }
@@ -1033,12 +986,12 @@ void Context::addScalar(const String & name, const Block & block)
 }
 
 
-void Context::addSpecialScalar(const String & name, const Block & block)
+void Context::addLocalScalar(const String & name, const Block & block)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have local scalars");
 
-    special_scalars[name] = block;
+    local_scalars[name] = block;
 }
 
 
@@ -1047,7 +1000,7 @@ bool Context::hasScalar(const String & name) const
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
-    return scalars.contains(name);
+    return scalars.count(name);
 }
 
 
@@ -1121,17 +1074,6 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (!res)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-        if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint())
-        {
-            const auto & insertion_table = getInsertionTable();
-            if (!insertion_table.empty())
-            {
-                const auto & structure_hint
-                    = DatabaseCatalog::instance().getTable(insertion_table, shared_from_this())->getInMemoryMetadataPtr()->columns;
-                table_function_ptr->setStructureHint(structure_hint);
-            }
-        }
-
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
 
         /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
@@ -2106,23 +2048,6 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     return zookeeper->second;
 }
 
-#if USE_ROCKSDB
-MergeTreeMetadataCachePtr Context::getMergeTreeMetadataCache() const
-{
-    auto cache = tryGetMergeTreeMetadataCache();
-    if (!cache)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Merge tree metadata cache is not initialized, please add config merge_tree_metadata_cache in config.xml and restart");
-    return cache;
-}
-
-MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
-{
-    return shared->merge_tree_metadata_cache;
-}
-#endif
-
 void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -2366,13 +2291,6 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
-#if USE_ROCKSDB
-void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
-{
-    shared->merge_tree_metadata_cache = MergeTreeMetadataCache::create(dir, size);
-}
-#endif
-
 bool Context::hasTraceCollector() const
 {
     return shared->hasTraceCollector();
@@ -2503,28 +2421,6 @@ std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
 }
 
 
-std::shared_ptr<TransactionsInfoLog> Context::getTransactionsInfoLog() const
-{
-    auto lock = getLock();
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->transactions_info_log;
-}
-
-
-std::shared_ptr<ProcessorsProfileLog> Context::getProcessorsProfileLog() const
-{
-    auto lock = getLock();
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->processors_profile_log;
-}
-
-
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
@@ -2624,7 +2520,7 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 
     if (shared->storage_s3_settings)
     {
-        shared->storage_s3_settings->loadFromConfig("s3", config, getSettingsRef());
+        shared->storage_s3_settings->loadFromConfig("s3", config);
     }
 }
 
@@ -2667,7 +2563,7 @@ const StorageS3Settings & Context::getStorageS3Settings() const
     if (!shared->storage_s3_settings)
     {
         const auto & config = getConfigRef();
-        shared->storage_s3_settings.emplace().loadFromConfig("s3", config, getSettingsRef());
+        shared->storage_s3_settings.emplace().loadFromConfig("s3", config);
     }
 
     return *shared->storage_s3_settings;
@@ -3117,56 +3013,6 @@ void Context::resetZooKeeperMetadataTransaction()
     metadata_transaction = nullptr;
 }
 
-
-void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */) const
-{
-    if (getConfigRef().getInt("allow_experimental_transactions", 0))
-        return;
-
-    if (explicit_tcl_query)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Experimental support for transactions is disabled, "
-                    "however, some query or background task tried to access TransactionLog. "
-                    "If you have not enabled this feature explicitly, then it's a bug.");
-}
-
-void Context::initCurrentTransaction(MergeTreeTransactionPtr txn)
-{
-    merge_tree_transaction_holder = MergeTreeTransactionHolder(txn, false, this);
-    setCurrentTransaction(std::move(txn));
-}
-
-void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
-{
-    assert(!merge_tree_transaction || !txn);
-    assert(this == session_context.lock().get() || this == query_context.lock().get());
-    merge_tree_transaction = std::move(txn);
-    if (!merge_tree_transaction)
-        merge_tree_transaction_holder = {};
-}
-
-MergeTreeTransactionPtr Context::getCurrentTransaction() const
-{
-    return merge_tree_transaction;
-}
-
-bool Context::isServerCompletelyStarted() const
-{
-    auto lock = getLock();
-    assert(getApplicationType() == ApplicationType::SERVER);
-    return shared->is_server_completely_started;
-}
-
-void Context::setServerCompletelyStarted()
-{
-    auto lock = getLock();
-    assert(global_context.lock().get() == this);
-    assert(!shared->is_server_completely_started);
-    assert(getApplicationType() == ApplicationType::SERVER);
-    shared->is_server_completely_started = true;
-}
-
 PartUUIDsPtr Context::getPartUUIDs() const
 {
     auto lock = getLock();
@@ -3332,9 +3178,8 @@ ReadSettings Context::getReadSettings() const
 
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
-    res.enable_filesystem_cache = settings.enable_filesystem_cache;
-    res.filesystem_cache_max_wait_sec = settings.filesystem_cache_max_wait_sec;
-    res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    res.remote_fs_enable_cache = settings.remote_fs_enable_cache;
+    res.remote_fs_cache_max_wait_sec = settings.remote_fs_cache_max_wait_sec;
 
     res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
@@ -3349,15 +3194,6 @@ ReadSettings Context::getReadSettings() const
     res.http_skip_not_found_url_for_globs = settings.http_skip_not_found_url_for_globs;
 
     res.mmap_cache = getMMappedFileCache().get();
-
-    return res;
-}
-
-WriteSettings Context::getWriteSettings() const
-{
-    WriteSettings res;
-
-    res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
 
     return res;
 }

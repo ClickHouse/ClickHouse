@@ -69,9 +69,9 @@ public:
         ColumnsDescriptionByShardNum objects_by_shard;
     };
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot) const override;
     StorageSnapshotPtr getStorageSnapshotForQuery(
-        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const override;
+        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query) const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -202,7 +202,7 @@ private:
     /// - WithMergeableStateAfterAggregationAndLimit
     /// - Complete
     ///
-    /// Some simple queries without GROUP BY/DISTINCT can use more optimal stage.
+    /// Some simple queries w/o GROUP BY/DISTINCT can use more optimal stage.
     ///
     /// Also in case of optimize_distributed_group_by_sharding_key=1 the queries
     /// with GROUP BY/DISTINCT sharding_key can also use more optimal stage.

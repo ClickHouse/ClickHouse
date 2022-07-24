@@ -101,10 +101,10 @@ struct SummingSortedAlgorithm::AggregateDescription
 };
 
 
-static bool isInPrimaryKey(const SortDescription & description, const std::string & name)
+static bool isInPrimaryKey(const SortDescription & description, const std::string & name, const size_t number)
 {
     for (const auto & desc : description)
-        if (desc.column_name == name)
+        if (desc.column_name == name || (desc.column_name.empty() && desc.column_number == number))
             return true;
 
     return false;
@@ -251,7 +251,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             }
 
             /// Are they inside the primary key or partition key?
-            if (isInPrimaryKey(description, column.name) || isInPartitionKey(column.name, partition_key_columns))
+            if (isInPrimaryKey(description, column.name, i) ||  isInPartitionKey(column.name, partition_key_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -307,7 +307,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// no elements of map could be in primary key
         auto column_num_it = map.second.begin();
         for (; column_num_it != map.second.end(); ++column_num_it)
-            if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name))
+            if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name, *column_num_it))
                 break;
         if (column_num_it != map.second.end())
         {
@@ -687,15 +687,14 @@ Chunk SummingSortedAlgorithm::SummingMergedData::pull()
 
 
 SummingSortedAlgorithm::SummingSortedAlgorithm(
-    const Block & header_,
-    size_t num_inputs,
+    const Block & header, size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
     const Names & partition_key_columns,
     size_t max_block_size)
-    : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header_, description, column_names_to_sum, partition_key_columns))
-    , merged_data(getMergedDataColumns(header_, columns_definition), max_block_size, columns_definition)
+    : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
+    , columns_definition(defineColumns(header, description, column_names_to_sum, partition_key_columns))
+    , merged_data(getMergedDataColumns(header, columns_definition), max_block_size, columns_definition)
 {
 }
 

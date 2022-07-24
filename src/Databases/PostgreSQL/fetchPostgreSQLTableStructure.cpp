@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
@@ -39,9 +38,10 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     std::set<std::string> tables;
     if (schemas.size() <= 1)
     {
-        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                        "WHERE schemaname != 'pg_catalog' AND {}",
-                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
+        std::string query = fmt::format(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
+            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
+
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(std::get<0>(table_name));
 
@@ -53,9 +53,10 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     /// If we add schema to table name then table can be accessed only this way: database_name.`schema_name.table_name`
     for (const auto & schema : schemas)
     {
-        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                        "WHERE schemaname != 'pg_catalog' AND {}",
-                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(schema));
+        std::string query = fmt::format(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
+            quoteString(schema));
+
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(schema + '.' + std::get<0>(table_name));
     }
@@ -98,8 +99,6 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
         res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
         res = std::make_shared<DataTypeDate>();
-    else if (type == "uuid")
-        res = std::make_shared<DataTypeUUID>();
     else if (type.starts_with("numeric"))
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,

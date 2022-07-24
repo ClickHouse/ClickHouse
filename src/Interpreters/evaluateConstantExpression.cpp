@@ -376,7 +376,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
                         Field prev_value = assert_cast<const ColumnConst &>(*prev.column).getField();
                         Field curr_value = assert_cast<const ColumnConst &>(*elem.column).getField();
 
-                        if (!always_false_map.contains(elem.name))
+                        if (!always_false_map.count(elem.name))
                         {
                             always_false_map[elem.name] = prev_value != curr_value;
                         }

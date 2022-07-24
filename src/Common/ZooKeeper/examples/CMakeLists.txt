@@ -7,5 +7,8 @@ target_link_libraries(zkutil_test_commands_new_lib PRIVATE clickhouse_common_zoo
 add_executable(zkutil_test_async zkutil_test_async.cpp)
 target_link_libraries(zkutil_test_async PRIVATE clickhouse_common_zookeeper_no_log)
 
+add_executable (zk_many_watches_reconnect zk_many_watches_reconnect.cpp)
+target_link_libraries (zk_many_watches_reconnect PRIVATE clickhouse_common_zookeeper_no_log clickhouse_common_config)
+
 add_executable (zookeeper_impl zookeeper_impl.cpp)
 target_link_libraries (zookeeper_impl PRIVATE clickhouse_common_zookeeper_no_log)

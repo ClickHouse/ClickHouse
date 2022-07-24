@@ -8,7 +8,6 @@
 #include <Poco/Redis/Command.h>
 #include <Poco/Redis/Type.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Interpreters/Context.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -41,20 +40,15 @@ namespace DB
                                     const Poco::Util::AbstractConfiguration & config,
                                     const String & config_prefix,
                                     Block & sample_block,
-                                    ContextPtr global_context,
+                                    ContextPtr /* global_context */,
                                     const std::string & /* default_database */,
                                     bool /* created_from_ddl */) -> DictionarySourcePtr {
 
             auto redis_config_prefix = config_prefix + ".redis";
-
-            auto host = config.getString(redis_config_prefix + ".host");
-            auto port = config.getUInt(redis_config_prefix + ".port");
-            global_context->getRemoteHostFilter().checkHostAndPort(host, toString(port));
-
             RedisDictionarySource::Configuration configuration =
             {
-                .host = host,
-                .port = static_cast<UInt16>(port),
+                .host = config.getString(redis_config_prefix + ".host"),
+                .port = static_cast<UInt16>(config.getUInt(redis_config_prefix + ".port")),
                 .db_index = config.getUInt(redis_config_prefix + ".db_index", 0),
                 .password = config.getString(redis_config_prefix + ".password", ""),
                 .storage_type = parseStorageType(config.getString(redis_config_prefix + ".storage_type", "")),

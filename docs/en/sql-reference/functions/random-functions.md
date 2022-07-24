@@ -1,15 +1,14 @@
 ---
-sidebar_position: 51
-sidebar_label: Pseudo-Random Numbers
+toc_priority: 51
+toc_title: Pseudo-Random Numbers
 ---
 
 # Functions for Generating Pseudo-Random Numbers {#functions-for-generating-pseudo-random-numbers}
 
 All the functions accept zero arguments or one argument. If an argument is passed, it can be any type, and its value is not used for anything. The only purpose of this argument is to prevent common subexpression elimination, so that two different instances of the same function return different columns with different random numbers.
 
-:::note    
-Non-cryptographic generators of pseudo-random numbers are used.
-:::
+!!! note "Note"
+    Non-cryptographic generators of pseudo-random numbers are used.
 
 ## rand, rand32 {#rand}
 

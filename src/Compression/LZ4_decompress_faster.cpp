@@ -628,12 +628,12 @@ void StreamStatistics::print() const
 {
     std::cerr
         << "Num tokens: " << num_tokens
-        << ", Avg literal length: " << static_cast<double>(sum_literal_lengths) / num_tokens
-        << ", Avg match length: " << static_cast<double>(sum_match_lengths) / num_tokens
-        << ", Avg match offset: " << static_cast<double>(sum_match_offsets) / num_tokens
-        << ", Offset < 8 ratio: " << static_cast<double>(count_match_offset_less_8) / num_tokens
-        << ", Offset < 16 ratio: " << static_cast<double>(count_match_offset_less_16) / num_tokens
-        << ", Match replicate itself: " << static_cast<double>(count_match_replicate_itself) / num_tokens
+        << ", Avg literal length: " << double(sum_literal_lengths) / num_tokens
+        << ", Avg match length: " << double(sum_match_lengths) / num_tokens
+        << ", Avg match offset: " << double(sum_match_offsets) / num_tokens
+        << ", Offset < 8 ratio: " << double(count_match_offset_less_8) / num_tokens
+        << ", Offset < 16 ratio: " << double(count_match_offset_less_16) / num_tokens
+        << ", Match replicate itself: " << double(count_match_replicate_itself) / num_tokens
         << "\n";
 }
 

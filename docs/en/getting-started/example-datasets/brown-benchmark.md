@@ -1,6 +1,6 @@
 ---
-sidebar_label: Brown University Benchmark
-description: A new analytical benchmark for machine-generated log data
+toc_priority: 20
+toc_title: Brown University Benchmark
 ---
 
 # Brown University Benchmark

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 90
-sidebar_label:  GraphiteMergeTree
+toc_priority: 38
+toc_title: GraphiteMergeTree
 ---
 
 # GraphiteMergeTree {#graphitemergetree}
@@ -54,9 +54,8 @@ When creating a `GraphiteMergeTree` table, the same [clauses](../../../engines/t
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning    
-Do not use this method in new projects and, if possible, switch old projects to the method described above.
-:::
+!!! attention "Attention"
+    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -120,13 +119,12 @@ default
     ...
 ```
 
-:::warning    
-Patterns must be strictly ordered:
+!!! warning "Attention"
+    Patterns must be strictly ordered:
 
-1. Patterns without `function` or `retention`.
-1. Patterns with both `function` and `retention`.
-1. Pattern `default`.
-:::
+      1. Patterns without `function` or `retention`.
+      1. Patterns with both `function` and `retention`.
+      1. Pattern `default`.
 
 When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections can contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
@@ -255,6 +253,7 @@ Valid values:
 ```
 
 
-:::warning
-Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
-:::
+!!! warning "Warning"
+    Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
+
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 48
-sidebar_label: DateTime
+toc_priority: 48
+toc_title: DateTime
 ---
 
 # Datetime {#data_type-datetime}

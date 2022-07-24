@@ -1,5 +1,5 @@
 ---
-sidebar_position: 207
+toc_priority: 207
 ---
 
 # quantileTDigest {#quantiletdigest}

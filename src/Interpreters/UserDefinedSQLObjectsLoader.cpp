@@ -88,7 +88,7 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 
     LOG_DEBUG(log, "loading user defined objects");
 
-    String dir_path = context->getUserDefinedPath();
+    String dir_path = context->getPath() + "user_defined/";
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
     {
@@ -116,7 +116,7 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
     if (unlikely(!enable_persistence))
         return;
 
-    String dir_path = context->getUserDefinedPath();
+    String dir_path = context->getPath() + "user_defined/";
     String file_path;
 
     switch (object_type)
@@ -152,7 +152,7 @@ void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQ
     if (unlikely(!enable_persistence))
         return;
 
-    String dir_path = context->getUserDefinedPath();
+    String dir_path = context->getPath() + "user_defined/";
     LOG_DEBUG(log, "Removing file for user defined object {} from {}", backQuote(object_name), dir_path);
 
     std::filesystem::path file_path;

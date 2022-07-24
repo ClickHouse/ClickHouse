@@ -20,7 +20,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledQuota.h>
 #include <Formats/FormatFactory.h>
 #include <base/logger_useful.h>
 
@@ -33,7 +32,6 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event AsyncInsertQuery;
-    extern const Event AsyncInsertBytes;
 }
 
 namespace DB
@@ -198,9 +196,6 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         copyData(*read_buf, write_buf);
     }
 
-    if (auto quota = query_context->getQuota())
-        quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
-
     auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
     InsertQuery key{query, settings};
 
@@ -227,9 +222,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
     if (!data)
         data = std::make_unique<InsertData>();
 
-    size_t entry_data_size = entry->bytes.size();
-
-    data->size += entry_data_size;
+    data->size += entry->bytes.size();
     data->last_update = std::chrono::steady_clock::now();
     data->entries.emplace_back(entry);
 
@@ -246,7 +239,6 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
 
     CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
     ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
-    ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)

@@ -230,11 +230,8 @@ void ColumnsDescription::remove(const String & column_name)
 {
     auto range = getNameRange(columns, column_name);
     if (range.first == range.second)
-    {
-        String exception_message = fmt::format("There is no column {} in table", column_name);
-        appendHintsMessage(exception_message, column_name);
-        throw Exception(exception_message, ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-    }
+        throw Exception("There is no column " + column_name + " in table.",
+            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
     for (auto list_it = range.first; list_it != range.second;)
     {
@@ -247,11 +244,7 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
 {
     auto it = columns.get<1>().find(column_from);
     if (it == columns.get<1>().end())
-    {
-        String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_from);
-        appendHintsMessage(exception_message, column_from);
-        throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception("Cannot find column " + column_from + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
 
     columns.get<1>().modify_key(it, [&column_to] (String & old_name)
     {
@@ -750,18 +743,6 @@ void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
     auto range = subcolumns.get<1>().equal_range(name_in_storage);
     if (range.first != range.second)
         subcolumns.get<1>().erase(range.first, range.second);
-}
-
-std::vector<String> ColumnsDescription::getAllRegisteredNames() const
-{
-    std::vector<String> names;
-    names.reserve(columns.size());
-    for (const auto & column : columns)
-    {
-        if (column.name.find('.') == std::string::npos)
-            names.push_back(column.name);
-    }
-    return names;
 }
 
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)

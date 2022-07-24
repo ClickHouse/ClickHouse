@@ -15,17 +15,6 @@ shopt -s extglob
 
 export _CLICKHOUSE_COMPLETION_LOADED=1
 
-CLICKHOUSE_logs_level=(
-    none
-    fatal
-    error
-    warning
-    information
-    debug
-    trace
-    test
-)
-
 CLICKHOUSE_QueryProcessingStage=(
     complete
     fetch_columns
@@ -122,10 +111,6 @@ function _complete_for_clickhouse_generic_bin_impl()
             ;;
         --stage)
             COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryProcessingStage[*]}" -- "$cur") )
-            return 1
-            ;;
-        --send_logs_level)
-            COMPREPLY=( $(compgen -W "${CLICKHOUSE_logs_level[*]}" -- "$cur") )
             return 1
             ;;
         --format|--input-format|--output-format)

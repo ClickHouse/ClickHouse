@@ -84,6 +84,16 @@ def rbac_roles(*roles, node=None):
                     node.query(f"DROP ROLE IF EXISTS {role}")
 
 
+def verify_ldap_user_exists(server, username, password):
+    """Check that LDAP user is defined on the LDAP server."""
+    with By("searching LDAP database"):
+        ldap_node = current().context.cluster.node(server)
+        r = ldap_node.command(
+            f"ldapwhoami -H ldap://localhost -D 'cn={user_name},ou=users,dc=company,dc=com' -w {password}"
+        )
+        assert r.exitcode == 0, error()
+
+
 def create_ldap_external_user_directory_config_content(
     server=None, roles=None, **kwargs
 ):

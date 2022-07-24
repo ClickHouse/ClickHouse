@@ -61,8 +61,6 @@ set the following environment variables:
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
 * `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and`users.xml`) are taken.
 
-Please note that if you use separate build (`ENABLE_CLICKHOUSE_ALL=OFF`), you need to build different components, including but not limited to `ENABLE_CLICKHOUSE_LIBRARY_BRIDGE=ON ENABLE_CLICKHOUSE_ODBC_BRIDGE=ON ENABLE_CLICKHOUSE_KEEPER=ON`. So it is easier to use `ENABLE_CLICKHOUSE_ALL=ON`
-
 For tests that use common docker compose files you may need to set up their path with environment variable: `DOCKER_COMPOSE_DIR=$HOME/ClickHouse/docker/test/integration/runner/compose`
 
 ### Running with runner script
@@ -121,9 +119,9 @@ You can just open shell inside a container by overwritting the command:
 
 ### Rebuilding the docker containers
 
-The main container used for integration tests lives in `docker/test/integration/base/Dockerfile`. Rebuild it with
+The main container used for integration tests lives in `docker/test/integration/Dockerfile`. Rebuild it with
 ```
-cd docker/test/integration/base
+cd docker/test/integration
 docker build -t clickhouse/integration-test .
 ```
 

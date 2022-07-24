@@ -96,7 +96,7 @@ public:
 
     /// Get processors from Pipe. Use it with cautious, it is easy to loss totals and extremes ports.
     static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
-    /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
+    /// Get processors from Pipe w/o destroying pipe (used for EXPLAIN to keep QueryPlan).
     const Processors & getProcessors() const { return processors; }
 
     /// Specify quotas and limits for every ISourceWithProgress.
@@ -141,6 +141,7 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
+    void setOutputFormat(ProcessorPtr output);
 
     friend class QueryPipelineBuilder;
     friend class QueryPipeline;

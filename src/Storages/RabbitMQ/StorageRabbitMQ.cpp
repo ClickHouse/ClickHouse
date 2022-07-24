@@ -90,8 +90,6 @@ StorageRabbitMQ::StorageRabbitMQ(
         , is_attach(is_attach_)
 {
     auto parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
-    context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
-
     auto rabbitmq_username = rabbitmq_settings->rabbitmq_username.value;
     auto rabbitmq_password = rabbitmq_settings->rabbitmq_password.value;
     configuration =
@@ -550,16 +548,6 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported queue setting: {}", value);
         }
-    }
-
-    /// Impose default settings if there are no user-defined settings.
-    if (!queue_settings.contains("x-max-length"))
-    {
-        queue_settings["x-max-length"] = queue_size;
-    }
-    if (!queue_settings.contains("x-overflow"))
-    {
-        queue_settings["x-overflow"] = "reject-publish";
     }
 
     /// If queue_base - a single name, then it can be used as one specific queue, from which to read.
@@ -1026,7 +1014,7 @@ bool StorageRabbitMQ::streamToViews()
     InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 

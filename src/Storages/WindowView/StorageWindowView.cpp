@@ -57,7 +57,6 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
-    extern const int SYNTAX_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
@@ -263,13 +262,7 @@ namespace
 
     IntervalKind strToIntervalKind(const String& interval_str)
     {
-        if (interval_str == "Nanosecond")
-            return IntervalKind::Nanosecond;
-        else if (interval_str == "Microsecond")
-            return IntervalKind::Microsecond;
-        else if (interval_str == "Millisecond")
-            return IntervalKind::Millisecond;
-        else if (interval_str == "Second")
+        if (interval_str == "Second")
             return IntervalKind::Second;
         else if (interval_str == "Minute")
             return IntervalKind::Minute;
@@ -314,12 +307,6 @@ namespace
     {
         switch (kind)
         {
-            case IntervalKind::Nanosecond:
-                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
-            case IntervalKind::Microsecond:
-                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
-            case IntervalKind::Millisecond:
-                throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: { \
         return AddTime<IntervalKind::KIND>::execute(time_sec, num_units, time_zone); \
@@ -467,7 +454,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     InterpreterSelectQuery fetch(
         getFetchColumnQuery(w_start, watermark),
-        getContext(),
+        window_view_context,
         getInnerStorage(),
         nullptr,
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
@@ -509,11 +496,11 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::WithMergeableState);
     };
 
-    TemporaryTableHolder blocks_storage(getContext(), creator);
+    TemporaryTableHolder blocks_storage(window_view_context, creator);
 
     InterpreterSelectQuery select(
         getFinalQuery(),
-        getContext(),
+        window_view_context,
         blocks_storage.getTable(),
         blocks_storage.getTable()->getInMemoryMetadataPtr(),
         SelectQueryOptions(QueryProcessingStage::Complete));
@@ -617,8 +604,8 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
 
     auto t_sample_block
         = InterpreterSelectQuery(
-              inner_select_query, getContext(), getParentStorage(), nullptr, SelectQueryOptions(QueryProcessingStage::WithMergeableState))
-              .getSampleBlock();
+            inner_select_query, window_view_context, getParentStorage(), nullptr,
+            SelectQueryOptions(QueryProcessingStage::WithMergeableState)) .getSampleBlock();
 
     auto columns_list = std::make_shared<ASTExpressionList>();
 
@@ -751,12 +738,6 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
 
     switch (window_interval_kind)
     {
-        case IntervalKind::Nanosecond:
-            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
-        case IntervalKind::Microsecond:
-            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
-        case IntervalKind::Millisecond:
-            throw Exception("Fractional seconds are not supported by windows yet", ErrorCodes::SYNTAX_ERROR);
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \
@@ -792,13 +773,6 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 
     switch (window_interval_kind)
     {
-        case IntervalKind::Nanosecond:
-            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
-        case IntervalKind::Microsecond:
-            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
-        case IntervalKind::Millisecond:
-            throw Exception("Fractional seconds are not supported by window view yet", ErrorCodes::SYNTAX_ERROR);
-
 #define CASE_WINDOW_KIND(KIND) \
     case IntervalKind::KIND: \
     { \
@@ -891,7 +865,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 
 inline void StorageWindowView::cleanup()
 {
-    InterpreterAlterQuery alter_query(getCleanupQuery(), getContext());
+    InterpreterAlterQuery alter_query(getCleanupQuery(), window_view_context);
     alter_query.execute();
 
     std::lock_guard lock(fire_signal_mutex);
@@ -915,38 +889,26 @@ void StorageWindowView::threadFuncCleanup()
 
 void StorageWindowView::threadFuncFireProc()
 {
-    static bool window_kind_larger_than_day = window_kind == IntervalKind::Week || window_kind == IntervalKind::Month
-        || window_kind == IntervalKind::Quarter || window_kind == IntervalKind::Year;
-
     std::unique_lock lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
-    /// When window kind is larger than day, getWindowUpperBound() will get a day num instead of timestamp,
-    /// and addTime will also add day num to the next_fire_signal, so we need to convert it into timestamp.
-    /// Otherwise, we will get wrong result and after create window view with window kind larger than day,
-    /// since day num is too smaller than current timestamp, it will fire a lot.
-    auto exact_fire_signal = window_kind_larger_than_day ? next_fire_signal * 86400 : next_fire_signal;
-
-    while (exact_fire_signal <= timestamp_now)
+    while (next_fire_signal <= timestamp_now)
     {
         try
         {
-            fire(exact_fire_signal);
+            fire(next_fire_signal);
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        max_fired_watermark = exact_fire_signal;
+        max_fired_watermark = next_fire_signal;
         next_fire_signal = addTime(next_fire_signal, window_kind, window_num_units, *time_zone);
-        exact_fire_signal = window_kind_larger_than_day ? next_fire_signal * 86400 : next_fire_signal;
     }
 
     UInt64 timestamp_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000;
     if (!shutdown_called)
-        fire_task->scheduleAfter(std::max(
-            UInt64(0),
-            static_cast<UInt64>(window_kind_larger_than_day ? next_fire_signal * 86400 : next_fire_signal) * 1000 - timestamp_ms));
+        fire_task->scheduleAfter(std::max(UInt64(0), static_cast<UInt64>(next_fire_signal) * 1000 - timestamp_ms));
 }
 
 void StorageWindowView::threadFuncFireEvent()
@@ -1011,6 +973,9 @@ StorageWindowView::StorageWindowView(
     , WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get(fmt::format("StorageWindowView({}.{})", table_id_.database_name, table_id_.table_name)))
 {
+    window_view_context = Context::createCopy(getContext());
+    window_view_context->makeQueryContext();
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
@@ -1098,11 +1063,11 @@ StorageWindowView::StorageWindowView(
     clean_interval_ms = getContext()->getSettingsRef().window_view_clean_interval.totalMilliseconds();
     next_fire_signal = getWindowUpperBound(std::time(nullptr));
 
-    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    clean_cache_task = window_view_context->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     if (is_proctime)
-        fire_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireProc(); });
+        fire_task = window_view_context->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireProc(); });
     else
-        fire_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireEvent(); });
+        fire_task = window_view_context->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
 }
@@ -1433,10 +1398,9 @@ Block & StorageWindowView::getHeader() const
     std::lock_guard lock(sample_block_lock);
     if (!sample_block)
     {
-        sample_block
-            = InterpreterSelectQuery(
-                  select_query->clone(), getContext(), getParentStorage(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete))
-                  .getSampleBlock();
+        sample_block = InterpreterSelectQuery(
+            select_query->clone(), window_view_context, getParentStorage(), nullptr,
+            SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
         /// convert all columns to full columns
         /// in case some of them are constant
         for (size_t i = 0; i < sample_block.columns(); ++i)

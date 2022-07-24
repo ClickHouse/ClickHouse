@@ -26,7 +26,6 @@ public:
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
     {
         auto target_table = getTargetTable();
@@ -97,10 +96,6 @@ public:
         unsigned num_streams) override;
 
     Strings getDataPaths() const override;
-
-    bool hasDataToBackup() const override { return hasInnerTable(); }
-    BackupEntries backupData(ContextPtr context_, const ASTs & partitions_) override;
-    RestoreTaskPtr restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_) override;
 
 private:
     /// Will be initialized in constructor

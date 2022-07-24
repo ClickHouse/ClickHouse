@@ -68,8 +68,6 @@ public:
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
-    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
-
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
@@ -81,8 +79,7 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
+        WriteMode mode) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;

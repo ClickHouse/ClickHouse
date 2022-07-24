@@ -1,6 +1,6 @@
 ---
-sidebar_position: 35
-sidebar_label: Arrays
+toc_priority: 35
+toc_title: Arrays
 ---
 
 # Array Functions {#functions-for-working-with-arrays}
@@ -17,9 +17,8 @@ empty([x])
 
 An array is considered empty if it does not contain any elements.
 
-:::note    
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
-:::
+!!! note "Note"
+    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 
 The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
 
@@ -61,9 +60,8 @@ notEmpty([x])
 
 An array is considered non-empty if it contains at least one element.
 
-:::note    
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
-:::
+!!! note "Note"
+    Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](../../sql-reference/data-types/array.md#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 
 The function also works for [strings](string-functions.md#notempty) or [UUID](uuid-functions.md#notempty).
 
@@ -735,9 +733,8 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 └─────────┘
 ```
 
-:::note    
-To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
-:::
+!!! note "Note"
+    To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 
 ## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 

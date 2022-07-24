@@ -32,7 +32,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
@@ -294,7 +293,7 @@ struct ExistsExpressionData
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_expr_list);
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
 
-        ASTPtr limit_length_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
+        ASTPtr limit_length_ast = std::make_shared<ASTLiteral>(Field(UInt64(1)));
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length_ast));
 
         auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
@@ -346,10 +345,7 @@ void replaceWithSumCount(String column_name, ASTFunction & func)
     {
         /// Rewrite "avg" to sumCount().1 / sumCount().2
         auto new_arg1 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(1)));
-        auto new_arg2 = makeASTFunction("CAST",
-            makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(static_cast<UInt8>(2))),
-            std::make_shared<ASTLiteral>("Float64"));
-
+        auto new_arg2 = makeASTFunction("tupleElement", func_base, std::make_shared<ASTLiteral>(UInt8(2)));
         func.name = "divide";
         exp_list->children.push_back(new_arg1);
         exp_list->children.push_back(new_arg2);
@@ -421,8 +417,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 /// Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are impossible.
-/// Also remove all INTERPOLATE columns which are not in SELECT anymore.
-void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
+void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
     ASTs & elements = select_query->select()->children;
 
@@ -451,8 +446,6 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     ASTs new_elements;
     new_elements.reserve(elements.size());
 
-    NameSet remove_columns;
-
     for (const auto & elem : elements)
     {
         String name = elem->getAliasOrColumnName();
@@ -469,8 +462,6 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         }
         else
         {
-            remove_columns.insert(name);
-
             ASTFunction * func = elem->as<ASTFunction>();
 
             /// Never remove untuple. It's result column may be in required columns.
@@ -481,24 +472,6 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
             if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
                 new_elements.push_back(elem);
-        }
-    }
-
-    if (select_query->interpolate())
-    {
-        auto & children = select_query->interpolate()->children;
-        if (!children.empty())
-        {
-            for (auto it = children.begin(); it != children.end();)
-            {
-                if (remove_columns.contains((*it)->as<ASTInterpolateElement>()->column))
-                    it = select_query->interpolate()->children.erase(it);
-                else
-                    ++it;
-            }
-
-            if (children.empty())
-                select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, nullptr);
         }
     }
 
@@ -536,7 +509,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
         String result_name = expr->getAliasOrColumnName();
 
         /// This is an array.
-        if (!expr->as<ASTIdentifier>() || source_columns_set.contains(source_name))
+        if (!expr->as<ASTIdentifier>() || source_columns_set.count(source_name))
         {
             result.array_join_result_to_source[result_name] = source_name;
         }
@@ -917,10 +890,10 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
         {
             const auto & name = joined_column.name;
-            if (available_columns.contains(name))
+            if (available_columns.count(name))
                 continue;
 
-            if (required.contains(name))
+            if (required.count(name))
             {
                 /// Optimisation: do not add columns needed only in JOIN ON section.
                 if (columns_context.nameInclusion(name) > analyzed_join->rightKeyInclusion(name))
@@ -939,7 +912,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             array_join_sources.insert(result_source.second);
 
         for (const auto & column_name_type : source_columns)
-            if (array_join_sources.contains(column_name_type.name))
+            if (array_join_sources.count(column_name_type.name))
                 required.insert(column_name_type.name);
     }
 
@@ -1016,7 +989,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         const String & column_name = it->name;
         unknown_required_source_columns.erase(column_name);
 
-        if (!required.contains(column_name))
+        if (!required.count(column_name))
             it = source_columns.erase(it);
         else
             ++it;

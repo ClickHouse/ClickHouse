@@ -33,7 +33,7 @@ static void checkInput(const InputPort & input, const ProcessorPtr & processor)
     if (!input.isConnected())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create QueryPipeline because {} has disconnected input",
+            "Cannot create QueryPipeline because {} has not connected input",
             processor->getName());
 }
 
@@ -42,7 +42,7 @@ static void checkOutput(const OutputPort & output, const ProcessorPtr & processo
     if (!output.isConnected())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot create QueryPipeline because {} has disconnected output",
+            "Cannot create QueryPipeline because {} has not connected output",
             processor->getName());
 }
 
@@ -348,7 +348,7 @@ QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipelin
 void QueryPipeline::complete(std::shared_ptr<ISink> sink)
 {
     if (!pulling())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with sink");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with chain");
 
     drop(totals, processors);
     drop(extremes, processors);

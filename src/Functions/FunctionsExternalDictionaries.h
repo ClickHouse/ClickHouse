@@ -195,7 +195,7 @@ public:
           *  that is the initiator of a distributed query,
           *  in the case when the function will be invoked for real data only at the remote servers.
           * This feature is controversial and implemented specially
-          *  for backward compatibility with the case in the Banner System application.
+          *  for backward compatibility with the case in Yandex Banner System.
           */
         if (input_rows_count == 0)
             return result_type->createColumn();

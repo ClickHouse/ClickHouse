@@ -6,7 +6,6 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
@@ -572,8 +571,8 @@ void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(*buf);
 }
 
-ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_), buf(in_), format_settings(format_settings_)
+ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ContextPtr context_)
+    : IRowSchemaReader(buf, format_settings_.max_rows_to_read_for_schema_inference), buf(in_), context(context_)
 {
 }
 
@@ -590,24 +589,37 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
         return {};
 
     assertChar('(', buf);
-    skipWhitespaceIfAny(buf);
+    PeekableReadBufferCheckpoint checkpoint(buf);
+    skipToNextRow(&buf, 0, 1);
+    buf.makeContinuousMemoryFromCheckpointToPos();
+    buf.rollbackToCheckpoint();
+
+    Tokens tokens(buf.position(), buf.buffer().end());
+    IParser::Pos token_iterator(tokens, context->getSettingsRef().max_parser_depth);
+
     DataTypes data_types;
-    String value;
-    while (!buf.eof() && *buf.position() != ')')
+    bool finish = false;
+    while (!finish)
     {
-        if (!data_types.empty())
-        {
-            skipWhitespaceIfAny(buf);
-            assertChar(',', buf);
-            skipWhitespaceIfAny(buf);
-        }
+        Expected expected;
+        ASTPtr ast;
 
-        readQuotedFieldIntoString(value, buf);
-        auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
-        data_types.push_back(std::move(type));
+        bool parsed = parser.parse(token_iterator, ast, expected);
+        /// Consider delimiter after value (',' or ')') as part of expression
+        parsed &= token_iterator->type == TokenType::Comma || token_iterator->type == TokenType::ClosingRoundBracket;
+
+        if (!parsed)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse expression here: {}, token: {}",
+                            String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position())), String(token_iterator.get().begin, token_iterator.get().end));
+
+        std::pair<Field, DataTypePtr> result = evaluateConstantExpression(ast, context);
+        data_types.push_back(generalizeDataType(result.second));
+
+        if (token_iterator->type == TokenType::ClosingRoundBracket)
+            finish = true;
+        ++token_iterator;
+        buf.position() = const_cast<char *>(token_iterator->begin);
     }
-
-    assertChar(')', buf);
 
     skipWhitespaceIfAny(buf);
     if (!buf.eof() && *buf.position() == ',')
@@ -630,9 +642,9 @@ void registerInputFormatValues(FormatFactory & factory)
 
 void registerValuesSchemaReader(FormatFactory & factory)
 {
-    factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)
+    factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
     {
-        return std::make_shared<ValuesSchemaReader>(buf, settings);
+        return std::make_shared<ValuesSchemaReader>(buf, settings, context);
     });
 }
 

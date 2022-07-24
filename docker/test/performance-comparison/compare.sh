@@ -211,8 +211,13 @@ function run_tests
     if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
         # filter tests array in bash https://stackoverflow.com/a/40375567
         for index in "${!test_files[@]}"; do
-            [ $(( index % CHPC_TEST_RUN_BY_HASH_TOTAL )) != "$CHPC_TEST_RUN_BY_HASH_NUM" ] && \
+            # sorry for this, just calculating hash(test_name) % total_tests_group == my_test_group_num
+            test_hash_result=$(echo test_files[$index] | perl -ne 'use Digest::MD5 qw(md5); print unpack('Q', md5($_)) % $ENV{CHPC_TEST_RUN_BY_HASH_TOTAL} == $ENV{CHPC_TEST_RUN_BY_HASH_NUM};')
+            # BTW, for some reason when hash(test_name) % total_tests_group != my_test_group_num perl outputs nothing, not zero
+            if [ "$test_hash_result" != "1" ]; then
+                # deleting element from array
                 unset -v 'test_files[$index]'
+            fi
         done
         # to have sequential indexes...
         test_files=("${test_files[@]}")
@@ -357,12 +362,27 @@ function get_profiles
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
 }
 
+function build_log_column_definitions
+{
+# FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
+# absolutely atrocious way. This should be done by the file() function itself.
+for x in {right,left}-{addresses,{query,query-thread,trace,{async-,}metric}-log}.tsv
+do
+    paste -d' ' \
+        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
+        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
+        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
+done
+}
+
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
 rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
 rm -rf analyze ||:
 mkdir analyze analyze/tmp ||:
+
+build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
 # To debug calculations only for a particular test, substitute a suitable
@@ -376,6 +396,7 @@ do
     sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
+    sed -n "s/^short\t/$test_name\t/p" < "$test_file" >> "analyze/marked-short-queries.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
 done
 
@@ -401,10 +422,12 @@ create table partial_query_times engine File(TSVWithNamesAndTypes,
 
 -- Process queries that were run normally, on both servers.
 create view left_query_log as select *
-    from file('left-query-log.tsv', TSVWithNamesAndTypes);
+    from file('left-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "left-query-log.tsv.columns")');
 
 create view right_query_log as select *
-    from file('right-query-log.tsv', TSVWithNamesAndTypes);
+    from file('right-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "right-query-log.tsv.columns")');
 
 create view query_logs as
     select 0 version, query_id, ProfileEvents,
@@ -622,6 +645,8 @@ mkdir report report/tmp ||:
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv run-errors.tsv ||:
 
+build_log_column_definitions
+
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
@@ -816,6 +841,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 -- calculate and check the average query run time in the report.
 -- We have to be careful, because we will encounter:
 --  1) partial queries which run only on one server
+--  2) short queries which run for a much higher number of times
 --  3) some errors that make query run for a different number of times on a
 --     particular server.
 --
@@ -823,11 +849,15 @@ create view test_runs as
     select test,
         -- Default to 7 runs if there are only 'short' queries in the test, and
         -- we can't determine the number of runs.
-        if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
+        if((ceil(medianOrDefaultIf(t.runs, not short), 0) as r) != 0, r, 7) runs
     from (
         select
             -- The query id is the same for both servers, so no need to divide here.
             uniqExact(query_id) runs,
+            (test, query_index) in
+                (select * from file('analyze/marked-short-queries.tsv', TSV,
+                    'test text, query_index int'))
+            as short,
             test, query_index
         from query_runs
         group by test, query_index
@@ -912,6 +942,41 @@ create table all_tests_report engine File(TSV, 'report/all-queries.tsv')
     from queries order by test, query_index;
 
 
+-- Report of queries that have inconsistent 'short' markings:
+-- 1) have short duration, but are not marked as 'short'
+-- 2) the reverse -- marked 'short' but take too long.
+-- The threshold for 2) is significantly larger than the threshold for 1), to
+-- avoid jitter.
+create view shortness
+    as select
+        (test, query_index) in
+            (select * from file('analyze/marked-short-queries.tsv', TSV,
+            'test text, query_index int'))
+            as marked_short,
+        time, test, query_index, query_display_name
+    from (
+            select right time, test, query_index from queries
+            union all
+            select time_median, test, query_index from partial_query_times
+        ) times
+        left join query_display_names
+            on times.test = query_display_names.test
+                and times.query_index = query_display_names.query_index
+    ;
+
+create table inconsistent_short_marking_report
+    engine File(TSV, 'report/unexpected-query-duration.tsv')
+    as select
+        multiIf(marked_short and time > 0.1, '\"short\" queries must run faster than 0.02 s',
+                not marked_short and time < 0.02, '\"normal\" queries must run longer than 0.1 s',
+                '') problem,
+        marked_short, time,
+        test, query_index, query_display_name
+    from shortness
+    where problem != ''
+    ;
+
+
 --------------------------------------------------------------------------------
 -- various compatibility data formats follow, not related to the main report
 
@@ -963,7 +1028,8 @@ create table unstable_query_runs engine File(TSVWithNamesAndTypes,
     ;
 
 create view query_log as select *
-    from file('$version-query-log.tsv', TSVWithNamesAndTypes);
+    from file('$version-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-query-log.tsv.columns")');
 
 create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
         'unstable-run-metrics.$version.rep') as
@@ -991,7 +1057,8 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
     array join v, n;
 
 create view trace_log as select *
-    from file('$version-trace-log.tsv', TSVWithNamesAndTypes);
+    from file('$version-trace-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-trace-log.tsv.columns")');
 
 create view addresses_src as select addr,
         -- Some functions change name between builds, e.g. '__clone' or 'clone' or
@@ -1000,7 +1067,8 @@ create view addresses_src as select addr,
         [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
             -- this line is a subscript operator of the above array
             [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
-    from file('$version-addresses.tsv', TSVWithNamesAndTypes);
+    from file('$version-addresses.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-addresses.tsv.columns")');
 
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
@@ -1127,12 +1195,15 @@ done
 
 function report_metrics
 {
+build_log_column_definitions
+
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
 create view right_async_metric_log as
-    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
+    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
+        '$(cat right-async-metric-log.tsv.columns)')
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -1140,7 +1211,8 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
     select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
-    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes) l
+    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
+        '$(cat left-async-metric-log.tsv.columns)') l
     on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
@@ -1306,7 +1378,7 @@ $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/
 EOF
 
     # Also insert some data about the check into the CI checks table.
-    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
+    "${client[@]}" --query "INSERT INTO "'"'"gh-data"'"'".checks FORMAT TSVWithNamesAndTypes" \
         < ci-checks.tsv
 
     set -x
@@ -1391,3 +1463,4 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
+

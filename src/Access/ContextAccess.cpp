@@ -5,6 +5,7 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
+#include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
@@ -29,6 +30,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int FUNCTION_NOT_ALLOWED;
     extern const int UNKNOWN_USER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -172,6 +174,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     if (!user)
     {
         /// User has been dropped.
+        user_was_dropped = true;
         subscription_for_user_change = {};
         subscription_for_roles_changes = {};
         access = nullptr;
@@ -246,6 +249,20 @@ void ContextAccess::calculateAccessRights() const
 
 
 UserPtr ContextAccess::getUser() const
+{
+    auto res = tryGetUser();
+
+    if (likely(res))
+        return res;
+
+    if (user_was_dropped)
+        throw Exception(ErrorCodes::UNKNOWN_USER, "User has been dropped");
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "No user in current context, it's a bug");
+}
+
+
+UserPtr ContextAccess::tryGetUser() const
 {
     std::lock_guard lock{mutex};
     return user;
@@ -382,7 +399,7 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
     if (!flags || is_full_access)
         return access_granted();
 
-    if (!getUser())
+    if (!tryGetUser())
         return access_denied("User has been dropped", ErrorCodes::UNKNOWN_USER);
 
     /// Access to temporary tables is controlled in an unusual way, not like normal tables.
@@ -573,7 +590,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
             throw Exception(getUserName() + ": " + msg, error_code);
     };
 
-    if (!getUser())
+    if (!tryGetUser())
     {
         show_error("User has been dropped", ErrorCodes::UNKNOWN_USER);
         return false;
@@ -662,5 +679,35 @@ void ContextAccess::checkAdminOption(const UUID & role_id, const std::unordered_
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids) const { checkAdminOptionImpl<true>(role_ids); }
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const { checkAdminOptionImpl<true>(role_ids, names_of_roles); }
 void ContextAccess::checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const { checkAdminOptionImpl<true>(role_ids, names_of_roles); }
+
+
+void ContextAccess::checkGranteeIsAllowed(const UUID & grantee_id, const IAccessEntity & grantee) const
+{
+    if (is_full_access)
+        return;
+
+    auto current_user = getUser();
+    if (!current_user->grantees.match(grantee_id))
+        throw Exception(grantee.formatTypeWithName() + " is not allowed as grantee", ErrorCodes::ACCESS_DENIED);
+}
+
+void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_ids) const
+{
+    if (is_full_access)
+        return;
+
+    auto current_user = getUser();
+    if (current_user->grantees == RolesOrUsersSet::AllTag{})
+        return;
+
+    for (const auto & id : grantee_ids)
+    {
+        auto entity = access_control->tryRead(id);
+        if (auto role_entity = typeid_cast<RolePtr>(entity))
+            checkGranteeIsAllowed(id, *role_entity);
+        else if (auto user_entity = typeid_cast<UserPtr>(entity))
+            checkGranteeIsAllowed(id, *user_entity);
+    }
+}
 
 }

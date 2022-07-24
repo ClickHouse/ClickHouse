@@ -22,7 +22,9 @@ static ColumnRawPtrs extractColumns(const Block & block, const SortDescription &
 
     for (size_t i = 0; i < size; ++i)
     {
-        const IColumn * column = block.getByName(description[i].column_name).column.get();
+        const IColumn * column = !description[i].column_name.empty()
+            ? block.getByName(description[i].column_name).column.get()
+            : block.safeGetByPosition(description[i].column_number).column.get();
         res.emplace_back(column);
     }
 

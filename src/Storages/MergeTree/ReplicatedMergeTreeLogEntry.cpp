@@ -504,15 +504,4 @@ Strings ReplicatedMergeTreeLogEntryData::getVirtualPartNames(MergeTreeDataFormat
     return {new_part_name};
 }
 
-String ReplicatedMergeTreeLogEntryData::getDescriptionForLogs(MergeTreeDataFormatVersion format_version) const
-{
-    String description = fmt::format("{} with virtual parts [{}]", typeToString(), fmt::join(getVirtualPartNames(format_version), ", "));
-    if (auto drop_range = getDropRange(format_version))
-    {
-        description += " and drop range ";
-        description += *drop_range;
-    }
-    return description;
-}
-
 }

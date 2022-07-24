@@ -149,26 +149,7 @@ def test_wrong_cluster(started_cluster):
     SELECT count(*) from s3Cluster(
         'non_existent_cluster',
         'http://minio1:9001/root/data/{clickhouse,database}/*', 
-        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
-    """
+        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
 
     assert "not found" in error
-
-
-def test_ambiguous_join(started_cluster):
-    node = started_cluster.instances["s0_0_0"]
-    result = node.query(
-        """
-    SELECT l.name, r.value from s3Cluster(
-        'cluster_simple', 
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
-        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as l
-    JOIN s3Cluster(
-        'cluster_simple', 
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
-        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as r
-    ON l.name = r.name
-    """
-    )
-    assert "AMBIGUOUS_COLUMN_NAME" not in result

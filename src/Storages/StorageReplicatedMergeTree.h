@@ -143,14 +143,7 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &) override;
 
-    enum RenamingRestrictions
-    {
-        ALLOW_ANY,
-        ALLOW_PRESERVING_UUID,
-        DO_NOT_ALLOW,
-    };
-
-    void checkTableCanBeRenamed(const StorageID & new_name) const override;
+    void checkTableCanBeRenamed() const override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -207,7 +200,10 @@ public:
     void getReplicaDelays(time_t & out_absolute_delay, time_t & out_relative_delay);
 
     /// Add a part to the queue of parts whose data you want to check in the background thread.
-    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
+    void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0)
+    {
+        part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
+    }
 
     CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
@@ -218,15 +214,11 @@ public:
 
     /** Remove a specific replica from zookeeper.
      */
-    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr);
+    static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica, Poco::Logger * logger);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
-
-    /// Extract data from the backup and put it to the storage.
-    RestoreTaskPtr restoreData(ContextMutablePtr local_context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
@@ -239,19 +231,22 @@ public:
     bool executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
 
     /// Lock part in zookeeper for use shared data in several nodes
-    void lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock, std::optional<HardlinkedFiles> hardlinked_files) const override;
+    void lockSharedData(const IMergeTreeDataPart & part, bool replace_existing_lock) const override;
 
     void lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
 
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    std::pair<bool, NameSet> unlockSharedData(const IMergeTreeDataPart & part) const override;
+    bool unlockSharedData(const IMergeTreeDataPart & part) const override;
+
+    /// Remove lock with old name for shared data part after rename
+    bool unlockSharedData(const IMergeTreeDataPart & part, const String & name) const override;
 
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    static std::pair<bool, NameSet> unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
+    static bool unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
         DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
         const String & zookeeper_path_old);
 
@@ -285,10 +280,8 @@ public:
     // Return default or custom zookeeper name for table
     String getZooKeeperName() const { return zookeeper_name; }
 
-    String getZooKeeperPath() const { return zookeeper_path; }
-
     // Return table id, common for different replicas
-    String getTableSharedID() const override;
+    String getTableSharedID() const;
 
     static String getDefaultZooKeeperName() { return default_zookeeper_name; }
 
@@ -420,7 +413,7 @@ private:
     bool other_replicas_fixed_granularity = false;
 
     /// Do not allow RENAME TABLE if zookeeper_path contains {database} or {table} macro
-    const RenamingRestrictions renaming_restrictions;
+    const bool allow_renaming;
 
     const size_t replicated_fetches_pool_size;
 
@@ -481,7 +474,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -498,9 +491,8 @@ private:
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
                                   NameSet * parts_should_be_retried = nullptr);
 
-    /// Remove parts from ZooKeeper, throw exception if unable to do so after max_retries.
-    void removePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
-    void removePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries = 5);
+    bool tryRemovePartsFromZooKeeperWithRetries(const Strings & part_names, size_t max_retries = 5);
+    bool tryRemovePartsFromZooKeeperWithRetries(DataPartsVector & parts, size_t max_retries = 5);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
@@ -527,7 +519,7 @@ private:
     /// NOTE: Attention! First of all tries to find covering part on other replica
     /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
     /// If fetch was not successful, clears entry.actual_new_part_name.
-    bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
+    bool executeFetch(LogEntry & entry);
 
     bool executeReplaceRange(const LogEntry & entry);
     void executeClonePartFromShard(const LogEntry & entry);
@@ -626,8 +618,7 @@ private:
         const String & replica_path,
         bool to_detached,
         size_t quorum,
-        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
-        bool try_fetch_shared = true);
+        zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
 
     /** Download the specified part from the specified replica.
       * Used for replace local part on the same s3-shared part in hybrid storage.
@@ -769,10 +760,7 @@ private:
     static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
         const String & part_name, const String & zookeeper_path_old);
 
-    static void createZeroCopyLockNode(
-        const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node,
-        int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false,
-        const String & path_to_set_hardlinked_files = "", const NameSet & hardlinked_files = {});
+    static void createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node, int32_t mode = zkutil::CreateMode::Persistent, bool replace_existing_lock = false);
 
     bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed) override;
 
@@ -809,7 +797,7 @@ protected:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
-        RenamingRestrictions renaming_restrictions_);
+        bool allow_renaming_);
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 33
-sidebar_label: ReplacingMergeTree
+toc_priority: 33
+toc_title: ReplacingMergeTree
 ---
 
 # ReplacingMergeTree {#replacingmergetree}
@@ -28,9 +28,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Описание параметров запроса смотрите в [описании запроса](../../../engines/table-engines/mergetree-family/replacingmergetree.md).
 
-    :::note "Внимание"
+!!! note "Внимание"
     Уникальность строк определяется `ORDER BY` секцией таблицы, а не `PRIMARY KEY`.
-    :::
+
 **Параметры ReplacingMergeTree**
 
 -   `ver` — столбец с номером версии. Тип `UInt*`, `Date`, `DateTime` или `DateTime64`. Необязательный параметр.
@@ -48,9 +48,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 <summary>Устаревший способ создания таблицы</summary>
 
-    :::note "Внимание"
+!!! attention "Внимание"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
-    :::
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (

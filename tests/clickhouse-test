@@ -52,15 +52,12 @@ MESSAGES_TO_RETRY = [
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
     "DB::Exception: Cannot enqueue query",
-    "line 1: wait_for: No record of process", # Something weird from bash internals, let's just retry
     "is executing longer than distributed_ddl_task_timeout" # FIXME
 ]
 
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
-
-VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 
 def stringhash(s):
@@ -117,7 +114,7 @@ def clickhouse_execute_http(base_args, query, timeout=30, settings=None, default
 def clickhouse_execute(base_args, query, timeout=30, settings=None):
     return clickhouse_execute_http(base_args, query, timeout, settings).strip()
 
-def clickhouse_execute_json(base_args, query, timeout=60, settings=None):
+def clickhouse_execute_json(base_args, query, timeout=30, settings=None):
     data = clickhouse_execute_http(base_args, query, timeout, settings, 'JSONEachRow')
     if not data:
         return None
@@ -203,42 +200,6 @@ def get_processlist(args):
         """)
     else:
         return clickhouse_execute_json(args, 'SHOW PROCESSLIST')
-
-def get_transactions_list(args):
-    try:
-        if args.replicated_database:
-            return clickhouse_execute_json(args, """
-            SELECT materialize((hostName(), tcpPort())) as host, *
-            FROM clusterAllReplicas('test_cluster_database_replicated', system.transactions)
-            """)
-        else:
-            return clickhouse_execute_json(args, 'select * from system.transactions')
-    except Exception as e:
-        return f"Cannot get list of transactions: {e}"
-
-def get_processlist_after_test(args):
-    log_comment = args.testcase_basename
-    database = args.testcase_database
-    if args.replicated_database:
-        return clickhouse_execute_json(args, f"""
-        SELECT materialize((hostName(), tcpPort())) as host, *
-        FROM clusterAllReplicas('test_cluster_database_replicated', system.processes)
-        WHERE
-            query NOT LIKE '%system.processes%' AND
-            {'NOT is_all_data_sent AND' if args.suppport_system_processes_is_all_data_sent else ''}
-            Settings['log_comment'] = '{log_comment}' AND
-            current_database = '{database}'
-        """)
-    else:
-        return clickhouse_execute_json(args, f"""
-        SELECT *
-        FROM system.processes
-        WHERE
-            query NOT LIKE '%system.processes%' AND
-            {'NOT is_all_data_sent AND' if args.suppport_system_processes_is_all_data_sent else ''}
-            Settings['log_comment'] = '{log_comment}' AND
-            current_database = '{database}'
-        """)
 
 
 # collect server stacktraces using gdb
@@ -358,7 +319,6 @@ class FailureReason(enum.Enum):
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
-    LEFT_QUERIES = "Queries left in background after the test finished:"
 
     # SKIPPED reasons
     DISABLED = "disabled"
@@ -371,7 +331,6 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
-    BACKWARD_INCOMPATIBLE = "test is backward incompatible"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -385,13 +344,9 @@ class SettingsRandomizer:
         "group_by_two_level_threshold_bytes": lambda: 1 if random.random() < 0.1 else 2 ** 60 if random.random() < 0.11 else 50000000,
         "distributed_aggregation_memory_efficient": lambda: random.randint(0, 1),
         "fsync_metadata": lambda: random.randint(0, 1),
+        "priority": lambda: int(abs(random.gauss(0, 2))),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
-        "min_chunk_bytes_for_parallel_parsing": lambda: max(1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))),
-        "max_read_buffer_size": lambda: random.randint(500000, 1048576),
-        "prefer_localhost_replica": lambda: random.randint(0, 1),
-        "max_block_size": lambda: random.randint(8000, 100000),
-        "max_threads": lambda: random.randint(1, 64),
     }
 
     @staticmethod
@@ -449,7 +404,7 @@ class TestCase:
 
         testcase_args.testcase_start_time = datetime.now()
         testcase_basename = os.path.basename(case_file)
-        testcase_args.testcase_client = f"{testcase_args.client} --log_comment '{testcase_basename}'"
+        testcase_args.testcase_client = f"{testcase_args.client} --log_comment='{testcase_basename}'"
         testcase_args.testcase_basename = testcase_basename
 
         if testcase_args.database:
@@ -482,10 +437,8 @@ class TestCase:
 
         return testcase_args
 
-    def add_random_settings(self, args, client_options):
+    def add_random_settings(self, client_options):
         if self.tags and 'no-random-settings' in self.tags:
-            return client_options
-        if args.no_random_settings:
             return client_options
 
         if len(self.base_url_params) == 0:
@@ -501,10 +454,8 @@ class TestCase:
         os.environ['CLICKHOUSE_URL_PARAMS'] = self.base_url_params
         os.environ['CLICKHOUSE_CLIENT_OPT'] = self.base_client_options
 
-    def add_info_about_settings(self, args, description):
+    def add_info_about_settings(self, description):
         if self.tags and 'no-random-settings' in self.tags:
-            return description
-        if args.no_random_settings:
             return description
 
         return description + "\n" + "Settings used in the test: " + "--" + " --".join(self.random_settings) + "\n"
@@ -512,9 +463,6 @@ class TestCase:
     def __init__(self, suite, case: str, args, is_concurrent: bool):
         self.case: str = case   # case file name
         self.tags: Set[str] = suite.all_tags[case] if case in suite.all_tags else set()
-
-        for tag in os.getenv("GLOBAL_TAGS", "").split(","):
-            self.tags.add(tag.strip())
 
         self.case_file: str = os.path.join(suite.suite_path, case)
         (self.name, self.ext) = os.path.splitext(case)
@@ -530,30 +478,6 @@ class TestCase:
         self.random_settings = SettingsRandomizer.get_random_settings()
         self.base_url_params = os.environ['CLICKHOUSE_URL_PARAMS'] if 'CLICKHOUSE_URL_PARAMS' in os.environ else ''
         self.base_client_options = os.environ['CLICKHOUSE_CLIENT_OPT'] if 'CLICKHOUSE_CLIENT_OPT' in os.environ else ''
-
-    # Check if test contains tag "no-backward-compatibility-check" and we should skip it
-    def check_backward_incompatible_tag(self) -> bool:
-        for tag in self.tags:
-            if tag.startswith("no-backward-compatibility-check"):
-                split = tag.split(':')
-
-                # If version is not specified in tag, always skip this test.
-                if len(split) == 1:
-                    return True
-                version_from_tag = split[1]
-
-                # Check if extracted string from tag is a real ClickHouse version, if not - always skip test.
-                if re.match(VERSION_PATTERN, version_from_tag) is None:
-                    return True
-
-                server_version = str(clickhouse_execute(args, "SELECT version()").decode())
-                # If server version is less or equal from the version specified in tag, we should skip this test.
-                version_from_tag_split = list(map(int, version_from_tag.split('.')))
-                server_version_split = list(map(int, server_version.split('.')))
-                if server_version_split[:len(version_from_tag_split)] <= version_from_tag_split:
-                    return True
-
-        return False
 
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
@@ -587,11 +511,9 @@ class TestCase:
         elif tags and ('no-replicated-database' in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif args.backward_compatibility_check and self.check_backward_incompatible_tag():
-            return FailureReason.BACKWARD_INCOMPATIBLE
-
         elif tags and ('no-s3-storage' in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
+
 
         elif tags:
             for build_flag in args.build_flags:
@@ -674,15 +596,6 @@ class TestCase:
             # We're in Flaky Check mode, check the run time as well while we're at it.
             return TestResult(self.name, TestStatus.FAIL, FailureReason.TOO_LONG, total_time, description)
 
-        left_queries_check = args.no_left_queries_check is False
-        if self.tags and 'no-left-queries-check' in self.tags:
-            left_queries_check = False
-        if left_queries_check:
-            processlist = get_processlist_after_test(self.testcase_args)
-            if processlist:
-                description += "\n{}\n".format(json.dumps(processlist, indent=4))
-                return TestResult(self.name, TestStatus.FAIL, FailureReason.LEFT_QUERIES, total_time, description)
-
         if os.path.exists(self.stdout_file):
             os.remove(self.stdout_file)
         if os.path.exists(self.stderr_file):
@@ -744,7 +657,7 @@ class TestCase:
             pattern = '{test} > {stdout} 2> {stderr}'
 
         if self.ext == '.sql':
-            pattern = "{client} --send_logs_level={logs_level} --multiquery {options} < " + pattern
+            pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
 
         command = pattern.format(**params)
 
@@ -807,13 +720,13 @@ class TestCase:
 
             self.runs_count += 1
             self.testcase_args = self.configure_testcase_args(args, self.case_file, suite.suite_tmp_path)
-            client_options = self.add_random_settings(args, client_options)
+            client_options = self.add_random_settings(client_options)
             proc, stdout, stderr, total_time = self.run_single_test(server_logs_level, client_options)
 
             result = self.process_result_impl(proc, stdout, stderr, total_time)
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
             if result.status == TestStatus.FAIL:
-                result.description = self.add_info_about_settings(args, result.description)
+                result.description = self.add_info_about_settings(result.description)
             return result
         except KeyboardInterrupt as e:
             raise e
@@ -821,12 +734,12 @@ class TestCase:
             return TestResult(self.name, TestStatus.FAIL,
                               FailureReason.INTERNAL_QUERY_FAIL,
                               0.,
-                              self.add_info_about_settings(args, self.get_description_from_exception_info(sys.exc_info())))
+                              self.add_info_about_settings(self.get_description_from_exception_info(sys.exc_info())))
         except (ConnectionRefusedError, ConnectionResetError):
             return TestResult(self.name, TestStatus.FAIL,
                               FailureReason.SERVER_DIED,
                               0.,
-                              self.add_info_about_settings(args, self.get_description_from_exception_info(sys.exc_info())))
+                              self.add_info_about_settings(self.get_description_from_exception_info(sys.exc_info())))
         except:
             return TestResult(self.name, TestStatus.UNKNOWN,
                               FailureReason.INTERNAL_ERROR,
@@ -1174,12 +1087,6 @@ def check_server_started(args):
             retry_count -= 1
             sleep(0.5)
             continue
-        except TimeoutError:
-            print("\nConnection timeout, will not retry")
-            break
-        except Exception as e:
-            print("\nUexpected exception, will not retry: ", str(e))
-            break
 
     print('\nAll connection tries failed')
     sys.stdout.flush()
@@ -1235,12 +1142,6 @@ def collect_build_flags(args):
 
     return result
 
-def check_table_column(args, database, table, column):
-    return int(clickhouse_execute(args, f"""
-    SELECT count()
-    FROM system.columns
-    WHERE database = '{database}' AND table = '{table}' AND name = '{column}'
-    """)) > 0
 
 def suite_key_func(item: str) -> Union[int, Tuple[int, str]]:
     if args.order == 'random':
@@ -1344,7 +1245,6 @@ def main(args):
         raise Exception(msg)
 
     args.build_flags = collect_build_flags(args)
-    args.suppport_system_processes_is_all_data_sent = check_table_column(args, 'system', 'processes', 'is_all_data_sent')
 
     if args.skip:
         args.skip = set(args.skip)
@@ -1388,14 +1288,10 @@ def main(args):
                     break
             create_database_retries += 1
 
-    try:
-        if args.database and args.database != "test":
-            create_common_database(args, args.database)
+    if args.database and args.database != "test":
+        create_common_database(args, args.database)
 
-        create_common_database(args, "test")
-    except Exception as e:
-        print(f"Failed to create databases for tests: {e}")
-        server_died.set()
+    create_common_database(args, "test")
 
     total_tests_run = 0
 
@@ -1424,7 +1320,6 @@ def main(args):
         if processlist:
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(json.dumps(processlist, indent=4))
-            print(get_transactions_list(args))
 
             print_stacktraces()
             exit_code.value = 1
@@ -1516,7 +1411,6 @@ if __name__ == '__main__':
     parser.add_argument('--order', default='desc', choices=['asc', 'desc', 'random'], help='Run order')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
-    parser.add_argument('--no-left-queries-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', help='Database for tests (random name test_XXXXXX by default)')
     parser.add_argument('--no-drop-if-fail', action='store_true', help='Do not drop database for test if test has failed')
@@ -1538,7 +1432,6 @@ if __name__ == '__main__':
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
     parser.add_argument('--check-zookeeper-session', action='store_true', help='Check ZooKeeper session uptime to determine if failed test should be retried')
     parser.add_argument('--s3-storage', action='store_true', default=False, help='Run tests over s3 storage')
-    parser.add_argument('--no-random-settings', action='store_true', default=False, help='Disable settings randomization')
 
     parser.add_argument('--run-by-hash-num', type=int, help='Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num')
     parser.add_argument('--run-by-hash-total', type=int, help='Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num')
@@ -1551,8 +1444,6 @@ if __name__ == '__main__':
     group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
-    group.add_argument('--backward-compatibility-check', action='store_true', help='Run tests for further backwoard compatibility testing by ignoring all'
-                                                                                   'drop queries in tests for collecting data from new version of server')
     args = parser.parse_args()
 
     if args.queries and not os.path.isdir(args.queries):
@@ -1628,9 +1519,6 @@ if __name__ == '__main__':
         args.client_database = client_database
     else:
         args.client_database = 'default'
-
-    if args.backward_compatibility_check:
-        args.client += ' --fake-drop'
 
     if args.client_option:
         # Set options for client

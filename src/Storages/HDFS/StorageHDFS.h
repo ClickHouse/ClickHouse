@@ -76,7 +76,6 @@ private:
     const bool distributed_processing;
     ASTPtr partition_by;
     bool is_path_with_globs;
-    NamesAndTypesList virtual_columns;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
 };
@@ -111,14 +110,25 @@ public:
     using IteratorWrapper = std::function<String()>;
     using StorageHDFSPtr = std::shared_ptr<StorageHDFS>;
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
+    static Block getHeader(
+        const StorageMetadataPtr & metadata_snapshot,
+        bool need_path_column,
+        bool need_file_column);
+
+    static Block getBlockForSource(
+        const StorageHDFSPtr & storage,
+        const StorageSnapshotPtr & storage_snapshot_,
+        const ColumnsDescription & columns_description,
+        bool need_path_column,
+        bool need_file_column);
 
     HDFSSource(
         StorageHDFSPtr storage_,
-        const Block & block_for_format_,
-        const std::vector<NameAndTypePair> & requested_virtual_columns_,
+        const StorageSnapshotPtr & storage_snapshot_,
         ContextPtr context_,
         UInt64 max_block_size_,
+        bool need_path_column_,
+        bool need_file_column_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         ColumnsDescription columns_description_);
 
@@ -130,8 +140,7 @@ public:
 
 private:
     StorageHDFSPtr storage;
-    Block block_for_format;
-    std::vector<NameAndTypePair> requested_virtual_columns;
+    StorageSnapshotPtr storage_snapshot;
     UInt64 max_block_size;
     bool need_path_column;
     bool need_file_column;

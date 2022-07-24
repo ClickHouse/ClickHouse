@@ -11,22 +11,30 @@ namespace ErrorCodes
 }
 
 MergingSortedAlgorithm::MergingSortedAlgorithm(
-    Block header_,
+    const Block & header,
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size,
     UInt64 limit_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : header(std::move(header_))
-    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    : merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
-    , has_collation(std::any_of(description.begin(), description.end(), [](const auto & descr) { return descr.collator != nullptr; }))
     , out_row_sources_buf(out_row_sources_buf_)
     , current_inputs(num_inputs)
     , cursors(num_inputs)
 {
+    /// Replace column names in description to positions.
+    for (auto & column_description : description)
+    {
+        has_collation |= column_description.collator != nullptr;
+        if (!column_description.column_name.empty())
+        {
+            column_description.column_number = header.getPositionByName(column_description.column_name);
+            column_description.column_name.clear();
+        }
+    }
 }
 
 void MergingSortedAlgorithm::addInput()
@@ -57,7 +65,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         prepareChunk(chunk);
-        cursors[source_num] = SortCursorImpl(header, chunk.getColumns(), description, source_num);
+        cursors[source_num] = SortCursorImpl(chunk.getColumns(), description, source_num);
     }
 
     if (has_collation)
@@ -70,7 +78,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
     prepareChunk(input.chunk);
     current_inputs[source_num].swap(input);
-    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), header);
+    cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), {});
 
     if (has_collation)
         queue_with_collation.push(cursors[source_num]);

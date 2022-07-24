@@ -333,7 +333,7 @@ struct MinHashImpl
     {
         void update(UInt64 hash, BytesRef ref, size_t limit)
         {
-            if (values.contains(hash))
+            if (values.count(hash))
                 return;
 
             values[hash] = ref;

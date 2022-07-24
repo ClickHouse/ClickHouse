@@ -1,6 +1,6 @@
 ---
-sidebar_position: 68
-sidebar_label: Time Window
+toc_priority: 68
+toc_title: Time Window
 ---
 
 # Time Window Functions {#time-window-functions}

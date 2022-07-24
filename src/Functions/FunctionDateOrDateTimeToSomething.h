@@ -88,20 +88,6 @@ public:
             Int64 scale = DataTypeDateTime64::default_scale;
             if (const auto * dt64 =  checkAndGetDataType<DataTypeDateTime64>(arguments[0].type.get()))
                 scale = dt64->getScale();
-            auto source_scale = scale;
-
-            if constexpr (std::is_same_v<ToStartOfMillisecondImpl, Transform>)
-            {
-                scale = std::max(source_scale, static_cast<Int64>(3));
-            }
-            else if constexpr (std::is_same_v<ToStartOfMicrosecondImpl, Transform>)
-            {
-                scale = std::max(source_scale, static_cast<Int64>(6));
-            }
-            else if constexpr (std::is_same_v<ToStartOfNanosecondImpl, Transform>)
-            {
-                scale = std::max(source_scale, static_cast<Int64>(9));
-            }
 
             return std::make_shared<ToDataType>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         }

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 51
-sidebar_label: LowCardinality
+toc_priority: 51
+toc_title: LowCardinality
 ---
 
 # LowCardinality {#lowcardinality-data-type}

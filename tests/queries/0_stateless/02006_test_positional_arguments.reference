@@ -111,9 +111,3 @@ select substr('aaaaaaaaaaaaaa', 8) as a  group by a;
 aaaaaaa
 select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8);
 aaaaaaa
-select b from (select 5 as a, 'Hello' as b order by a);
-Hello
-select b from (select 5 as a, 'Hello' as b group by a);
-Hello
-select b from (select 5 as a, 'Hello' as b order by 1);
-Hello

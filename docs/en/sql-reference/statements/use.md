@@ -1,6 +1,6 @@
 ---
-sidebar_position: 53
-sidebar_label: USE
+toc_priority: 53
+toc_title: USE
 ---
 
 # USE Statement {#use}

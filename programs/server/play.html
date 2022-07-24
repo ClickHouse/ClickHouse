@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html>
+<html> <!-- TODO If I write DOCTYPE HTML something changes but I don't know what. -->
 <head>
     <meta charset="UTF-8">
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
@@ -30,7 +29,7 @@
 
     -->
 
-    <style>
+    <style type="text/css">
         :root {
             --background-color: #DDF8FF; /* Or #FFFBEF; actually many pastel colors look great for light theme. */
             --element-background-color: #FFF;
@@ -72,24 +71,12 @@
             --logo-color-active: #333;
         }
 
-        *
-        {
-            box-sizing: border-box;
-        }
-
         html, body
         {
-            height: 100%;
-            margin: 0;
-        }
-
-        html
-        {
-            /* The fonts that have full support for hinting. */
+            /* Personal choice. */
             font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
-            padding: 0.5rem;
         }
 
         /* Otherwise Webkit based browsers will display ugly border on focus. */
@@ -100,17 +87,22 @@
             color: var(--text-color);
         }
 
+        div
+        {
+            width: 100%;
+        }
+
         .monospace
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
                Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
-            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;
+            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, Monospace;
         }
 
         .monospace-table
         {
             /* Liberation is worse than DejaVu for block drawing characters. */
-            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, Monospace;
         }
 
         .shadow
@@ -127,21 +119,17 @@
             background-color: var(--element-background-color);
         }
 
-        #query_div
+        #query
         {
             /* Make enough space for even huge queries. */
             height: 20%;
-        }
-
-        #query
-        {
-            height: 100%;
             width: 100%;
         }
 
         #inputs
         {
             white-space: nowrap;
+            width: 100%;
         }
 
         #url
@@ -205,9 +193,10 @@
 
         #data-table
         {
-            width: 100%;
             border-collapse: collapse;
             border-spacing: 0;
+            /* I need pixel-perfect alignment but not sure the following is correct, please help */
+            min-width: calc(100vw - 2rem);
         }
 
         /* Will be displayed when user specified custom format. */
@@ -222,15 +211,14 @@
         td
         {
             background-color: var(--element-background-color);
+            white-space: nowrap;
             /* For wide tables any individual column will be no more than 50% of page width. */
             max-width: 50vw;
             /* The content is cut unless you hover. */
             overflow: hidden;
-            text-overflow: ellipsis;
             padding: 0.25rem 0.5rem;
             border: 1px solid var(--border-color);
             white-space: pre;
-            vertical-align: top;
         }
 
         td.right
@@ -241,7 +229,7 @@
         th
         {
             padding: 0.25rem 0.5rem;
-            text-align: center;
+            text-align: middle;
             background-color: var(--table-header-color);
             border: 1px solid var(--border-color);
         }
@@ -265,11 +253,11 @@
             display: none;
         }
 
-        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut. */
+        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
+           TODO Find a way to make it work on touch devices. */
         td.left:hover
         {
             white-space: pre-wrap;
-            max-width: none;
         }
 
         /* The style for SQL NULL */
@@ -278,25 +266,12 @@
             color: var(--null-color);
         }
 
-        @keyframes hourglass-animation {
-            0% {
-                transform: rotate(-180deg);
-            }
-            50% {
-                transform: rotate(-180deg);
-            }
-            100% {
-                transform: none;
-            }
-        }
-
         #hourglass
         {
             display: none;
-            margin-left: 1rem;
+            padding-left: 1rem;
             font-size: 110%;
             color: #888;
-            animation: hourglass-animation 1s linear infinite;
         }
 
         #check-mark
@@ -311,11 +286,6 @@
         {
             color: var(--link-color);
             text-decoration: none;
-        }
-
-        #graph
-        {
-            display: none;
         }
 
         /* This is for graph in svg */
@@ -363,7 +333,7 @@
     <div id="inputs">
         <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
     </div>
-    <div id="query_div">
+    <div>
         <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
     </div>
     <div id="run_div">
@@ -487,7 +457,7 @@
         }
 
         document.getElementById('check-mark').style.display = 'none';
-        document.getElementById('hourglass').style.display = 'inline-block';
+        document.getElementById('hourglass').style.display = 'inline';
 
         xhr.send(query);
     }
@@ -606,7 +576,7 @@
         stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
-        if (response.data.length > 3 && document.getElementById('query').value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
+        if (response.data.length > 3 && response.data[0][0].startsWith("digraph") && document.getElementById('query').value.match(/^\s*EXPLAIN/i)) {
             renderGraph(response);
         } else {
             renderTable(response);

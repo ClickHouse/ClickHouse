@@ -8,7 +8,6 @@ namespace DB
 void registerFunctionsArithmetic(FunctionFactory &);
 void registerFunctionsArray(FunctionFactory &);
 void registerFunctionsTuple(FunctionFactory &);
-void registerFunctionsMakeDate(FunctionFactory &);
 void registerFunctionsMap(FunctionFactory &);
 void registerFunctionsBitmap(FunctionFactory &);
 void registerFunctionsBinaryRepr(FunctionFactory &);
@@ -57,7 +56,6 @@ void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 void registerFunctionsTimeWindow(FunctionFactory &);
 void registerFunctionToBool(FunctionFactory &);
-void registerFunctionMinSampleSize(FunctionFactory &);
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
@@ -74,7 +72,6 @@ void registerFunctions()
     registerFunctionsArithmetic(factory);
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
-    registerFunctionsMakeDate(factory);
     registerFunctionsMap(factory);
     registerFunctionsBitmap(factory);
     registerFunctionsBinaryRepr(factory);
@@ -121,7 +118,6 @@ void registerFunctions()
     registerFunctionsSnowflake(factory);
     registerFunctionsTimeWindow(factory);
     registerFunctionToBool(factory);
-    registerFunctionMinSampleSize(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);

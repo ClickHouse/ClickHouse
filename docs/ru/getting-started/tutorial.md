@@ -1,6 +1,6 @@
 ---
-sidebar_position: 12
-sidebar_label: Tutorial
+toc_priority: 12
+toc_title: Tutorial
 ---
 
 # ClickHouse Tutorial {#clickhouse-tutorial}
@@ -16,17 +16,7 @@ To postpone the complexities of a distributed environment, we’ll start with de
 For example, you have chosen `deb` packages and executed:
 
 ``` bash
-sudo apt-get install -y apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you've set up a password.
+{% include 'install/deb.sh' %}
 ```
 
 What do we have in the packages that got installed:
@@ -476,7 +466,7 @@ clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert
 clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouse has a lot of [settings to tune](../operations/settings/overview.md) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
+ClickHouse has a lot of [settings to tune](../operations/settings/index.md) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
 
 ``` sql
 SELECT name, value, changed, description
@@ -584,7 +574,7 @@ Let’s run [INSERT SELECT](../sql-reference/statements/insert-into.md) into the
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
-:::danger "Notice"
+!!! warning "Notice"
     This approach is not suitable for the sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utilities/clickhouse-copier.md) that can re-shard arbitrary large tables.
 
 As you could expect, computationally heavy queries run N times faster if they utilize 3 servers instead of one.
@@ -619,9 +609,9 @@ Example config for a cluster of one shard containing three replicas:
 
 To enable native replication [ZooKeeper](http://zookeeper.apache.org/) is required. ClickHouse takes care of data consistency on all replicas and runs restore procedure after failure automatically. It’s recommended to deploy the ZooKeeper cluster on separate servers (where no other processes including ClickHouse are running).
 
-    :::note "Note"
+!!! note "Note"
     ZooKeeper is not a strict requirement: in some simple cases, you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case, ClickHouse won’t be able to guarantee data consistency on all replicas. Thus it becomes the responsibility of your application.
-    :::
+
 ZooKeeper locations are specified in the configuration file:
 
 ``` xml

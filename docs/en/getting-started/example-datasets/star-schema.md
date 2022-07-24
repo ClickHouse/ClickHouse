@@ -1,11 +1,9 @@
 ---
-sidebar_label: Star Schema Benchmark
-description:  "Dataset based on the TPC-H dbgen source. The coding style and architecture
-follows the TPCH dbgen."
+toc_priority: 16
+toc_title: Star Schema Benchmark
 ---
 
-# Star Schema Benchmark 
-
+# Star Schema Benchmark {#star-schema-benchmark}
 
 Compiling dbgen:
 
@@ -17,9 +15,8 @@ $ make
 
 Generating data:
 
-:::warning    
-With `-s 100` dbgen generates 600 million rows (67 GB), while while `-s 1000` it generates 6 billion rows (which takes a lot of time)
-:::
+!!! warning "Attention"
+    With `-s 100` dbgen generates 600 million rows (67 GB), while while `-s 1000` it generates 6 billion rows (which takes a lot of time)
 
 ``` bash
 $ ./dbgen -s 1000 -T c

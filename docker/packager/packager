@@ -163,12 +163,9 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
         cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
+        cmake_flags.append("-DBUILD_STANDALONE_KEEPER=ON")
         if is_release_build(build_type, package_type, sanitizer, split_binary):
             cmake_flags.append("-DINSTALL_STRIPPED_BINARIES=ON")
-            if is_cross_arm:
-                cmake_flags.append("-DBUILD_STANDALONE_KEEPER=1")
-            else:
-                result.append("BUILD_MUSL_KEEPER=1")
 
     result.append(f"CC={cc}")
     result.append(f"CXX={cxx}")
@@ -179,9 +176,6 @@ def parse_env_variables(
     if package_type == "performance":
         result.append("COMBINED_OUTPUT=performance")
         cmake_flags.append("-DENABLE_TESTS=0")
-    elif package_type == "coverity":
-        result.append("COMBINED_OUTPUT=coverity")
-        result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
     elif split_binary:
         result.append("COMBINED_OUTPUT=shared_build")
 
@@ -268,8 +262,9 @@ if __name__ == "__main__":
     # and configs to be used for performance test.
     parser.add_argument(
         "--package-type",
-        choices=["deb", "binary", "performance", "coverity"],
+        choices=("deb", "binary", "performance"),
         required=True,
+        help="a build type",
     )
     parser.add_argument(
         "--clickhouse-repo-path",
@@ -335,11 +330,7 @@ if __name__ == "__main__":
     if not os.path.isabs(args.output_dir):
         args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
-    image_type = (
-        "binary"
-        if args.package_type in ("performance", "coverity")
-        else args.package_type
-    )
+    image_type = "binary" if args.package_type == "performance" else args.package_type
     image_name = "clickhouse/binary-builder"
 
     if not os.path.isabs(args.clickhouse_repo_path):

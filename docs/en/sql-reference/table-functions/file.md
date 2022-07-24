@@ -1,6 +1,6 @@
 ---
-sidebar_position: 37
-sidebar_label: file
+toc_priority: 37
+toc_title: file
 ---
 
 # file {#file}
@@ -106,9 +106,8 @@ Query the number of rows in all files of these two directories:
 SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
 ```
 
-:::warning    
-If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-:::
+!!! warning "Warning"
+    If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 
 **Example**
 

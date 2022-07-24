@@ -35,10 +35,9 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 
-#include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
-#include <Backups/IRestoreTask.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <base/insertAtEnd.h>
@@ -491,7 +490,7 @@ void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for wri
 }
 
 
-BackupEntries StorageStripeLog::backupData(ContextPtr context, const ASTs & partitions)
+BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr context)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
@@ -516,24 +515,24 @@ BackupEntries StorageStripeLog::backupData(ContextPtr context, const ASTs & part
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file_path);
-        String hardlink_file_path = temp_dir + "/" + data_file_name;
-        disk->createHardLink(data_file_path, hardlink_file_path);
+        String temp_file_path = temp_dir + "/" + data_file_name;
+        disk->copy(data_file_path, disk, temp_file_path);
         backup_entries.emplace_back(
             data_file_name,
-            std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
+            std::make_unique<BackupEntryFromImmutableFile>(
+                disk, temp_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// index.mrk
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String index_file_name = fileName(index_file_path);
-        String hardlink_file_path = temp_dir + "/" + index_file_name;
-        disk->createHardLink(index_file_path, hardlink_file_path);
+        String temp_file_path = temp_dir + "/" + index_file_name;
+        disk->copy(index_file_path, disk, temp_file_path);
         backup_entries.emplace_back(
             index_file_name,
-            std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
+            std::make_unique<BackupEntryFromImmutableFile>(
+                disk, temp_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
@@ -553,51 +552,37 @@ BackupEntries StorageStripeLog::backupData(ContextPtr context, const ASTs & part
     return backup_entries;
 }
 
-class StripeLogRestoreTask : public IRestoreTask
+RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
 {
-    using WriteLock = StorageStripeLog::WriteLock;
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
-public:
-    StripeLogRestoreTask(
-        const std::shared_ptr<StorageStripeLog> storage_,
-        const BackupPtr & backup_,
-        const String & data_path_in_backup_,
-        ContextMutablePtr context_)
-        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+    auto restore_task = [this, backup, data_path_in_backup, context]()
     {
-    }
-
-    RestoreTasks run() override
-    {
-        WriteLock lock{storage->rwlock, getLockTimeout(context)};
+        WriteLock lock{rwlock, getLockTimeout(context)};
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-        auto & file_checker = storage->file_checker;
-
         /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
-        storage->loadIndices(lock);
+        loadIndices(lock);
 
         /// If there were no files, save zero file sizes to be able to rollback in case of error.
-        storage->saveFileSizes(lock);
+        saveFileSizes(lock);
 
         try
         {
             /// Append the data file.
-            auto old_data_size = file_checker.getFileSize(storage->data_file_path);
+            auto old_data_size = file_checker.getFileSize(data_file_path);
             {
-                const auto & data_file_path = storage->data_file_path;
                 String file_path_in_backup = data_path_in_backup + fileName(data_file_path);
                 auto backup_entry = backup->readFile(file_path_in_backup);
-                const auto & disk = storage->disk;
                 auto in = backup_entry->getReadBuffer();
-                auto out = disk->writeFile(data_file_path, storage->max_compress_block_size, WriteMode::Append);
+                auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
                 copyData(*in, *out);
             }
 
             /// Append the index.
             {
-                const auto & index_file_path = storage->index_file_path;
                 String index_path_in_backup = data_path_in_backup + fileName(index_file_path);
                 IndexForNativeFormat extra_indices;
                 auto backup_entry = backup->readFile(index_path_in_backup);
@@ -612,38 +597,23 @@ public:
                         column.location.offset_in_compressed_file += old_data_size;
                 }
 
-                insertAtEnd(storage->indices.blocks, std::move(extra_indices.blocks));
+                insertAtEnd(indices.blocks, std::move(extra_indices.blocks));
             }
 
             /// Finish writing.
-            storage->saveIndices(lock);
-            storage->saveFileSizes(lock);
-            return {};
+            saveIndices(lock);
+            saveFileSizes(lock);
         }
         catch (...)
         {
             /// Rollback partial writes.
             file_checker.repair();
-            storage->removeUnsavedIndices(lock);
+            removeUnsavedIndices(lock);
             throw;
         }
-    }
 
-private:
-    std::shared_ptr<StorageStripeLog> storage;
-    BackupPtr backup;
-    String data_path_in_backup;
-    ContextMutablePtr context;
-};
-
-
-RestoreTaskPtr StorageStripeLog::restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &, const std::shared_ptr<IRestoreCoordination> &)
-{
-    if (!partitions.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
-
-    return std::make_unique<StripeLogRestoreTask>(
-        typeid_cast<std::shared_ptr<StorageStripeLog>>(shared_from_this()), backup, data_path_in_backup, context);
+    };
+    return {restore_task};
 }
 
 

@@ -1,5 +1,5 @@
 ---
-sidebar_label: ALL
+toc_title: ALL
 ---
 
 # ALL Clause {#select-all}

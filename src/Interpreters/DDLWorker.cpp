@@ -47,7 +47,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int NOT_A_LEADER;
-    extern const int TABLE_IS_READ_ONLY;
     extern const int KEEPER_EXCEPTION;
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -222,7 +221,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
 
 static void filterAndSortQueueNodes(Strings & all_nodes)
 {
-    std::erase_if(all_nodes, [] (const String & s) { return !startsWith(s, "query-"); });
+    all_nodes.erase(std::remove_if(all_nodes.begin(), all_nodes.end(), [] (const String & s) { return !startsWith(s, "query-"); }), all_nodes.end());
     ::sort(all_nodes.begin(), all_nodes.end());
 }
 
@@ -351,12 +350,6 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             bool maybe_concurrently_deleting = task && !zookeeper->exists(fs::path(task->entry_path) / "active");
             return task && !maybe_concurrently_deleting && !maybe_currently_processing;
         }
-        else if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
-        {
-            /// If connection was lost during queue loading
-            /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
-            return false;
-        }
         else
         {
             /// Return true if entry should not be scheduled.
@@ -372,11 +365,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
         String reason;
         auto task = initAndCheckTask(entry_name, reason, zookeeper);
-        if (task)
-        {
-            queue_fully_loaded_after_initialization_debug_helper = true;
-        }
-        else
+        if (!task)
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
             updateMaxDDLEntryID(entry_name);
@@ -460,7 +449,6 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
         /// and consider query as executed with status "failed" and return true in other cases.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
-                                 e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
@@ -634,6 +622,8 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         task.was_executed = true;
     }
 
+    updateMaxDDLEntryID(task.entry_name);
+
     /// Step 3: Create node in finished/ status dir and write execution status.
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
     /// NOTE: If ZooKeeper connection is lost here, we will try again to write query status.
@@ -650,7 +640,6 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     active_node->setAlreadyRemoved();
 
     task.completely_processed = true;
-    updateMaxDDLEntryID(task.entry_name);
 }
 
 
@@ -877,7 +866,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
 
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
-            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, "finished");
+            zookeeper->tryRemoveChildrenRecursive(node_path, "finished");
 
             /// And then we remove node_path and node_path/finished in a single transaction
             Coordination::Requests ops;

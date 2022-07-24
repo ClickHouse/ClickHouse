@@ -1,6 +1,6 @@
 ---
-sidebar_position: 41
-sidebar_label: ORDER BY
+toc_priority: 41
+toc_title: ORDER BY
 ---
 
 # Manipulating Key Expressions {#manipulations-with-key-expressions}
@@ -13,6 +13,5 @@ The command changes the [sorting key](../../../engines/table-engines/mergetree-f
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part rows are ordered by the sorting key expression you cannot add expressions containing existing columns to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query, without default column value).
 
-:::note    
-It only works for tables in the [`MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) family (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables).
-:::
+!!! note "Note"
+    It only works for tables in the [`MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) family (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables).

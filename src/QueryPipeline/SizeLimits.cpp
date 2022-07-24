@@ -12,20 +12,12 @@ bool SizeLimits::check(UInt64 rows, UInt64 bytes, const char * what, int too_man
     if (overflow_mode == OverflowMode::THROW)
     {
         if (max_rows && rows > max_rows)
-            throw Exception(
-                too_many_rows_exception_code,
-                "Limit for {} exceeded, max rows: {}, current rows: {}",
-                what,
-                formatReadableQuantity(max_rows),
-                formatReadableQuantity(rows));
+            throw Exception("Limit for " + std::string(what) + " exceeded, max rows: " + formatReadableQuantity(max_rows)
+                + ", current rows: " + formatReadableQuantity(rows), too_many_rows_exception_code);
 
         if (max_bytes && bytes > max_bytes)
-            throw Exception(
-                too_many_bytes_exception_code,
-                "Limit for {} exceeded, max bytes: {}, current bytes: {}",
-                what,
-                ReadableSize(max_bytes),
-                ReadableSize(bytes));
+            throw Exception(fmt::format("Limit for {} exceeded, max bytes: {}, current bytes: {}",
+                std::string(what), ReadableSize(max_bytes), ReadableSize(bytes)), too_many_bytes_exception_code);
 
         return true;
     }

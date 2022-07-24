@@ -18,11 +18,11 @@ public:
         , max_streams(context->getSettingsRef().max_threads)
     {
         if (options.shard_num)
-            context->addSpecialScalar(
+            context->addLocalScalar(
                 "_shard_num",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
         if (options.shard_count)
-            context->addSpecialScalar(
+            context->addLocalScalar(
                 "_shard_count",
                 Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
     }

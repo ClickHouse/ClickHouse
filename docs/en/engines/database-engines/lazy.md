@@ -1,6 +1,6 @@
 ---
-sidebar_label: Lazy
-sidebar_position: 20
+toc_priority: 31
+toc_title: Lazy
 ---
 
 # Lazy {#lazy}

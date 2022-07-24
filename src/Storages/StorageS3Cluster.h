@@ -41,13 +41,14 @@ protected:
         const StorageID & table_id_,
         String cluster_name_,
         const String & format_name_,
+        UInt64 max_connections_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
         const String & compression_method_);
 
 private:
-    StorageS3::S3Configuration s3_configuration;
+    StorageS3::ClientAuthentication client_auth;
 
     String filename;
     String cluster_name;

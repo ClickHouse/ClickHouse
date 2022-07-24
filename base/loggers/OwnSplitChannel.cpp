@@ -103,7 +103,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(DNSResolver::instance().getHostName());
         columns[i++]->insert(msg_ext.query_id);
         columns[i++]->insert(msg_ext.thread_id);
-        columns[i++]->insert(static_cast<Int64>(msg.getPriority()));
+        columns[i++]->insert(Int64(msg.getPriority()));
         columns[i++]->insert(msg.getSource());
         columns[i++]->insert(msg.getText());
 

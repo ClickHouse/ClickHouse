@@ -38,7 +38,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column);
 
 /// Converts Object types and columns to Tuples in @columns_list and @block
 /// and checks that types are consistent with types in @extended_storage_columns.
-void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_storage_columns);
+void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns);
 
 /// Checks that each path is not the prefix of any other path.
 void checkObjectHasNoAmbiguosPaths(const PathsInData & paths);

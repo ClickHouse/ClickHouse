@@ -45,8 +45,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static MergeTreeReaderSettings getMergeTreeReaderSettings(
-    const ContextPtr & context, const SelectQueryInfo & query_info)
+static MergeTreeReaderSettings getMergeTreeReaderSettings(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     return
@@ -54,7 +53,6 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .read_settings = context->getReadSettings(),
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
-        .read_in_order = query_info.input_order_info != nullptr,
     };
 }
 
@@ -84,7 +82,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         getPrewhereInfo(query_info_),
         data_.getPartitionValueType(),
         virt_column_names_)})
-    , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
+    , reader_settings(getMergeTreeReaderSettings(context_))
     , prepared_parts(std::move(parts_))
     , real_column_names(std::move(real_column_names_))
     , virt_column_names(std::move(virt_column_names_))
@@ -114,9 +112,6 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     if (enable_parallel_reading)
         read_task_callback = context->getMergeTreeReadTaskCallback();
-
-    /// Add explicit description.
-    setStepDescription(data.getStorageID().getFullNameNotQuoted());
 }
 
 Pipe ReadFromMergeTree::readFromPool(
@@ -208,7 +203,6 @@ ProcessorPtr ReadFromMergeTree::createSource(
             .colums_to_read = required_columns
         };
     }
-
     return std::make_shared<TSource>(
             data, storage_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
@@ -612,8 +606,14 @@ static void addMergingFinal(
 
     ColumnNumbers key_columns;
     key_columns.reserve(sort_description.size());
+
     for (const auto & desc : sort_description)
-        key_columns.push_back(header.getPositionByName(desc.column_name));
+    {
+        if (!desc.column_name.empty())
+            key_columns.push_back(header.getPositionByName(desc.column_name));
+        else
+            key_columns.emplace_back(desc.column_number);
+    }
 
     pipe.addSimpleTransform([&](const Block & stream_header)
     {
@@ -768,8 +768,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
         Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
 
+        const auto & header = pipe.getHeader();
         for (size_t i = 0; i < sort_columns_size; ++i)
-            sort_description.emplace_back(sort_columns[i], 1, 1);
+            sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
         addMergingFinal(
             pipe,
@@ -917,7 +918,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             total_marks_pk += part->index_granularity.getMarksCountWithoutFinal();
         parts_before_pk = parts.size();
 
-        auto reader_settings = getMergeTreeReaderSettings(context, query_info);
+        auto reader_settings = getMergeTreeReaderSettings(context);
 
         bool use_skip_indexes = settings.use_skip_indexes;
         if (select.final() && !settings.use_skip_indexes_if_final)

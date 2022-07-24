@@ -453,12 +453,14 @@ TemplateSchemaReader::TemplateSchemaReader(
     const ParsedTemplateFormatString & format_,
     const ParsedTemplateFormatString & row_format_,
     std::string row_between_delimiter,
-    const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_, getDefaultDataTypeForEscapingRules(row_format_.escaping_rules))
+    const FormatSettings & format_settings_,
+    ContextPtr context_)
+    : IRowSchemaReader(buf, format_settings_.max_rows_to_read_for_schema_inference)
     , buf(in_)
     , format(format_)
     , row_format(row_format_)
     , format_settings(format_settings_)
+    , context(context_)
     , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
 {
     setColumnNames(row_format.column_names);
@@ -487,7 +489,7 @@ DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
             format_settings.csv.delimiter = row_format.delimiters[i + 1].empty() ? format_settings.csv.delimiter : row_format.delimiters[i + 1].front();
 
         field = readFieldByEscapingRule(buf, row_format.escaping_rules[i], format_settings);
-        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i]));
+        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i], context));
     }
 
     format_reader.skipRowEndDelimiter();
@@ -562,12 +564,12 @@ void registerTemplateSchemaReader(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
     {
-        factory.registerSchemaReader(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [ignore_spaces](ReadBuffer & buf, const FormatSettings & settings)
+        factory.registerSchemaReader(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [ignore_spaces](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
         {
             size_t index = 0;
             auto idx_getter = [&](const String &) -> std::optional<size_t> { return index++; };
             auto row_format = fillRowFormat(settings, idx_getter, false);
-            return std::make_shared<TemplateSchemaReader>(buf, ignore_spaces, fillResultSetFormat(settings), row_format, settings.template_settings.row_between_delimiter, settings);
+            return std::make_shared<TemplateSchemaReader>(buf, ignore_spaces, fillResultSetFormat(settings), row_format, settings.template_settings.row_between_delimiter, settings, context);
         });
     }
 }

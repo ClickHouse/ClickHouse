@@ -149,7 +149,7 @@ TEST(GraphiteTest, testSelectPattern)
     using namespace std::literals;
 
     std::string
-        xml(R"END(<clickhouse>
+        xml(R"END(<yandex>
 <graphite_rollup>
     <pattern>
         <regexp>\.sum$</regexp>
@@ -210,7 +210,7 @@ TEST(GraphiteTest, testSelectPattern)
         </retention>
     </default>
 </graphite_rollup>
-</clickhouse>
+</yandex>
 )END");
 
     // Retentions must be ordered by 'age' descending.
@@ -370,7 +370,7 @@ TEST(GraphiteTest, testSelectPatternTyped)
     using namespace std::literals;
 
     std::string
-        xml(R"END(<clickhouse>
+        xml(R"END(<yandex>
 <graphite_rollup>
     <pattern>
         <rule_type>plain</rule_type>
@@ -488,7 +488,7 @@ TEST(GraphiteTest, testSelectPatternTyped)
         </retention>
     </default>
 </graphite_rollup>
-</clickhouse>
+</yandex>
 )END");
 
     // Retentions must be ordered by 'age' descending.

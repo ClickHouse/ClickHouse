@@ -23,6 +23,7 @@ public:
     {
         UInt64 uncompressed_size;
         UInt64 compressed_size;
+        int compression_method;
         bool is_encrypted;
     };
 

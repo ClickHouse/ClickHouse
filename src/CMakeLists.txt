@@ -49,18 +49,6 @@ if (COMPILER_GCC)
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
 
-# ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
-# If turned ON, this option defines such macro.
-# See `src/Common/TargetSpecific.h`
-option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
-
-if (ENABLE_MULTITARGET_CODE)
-    add_definitions(-DENABLE_MULTITARGET_CODE=1)
-else()
-    add_definitions(-DENABLE_MULTITARGET_CODE=0)
-endif()
-
-
 add_subdirectory (Access)
 add_subdirectory (Backups)
 add_subdirectory (Columns)
@@ -506,11 +494,6 @@ endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
-if (USE_ORC)
-    dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
-endif ()
-
 if (TARGET ch_contrib::rocksdb)
     dbms_target_link_libraries(PUBLIC ch_contrib::rocksdb)
 endif()
@@ -588,6 +571,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
+    endif()
+
+    if(TARGET ch_contrib::rapidjson)
+        target_include_directories(unit_tests_dbms PRIVATE ch_contrib::rapidjson)
     endif()
 
     if (TARGET ch_contrib::yaml_cpp)

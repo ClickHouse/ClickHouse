@@ -1,6 +1,6 @@
 ---
-sidebar_position: 45
-sidebar_label: Secured Communication with Zookeeper
+toc_priority: 45
+toc_title: Secured communication with Zookeeper
 ---
 
 # Optional secured communication between ClickHouse and Zookeeper {#secured-communication-with-zookeeper}
@@ -67,7 +67,8 @@ SELECT * FROM system.zookeeper WHERE path = '/';
 On unencrypted connection you will see in `tcpdump` output something like this:
 
 ```text
-..../zookeeper/quota.
+..../zookeeper/q
+uota.
 ```
 
 On encrypted connection you should not see this.

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 11
-sidebar_label: 安装部署
+toc_priority: 11
+toc_title: 安装部署
 ---
 
 # 安装 {#clickhouse-an-zhuang}
@@ -24,37 +24,15 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 建议使用Debian或Ubuntu的官方预编译`deb`软件包。运行以下命令来安装包:
 
 ``` bash
-sudo apt-get install -y apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
-
-echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you've set up a password.
+{% include 'install/deb.sh' %}
 ```
 
 <details markdown="1">
 
 <summary>Deprecated Method for installing deb-packages</summary>
-
 ``` bash
-sudo apt-get install apt-transport-https ca-certificates dirmngr
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
-
-echo "deb https://repo.clickhouse.com/deb/stable/ main/" | sudo tee \
-    /etc/apt/sources.list.d/clickhouse.list
-sudo apt-get update
-
-sudo apt-get install -y clickhouse-server clickhouse-client
-
-sudo service clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+{% include 'install/deb_repo.sh' %}
 ```
-
 </details>
 
 如果您想使用最新的版本，请用`testing`替代`stable`(我们只推荐您用于测试环境)。
@@ -75,28 +53,15 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 首先，您需要添加官方存储库：
 
 ``` bash
-sudo yum install -y yum-utils
-sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
-sudo yum install -y clickhouse-server clickhouse-client
-
-sudo /etc/init.d/clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+{% include 'install/rpm.sh' %}
 ```
 
 <details markdown="1">
 
 <summary>Deprecated Method for installing rpm-packages</summary>
-
 ``` bash
-sudo yum install yum-utils
-sudo rpm --import https://repo.clickhouse.com/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/clickhouse.repo
-sudo yum install clickhouse-server clickhouse-client
-
-sudo /etc/init.d/clickhouse-server start
-clickhouse-client # or "clickhouse-client --password" if you set up a password.
+{% include 'install/rpm_repo.sh' %}
 ```
-
 </details>
 
 如果您想使用最新的版本，请用`testing`替代`stable`(我们只推荐您用于测试环境)。`prestable`有时也可用。
@@ -118,54 +83,15 @@ sudo yum install clickhouse-server clickhouse-client
 下载后解压缩下载资源文件并使用安装脚本进行安装。以下是一个最新稳定版本的安装示例:
 
 ``` bash
-LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
-    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
-export LATEST_VERSION
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz"
-
-tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
-sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
-
-tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
-sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
-
-tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
-sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
-sudo /etc/init.d/clickhouse-server start
-
-tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
-sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
+{% include 'install/tgz.sh' %}
 ```
 
 <details markdown="1">
 
 <summary>Deprecated Method for installing tgz archives</summary>
-
 ``` bash
-export LATEST_VERSION=$(curl -s https://repo.clickhouse.com/tgz/stable/ | \
-    grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION.tgz
-curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION.tgz
-
-tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
-sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
-
-tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
-sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
-
-tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
-sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
-sudo /etc/init.d/clickhouse-server start
-
-tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
-sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
+{% include 'install/tgz_repo.sh' %}
 ```
-
 </details>
 
 对于生产环境，建议使用最新的`stable`版本。你可以在GitHub页面https://github.com/ClickHouse/ClickHouse/tags找到它，它以后缀`-stable`标志。

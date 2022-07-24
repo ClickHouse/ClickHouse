@@ -1,6 +1,6 @@
 ---
-sidebar_position: 59
-sidebar_label: IPv4
+toc_priority: 59
+toc_title: IPv4
 ---
 
 ## IPv4 {#ipv4}

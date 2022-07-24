@@ -60,9 +60,11 @@ public:
         std::optional<size_t> read_hint,
         std::optional<size_t> file_size) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 
-    void removeFromRemoteFS(const std::vector<String> & paths) override;
+    void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) override;
+
+    RemoteFSPathKeeperPtr createFSPathKeeper() const override;
 
     /// Check file exists and ClickHouse has an access to it
     /// Overrode in remote disk

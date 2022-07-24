@@ -26,6 +26,7 @@
 #    include <Common/setThreadName.h>
 #    include <filesystem>
 #    include <Common/filesystemHelpers.h>
+#    include <Parsers/ASTIdentifier.h>
 
 namespace fs = std::filesystem;
 
@@ -148,11 +149,22 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         auto storage_engine_arguments = ast_storage->engine->arguments;
 
         /// Add table_name to engine arguments
-        auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
-        storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
+        if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
+        {
+            storage_engine_arguments->children.push_back(
+                makeASTFunction("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
+        }
+        else
+        {
+            auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
+            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
+        }
 
         /// Unset settings
-        std::erase_if(storage_children, [&](const ASTPtr & element) { return element.get() == ast_storage->settings; });
+        storage_children.erase(
+            std::remove_if(storage_children.begin(), storage_children.end(),
+                           [&](const ASTPtr & element) { return element.get() == ast_storage->settings; }),
+            storage_children.end());
         ast_storage->settings = nullptr;
     }
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,

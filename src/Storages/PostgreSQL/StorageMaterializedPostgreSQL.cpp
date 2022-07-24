@@ -246,9 +246,8 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPt
         return;
 
     replication_handler->shutdownFinal();
-    replication_handler.reset();
 
-    auto nested_table = tryGetNested() != nullptr;
+    auto nested_table = getNested();
     if (nested_table)
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), no_delay);
 }
@@ -352,7 +351,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
 
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
-        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
         return ast_expression;
     }
 

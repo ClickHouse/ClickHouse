@@ -24,7 +24,6 @@
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
 
 #    include <IO/S3/PocoHTTPClientFactory.h>
 #    include <IO/S3/PocoHTTPClient.h>
@@ -86,7 +85,7 @@ public:
     void callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
     {
         const auto & [level, prio] = convertLogLevel(log_level);
-        if (tag_loggers.contains(tag))
+        if (tag_loggers.count(tag) > 0)
         {
             LOG_IMPL(tag_loggers[tag], level, prio, "{}", message);
         }
@@ -285,7 +284,7 @@ protected:
 
         auto credentials_view = credentials_doc.View();
         access_key = credentials_view.GetString("AccessKeyId");
-        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key.");
+        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
 
         secret_key = credentials_view.GetString("SecretAccessKey");
         token = credentials_view.GetString("Token");
@@ -483,7 +482,7 @@ protected:
         Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
 
         auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
-        LOG_TRACE(logger, "Successfully retrieved credentials.");
+        LOG_TRACE(logger, "Successfully retrieved credentials with AWS_ACCESS_KEY: {}", result.creds.GetAWSAccessKeyId());
         credentials = result.creds;
     }
 
@@ -518,7 +517,7 @@ private:
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request)
+    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_insecure_imds_request)
     {
         auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
@@ -530,17 +529,16 @@ public:
             static const char AWS_EC2_METADATA_DISABLED[] = "AWS_EC2_METADATA_DISABLED";
 
             /// The only difference from DefaultAWSCredentialsProviderChain::DefaultAWSCredentialsProviderChain()
-            /// is that this chain uses custom ClientConfiguration. Also we removed process provider because it's useless in our case.
-            ///
-            /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
-            /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
+            /// is that this chain uses custom ClientConfiguration.
+
+            AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
+            AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+            AddProvider(std::make_shared<Aws::Auth::ProcessCredentialsProvider>());
+
             {
                 DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.region, configuration.remote_host_filter, configuration.s3_max_redirects);
                 AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
             }
-
-            AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
-
 
             /// ECS TaskRole Credentials only available when ENVIRONMENT VARIABLE is set.
             const auto relative_uri = Aws::Environment::GetEnv(AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI);
@@ -603,9 +601,6 @@ public:
         }
 
         AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
-        /// Quite verbose provider (argues if file with credentials doesn't exist) so iut's the last one
-        /// in chain.
-        AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
     }
 };
 
@@ -683,7 +678,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int S3_ERROR;
 }
 
 namespace S3
@@ -779,26 +773,12 @@ namespace S3
         static constexpr auto OBS = "OBS";
         static constexpr auto OSS = "OSS";
 
+
         uri = uri_;
         storage_name = S3;
 
         if (uri.getHost().empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
-
-        /// Extract object version ID from query string.
-        {
-            version_id = "";
-            const String version_key = "versionId=";
-            const auto query_string = uri.getQuery();
-
-            auto start = query_string.rfind(version_key);
-            if (start != std::string::npos)
-            {
-                start += version_key.length();
-                auto end = query_string.find_first_of('&', start);
-                version_id = query_string.substr(start, end == std::string::npos ? std::string::npos : end - start);
-            }
-        }
 
         String name;
         String endpoint_authority_from_uri;
@@ -854,29 +834,6 @@ namespace S3
         if (bucket.length() < 3 || bucket.length() > 63)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket name length is out of bounds in virtual hosted style S3 URI:     {}{}",
                             quoteString(bucket), !uri.empty() ? " (" + uri.toString() + ")" : "");
-    }
-
-    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
-    {
-        Aws::S3::Model::HeadObjectRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        Aws::S3::Model::HeadObjectOutcome outcome = client_ptr->HeadObject(req);
-
-        if (outcome.IsSuccess())
-        {
-            auto read_result = outcome.GetResultWithOwnership();
-            return static_cast<size_t>(read_result.GetContentLength());
-        }
-        else if (throw_on_error)
-        {
-            throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
-        }
-        return 0;
     }
 }
 

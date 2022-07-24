@@ -95,22 +95,11 @@ public:
 
     bool reserve(size_t size);
 
-    void write(const char * from, size_t size, size_t offset_);
-
-    /**
-     * writeInMemory and finalizeWrite are used together to write a single file with delay.
-     * Both can be called only once, one after another. Used for writing cache via threadpool
-     * on wrote operations. TODO: this solution is temporary, until adding a separate cache layer.
-     */
-    void writeInMemory(const char * from, size_t size);
-
-    size_t finalizeWrite();
+    void write(const char * from, size_t size);
 
     RemoteFileReaderPtr getRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
-
-    void resetRemoteFileReader();
 
     String getOrSetDownloader();
 
@@ -126,55 +115,22 @@ public:
 
     size_t getDownloadOffset() const;
 
-    size_t getDownloadedSize() const;
-
     void completeBatchAndResetDownloader();
 
     void complete(State state);
 
     String getInfoForLog() const;
 
-    size_t getHitsCount() const { return hits_count; }
-
-    size_t getRefCount() const { return ref_count; }
-
-    void incrementHitsCount() { ++hits_count; }
-
-    void assertCorrectness() const;
-
-    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
-
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
-
+    bool lastFileSegmentHolder() const;
+    void complete();
+    void completeImpl(bool allow_non_strict_checking = false);
+    void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
+    static String getCallerIdImpl(bool allow_non_strict_checking = false);
+    void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
     size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
     String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertNotDetached() const;
-    void assertDetachedStatus() const;
-
-
-    void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
-    void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
-    bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
-
-    void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
-
-    bool lastFileSegmentHolder() const;
-
-    /// complete() without any completion state is called from destructor of
-    /// FileSegmentsHolder. complete() might check if the caller of the method
-    /// is the last alive holder of the segment. Therefore, complete() and destruction
-    /// of the file segment pointer must be done under the same cache mutex.
-    void complete(std::lock_guard<std::mutex> & cache_lock);
-
-    void completeImpl(
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
-
-    static String getCallerIdImpl();
-
-    void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 
     const Range segment_range;
 
@@ -203,13 +159,9 @@ private:
 
     Poco::Logger * log;
 
-    /// "detached" file segment means that it is not owned by cache ("detached" from cache).
-    /// In general case, all file segments are owned by cache.
     bool detached = false;
 
     std::atomic<bool> is_downloaded{false};
-    std::atomic<size_t> hits_count = 0; /// cache hits.
-    std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 };
 
 struct FileSegmentsHolder : private boost::noncopyable
@@ -217,7 +169,28 @@ struct FileSegmentsHolder : private boost::noncopyable
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
     FileSegmentsHolder(FileSegmentsHolder && other) : file_segments(std::move(other.file_segments)) {}
 
-    ~FileSegmentsHolder();
+    ~FileSegmentsHolder()
+    {
+        /// In CacheableReadBufferFromRemoteFS file segment's downloader removes file segments from
+        /// FileSegmentsHolder right after calling file_segment->complete(), so on destruction here
+        /// remain only uncompleted file segments.
+
+        for (auto & segment : file_segments)
+        {
+            try
+            {
+                segment->complete();
+            }
+            catch (...)
+            {
+#ifndef NDEBUG
+                throw;
+#else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+#endif
+            }
+        }
+    }
 
     FileSegments file_segments{};
 

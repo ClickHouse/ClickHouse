@@ -420,15 +420,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** Element of INTERPOLATE expression
-  */
-class ParserInterpolateElement : public IParserBase
-{
-protected:
-    const char * getName() const override { return "element of INTERPOLATE expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 /** Parser for function with arguments like KEY VALUE (space separated)
   * no commas allowed, just space-separated pairs.
   */

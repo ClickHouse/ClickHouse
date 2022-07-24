@@ -81,14 +81,6 @@
     M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
-    M(KafkaConsumers, "Number of active Kafka consumers") \
-    M(KafkaConsumersWithAssignment, "Number of active Kafka consumers which have some partitions assigned.") \
-    M(KafkaProducers, "Number of active Kafka producer created") \
-    M(KafkaLibrdkafkaThreads, "Number of active librdkafka threads") \
-    M(KafkaBackgroundReads, "Number of background reads currently working (populating materialized views from Kafka)") \
-    M(KafkaConsumersInUse, "Number of consumers which are currently used by direct or background reads") \
-    M(KafkaWrites, "Number of currently running inserts to Kafka") \
-    M(KafkaAssignedPartitions, "Number of partitions Kafka tables currently assigned to") \
 
 namespace CurrentMetrics
 {

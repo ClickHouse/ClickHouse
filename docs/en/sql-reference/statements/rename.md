@@ -1,6 +1,6 @@
 ---
-sidebar_position: 48
-sidebar_label: RENAME
+toc_priority: 48
+toc_title: RENAME
 ---
 
 # RENAME Statement {#misc_operations-rename}
@@ -8,9 +8,8 @@ sidebar_label: RENAME
 Renames databases, tables, or dictionaries. Several entities can be renamed in a single query.
 Note that the `RENAME` query with several entities is non-atomic operation. To swap entities names atomically, use the [EXCHANGE](./exchange.md) statement.
 
-:::note    
-The `RENAME` query is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine only.
-:::
+!!! note "Note"
+    The `RENAME` query is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine only.
 
 **Syntax**
 

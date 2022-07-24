@@ -140,7 +140,7 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
     std::vector<UUID> user_ids;
 
     // Build a list of ids of the relevant users.
-    if (common_role_names.contains(role_name))
+    if (common_role_names.count(role_name))
     {
         user_ids = memory_storage.findAll<User>();
     }
@@ -254,7 +254,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
     // Cleanup users_per_roles and granted_role_* mappings.
     for (const auto & old_role_name : old_role_names)
     {
-        if (local_role_names.contains(old_role_name))
+        if (local_role_names.count(old_role_name))
             continue;
 
         const auto rit = users_per_roles.find(old_role_name);
@@ -269,7 +269,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
 
         users_per_roles.erase(rit);
 
-        if (common_role_names.contains(old_role_name))
+        if (common_role_names.count(old_role_name))
             continue;
 
         const auto iit = granted_role_ids.find(old_role_name);

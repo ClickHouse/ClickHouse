@@ -179,9 +179,8 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         method = chooseCompressionMethod(current_path, compression_method);
     }
 
-    /// For clickhouse-local and clickhouse-client add progress callback to display progress bar.
-    if (context->getApplicationType() == Context::ApplicationType::LOCAL
-        || context->getApplicationType() == Context::ApplicationType::CLIENT)
+    /// For clickhouse-local add progress callback to display progress bar.
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL)
     {
         auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
         in.setProgressCallback(context);
@@ -237,7 +236,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
     /// in case of file descriptor we have a stream of data and we cannot
     /// start reading data from the beginning after reading some data for
     /// schema inference.
-    ReadBufferIterator read_buffer_iterator = [&]()
+    auto read_buffer_creator = [&]()
     {
         /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
         /// where we can store the original read buffer.
@@ -247,7 +246,7 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
         return read_buf;
     };
 
-    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, false, context, peekable_read_buffer_from_fd);
+    auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_creator, context, peekable_read_buffer_from_fd);
     if (peekable_read_buffer_from_fd)
     {
         /// If we have created read buffer in readSchemaFromFormat we should rollback to checkpoint.
@@ -274,22 +273,38 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
         return ColumnsDescription(source->getOutputs().front().getHeader().getNamesAndTypesList());
     }
 
-    if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
-        throw Exception(
-            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
-            "table structure manually",
-            format);
-
-    ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()]() mutable -> std::unique_ptr<ReadBuffer>
+    std::string exception_messages;
+    bool read_buffer_creator_was_used = false;
+    for (const auto & path : paths)
     {
-        if (it == paths.end())
-            return nullptr;
+        auto read_buffer_creator = [&]()
+        {
+            read_buffer_creator_was_used = true;
 
-        return createReadBuffer(*it++, false, "File", -1, compression_method, context);
-    };
+            if (!std::filesystem::exists(path))
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file, because there are no files with provided path. You must specify "
+                    "table structure manually",
+                    format);
 
-    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
+            return createReadBuffer(path, false, "File", -1, compression_method, context);
+        };
+
+        try
+        {
+            return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
+        }
+        catch (...)
+        {
+            if (paths.size() == 1 || !read_buffer_creator_was_used)
+                throw;
+
+            exception_messages += getCurrentExceptionMessage(false) + "\n";
+        }
+    }
+
+    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:\n{}", exception_messages);
 }
 
 bool StorageFile::isColumnOriented() const
@@ -528,6 +543,7 @@ public:
             Chunk chunk;
             if (reader->pull(chunk))
             {
+                //Columns columns = res.getColumns();
                 UInt64 num_rows = chunk.getNumRows();
 
                 /// Enrich with virtual columns.
@@ -627,9 +643,7 @@ Pipe StorageFile::read(
 
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = context->getFileProgressCallback();
-    if ((context->getApplicationType() == Context::ApplicationType::LOCAL
-         || context->getApplicationType() == Context::ApplicationType::CLIENT)
-         && progress_callback)
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL && progress_callback)
         progress_callback(FileProgress(0, total_bytes_to_read));
 
     for (size_t i = 0; i < num_streams; ++i)

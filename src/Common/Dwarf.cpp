@@ -121,8 +121,7 @@ const uint32_t kMaxAbbreviationEntries = 1000;
 
 // Read (bitwise) one object of type T
 template <typename T>
-requires std::is_trivial_v<T> && std::is_standard_layout_v<T>
-T read(std::string_view & sp)
+std::enable_if_t<std::is_trivial_v<T> && std::is_standard_layout_v<T>, T> read(std::string_view & sp)
 {
     SAFE_CHECK(sp.size() >= sizeof(T), fmt::format("underflow: expected bytes {}, got bytes {}", sizeof(T), sp.size()));
     T x;

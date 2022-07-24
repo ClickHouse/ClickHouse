@@ -84,7 +84,8 @@ public:
         }
         else if (compression_method == CompressionMethod::Zstd)
         {
-            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::move(file_buf), /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append);
+            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
+                std::move(file_buf), /* compression level = */ 3, /* append_to_existing_file_ = */ mode == WriteMode::Append);
         }
         else
         {
@@ -140,7 +141,7 @@ private:
 
     std::string filepath;
     std::unique_ptr<WriteBufferFromFile> file_buf;
-    std::unique_ptr<WriteBufferWithOwnMemoryDecorator> compressed_buffer;
+    std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
     uint64_t start_index;
 };
 
@@ -222,8 +223,8 @@ public:
                 }
 
                 /// Check for duplicated changelog ids
-                if (logs.contains(record.header.index))
-                    std::erase_if(logs, [&record] (const auto & item) { return item.first >= record.header.index; });
+                if (logs.count(record.header.index) != 0)
+                    std::erase_if(logs, [record] (const auto & item) { return item.first >= record.header.index; });
 
                 result.total_entries_read_from_log += 1;
 
@@ -659,7 +660,6 @@ LogEntryPtr Changelog::getLatestConfigChange() const
 nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, int32_t count)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> returned_logs;
-    returned_logs.reserve(count);
 
     uint64_t size_total = 0;
     for (uint64_t i = index; i < index + count; ++i)
@@ -670,7 +670,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
 
         nuraft::ptr<nuraft::buffer> buf = entry->second->serialize();
         size_total += buf->size();
-        returned_logs.push_back(std::move(buf));
+        returned_logs.push_back(buf);
     }
 
     nuraft::ptr<nuraft::buffer> buf_out = nuraft::buffer::alloc(sizeof(int32_t) + count * sizeof(int32_t) + size_total);
@@ -679,8 +679,9 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
 
     for (auto & entry : returned_logs)
     {
-        buf_out->put(static_cast<int32_t>(entry->size()));
-        buf_out->put(*entry);
+        nuraft::ptr<nuraft::buffer> & bb = entry;
+        buf_out->put(static_cast<int32_t>(bb->size()));
+        buf_out->put(*bb);
     }
     return buf_out;
 }
@@ -699,7 +700,7 @@ void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
         buffer.get(buf_local);
 
         LogEntryPtr log_entry = nuraft::log_entry::deserialize(*buf_local);
-        if (i == 0 && logs.contains(cur_index))
+        if (i == 0 && logs.count(cur_index))
             writeAt(cur_index, log_entry);
         else
             appendEntry(cur_index, log_entry);

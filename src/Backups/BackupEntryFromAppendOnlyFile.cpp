@@ -1,5 +1,5 @@
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
-#include <IO/LimitSeekableReadBuffer.h>
+#include <IO/LimitReadBuffer.h>
 
 
 namespace DB
@@ -26,10 +26,10 @@ BackupEntryFromAppendOnlyFile::BackupEntryFromAppendOnlyFile(
 {
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupEntryFromAppendOnlyFile::getReadBuffer() const
+std::unique_ptr<ReadBuffer> BackupEntryFromAppendOnlyFile::getReadBuffer() const
 {
     auto buf = BackupEntryFromImmutableFile::getReadBuffer();
-    return std::make_unique<LimitSeekableReadBuffer>(std::move(buf), limit);
+    return std::make_unique<LimitReadBuffer>(std::move(buf), limit, true);
 }
 
 }

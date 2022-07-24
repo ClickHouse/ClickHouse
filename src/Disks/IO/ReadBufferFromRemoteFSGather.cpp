@@ -36,24 +36,21 @@ namespace ErrorCodes
 SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t file_size)
 {
     current_path = path;
-    auto remote_path = fs::path(common_path_prefix) / path;
 
     auto cache = settings.remote_fs_cache;
-    bool with_cache = cache
-        && settings.enable_filesystem_cache
-        && (!IFileCache::isReadOnly() || settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache);
+    bool with_cache = cache && settings.remote_fs_enable_cache && !IFileCache::shouldBypassCache();
 
     auto remote_file_reader_creator = [=, this]()
     {
         return std::make_unique<ReadBufferFromS3>(
-            client_ptr, bucket, remote_path, version_id, max_single_read_retries,
-            settings, /* use_external_buffer */true, /* offset */ 0, read_until_position, /* restricted_seek */true);
+            client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries,
+            settings, /* use_external_buffer */true, read_until_position, /* restricted_seek */true);
     };
 
     if (with_cache)
     {
         return std::make_shared<CachedReadBufferFromRemoteFS>(
-            remote_path, cache, remote_file_reader_creator, settings, read_until_position ? read_until_position : file_size);
+            path, cache, remote_file_reader_creator, settings, read_until_position ? read_until_position : file_size);
     }
 
     return remote_file_reader_creator();
@@ -86,14 +83,11 @@ SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const
 #endif
 
 
-ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
-    const std::string & common_path_prefix_,
-    const BlobsPathToSize & blobs_to_read_,
-    const ReadSettings & settings_)
+ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata & metadata_, const ReadSettings & settings_, const String & path_)
     : ReadBuffer(nullptr, 0)
-    , common_path_prefix(common_path_prefix_)
-    , blobs_to_read(blobs_to_read_)
+    , metadata(metadata_)
     , settings(settings_)
+    , canonical_path(path_)
     , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
 }
@@ -125,9 +119,9 @@ void ReadBufferFromRemoteFSGather::initialize()
 {
     /// One clickhouse file can be split into multiple files in remote fs.
     auto current_buf_offset = file_offset_of_buffer_end;
-    for (size_t i = 0; i < blobs_to_read.size(); ++i)
+    for (size_t i = 0; i < metadata.remote_fs_objects.size(); ++i)
     {
-        const auto & [file_path, size] = blobs_to_read[i];
+        const auto & [file_path, size] = metadata.remote_fs_objects[i];
 
         if (size > current_buf_offset)
         {
@@ -144,7 +138,7 @@ void ReadBufferFromRemoteFSGather::initialize()
 
         current_buf_offset -= size;
     }
-    current_buf_idx = blobs_to_read.size();
+    current_buf_idx = metadata.remote_fs_objects.size();
     current_buf = nullptr;
 }
 
@@ -174,12 +168,12 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
 bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 {
     /// If there is no available buffers - nothing to read.
-    if (current_buf_idx + 1 >= blobs_to_read.size())
+    if (current_buf_idx + 1 >= metadata.remote_fs_objects.size())
         return false;
 
     ++current_buf_idx;
 
-    const auto & [path, size] = blobs_to_read[current_buf_idx];
+    const auto & [path, size] = metadata.remote_fs_objects[current_buf_idx];
     current_buf = createImplementationBuffer(path, size);
 
     return true;
@@ -208,7 +202,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     if (!result)
         result = current_buf->next();
 
-    if (blobs_to_read.size() == 1)
+    if (metadata.remote_fs_objects.size() == 1)
     {
         file_offset_of_buffer_end = current_buf->getFileOffsetOfBufferEnd();
     }
@@ -261,8 +255,8 @@ String ReadBufferFromRemoteFSGather::getFileName() const
 size_t ReadBufferFromRemoteFSGather::getFileSize() const
 {
     size_t size = 0;
-    for (const auto & object : blobs_to_read)
-        size += object.bytes_size;
+    for (const auto & object : metadata.remote_fs_objects)
+        size += object.second;
     return size;
 }
 

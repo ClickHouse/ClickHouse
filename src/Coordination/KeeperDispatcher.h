@@ -109,16 +109,10 @@ public:
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
     void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
 
-    void startServer();
-
     bool checkInit() const
     {
         return server && server->checkInit();
     }
-
-    /// Is server accepting requests, i.e. connected to the cluster
-    /// and achieved quorum
-    bool isServerActive() const;
 
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
@@ -126,8 +120,6 @@ public:
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
-
-    void forceRecovery();
 
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);

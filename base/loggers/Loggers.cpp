@@ -197,6 +197,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
+        logger.warning("Logging " + console_log_level_string + " to console");
         log->setLevel(console_log_level);
         split->addChannel(log, "console");
     }

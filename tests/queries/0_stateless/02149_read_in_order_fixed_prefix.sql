@@ -1,5 +1,3 @@
-SET max_threads=0;
-
 DROP TABLE IF EXISTS t_read_in_order;
 
 CREATE TABLE t_read_in_order(date Date, i UInt64, v UInt64)

@@ -86,7 +86,7 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
-    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
+    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 
 template<typename T>

@@ -30,7 +30,7 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
 void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     /// NOTE: due to trickery of filling cte_name (in interpreters) it is hard
-    /// to print it without newline (for !oneline case), since if nl_or_ws
+    /// to print it w/o newline (for !oneline case), since if nl_or_ws
     /// prepended here, then formatting will be incorrect with alias:
     ///
     ///   (select 1 in ((select 1) as sub))

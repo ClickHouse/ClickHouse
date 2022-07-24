@@ -1,15 +1,14 @@
 ---
-sidebar_position: 59
-sidebar_label: clickhouse-copier
+toc_priority: 59
+toc_title: clickhouse-copier
 ---
 
-# clickhouse-copier 
+# clickhouse-copier {#clickhouse-copier}
 
 Copies data from the tables in one cluster to tables in another (or the same) cluster.
 
-:::warning    
-To get a consistent copy, the data in the source tables and partitions should not change during the entire process.
-:::
+!!! warning "Warning"
+    To get a consistent copy, the data in the source tables and partitions should not change during the entire process.
 
 You can run multiple `clickhouse-copier` instances on different servers to perform the same job. ZooKeeper is used for syncing the processes.
 

@@ -201,7 +201,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
     for (size_t i = 0; i < arg_types.size(); ++i)
     {
         auto & column = columns[i];
-        const auto & type = arg_types[i];
+        auto type = arg_types[i];
 
         auto * value = b.CreateLoad(toNativeType(b, removeNullable(type)), column.data);
         if (!type->isNullable())

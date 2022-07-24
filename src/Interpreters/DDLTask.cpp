@@ -142,11 +142,10 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 {
     const char * begin = entry.query.data();
     const char * end = begin + entry.query.size();
-    const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
+    ParserQuery parser_query(end);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, context->getSettingsRef().max_parser_depth);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -224,11 +223,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
-    WithoutOnClusterASTRewriteParams params;
-    params.default_database = address_in_cluster.default_database;
-    params.shard_index = address_in_cluster.shard_index;
-    params.replica_index = address_in_cluster.replica_index;
-    query = query_on_cluster->getRewrittenASTWithoutOnCluster(params);
+    query = query_on_cluster->getRewrittenASTWithoutOnCluster(address_in_cluster.default_database);
     query_on_cluster = nullptr;
 }
 
@@ -395,7 +390,12 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
 
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 {
-    return zkutil::getSequentialNodeName("query-", log_entry_number);
+    /// Sequential counter in ZooKeeper is Int32.
+    assert(log_entry_number < std::numeric_limits<Int32>::max());
+    constexpr size_t seq_node_digits = 10;
+    String number = toString(log_entry_number);
+    String name = "query-" + String(seq_node_digits - number.size(), '0') + number;
+    return name;
 }
 
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)

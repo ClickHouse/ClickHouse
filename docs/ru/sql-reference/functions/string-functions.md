@@ -1,6 +1,6 @@
 ---
-sidebar_position: 40
-sidebar_label: "Функции для работы со строками"
+toc_priority: 40
+toc_title: "Функции для работы со строками"
 ---
 
 # Функции для работы со строками {#funktsii-dlia-raboty-so-strokami}

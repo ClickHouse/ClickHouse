@@ -113,7 +113,7 @@ private:
                 return default_port;
 
             port = (port * 10) + (*p - '0');
-            if (port < 0 || port > static_cast<UInt16>(-1))
+            if (port < 0 || port > UInt16(-1))
                 return default_port;
             ++p;
         }

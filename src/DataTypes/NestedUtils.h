@@ -32,7 +32,7 @@ namespace Nested
     void validateArraySizes(const Block & block);
 
     /// Get all nested tables names from a block.
-    std::unordered_set<String> getAllTableNames(const Block & block, bool to_lower_case = false);
+    std::unordered_set<String> getAllTableNames(const Block & block);
 }
 
 }

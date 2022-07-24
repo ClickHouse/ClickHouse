@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, zookeeper, no-parallel
 
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -29,34 +27,38 @@ done
 
 function optimize_thread
 {
-    REPLICA=$(($RANDOM % 5 + 1))
-    $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE ttl_table$REPLICA FINAl"
+    while true; do
+        REPLICA=$(($RANDOM % 5 + 1))
+        $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE ttl_table$REPLICA FINAl"
+    done
 }
 
 function insert_thread
 {
-    REPLICA=$(($RANDOM % 5 + 1))
-    $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
-    $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
-    $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
+    while true; do
+        REPLICA=$(($RANDOM % 5 + 1))
+        $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
+        $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
+        $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
+    done
 }
 
 
-export -f insert_thread
-export -f optimize_thread
+export -f insert_thread;
+export -f optimize_thread;
 
 TIMEOUT=30
 
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT insert_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
-clickhouse_client_loop_timeout $TIMEOUT optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 
 wait
 for i in $(seq 1 $NUM_REPLICAS); do

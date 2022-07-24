@@ -63,7 +63,7 @@ public:
 
     void waitDetachedTableNotInUse(const UUID & uuid) override;
     void checkDetachedTableNotInUse(const UUID & uuid) override;
-    void setDetachedTableNotInUseForce(const UUID & uuid) override;
+    void setDetachedTableNotInUseForce(const UUID & uuid);
 
 protected:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, ContextPtr query_context) override;
@@ -75,8 +75,6 @@ protected:
     [[nodiscard]] DetachedTables cleanupDetachedTables();
 
     void tryCreateMetadataSymlink();
-
-    virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
 
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;

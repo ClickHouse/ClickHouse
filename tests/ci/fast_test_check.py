@@ -9,7 +9,7 @@ import sys
 from github import Github
 
 from env_helper import CACHES_PATH, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
+from pr_info import PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
@@ -113,10 +113,7 @@ if __name__ == "__main__":
     cache_path = os.path.join(caches_path, "fasttest")
 
     logging.info("Will try to fetch cache for our build")
-    ccache_for_pr = get_ccache_if_not_exists(
-        cache_path, s3_helper, pr_info.number, temp_path
-    )
-    upload_master_ccache = ccache_for_pr in (-1, 0)
+    get_ccache_if_not_exists(cache_path, s3_helper, pr_info.number, temp_path)
 
     if not os.path.exists(cache_path):
         logging.info("cache was not fetched, will create empty dir")
@@ -182,9 +179,6 @@ if __name__ == "__main__":
 
     logging.info("Will upload cache")
     upload_ccache(cache_path, s3_helper, pr_info.number, temp_path)
-    if upload_master_ccache:
-        logging.info("Will upload a fallback cache for master")
-        upload_ccache(cache_path, s3_helper, 0, temp_path)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, NAME, test_results)
@@ -210,11 +204,11 @@ if __name__ == "__main__":
         report_url,
         NAME,
     )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
 
     # Refuse other checks to run if fast test failed
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
-            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
+        if "force-tests" in pr_info.labels:
+            print("'force-tests' enabled, will report success")
         else:
             sys.exit(1)

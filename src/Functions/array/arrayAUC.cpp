@@ -132,7 +132,7 @@ public:
         if (count_positive == 0 || count_positive == size)
             return std::numeric_limits<ResultType>::quiet_NaN();
 
-        return static_cast<ResultType>(area) / count_positive / (size - count_positive);
+        return ResultType(area) / count_positive / (size - count_positive);
     }
 };
 

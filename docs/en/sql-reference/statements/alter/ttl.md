@@ -1,6 +1,6 @@
 ---
-sidebar_position: 44
-sidebar_label: TTL
+toc_priority: 44
+toc_title: TTL
 ---
 
 # Manipulations with Table TTL {#manipulations-with-table-ttl}

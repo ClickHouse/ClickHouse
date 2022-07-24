@@ -14,7 +14,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 
@@ -47,6 +46,55 @@ SelectStreamFactory::SelectStreamFactory(
 {
 }
 
+
+namespace
+{
+
+ActionsDAGPtr getConvertingDAG(const Block & block, const Block & header)
+{
+    /// Convert header structure to expected.
+    /// Also we ignore constants from result and replace it with constants from header.
+    /// It is needed for functions like `now64()` or `randConstant()` because their values may be different.
+    return ActionsDAG::makeConvertingActions(
+        block.getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        true);
+}
+
+void addConvertingActions(QueryPlan & plan, const Block & header)
+{
+    if (blocksHaveEqualStructure(plan.getCurrentDataStream().header, header))
+        return;
+
+    auto convert_actions_dag = getConvertingDAG(plan.getCurrentDataStream().header, header);
+    auto converting = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), convert_actions_dag);
+    plan.addStep(std::move(converting));
+}
+
+std::unique_ptr<QueryPlan> createLocalPlan(
+    const ASTPtr & query_ast,
+    const Block & header,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    UInt32 shard_num,
+    UInt32 shard_count)
+{
+    checkStackSize();
+
+    auto query_plan = std::make_unique<QueryPlan>();
+
+    InterpreterSelectQuery interpreter(
+        query_ast, context, SelectQueryOptions(processed_stage).setShardInfo(shard_num, shard_count));
+    interpreter.buildQueryPlan(*query_plan);
+
+    addConvertingActions(*query_plan, header);
+
+    return query_plan;
+}
+
+}
+
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const ASTPtr & query_ast,
@@ -63,7 +111,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_local_stream = [&]()
     {
-        local_plans.emplace_back(createLocalPlan(query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*coordinator=*/nullptr));
+        local_plans.emplace_back(createLocalPlan(query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, UInt32 local_delay = 0)

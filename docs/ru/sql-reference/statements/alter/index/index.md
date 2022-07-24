@@ -1,7 +1,7 @@
 ---
 toc_hidden_folder: true
-sidebar_position: 42
-sidebar_label: "Манипуляции с индексами"
+toc_priority: 42
+toc_title: "Манипуляции с индексами"
 ---
 
 # Манипуляции с индексами {#manipuliatsii-s-indeksami}

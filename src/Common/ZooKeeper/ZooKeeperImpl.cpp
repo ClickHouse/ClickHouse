@@ -8,7 +8,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/logger_useful.h>
-#include <base/getThreadId.h>
 
 #include <Common/config.h>
 
@@ -452,7 +451,7 @@ void ZooKeeper::connect(
     }
     else
     {
-        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
+        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}", socket.peerAddress().toString(), session_id);
     }
 }
 
@@ -539,7 +538,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
             Error::ZMARSHALLINGERROR);
 
     if (err != Error::ZOK)
-        throw Exception("Error received in reply to auth request. Code: " + DB::toString(static_cast<int32_t>(err)) + ". Message: " + String(errorMessage(err)),
+        throw Exception("Error received in reply to auth request. Code: " + DB::toString(int32_t(err)) + ". Message: " + String(errorMessage(err)),
             Error::ZMARSHALLINGERROR);
 }
 
@@ -563,8 +562,8 @@ void ZooKeeper::sendThread()
             {
                 /// Wait for the next request in queue. No more than operation timeout. No more than until next heartbeat time.
                 UInt64 max_wait = std::min(
-                    static_cast<UInt64>(std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count()),
-                    static_cast<UInt64>(operation_timeout.totalMilliseconds()));
+                    UInt64(std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count()),
+                    UInt64(operation_timeout.totalMilliseconds()));
 
                 RequestInfo info;
                 if (requests_queue.tryPop(info, max_wait))
@@ -847,7 +846,7 @@ void ZooKeeper::receiveEvent()
 void ZooKeeper::finalize(bool error_send, bool error_receive, const String & reason)
 {
     /// If some thread (send/receive) already finalizing session don't try to do it
-    bool already_started = finalization_started.test_and_set();
+    bool already_started = finalization_started.exchange(true);
 
     LOG_TEST(log, "Finalizing session {}: finalization_started={}, queue_finished={}, reason={}",
              session_id, already_started, requests_queue.isFinished(), reason);
@@ -1017,11 +1016,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     try
     {
         info.time = clock::now();
-        if (zk_log)
-        {
-            info.request->thread_id = getThreadId();
-            info.request->query_id = String(CurrentThread::getQueryId());
-        }
 
         if (!info.request->xid)
         {
@@ -1275,11 +1269,6 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
-        if (request)
-        {
-            elem.thread_id = request->thread_id;
-            elem.query_id = request->query_id;
-        }
         maybe_zk_log->add(elem);
     }
 }

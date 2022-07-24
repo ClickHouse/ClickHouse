@@ -929,7 +929,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     for (auto & column : columns)
-        if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
+        if (column.column && isColumnConst(*column.column) && non_constant_inputs.count(column.name))
             column.column = nullptr;
 
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
@@ -950,7 +950,7 @@ void ExpressionActionsChain::finalize()
             const NameSet & additional_input = steps[i + 1]->additional_input;
             for (const auto & it : steps[i + 1]->getRequiredColumns())
             {
-                if (!additional_input.contains(it.name))
+                if (additional_input.count(it.name) == 0)
                 {
                     auto iter = required_output.find(it.name);
                     if (iter == required_output.end())
@@ -1001,7 +1001,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join->columns.contains(column.name))
+        if (array_join->columns.count(column.name) > 0)
         {
             const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
             column.type = array->getNestedType();
@@ -1018,12 +1018,12 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
             new_required_columns.emplace_back(column);
     }
 
@@ -1034,7 +1034,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 ExpressionActionsChain::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
-    ColumnsWithTypeAndName required_columns_)
+    const ColumnsWithTypeAndName & required_columns_)
     : Step({})
     , analyzed_join(std::move(analyzed_join_))
     , join(std::move(join_))
@@ -1042,11 +1042,8 @@ ExpressionActionsChain::JoinStep::JoinStep(
     for (const auto & column : required_columns_)
         required_columns.emplace_back(column.name, column.type);
 
-    NamesAndTypesList result_names_and_types = required_columns;
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types, true);
-    for (const auto & [name, type] : result_names_and_types)
-        /// `column` is `nullptr` because we don't care on constness here, it may be changed in join
-        result_columns.emplace_back(nullptr, type, name);
+    result_columns = required_columns_;
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
 }
 
 void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
@@ -1066,7 +1063,7 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     for (const auto & column : required_columns)
     {
-        if (required_names.contains(column.name))
+        if (required_names.count(column.name) != 0)
             new_required_columns.emplace_back(column);
     }
 
@@ -1076,7 +1073,7 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     for (const auto & column : result_columns)
     {
-        if (required_names.contains(column.name))
+        if (required_names.count(column.name) != 0)
             new_result_columns.emplace_back(column);
     }
 

@@ -71,7 +71,7 @@ std::string toString(OpNum op_num)
 
 OpNum getOpNum(int32_t raw_op_num)
 {
-    if (!VALID_OPERATIONS.contains(raw_op_num))
+    if (!VALID_OPERATIONS.count(raw_op_num))
         throw Exception("Operation " + std::to_string(raw_op_num) + " is unknown", Error::ZUNIMPLEMENTED);
     return static_cast<OpNum>(raw_op_num);
 }

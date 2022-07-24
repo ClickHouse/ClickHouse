@@ -1,7 +1,6 @@
 #include <Storages/System/StorageSystemDisks.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
-#include <Disks/IDiskRemote.h>
 
 namespace DB
 {
@@ -23,7 +22,6 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"total_space", std::make_shared<DataTypeUInt64>()},
         {"keep_free_space", std::make_shared<DataTypeUInt64>()},
         {"type", std::make_shared<DataTypeString>()},
-        {"cache_path", std::make_shared<DataTypeString>()},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -45,7 +43,6 @@ Pipe StorageSystemDisks::read(
     MutableColumnPtr col_total = ColumnUInt64::create();
     MutableColumnPtr col_keep = ColumnUInt64::create();
     MutableColumnPtr col_type = ColumnString::create();
-    MutableColumnPtr col_cache_path = ColumnString::create();
 
     for (const auto & [disk_name, disk_ptr] : context->getDisksMap())
     {
@@ -55,12 +52,6 @@ Pipe StorageSystemDisks::read(
         col_total->insert(disk_ptr->getTotalSpace());
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
         col_type->insert(toString(disk_ptr->getType()));
-
-        String cache_path;
-        if (disk_ptr->isRemote())
-            cache_path = disk_ptr->getCacheBasePath();
-
-        col_cache_path->insert(cache_path);
     }
 
     Columns res_columns;
@@ -70,7 +61,6 @@ Pipe StorageSystemDisks::read(
     res_columns.emplace_back(std::move(col_total));
     res_columns.emplace_back(std::move(col_keep));
     res_columns.emplace_back(std::move(col_type));
-    res_columns.emplace_back(std::move(col_cache_path));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);

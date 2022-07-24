@@ -1,5 +1,5 @@
 ---
-sidebar_label: DISTINCT
+toc_title: DISTINCT
 ---
 
 # DISTINCT Clause {#select-distinct}

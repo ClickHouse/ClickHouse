@@ -12,7 +12,7 @@
 
 
 /** Functions for retrieving "visit parameters".
- * Visit parameters in Metrica web analytics system are a special kind of JSONs.
+ * Visit parameters in Yandex.Metrika are a special kind of JSONs.
  * These functions are applicable to almost any JSONs.
  * Implemented via templates from FunctionsStringSearch.h.
  *

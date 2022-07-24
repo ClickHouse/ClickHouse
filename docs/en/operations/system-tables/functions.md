@@ -1,4 +1,4 @@
-# functions {#system-functions}
+# system.functions {#system-functions}
 
 Contains information about normal and aggregate functions.
 

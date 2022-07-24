@@ -1,12 +1,11 @@
-#include <stdexcept>
-#include <IO/Operators.h>
-#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/Transforms/FinishSortingTransform.h>
-#include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Transforms/FinishSortingTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -87,20 +86,6 @@ SortingStep::SortingStep(
     /// TODO: check input_stream is partially sorted (each port) by the same description.
     output_stream->sort_description = result_description;
     output_stream->sort_mode = DataStream::SortMode::Stream;
-}
-
-void SortingStep::updateInputStream(DataStream input_stream)
-{
-    input_streams.clear();
-    input_streams.emplace_back(std::move(input_stream));
-}
-
-void SortingStep::updateOutputStream(Block result_header)
-{
-    output_stream = createOutputStream(input_streams.at(0), std::move(result_header), getDataStreamTraits());
-    output_stream->sort_description = result_description;
-    output_stream->sort_mode = DataStream::SortMode::Stream;
-    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void SortingStep::updateLimit(size_t limit_)
@@ -221,17 +206,17 @@ void SortingStep::describeActions(FormatSettings & settings) const
     if (!prefix_description.empty())
     {
         settings.out << prefix << "Prefix sort description: ";
-        dumpSortDescription(prefix_description, settings.out);
+        dumpSortDescription(prefix_description, input_streams.front().header, settings.out);
         settings.out << '\n';
 
         settings.out << prefix << "Result sort description: ";
-        dumpSortDescription(result_description, settings.out);
+        dumpSortDescription(result_description, input_streams.front().header, settings.out);
         settings.out << '\n';
     }
     else
     {
         settings.out << prefix << "Sort description: ";
-        dumpSortDescription(result_description, settings.out);
+        dumpSortDescription(result_description, input_streams.front().header, settings.out);
         settings.out << '\n';
     }
 
@@ -243,11 +228,11 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (!prefix_description.empty())
     {
-        map.add("Prefix Sort Description", explainSortDescription(prefix_description));
-        map.add("Result Sort Description", explainSortDescription(result_description));
+        map.add("Prefix Sort Description", explainSortDescription(prefix_description, input_streams.front().header));
+        map.add("Result Sort Description", explainSortDescription(result_description, input_streams.front().header));
     }
     else
-        map.add("Sort Description", explainSortDescription(result_description));
+        map.add("Sort Description", explainSortDescription(result_description, input_streams.front().header));
 
     if (limit)
         map.add("Limit", limit);

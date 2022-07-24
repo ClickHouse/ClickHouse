@@ -7,7 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int QUOTA_EXCEEDED;
+    extern const int QUOTA_EXPIRED;
     extern const int QUERY_WAS_CANCELLED;
 }
 
@@ -34,7 +34,7 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
 {
     /// Don't add additional info to limits and quota exceptions, and in case of kill query (to pass tests).
     return exception.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES
-           && exception.code() != ErrorCodes::QUOTA_EXCEEDED
+           && exception.code() != ErrorCodes::QUOTA_EXPIRED
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
@@ -54,13 +54,8 @@ static void executeJob(IProcessor * processor)
 
 bool ExecutionThreadContext::executeTask()
 {
-    std::optional<Stopwatch> execution_time_watch;
-
 #ifndef NDEBUG
-    execution_time_watch.emplace();
-#else
-    if (profile_processors)
-        execution_time_watch.emplace();
+    Stopwatch execution_time_watch;
 #endif
 
     try
@@ -74,11 +69,8 @@ bool ExecutionThreadContext::executeTask()
         node->exception = std::current_exception();
     }
 
-    if (profile_processors)
-        node->processor->elapsed_us += execution_time_watch->elapsedMicroseconds();
-
 #ifndef NDEBUG
-    execution_time_ns += execution_time_watch->elapsed();
+    execution_time_ns += execution_time_watch.elapsed();
 #endif
 
     return node->exception == nullptr;

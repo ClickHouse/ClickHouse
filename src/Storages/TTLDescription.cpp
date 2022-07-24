@@ -253,7 +253,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// The separate step, because not all primary key columns are ordinary columns.
             for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
             {
-                if (!aggregation_columns_set.contains(pk_columns[i]))
+                if (!aggregation_columns_set.count(pk_columns[i]))
                 {
                     ASTPtr expr = makeASTFunction("any", primary_key_expressions[i]->clone());
                     aggregations.emplace_back(pk_columns[i], std::move(expr));
@@ -264,7 +264,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// Wrap with 'any' aggregate function other columns, which was not set explicitly.
             for (const auto & column : columns.getOrdinary())
             {
-                if (!aggregation_columns_set.contains(column.name) && !used_primary_key_columns_set.contains(column.name))
+                if (!aggregation_columns_set.count(column.name) && !used_primary_key_columns_set.count(column.name))
                 {
                     ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
                     aggregations.emplace_back(column.name, std::move(expr));

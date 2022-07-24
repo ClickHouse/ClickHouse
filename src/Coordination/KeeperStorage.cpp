@@ -24,10 +24,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-String base64Encode(const String & decoded)
+static String base64Encode(const String & decoded)
 {
     std::ostringstream ostr; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ostr.exceptions(std::ios::failbit);
@@ -38,7 +35,7 @@ String base64Encode(const String & decoded)
     return ostr.str();
 }
 
-String getSHA1(const String & userdata)
+static String getSHA1(const String & userdata)
 {
     Poco::SHA1Engine engine;
     engine.update(userdata);
@@ -46,14 +43,14 @@ String getSHA1(const String & userdata)
     return String{digest_id.begin(), digest_id.end()};
 }
 
-String generateDigest(const String & userdata)
+static String generateDigest(const String & userdata)
 {
     std::vector<String> user_password;
     boost::split(user_password, userdata, [](char c) { return c == ':'; });
     return user_password[0] + ":" + base64Encode(getSHA1(userdata));
 }
 
-bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
+static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const std::vector<KeeperStorage::AuthID> & session_auths)
 {
     if (node_acls.empty())
         return true;
@@ -80,7 +77,7 @@ bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, const st
     return false;
 }
 
-bool fixupACL(
+static bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
     const std::vector<KeeperStorage::AuthID> & current_ids,
     std::vector<Coordination::ACL> & result_acls)
@@ -122,7 +119,7 @@ bool fixupACL(
     return valid_found;
 }
 
-KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
+static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
     KeeperStorage::ResponsesForSessions result;
     auto it = watches.find(path);
@@ -176,25 +173,6 @@ KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, Keep
         }
     }
     return result;
-}
-}
-
-void KeeperStorage::Node::setData(String new_data)
-{
-    size_bytes = size_bytes - data.size() + new_data.size();
-    data = std::move(new_data);
-}
-
-void KeeperStorage::Node::addChild(StringRef child_path)
-{
-    size_bytes += sizeof child_path;
-    children.insert(child_path);
-}
-
-void KeeperStorage::Node::removeChild(StringRef child_path)
-{
-    size_bytes -= sizeof child_path;
-    children.erase(child_path);
 }
 
 KeeperStorage::KeeperStorage(int64_t tick_time_ms, const String & superdigest_)
@@ -336,8 +314,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         created_node.stat.numChildren = 0;
         created_node.stat.dataLength = request.data.length();
         created_node.stat.ephemeralOwner = request.is_ephemeral ? session_id : 0;
+        created_node.data = request.data;
         created_node.is_sequental = request.is_sequential;
-        created_node.setData(std::move(request.data));
 
         auto [map_key, _] = container.insert(path_created, created_node);
         /// Take child path from key owned by map.
@@ -349,7 +327,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid,
                                             parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
         {
-            parent.addChild(child_path);
+            parent.children.insert(child_path);
+            parent.size_bytes += child_path.size;
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -384,7 +363,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 --undo_parent.seq_num;
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
-                undo_parent.removeChild(child_path);
+                undo_parent.children.erase(child_path);
+                undo_parent.size_bytes -= child_path.size;
             });
 
             storage.container.erase(path_created);
@@ -429,7 +409,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         else
         {
             response.stat = it->value.stat;
-            response.data = it->value.getData();
+            response.data = it->value.data;
             response.error = Coordination::Error::ZOK;
         }
 
@@ -518,7 +498,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             {
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
-                parent.removeChild(child_basename);
+                parent.children.erase(child_basename);
+                parent.size_bytes -= child_basename.size;
             });
 
             response.error = Coordination::Error::ZOK;
@@ -539,7 +520,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
-                    parent.addChild(child_name);
+                    parent.children.insert(child_name);
+                    parent.size_bytes += child_name.size;
                 });
             };
         }
@@ -616,13 +598,14 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
             auto prev_node = it->value;
 
-            auto itr = container.updateValue(request.path, [zxid, request, time] (KeeperStorage::Node & value) mutable
+            auto itr = container.updateValue(request.path, [zxid, request, time] (KeeperStorage::Node & value)
             {
                 value.stat.version++;
                 value.stat.mzxid = zxid;
                 value.stat.mtime = time;
                 value.stat.dataLength = request.data.length();
-                value.setData(std::move(request.data));
+                value.size_bytes = value.size_bytes + request.data.size() - value.data.size();
+                value.data = request.data;
             });
 
             container.updateValue(parentPath(request.path), [] (KeeperStorage::Node & parent)
@@ -692,10 +675,9 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if (path_prefix.empty())
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
-            const auto & children = it->value.getChildren();
-            response.names.reserve(children.size());
+            response.names.reserve(it->value.children.size());
 
-            for (const auto child : children)
+            for (const auto child : it->value.children)
                 response.names.push_back(child.toString());
 
             response.stat = it->value.stat;
@@ -874,23 +856,24 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
         for (const auto & sub_request : request.requests)
         {
             auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
-            switch (sub_zk_request->getOpNum())
+            if (sub_zk_request->getOpNum() == Coordination::OpNum::Create)
             {
-                case Coordination::OpNum::Create:
-                    concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::Remove:
-                    concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::Set:
-                    concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
-                    break;
-                case Coordination::OpNum::Check:
-                    concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
-                    break;
-                default:
-                    throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
+                concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequestProcessor>(sub_zk_request));
             }
+            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Remove)
+            {
+                concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequestProcessor>(sub_zk_request));
+            }
+            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Set)
+            {
+                concrete_requests.push_back(std::make_shared<KeeperStorageSetRequestProcessor>(sub_zk_request));
+            }
+            else if (sub_zk_request->getOpNum() == Coordination::OpNum::Check)
+            {
+                concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequestProcessor>(sub_zk_request));
+            }
+            else
+                throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
         }
     }
 
@@ -1109,7 +1092,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
                     auto base_name = getBaseName(ephemeral_path);
-                    parent.removeChild(base_name);
+                    parent.children.erase(base_name);
+                    parent.size_bytes -= base_name.size;
                 });
 
                 container.erase(ephemeral_path);

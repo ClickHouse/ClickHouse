@@ -1,6 +1,6 @@
 ---
-sidebar_position: 37
-sidebar_label: Logical
+toc_priority: 37
+toc_title: Logical
 ---
 
 # Logical Functions {#logical-functions}

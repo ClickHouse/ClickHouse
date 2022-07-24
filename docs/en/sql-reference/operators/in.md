@@ -119,9 +119,8 @@ FROM t_null
 
 There are two options for IN-s with subqueries (similar to JOINs): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
-:::note    
-Remember that the algorithms described below may work differently depending on the [settings](../../operations/settings/settings.md) `distributed_product_mode` setting.
-:::
+!!! attention "Attention"
+    Remember that the algorithms described below may work differently depending on the [settings](../../operations/settings/settings.md) `distributed_product_mode` setting.
 
 When using the regular IN, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
 

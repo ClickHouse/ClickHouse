@@ -1,7 +1,7 @@
 ---
 title: "\u201CClickHouse\u201D 有什么含义?"
 toc_hidden: true
-sidebar_position: 10
+toc_priority: 10
 ---
 
 # “ClickHouse” 有什么含义? {#what-does-clickhouse-mean}

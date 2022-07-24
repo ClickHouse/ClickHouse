@@ -97,13 +97,13 @@ private:
 class ValuesSchemaReader : public IRowSchemaReader
 {
 public:
-    ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
+    ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, ContextPtr context_);
 
 private:
     DataTypes readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;
-    const FormatSettings format_settings;
+    ContextPtr context;
     ParserExpression parser;
     bool first_row = true;
 };

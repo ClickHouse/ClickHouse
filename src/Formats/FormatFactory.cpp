@@ -65,7 +65,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
-    format_settings.csv.input_format_use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
@@ -91,14 +90,12 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.named_tuples_as_objects = settings.output_format_json_named_tuples_as_objects;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
-    format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
     format_settings.null_as_default = settings.input_format_null_as_default;
+    format_settings.use_lowercase_column_name = settings.input_format_use_lowercase_column_name;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
-    format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
-    format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -119,7 +116,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
     format_settings.tsv.input_format_enum_as_number = settings.input_format_tsv_enum_as_number;
     format_settings.tsv.null_representation = settings.format_tsv_null_representation;
-    format_settings.tsv.input_format_use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
@@ -129,25 +125,15 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
-    format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
-    format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_orc_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.arrow.case_insensitive_column_matching = settings.input_format_arrow_case_insensitive_column_matching;
-    format_settings.orc.import_nested = settings.input_format_orc_import_nested;
-    format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
-    format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
-    format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_orc_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
-    format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -374,7 +360,7 @@ String FormatFactory::getContentType(
 SchemaReaderPtr FormatFactory::getSchemaReader(
     const String & name,
     ReadBuffer & buf,
-    ContextPtr & context,
+    ContextPtr context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & schema_reader_creator = dict.at(name).schema_reader_creator;
@@ -382,12 +368,12 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
         throw Exception("FormatFactory: Format " + name + " doesn't support schema inference.", ErrorCodes::LOGICAL_ERROR);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    return schema_reader_creator(buf, format_settings);
+    return schema_reader_creator(buf, format_settings, context);
 }
 
 ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     const String & name,
-    ContextPtr & context,
+    ContextPtr context,
     const std::optional<FormatSettings> & _format_settings) const
 {
     const auto & external_schema_reader_creator = dict.at(name).external_schema_reader_creator;

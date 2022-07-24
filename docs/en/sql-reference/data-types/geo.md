@@ -1,15 +1,14 @@
 ---
-sidebar_position: 62
-sidebar_label: Geo
+toc_priority: 62
+toc_title: Geo
 ---
 
 # Geo Data Types {#geo-data-types}
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
 
-:::warning    
-Currently geo data types are an experimental feature. To work with them you must set `allow_experimental_geo_types = 1`.
-:::
+!!! warning "Warning"
+    Currently geo data types are an experimental feature. To work with them you must set `allow_experimental_geo_types = 1`.
 
 **See Also**
 - [Representing simple geographical features](https://en.wikipedia.org/wiki/GeoJSON).

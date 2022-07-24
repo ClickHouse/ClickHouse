@@ -28,7 +28,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
       *  in which all metacharacters are escaped,
       *  and also if there are no '|' outside the brackets,
       *  and also avoid substrings of the form `http://` or `www` and some other
-      *   (this is the hack for typical use case in web analytics applications).
+      *   (this is the hack for typical use case in Yandex.Metrica).
       */
     const char * begin = regexp.data();
     const char * pos = begin;

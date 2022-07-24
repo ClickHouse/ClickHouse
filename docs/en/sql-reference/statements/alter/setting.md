@@ -1,6 +1,6 @@
 ---
-sidebar_position: 38
-sidebar_label: SETTING
+toc_priority: 38
+toc_title: SETTING
 ---
 
 # Table Settings Manipulations {#table_settings_manipulations}
@@ -14,9 +14,9 @@ If a setting with the specified name does not exist, then the query raises an ex
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 ```
 
-:::note    
-These queries can be applied to [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) tables only.
-:::
+!!! note "Note"
+    These queries can be applied to [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) tables only.
+
 
 ## MODIFY SETTING {#alter_modify_setting}
 

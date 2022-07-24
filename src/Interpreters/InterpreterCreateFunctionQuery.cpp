@@ -34,11 +34,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
         access_rights_elements.emplace_back(AccessType::DROP_FUNCTION);
 
     if (!create_function_query.cluster.empty())
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = std::move(access_rights_elements);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
+        return executeDDLQueryOnCluster(query_ptr, getContext(), access_rights_elements);
 
     auto current_context = getContext();
     current_context->checkAccess(access_rights_elements);

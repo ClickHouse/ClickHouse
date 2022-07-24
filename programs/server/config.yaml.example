@@ -103,7 +103,7 @@ interserver_http_port: 9009
 # If not specified, than it is determined analogous to 'hostname -f' command.
 # This setting could be used to switch replication to another network interface
 # (the server may be connected to multiple networks via multiple addresses)
-# interserver_http_host: example.clickhouse.com
+# interserver_http_host: example.yandex.ru
 
 # You can specify credentials for authenthication between replicas.
 # This is required when interserver_https_port is accessible from untrusted networks,
@@ -592,10 +592,10 @@ remote_servers:
 # remote_url_allow_hosts:
 
 # Host should be specified exactly as in URL. The name is checked before DNS resolution.
-# Example: "clickhouse.com", "clickhouse.com." and "www.clickhouse.com" are different hosts.
+# Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
 # If port is explicitly specified in URL, the host:port is checked as a whole.
 # If host specified here without port, any port with this host allowed.
-# "clickhouse.com" -> "clickhouse.com:443", "clickhouse.com:80" etc. is allowed, but "clickhouse.com:80" -> only "clickhouse.com:80" is allowed.
+# "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
 # If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
 # If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
 
@@ -802,6 +802,16 @@ crash_log:
     table: crash_log
     partition_by: ''
     flush_interval_milliseconds: 1000
+
+# Parameters for embedded dictionaries, used in Yandex.Metrica.
+# See https://clickhouse.com/docs/en/dicts/internal_dicts/
+
+# Path to file with region hierarchy.
+# path_to_regions_hierarchy_file: /opt/geo/regions_hierarchy.txt
+
+# Path to directory with files containing names of regions
+# path_to_regions_names_files: /opt/geo/
+
 
 # top_level_domains_path: /var/lib/clickhouse/top_level_domains/
 # Custom TLD lists.

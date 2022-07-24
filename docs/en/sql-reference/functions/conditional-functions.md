@@ -1,6 +1,6 @@
 ---
-sidebar_position: 43
-sidebar_label: 'Conditional '
+toc_priority: 43
+toc_title: 'Conditional '
 ---
 
 # Conditional Functions {#conditional-functions}

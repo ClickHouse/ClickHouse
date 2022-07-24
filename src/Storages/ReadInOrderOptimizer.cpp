@@ -193,7 +193,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
 
     for (size_t i = 0; i < descr_prefix_size; ++i)
     {
-        if (forbidden_columns.contains(description[i].column_name))
+        if (forbidden_columns.count(description[i].column_name))
             break;
 
         int current_direction = matchSortDescriptionAndKey(

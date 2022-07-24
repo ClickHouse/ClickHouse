@@ -39,8 +39,6 @@ public:
 
     virtual void ignoreWithTotals() override;
 
-    bool supportsTransactions() const override { return true; }
-
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 

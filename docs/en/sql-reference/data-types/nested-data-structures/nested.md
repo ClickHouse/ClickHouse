@@ -1,6 +1,6 @@
 ---
-sidebar_position: 57
-sidebar_label: Nested(Name1 Type1, Name2 Type2, ...)
+toc_priority: 57
+toc_title: Nested(Name1 Type1, Name2 Type2, ...)
 ---
 
 # Nested {#nested}

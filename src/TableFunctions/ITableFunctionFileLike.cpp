@@ -25,6 +25,24 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+    void checkIfFormatSupportsAutoStructure(const String & name, const String & format)
+    {
+        if (name == "file" && format == "Distributed")
+            return;
+
+        if (FormatFactory::instance().checkIfFormatHasAnySchemaReader(format))
+            return;
+
+        throw Exception(
+            "Table function '" + name
+                + "' allows automatic structure determination only for formats that support schema inference and for Distributed format in table function "
+                  "'file'",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+}
+
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
@@ -50,13 +68,18 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
         format = FormatFactory::instance().getFormatFromFileName(filename, true);
 
     if (args.size() <= 2)
+    {
+        checkIfFormatSupportsAutoStructure(getName(), format);
         return;
+    }
 
     if (args.size() != 3 && args.size() != 4)
         throw Exception("Table function '" + getName() + "' requires 1, 2, 3 or 4 arguments: filename, format (default auto), structure (default auto) and compression method (default auto)",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    if (structure == "auto")
+        checkIfFormatSupportsAutoStructure(getName(), format);
 
     if (structure.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

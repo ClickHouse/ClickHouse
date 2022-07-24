@@ -102,7 +102,6 @@ enum class AccessType
     \
     M(KILL_QUERY, "", GLOBAL, ALL) /* allows to kill a query started by another user
                                       (anyone can kill his own queries) */\
-    M(KILL_TRANSACTION, "", GLOBAL, ALL) \
     \
     M(MOVE_PARTITION_BETWEEN_SHARDS, "", GLOBAL, ALL) /* required to be able to move a part/partition to a table
                                                          identified by its ZooKeeper path */\
@@ -183,7 +182,6 @@ enum class AccessType
     M(JDBC, "", GLOBAL, SOURCES) \
     M(HDFS, "", GLOBAL, SOURCES) \
     M(S3, "", GLOBAL, SOURCES) \
-    M(HIVE, "", GLOBAL, SOURCES) \
     M(SOURCES, "", GROUP, ALL) \
     \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
