@@ -160,27 +160,23 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
             need_to_check_marks_from_the_right = true;
         }
 
-
         /// Let's go to the right and find mark with bigger offset in compressed file
-        if (need_to_check_marks_from_the_right)
+        bool found_bigger_mark = false;
+        for (size_t i = right_mark_non_included + 1; i < marks_count; ++i)
         {
-            bool found_bigger_mark = false;
-            for (size_t i = right_mark_non_included + 1; i < marks_count; ++i)
+            const auto & candidate_mark =  marks_loader.getMark(i);
+            if (result_right_offset < candidate_mark.offset_in_compressed_file)
             {
-                const auto & candidate_mark =  marks_loader.getMark(i);
-                if (result_right_offset < candidate_mark.offset_in_compressed_file)
-                {
-                    result_right_offset = candidate_mark.offset_in_compressed_file;
-                    found_bigger_mark = true;
-                    break;
-                }
+                result_right_offset = candidate_mark.offset_in_compressed_file;
+                found_bigger_mark = true;
+                break;
             }
+        }
 
-            if (!found_bigger_mark)
-            {
-                /// If there are no marks after the end of range, just use file size
-                result_right_offset = file_size;
-            }
+        if (!found_bigger_mark)
+        {
+            /// If there are no marks after the end of range, just use file size
+            result_right_offset = file_size;
         }
     }
     else if (right_mark_non_included == 0)
