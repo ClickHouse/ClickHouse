@@ -43,11 +43,13 @@ inline size_t encodeBase58(const char8_t * src, char8_t * dst)
 
 inline size_t decodeBase58(const char8_t * src, char8_t * dst)
 {
-    const char map_digits[128]
-        = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-           -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  -1, -1, -1, -1, -1, -1,
-           -1, 9,  10, 11, 12, 13, 14, 15, 16, -1, 17, 18, 19, 20, 21, -1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, -1, -1, -1, -1, -1,
-           -1, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, -1, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, -1, -1, -1, -1, -1};
+    const signed char uint_max = UINT_MAX;
+    const signed char map_digits[128]
+        = {uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max,
+           uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max,
+           uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max,
+           uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, 0,  1,  2,  3,  4,  5,  6,  7,  8,        uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, 9,  10, 11, 12, 13, 14, 15, 16,       uint_max, 17, 18, 19, 20, 21,       uint_max, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+           uint_max, uint_max, uint_max, uint_max, uint_max, uint_max, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,       uint_max, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,       uint_max, uint_max, uint_max, uint_max, uint_max};
 
     size_t idx = 0;
 
