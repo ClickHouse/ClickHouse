@@ -56,6 +56,9 @@ struct ZeroCopyLock;
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
 
+class MergeTreeTransaction;
+using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
+
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
 {
@@ -671,12 +674,7 @@ public:
         AlterLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
-    void reportBrokenPart(const String & name) const
-    {
-        broken_part_callback(name);
-    }
-
-    /// Same as above but has the ability to check all other parts
+    /// Has the ability to check all other parts
     /// which reside on the same disk of the suspicious part.
     void reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const;
 
