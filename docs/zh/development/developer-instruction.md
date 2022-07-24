@@ -264,3 +264,11 @@ ClickHouse成员一旦在您的拉取请求上贴上«可以测试»标签，就
 系统将分别为您的拉取请求准备ClickHouse二进制版本。若要检索这些构建信息，请在检查列表中单击« ClickHouse构建检查»旁边的«详细信息»链接。在这里，您会找到指向ClickHouse的.deb软件包的直接链接，此外，甚至可以将其部署在生产服务器上（如果您不担心）。
 
 某些构建项很可能会在首次构建时失败。这是因为我们同时检查了基于gcc和clang的构建，几乎所有现有的被clang启用的警告（总是带有`-Werror`标志）。在同一页面上，您可以找到所有构建的日志，因此不必以所有可能的方式构建ClickHouse。
+
+## 浏览ClickHouse源代码 {#browse-clickhouse-source-code}
+
+您可以使用 **Woboq** 在线代码浏览器 [点击这里](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). 它提供了代码导航和语义突出显示、搜索和索引。 代码快照每天更新。
+
+此外，您还可以像往常一样浏览源代码 [GitHub](https://github.com/ClickHouse/ClickHouse)
+
+如果你希望了解哪种IDE较好，我们推荐使用CLion，QT Creator，VS Code和KDevelop（有注意事项）。 您可以使用任何您喜欢的IDE。 Vim和Emacs也可以。
