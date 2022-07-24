@@ -15,7 +15,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
@@ -30,6 +29,28 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
+    /// Coordination status meaning that a host finished its work.
+    constexpr const char * kCompletedCoordinationStatus = "completed";
+
+    /// Sends information about the current exception to IBackupCoordination or IRestoreCoordination.
+    template <typename CoordinationType>
+    void sendErrorToCoordination(std::shared_ptr<CoordinationType> coordination, const String & current_host)
+    {
+        if (!coordination)
+            return;
+        try
+        {
+            coordination->setErrorStatus(current_host, Exception{getCurrentExceptionCode(), getCurrentExceptionMessage(true, true)});
+        }
+        catch (...)
+        {
+        }
+    }
+}
+
 
 BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads)
     : backups_thread_pool(num_backup_threads, /* max_free_threads = */ 0, num_backup_threads)
@@ -51,11 +72,14 @@ UUID BackupsWorker::start(const ASTPtr & backup_or_restore_query, ContextMutable
 
 UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & context)
 {
-    UUID backup_uuid = UUIDHelpers::generateV4();
     auto backup_query = std::static_pointer_cast<ASTBackupQuery>(query->clone());
     auto backup_settings = BackupSettings::fromBackupQuery(*backup_query);
     auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
     bool on_cluster = !backup_query->cluster.empty();
+
+    if (!backup_settings.backup_uuid)
+        backup_settings.backup_uuid = UUIDHelpers::generateV4();
+    UUID backup_uuid = *backup_settings.backup_uuid;
 
     /// Prepare context to use.
     ContextPtr context_in_use = context;
@@ -76,34 +100,25 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
                 backup_info,
                 on_cluster,
                 context_in_use,
-                thread_group = CurrentThread::getGroup(),
                 mutable_context](bool async) mutable
     {
-        SCOPE_EXIT_SAFE(
-            if (async)
-                CurrentThread::detachQueryIfNotDetached();
-        );
+        std::optional<CurrentThread::QueryScope> query_scope;
+        std::shared_ptr<IBackupCoordination> backup_coordination;
+        SCOPE_EXIT_SAFE(if (backup_coordination && !backup_settings.internal) backup_coordination->drop(););
 
         try
         {
-            if (async && thread_group)
-                CurrentThread::attachTo(thread_group);
-
             if (async)
+            {
+                query_scope.emplace(mutable_context);
                 setThreadName("BackupWorker");
+            }
 
             /// Checks access rights if this is not ON CLUSTER query.
             /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
             auto required_access = getRequiredAccessToBackup(backup_query->elements);
             if (!on_cluster)
                 context_in_use->checkAccess(required_access);
-
-            /// Make a backup coordination.
-            std::shared_ptr<IBackupCoordination> backup_coordination;
-            SCOPE_EXIT_SAFE(
-                if (backup_coordination && !backup_settings.internal)
-                    backup_coordination->drop();
-            );
 
             ClusterPtr cluster;
             if (on_cluster)
@@ -118,6 +133,7 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
                 }
             }
 
+            /// Make a backup coordination.
             if (!backup_settings.coordination_zk_path.empty())
             {
                 backup_coordination = std::make_shared<BackupCoordinationRemote>(
@@ -138,9 +154,9 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
             backup_create_params.compression_method = backup_settings.compression_method;
             backup_create_params.compression_level = backup_settings.compression_level;
             backup_create_params.password = backup_settings.password;
-            backup_create_params.backup_uuid = backup_uuid;
             backup_create_params.is_internal_backup = backup_settings.internal;
             backup_create_params.backup_coordination = backup_coordination;
+            backup_create_params.backup_uuid = backup_uuid;
             BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
             /// Write the backup.
@@ -151,26 +167,34 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
                 params.only_shard_num = backup_settings.shard_num;
                 params.only_replica_num = backup_settings.replica_num;
                 params.access_to_check = required_access;
-                mutable_context->setSetting("distributed_ddl_task_timeout", -1); // No timeout
-                mutable_context->setSetting("distributed_ddl_output_mode", Field{"throw"});
                 backup_settings.copySettingsToQuery(*backup_query);
-                auto res = executeDDLQueryOnCluster(backup_query, mutable_context, params);
-                auto on_cluster_io = std::make_shared<BlockIO>(std::move(res));
-                PullingPipelineExecutor executor(on_cluster_io->pipeline);
-                Block block;
-                while (executor.pull(block));
+
+                // executeDDLQueryOnCluster() will return without waiting for completion
+                mutable_context->setSetting("distributed_ddl_task_timeout", Field{0});
+                mutable_context->setSetting("distributed_ddl_output_mode", Field{"none"});
+                executeDDLQueryOnCluster(backup_query, mutable_context, params);
+
+                /// Wait until all the hosts have written their backup entries.
+                auto all_hosts = BackupSettings::Util::filterHostIDs(
+                    backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
+                backup_coordination->waitStatus(all_hosts, kCompletedCoordinationStatus);
             }
             else
             {
                 backup_query->setCurrentDatabase(context_in_use->getCurrentDatabase());
 
+                /// Prepare backup entries.
                 BackupEntries backup_entries;
                 {
                     BackupEntriesCollector backup_entries_collector{backup_query->elements, backup_settings, backup_coordination, context_in_use};
                     backup_entries = backup_entries_collector.run();
                 }
 
+                /// Write the backup entries to the backup.
                 writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
+
+                /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
+                backup_coordination->setStatus(backup_settings.host_id, kCompletedCoordinationStatus, "");
             }
 
             /// Finalize backup (write its metadata).
@@ -184,7 +208,9 @@ UUID BackupsWorker::startMakingBackup(const ASTPtr & query, const ContextPtr & c
         }
         catch (...)
         {
+            /// Something bad happened, the backup has not built.
             setStatus(backup_uuid, BackupStatus::FAILED_TO_BACKUP);
+            sendErrorToCoordination(backup_coordination, backup_settings.host_id);
             if (!async)
                 throw;
         }
@@ -224,21 +250,19 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 restore_settings,
                 backup_info,
                 on_cluster,
-                thread_group = CurrentThread::getGroup(),
                 context_in_use](bool async) mutable
     {
-        SCOPE_EXIT_SAFE(
-            if (async)
-                CurrentThread::detachQueryIfNotDetached();
-        );
+        std::optional<CurrentThread::QueryScope> query_scope;
+        std::shared_ptr<IRestoreCoordination> restore_coordination;
+        SCOPE_EXIT_SAFE(if (restore_coordination && !restore_settings.internal) restore_coordination->drop(););
 
         try
         {
-            if (async && thread_group)
-                CurrentThread::attachTo(thread_group);
-
             if (async)
+            {
+                query_scope.emplace(context_in_use);
                 setThreadName("RestoreWorker");
+            }
 
             /// Open the backup for reading.
             BackupFactory::CreateParams backup_open_params;
@@ -277,12 +301,6 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
             }
 
             /// Make a restore coordination.
-            std::shared_ptr<IRestoreCoordination> restore_coordination;
-            SCOPE_EXIT_SAFE(
-                if (restore_coordination && !restore_settings.internal)
-                    restore_coordination->drop();
-            );
-
             if (on_cluster && restore_settings.coordination_zk_path.empty())
             {
                 String root_zk_path = context_in_use->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
@@ -308,20 +326,24 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                 params.cluster = cluster;
                 params.only_shard_num = restore_settings.shard_num;
                 params.only_replica_num = restore_settings.replica_num;
-                context_in_use->setSetting("distributed_ddl_task_timeout", -1); // No timeout
-                context_in_use->setSetting("distributed_ddl_output_mode", Field{"throw"});
                 restore_settings.copySettingsToQuery(*restore_query);
-                auto res = executeDDLQueryOnCluster(restore_query, context_in_use, params);
-                auto on_cluster_io = std::make_shared<BlockIO>(std::move(res));
-                PullingPipelineExecutor executor(on_cluster_io->pipeline);
-                Block block;
-                while (executor.pull(block))
-                    ;
+
+                // executeDDLQueryOnCluster() will return without waiting for completion
+                context_in_use->setSetting("distributed_ddl_task_timeout", Field{0});
+                context_in_use->setSetting("distributed_ddl_output_mode", Field{"none"});
+
+                executeDDLQueryOnCluster(restore_query, context_in_use, params);
+
+                /// Wait until all the hosts have written their backup entries.
+                auto all_hosts = BackupSettings::Util::filterHostIDs(
+                    restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
+                restore_coordination->waitStatus(all_hosts, kCompletedCoordinationStatus);
             }
             else
             {
                 restore_query->setCurrentDatabase(current_database);
 
+                /// Restore metadata and prepare data restoring tasks.
                 DataRestoreTasks data_restore_tasks;
                 {
                     RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
@@ -329,14 +351,20 @@ UUID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePtr conte
                     data_restore_tasks = restorer.run(RestorerFromBackup::RESTORE);
                 }
 
+                /// Execute the data restoring tasks.
                 restoreTablesData(std::move(data_restore_tasks), restores_thread_pool);
+
+                /// We have restored everything, we need to tell other hosts (they could be waiting for it).
+                restore_coordination->setStatus(restore_settings.host_id, kCompletedCoordinationStatus, "");
             }
 
             setStatus(restore_uuid, BackupStatus::RESTORED);
         }
         catch (...)
         {
+            /// Something bad happened, the backup has not built.
             setStatus(restore_uuid, BackupStatus::FAILED_TO_RESTORE);
+            sendErrorToCoordination(restore_coordination, restore_settings.host_id);
             if (!async)
                 throw;
         }

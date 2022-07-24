@@ -155,7 +155,7 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
-    /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
+    exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

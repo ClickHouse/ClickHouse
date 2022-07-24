@@ -52,9 +52,6 @@ namespace
     /// Inserting restored data to tables.
     constexpr const char * kInsertingDataToTablesStatus = "inserting data to tables";
 
-    /// Error status.
-    constexpr const char * kErrorStatus = IRestoreCoordination::kErrorStatus;
-
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
     {
@@ -114,73 +111,52 @@ RestorerFromBackup::~RestorerFromBackup() = default;
 
 RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 {
-    try
-    {
-        /// run() can be called onle once.
-        if (!current_status.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
+    /// run() can be called onle once.
+    if (!current_status.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
 
-        /// Find other hosts working along with us to execute this ON CLUSTER query.
-        all_hosts = BackupSettings::Util::filterHostIDs(
-            restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
+    /// Find other hosts working along with us to execute this ON CLUSTER query.
+    all_hosts = BackupSettings::Util::filterHostIDs(
+        restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
-        /// Do renaming in the create queries according to the renaming config.
-        renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
+    /// Do renaming in the create queries according to the renaming config.
+    renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
 
-        /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
-        findRootPathsInBackup();
+    /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
+    findRootPathsInBackup();
 
-        /// Find all the databases and tables which we will read from the backup.
-        setStatus(kFindingTablesInBackupStatus);
-        findDatabasesAndTablesInBackup();
+    /// Find all the databases and tables which we will read from the backup.
+    setStatus(kFindingTablesInBackupStatus);
+    findDatabasesAndTablesInBackup();
 
-        /// Check access rights.
-        checkAccessForObjectsFoundInBackup();
+    /// Check access rights.
+    checkAccessForObjectsFoundInBackup();
 
-        if (mode == Mode::CHECK_ACCESS_ONLY)
-            return {};
+    if (mode == Mode::CHECK_ACCESS_ONLY)
+        return {};
 
-        /// Create databases using the create queries read from the backup.
-        setStatus(kCreatingDatabasesStatus);
-        createDatabases();
+    /// Create databases using the create queries read from the backup.
+    setStatus(kCreatingDatabasesStatus);
+    createDatabases();
 
-        /// Create tables using the create queries read from the backup.
-        setStatus(kCreatingTablesStatus);
-        createTables();
+    /// Create tables using the create queries read from the backup.
+    setStatus(kCreatingTablesStatus);
+    createTables();
 
-        /// All what's left is to insert data to tables.
-        /// No more data restoring tasks are allowed after this point.
-        setStatus(kInsertingDataToTablesStatus);
-        return getDataRestoreTasks();
-    }
-    catch (...)
-    {
-        try
-        {
-            /// Other hosts should know that we've encountered an error.
-            setStatus(kErrorStatus, getCurrentExceptionMessage(false));
-        }
-        catch (...)
-        {
-        }
-        throw;
-    }
+    /// All what's left is to insert data to tables.
+    /// No more data restoring tasks are allowed after this point.
+    setStatus(kInsertingDataToTablesStatus);
+    return getDataRestoreTasks();
 }
 
 void RestorerFromBackup::setStatus(const String & new_status, const String & message)
 {
-    if (new_status == kErrorStatus)
+    LOG_TRACE(log, "{}", toUpperFirst(new_status));
+    current_status = new_status;
+    if (restore_coordination)
     {
-        LOG_ERROR(log, "{} failed with {}", toUpperFirst(current_status), message);
-        if (restore_coordination)
-            restore_coordination->setStatus(restore_settings.host_id, new_status, message);
-    }
-    else
-    {
-        LOG_TRACE(log, "{}", toUpperFirst(new_status));
-        current_status = new_status;
-        if (restore_coordination)
-            restore_coordination->setStatusAndWait(restore_settings.host_id, new_status, message, all_hosts);
+        restore_coordination->setStatus(restore_settings.host_id, new_status, message);
+        restore_coordination->waitStatus(all_hosts, new_status);
     }
 }
 
