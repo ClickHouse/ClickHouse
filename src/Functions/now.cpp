@@ -3,7 +3,6 @@
 #include <Functions/IFunction.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/FunctionFactory.h>
-#include <Core/Field.h>
 
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
