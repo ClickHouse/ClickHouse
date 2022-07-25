@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/IProcessor.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
@@ -107,9 +108,14 @@ private:
 class ParallelJoinTransform : public IProcessor
 {
 public:
-    ParallelJoinTransform(JoinPtr join_, size_t /*num_inputs*/)
+    ParallelJoinTransform(JoinPtr join_, size_t num_inputs_)
         // : IProcessor({}, {Block()})
-        : join(join_)
+        : num_inputs(num_inputs_),
+          inp(0),
+          current_input(inputs.begin()),
+          status(num_inputs),
+          // first_input(true),
+          join(join_)
     {
         // for (size_t i = 0; i < num_inputs; ++i)
         //     inputs.emplace_back(Block(), this);
@@ -130,12 +136,32 @@ protected:
 private:
     // Chunk current_input_chunk;
     // Chunk current_output_chunk;
+    // InputPorts::iterator current_input;
+    size_t num_inputs;
+    size_t inp;
     InputPorts::iterator current_input;
+
+    struct SourceStatus
+    {
+        size_t left_pos;
+        size_t current_pos;
+        bool left_rest;
+        bool right_rest;
+        Block block;
+        PaddedPODArray<Int16> right_filt;
+        //  1  -  filter the row out
+        //  negative -    -1 * (left_position + 1)
+    };
+
+    std::vector<SourceStatus> status;
+
+    IColumn::Filter left_filt;
+
 
     JoinPtr join;
     Chunk chunk;
     Blocks input_headers;
-    Block block;
+
 
 };
 
