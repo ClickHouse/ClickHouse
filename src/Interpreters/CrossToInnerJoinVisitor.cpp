@@ -39,7 +39,10 @@ struct JoinedElement
         : element(table_element)
     {
         if (element.table_join)
+        {
             join = element.table_join->as<ASTTableJoin>();
+            original_kind = join->kind;
+        }
     }
 
     void checkTableName(const DatabaseAndTableWithAlias & table, const String & current_database) const
@@ -60,6 +63,8 @@ struct JoinedElement
         if (join && join->kind == ASTTableJoin::Kind::Comma)
             join->kind = ASTTableJoin::Kind::Cross;
     }
+
+    ASTTableJoin::Kind getOriginalKind() const { return original_kind; }
 
     bool rewriteCrossToInner(ASTPtr on_expression)
     {
@@ -83,6 +88,8 @@ struct JoinedElement
 private:
     const ASTTablesInSelectQueryElement & element;
     ASTTableJoin * join = nullptr;
+
+    ASTTableJoin::Kind original_kind;
 };
 
 bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
@@ -251,10 +258,17 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                 }
             }
 
-            if (data.cross_to_inner_join_rewrite > 1 && !rewritten)
+            if (joined.getOriginalKind() == ASTTableJoin::Kind::Comma &&
+                data.cross_to_inner_join_rewrite > 1 &&
+                !rewritten)
             {
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Failed to rewrite '{} WHERE {}' to INNER JOIN",
-                                query_before, queryToString(select.where()));
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Failed to rewrite comma join to INNER. "
+                    "Please, try to simplify WHERE section "
+                    "or set the setting `cross_to_inner_join_rewrite` to 1 to allow slow CROSS JOIN for this case "
+                    "(cannot rewrite '{} WHERE {}' to INNER JOIN)",
+                    query_before, queryToString(select.where()));
             }
         }
     }

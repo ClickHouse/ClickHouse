@@ -28,6 +28,7 @@
 #include <Common/FileCacheFactory.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/MultiVersion.h>
 
 namespace DB
 {
