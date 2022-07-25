@@ -112,6 +112,8 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
 
 #elif defined(OS_DARWIN) || defined(OS_FREEBSD)
 
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+
 #include <sys/event.h>
 #include <err.h>
 
