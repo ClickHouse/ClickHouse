@@ -1377,7 +1377,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
 
-    size_t query_cache_size_in_bytes = config().getUInt64("query_cache_size_in_bytes", 1 * (1ULL << 20));
+    size_t query_cache_size_in_bytes = config().getUInt64("query_cache_size_in_bytes", 1 * (1ULL << 10));
     if (query_cache_size_in_bytes)
         global_context->setQueryCache(query_cache_size_in_bytes);
 
