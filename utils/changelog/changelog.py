@@ -368,11 +368,13 @@ def main():
 
     logging.info("Using %s..%s as changelog interval", FROM_REF, TO_REF)
 
+    # use merge-base commit as a starting point, if used ref in another branch
+    base_commit = runner.run(f"git merge-base '{FROM_REF}^{{}}' '{TO_REF}^{{}}'")
     # Get starting and ending dates for gathering PRs
     # Add one day after and before to mitigate TZ possible issues
     # `tag^{}` format gives commit ref when we have annotated tags
     # format %cs gives a committer date, works better for cherry-picked commits
-    from_date = runner.run(f"git log -1 --format=format:%cs '{FROM_REF}^{{}}'")
+    from_date = runner.run(f"git log -1 --format=format:%cs '{base_commit}'")
     to_date = runner.run(f"git log -1 --format=format:%cs '{TO_REF}^{{}}'")
     merged = (
         date.fromisoformat(from_date) - timedelta(1),
