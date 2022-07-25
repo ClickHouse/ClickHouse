@@ -70,7 +70,11 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 static Block appendGroupingColumn(Block block, const Names & keys, const GroupingSetsParamsList & params, bool use_nulls)
 {
     if (params.empty())
+    {
+        if (use_nulls)
+            convertToNullable(block, keys);
         return block;
+    }
 
     return generateOutputHeader(block, keys, use_nulls);
 }
@@ -104,6 +108,33 @@ AggregatingStep::AggregatingStep(
     , group_by_sort_description(std::move(group_by_sort_description_))
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
 {
+}
+
+void AggregatingStep::addConvertingToNullableTransform(QueryPipelineBuilder& pipeline, const BuildQueryPipelineSettings& settings)
+{
+    if (group_by_use_nulls)
+    {
+        auto input_header = pipeline.getHeader();
+        auto dag = std::make_shared<ActionsDAG>(input_header.getColumnsWithTypeAndName());
+        ActionsDAG::NodeRawConstPtrs index;
+        index.reserve(getOutputStream().header.columns());
+        auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
+        for (auto & col : input_header)
+        {
+            const auto * column_node = dag->getIndex()[input_header.getPositionByName(col.name)];
+            if (column_node->result_type->canBeInsideNullable())
+                index.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
+            else
+                index.push_back(column_node);
+        }
+        dag->getIndex().swap(index);
+        auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
+
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, expression);
+        });
+    }
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -356,6 +387,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             aggregating_in_order = collector.detachProcessors(0);
         }
 
+        addConvertingToNullableTransform(pipeline, settings);
+
         finalizing = collector.detachProcessors(2);
         return;
     }
@@ -378,6 +411,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// We add the explicit resize here, but not in case of aggregating in order, since AIO don't use two-level hash tables and thus returns only buckets with bucket_number = -1.
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : pipeline.getNumStreams(), true /* force */);
 
+        addConvertingToNullableTransform(pipeline, settings);
+
         aggregating = collector.detachProcessors(0);
     }
     else
@@ -386,6 +421,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         {
             return std::make_shared<AggregatingTransform>(header, transform_params);
         });
+
+        addConvertingToNullableTransform(pipeline, settings);
 
         aggregating = collector.detachProcessors(0);
     }

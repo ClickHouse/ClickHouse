@@ -2396,7 +2396,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         merge_threads,
         temporary_data_merge_threads,
         storage_has_evenly_distributed_read,
-        settings.group_by_use_nulls,
+        settings.group_by_use_nulls && (analysis_result.group_by_kind == GroupByKind::GROUPING_SETS || getSelectQuery().group_by_with_totals),
         std::move(group_by_info),
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number);

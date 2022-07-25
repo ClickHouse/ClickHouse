@@ -182,7 +182,7 @@ SETTINGS group_by_use_nulls=1;
 9	\N	9
 \N	\N	45
 
-0	0	45
+\N	\N	45
 SELECT number, number % 2, sum(number) AS val
 FROM numbers(10)
 GROUP BY CUBE(number, number % 2) WITH TOTALS
@@ -212,4 +212,4 @@ SETTINGS group_by_use_nulls=1;
 \N	1	25
 \N	\N	45
 
-0	0	45
+\N	\N	45

@@ -348,7 +348,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 group_by_kind = GroupByKind::GROUPING_SETS;
             else
                 group_by_kind = GroupByKind::ORDINARY;
-            bool use_nulls = group_by_kind != GroupByKind::ORDINARY && getContext()->getSettingsRef().group_by_use_nulls;
+            bool use_nulls = (group_by_kind != GroupByKind::ORDINARY || select_query->group_by_with_totals) && getContext()->getSettingsRef().group_by_use_nulls;
 
             /// For GROUPING SETS with multiple groups we always add virtual __grouping_set column
             /// With set number, which is used as an additional key at the stage of merging aggregating data.
@@ -1497,7 +1497,7 @@ void SelectQueryExpressionAnalyzer::appendGroupByModifiers(ActionsDAGPtr & befor
 {
     const auto * select_query = getAggregatingQuery();
 
-    if (!select_query->groupBy() || !(select_query->group_by_with_rollup || select_query->group_by_with_cube))
+    if (!select_query->groupBy() || !(select_query->group_by_with_rollup || select_query->group_by_with_cube || select_query->group_by_with_totals))
         return;
 
     auto source_columns = before_aggregation->getResultColumns();
@@ -1849,6 +1849,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     , need_aggregate(query_analyzer.hasAggregation())
     , has_window(query_analyzer.hasWindow())
     , use_grouping_set_key(query_analyzer.useGroupingSetKey())
+    , group_by_kind(query_analyzer.group_by_kind)
 {
     /// first_stage: Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     /// second_stage: Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
