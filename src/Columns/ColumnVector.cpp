@@ -500,30 +500,42 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
     static constexpr size_t ELEMENT_SIZE = sizeof(T);
     static constexpr size_t ELEMENT_PER_VEC = VEC_LEN / ELEMENT_SIZE;
     static constexpr UInt64 kmask = 0xffffffffffffffff >> (64 - ELEMENT_PER_VEC);
+
+    size_t current_offset = res_data.size();
+    size_t reserve_size = res_data.size();
+    size_t alloc_size = SIMD_BYTES * 2;
+
     while (filt_pos < filt_end_aligned)
     {
+        /// to avoid calling resize too frequently, resize to reserve buffer.
+        if (reserve_size - current_offset < SIMD_BYTES)
+        {
+            reserve_size += alloc_size;
+            res_data.resize(reserve_size);
+            alloc_size *= 2;
+        }
+
         UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
 
         if (0xffffffffffffffff == mask)
         {
-            res_data.insert(data_pos, data_pos + SIMD_BYTES);
+            for (size_t i = 0; i < SIMD_BYTES; i += ELEMENT_PER_VEC)
+                _mm512_storeu_si512(reinterpret_cast<void *>(&res_data[current_offset + i]),
+                        _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
+            current_offset += SIMD_BYTES;
         }
         else
         {
             if (mask)
             {
-                size_t current_offset = res_data.size();
-                int count = std::popcount(mask);
-                /// reserve and resize for later writing
-                res_data.resize(current_offset + count);
                 for (size_t i = 0; i < SIMD_BYTES; i += ELEMENT_PER_VEC)
                 {
                     compressStoreAVX512<ELEMENT_SIZE>(reinterpret_cast<const void *>(data_pos + i),
                             reinterpret_cast<void *>(&res_data[current_offset]), mask & kmask);
-                    /// prepare for next iter, if ELEMENT_PER_VEC = 64, no next iter
+                    current_offset += std::popcount(mask & kmask);
+                    /// prepare mask for next iter, if ELEMENT_PER_VEC = 64, no next iter
                     if (ELEMENT_PER_VEC < 64)
                     {
-                        current_offset += std::popcount(mask & kmask);
                         mask >>= ELEMENT_PER_VEC;
                     }
                 }
@@ -533,6 +545,8 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
         filt_pos += SIMD_BYTES;
         data_pos += SIMD_BYTES;
     }
+    /// resize to the real size.
+    res_data.resize(current_offset);
 }
 )
 
