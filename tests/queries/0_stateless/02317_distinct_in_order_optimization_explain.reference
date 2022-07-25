@@ -1,5 +1,5 @@
 -- disable optimize_distinct_in_order
--- distinct all primary key columns -> no optimizations
+-- distinct all primary key columns -> ordinary distinct
 DistinctTransform
 DistinctTransform
 -- enable optimize_distinct_in_order
@@ -18,18 +18,15 @@ DistinctSortedChunkTransform
 -- distinct with primary key prefix and order by column in distinct but non-primary key prefix -> pre-distinct and final distinct optimization
 DistinctSortedTransform
 DistinctSortedChunkTransform
--- distinct with primary key prefix and order by column in distinct but non-primary key prefix, optimize memory usage -> pre-distinct and final distinct optimization
-DistinctSortedStreamTransform
-DistinctSortedChunkTransform
 -- distinct with primary key prefix and order by on column _not_ in distinct -> pre-distinct optimization only
 DistinctTransform
 DistinctSortedChunkTransform
--- distinct with non-primary key prefix -> no optimizations
+-- distinct with non-primary key prefix -> ordinary distinct
 DistinctTransform
 DistinctTransform
 -- distinct with non-primary key prefix and order by on column in distinct -> final distinct optimization only
 DistinctSortedTransform
 DistinctTransform
--- distinct with non-primary key prefix and order by on column _not_ in distinct -> no optimizations
+-- distinct with non-primary key prefix and order by on column _not_ in distinct -> ordinary distinct
 DistinctTransform
 DistinctTransform
