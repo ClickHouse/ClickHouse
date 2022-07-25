@@ -7,6 +7,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -71,6 +72,18 @@ static const PrewhereInfoPtr & getPrewhereInfo(const SelectQueryInfo & query_inf
                                  : query_info.prewhere_info;
 }
 
+static int getSortDirection(const SelectQueryInfo & query_info)
+{
+    const InputOrderInfoPtr & order_info = query_info.input_order_info
+        ? query_info.input_order_info
+        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+
+    if (!order_info)
+        return 1;
+
+    return order_info->direction;
+}
+
 ReadFromMergeTree::ReadFromMergeTree(
     MergeTreeData::DataPartsVector parts_,
     Names real_column_names_,
@@ -124,6 +137,22 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
+
+    { /// build sort description for output stream
+        SortDescription sort_description;
+        const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+        const Block & header = output_stream->header;
+        const int sort_direction = getSortDirection(query_info);
+        for (const auto & column_name : sorting_key_columns)
+        {
+            if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
+                == header.end())
+                break;
+            sort_description.emplace_back(column_name, sort_direction);
+        }
+        output_stream->sort_description = std::move(sort_description);
+        output_stream->sort_mode = DataStream::SortMode::Chunk;
+    }
 }
 
 Pipe ReadFromMergeTree::readFromPool(
@@ -555,7 +584,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                         pipe.getHeader(),
                         pipe.numOutputPorts(),
                         sort_description,
-                        max_block_size);
+                        max_block_size,
+                        SortingQueueStrategy::Batch);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -583,7 +613,7 @@ static void addMergingFinal(
         {
             case MergeTreeData::MergingParams::Ordinary:
                 return std::make_shared<MergingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size);
+                            sort_description, max_block_size, SortingQueueStrategy::Batch);
 
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedTransform>(header, num_outputs,

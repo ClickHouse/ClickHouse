@@ -2626,7 +2626,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 1800.
+Default value: 180.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -2637,7 +2637,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 1800.
+Default value: 180.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -3328,6 +3328,15 @@ Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
+
+## compatibility {#compatibility}
+
+This setting changes other settings according to provided ClickHouse version.
+If a behaviour in ClickHouse was changed by using a different default value for some setting, this compatibility setting allows you to use default values from previous versions for all the settings that were not set by the user.
+
+This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
+
+Disabled by default.
 
 # Format settings {#format-settings}
 
@@ -4637,3 +4646,35 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 1.
+
+## SQLInsert format settings {$sqlinsert-format-settings}
+
+### output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
+
+The maximum number of rows in one INSERT statement.
+
+Default value: `65505`.
+
+### output_format_sql_insert_table_name {#output_format_sql_insert_table_name}
+
+The name of table that will be used in the output INSERT statement.
+
+Default value: `'table''`.
+
+### output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
+
+Include column names in INSERT statement.
+
+Default value: `true`.
+
+### output_format_sql_insert_use_replace {#output_format_sql_insert_use_replace}
+
+Use REPLACE keyword instead of INSERT.
+
+Default value: `false`.
+
+### output_format_sql_insert_quote_names {#output_format_sql_insert_quote_names}
+
+Quote column names with "`" characters
+
+Default value: `true`.
