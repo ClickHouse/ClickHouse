@@ -1205,6 +1205,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
 
+            global_context->reloadDDLWorker(config);
+
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
             CertificateReloader::instance().tryLoad(*config);

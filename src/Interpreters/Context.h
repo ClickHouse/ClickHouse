@@ -636,6 +636,7 @@ public:
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
+    void reloadDDLWorker(const Poco::Util::AbstractConfiguration * config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;

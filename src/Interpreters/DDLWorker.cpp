@@ -62,13 +62,14 @@ DDLWorker::DDLWorker(
     const std::string & zk_root_dir,
     ContextPtr context_,
     const Poco::Util::AbstractConfiguration * config,
-    const String & prefix,
+    const String & prefix_,
     const String & logger_name,
     const CurrentMetrics::Metric * max_entry_metric_,
     const CurrentMetrics::Metric * max_pushed_entry_metric_)
     : context(Context::createCopy(context_))
     , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
+    , prefix(prefix_)
     , max_entry_metric(max_entry_metric_)
     , max_pushed_entry_metric(max_pushed_entry_metric_)
 {
@@ -89,15 +90,7 @@ DDLWorker::DDLWorker(
     if (queue_dir.back() == '/')
         queue_dir.resize(queue_dir.size() - 1);
 
-    if (config)
-    {
-        task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
-        cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
-        max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
-
-        if (config->has(prefix + ".profile"))
-            context->setSetting("profile", config->getString(prefix + ".profile"));
-    }
+    loadOrReloadWorkerConfig(config);
 
     if (context->getSettingsRef().readonly)
     {
@@ -106,6 +99,23 @@ DDLWorker::DDLWorker(
 
     host_fqdn = getFQDNOrHostName();
     host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getTCPPort());
+}
+
+void DDLWorker::loadOrReloadWorkerConfig(const Poco::Util::AbstractConfiguration * config)
+{
+    if (config == nullptr)
+    {
+        return;
+    }
+
+    task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
+    cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
+    max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+
+    if (config->has(prefix + ".profile"))
+    {
+        profile_name = config->getString(prefix + ".profile");
+    }
 }
 
 void DDLWorker::startup()
@@ -432,6 +442,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
 
     try
     {
+        context->setSetting("profile", profile_name);
         auto query_context = task.makeQueryContext(context, zookeeper);
         if (!task.is_initial_query)
             query_scope.emplace(query_context);

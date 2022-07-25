@@ -66,6 +66,8 @@ public:
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
+    void loadOrReloadWorkerConfig(const Poco::Util::AbstractConfiguration * config);
+
 protected:
 
     /// Returns cached ZooKeeper session (possibly expired).
@@ -153,6 +155,9 @@ protected:
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
+    /// ddl profile name
+    String profile_name = "default";
+    String prefix;
 
     std::atomic<UInt64> max_id = 0;
     const CurrentMetrics::Metric * max_entry_metric;

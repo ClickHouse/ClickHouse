@@ -1527,6 +1527,17 @@ void Context::loadOrReloadModels(const Poco::Util::AbstractConfiguration & confi
     shared->models_repository_guard = external_models_loader.addConfigRepository(std::move(repository));
 }
 
+void Context::reloadDDLWorker(const Poco::Util::AbstractConfiguration * config)
+{
+    auto lock = getLock();
+    if (shared->ddl_worker)
+    {
+        shared->ddl_worker->loadOrReloadWorkerConfig(config);
+    }
+
+    return;
+}
+
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard lock(shared->embedded_dictionaries_mutex);
