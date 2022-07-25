@@ -34,7 +34,18 @@ INSERT INTO video_log SELECT
   (bytes_raw % 1024) + 128,
   (duration_raw % 300) + 100
 FROM rng
-LIMIT 17280000;
+LIMIT 1728000;
+
+INSERT INTO video_log SELECT
+  toUnixTimestamp('2022-07-22 01:00:00')
+  + (rowNumberInAllBlocks() / 20000),
+  user_id_raw % 100000000 AS user_id,
+  100 AS device_id,
+  domain_raw % 100,
+  (bytes_raw % 1024) + 128,
+  (duration_raw % 300) + 100
+FROM rng
+LIMIT 10;
 
 ALTER TABLE video_log ADD PROJECTION p_norm
 (
@@ -70,7 +81,7 @@ SELECT
     ignore(sum(bytes)),
     ignore(avg(duration))
 FROM video_log
-WHERE (toDate(hour) = '2022-07-22') AND (device_id = '100')
+WHERE (toDate(hour) = '2022-07-22') AND (device_id = '100') --(device_id = '100') Make sure it's not good and doesn't go into prewhere.
 GROUP BY hour;
 
 DROP TABLE IF EXISTS video_log;
