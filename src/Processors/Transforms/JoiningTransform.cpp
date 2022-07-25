@@ -345,7 +345,8 @@ IProcessor::Status ParallelJoinTransform::prepare()
         {
             all_finished = false;
             if (current_input == inputs.begin())
-            {
+            { // left
+                left_read = false;
                 assert(!inp);
                 LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "reading left");
                 //  only when no right input, that refers
@@ -357,12 +358,13 @@ IProcessor::Status ParallelJoinTransform::prepare()
                     {
                         left_in_use = true;
                         LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left in use");
-                        break;
+                        goto EOFL;
                     }
                 }
 
                 if (!left_in_use)
                 {
+                    current_input->setNeeded();
                     if (current_input->hasData())
                     {
                         LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "not left in use - has data");
@@ -404,14 +406,15 @@ IProcessor::Status ParallelJoinTransform::prepare()
                 }
             }
             else
-            {
+            { // right
                 if (!left_read && status[inp].right_rest)
                 {
                     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "need left while it is not read");
-                    continue;
+                    goto EOFL;
                 }
                 if (!status[inp].current_pos) // status[inp].left_rest ?
                 {
+                    current_input->setNeeded();
                     if (current_input->hasData())
                     {
                         chunk = current_input->pull(true);
@@ -421,7 +424,7 @@ IProcessor::Status ParallelJoinTransform::prepare()
                     else if (!status[inp].right_rest)
                     {
                         LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "no right, but cannot read - continue");
-                        continue;
+                        goto EOFL;
                     }
                 }
                 Block & add_block = status[inp].block;
@@ -496,6 +499,8 @@ IProcessor::Status ParallelJoinTransform::prepare()
                 //     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "added {} columns", i);
                 // }
             }
+          EOFL:
+
 
             // current_input->setNeeded();
 
@@ -517,6 +522,15 @@ IProcessor::Status ParallelJoinTransform::prepare()
                 if (!left_in_use)
                 {
                     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "inputs.end - not left in use");
+
+                    if (!status[0].block.rows())
+                    {
+                        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "no left block - returning NeedData");
+                        return Status::NeedData;
+
+                    }
+
+
                     for (size_t right_inp = 1; right_inp < num_inputs; ++right_inp)
                     {
                         IColumn::Filter filt(status[right_inp].right_filt.size());
@@ -531,8 +545,8 @@ IProcessor::Status ParallelJoinTransform::prepare()
                             // adjust current_pos ?
                         }
 
-                        Block add_block = current_input->getHeader();
-                        add_block.setColumns(chunk.detachColumns());
+                        Block & add_block = status[inp].block;
+                        // add_block.setColumns(chunk.detachColumns());
                         size_t i = 0;
                         for (; i < status[inp].block.columns(); ++i)
                         {
@@ -596,7 +610,8 @@ IProcessor::Status ParallelJoinTransform::prepare()
         else
         {
             LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "current input is finished");
-            continue;
+            ++inp;
+            ++current_input;
         }
     }
     assert(!"end of loop");
