@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-stress
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,8 +13,7 @@ done
 
 sleep 2
 
-$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02368_') sync" > /dev/null
-$CLICKHOUSE_CLIENT -q "select demangle(addressToSymbol(arrayJoin(trace))) from system.stack_trace where startsWith(query_id, '02368_')" 2>&1 /dev/null
+$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02368_') sync" 2>&1 /dev/null
 
 for i in $(seq 1 10);
 do
@@ -23,5 +22,4 @@ done
 
 sleep 2
 
-$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02368_') sync" > /dev/null
-$CLICKHOUSE_CLIENT -q "select demangle(addressToSymbol(arrayJoin(trace))) from system.stack_trace where startsWith(query_id, '02368_')" 2>&1 /dev/null
+$CLICKHOUSE_CLIENT -q "kill query where startsWith(query_id, '02368_') sync" 2>&1 /dev/null
