@@ -82,7 +82,7 @@ BlockIO InterpreterDeleteQuery::execute()
     command->predicate = delete_query.predicate;
     command->update_assignments = std::make_shared<ASTExpressionList>();
     auto set_row_does_not_exist = std::make_shared<ASTAssignment>();
-    set_row_does_not_exist->column_name = LightweightDeleteDescription::filter_column.name;
+    set_row_does_not_exist->column_name = LightweightDeleteDescription::FILTER_COLUMN.name;
     auto zero_value = std::make_shared<ASTLiteral>(DB::Field(UInt8(0)));
     set_row_does_not_exist->children.push_back(zero_value);
     command->update_assignments->children.push_back(set_row_does_not_exist);

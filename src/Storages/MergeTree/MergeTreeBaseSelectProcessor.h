@@ -103,7 +103,7 @@ protected:
     StorageSnapshotPtr storage_snapshot;
 
     /// This step is added when the part has lightweight delete mask
-    const PrewhereExprStep lightweight_delete_filter_step { nullptr, LightweightDeleteDescription::filter_column.name, true, true };
+    const PrewhereExprStep lightweight_delete_filter_step { nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, true };
     PrewhereInfoPtr prewhere_info;
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
