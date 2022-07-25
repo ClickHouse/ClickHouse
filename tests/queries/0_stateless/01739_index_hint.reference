@@ -30,6 +30,6 @@ SELECT sum(t) FROM XXXX WHERE indexHint(t = 42);
 drop table if exists XXXX;
 create table XXXX (t Int64, f Float64) Engine=MergeTree order by t settings index_granularity=8192;
 insert into XXXX select number*60, 0 from numbers(100000);
-SELECT count() >= 1 FROM XXXX WHERE indexHint(t = toDateTime(0));
-1
+SELECT count() FROM XXXX WHERE indexHint(t = toDateTime(0));
+100000
 drop table XXXX;
