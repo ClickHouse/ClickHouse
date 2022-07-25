@@ -27,8 +27,8 @@ namespace ErrorCodes
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 {
 #if defined(__AVX512F__) && defined(__AVX512BW__)
-    const __m512i zero64 = _mm512_setzero_epi32();
-    UInt64 res = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(bytes64)), zero64, _MM_CMPINT_EQ);
+    const __m512i vbytes = _mm512_loadu_si512(reinterpret_cast<const void *>(bytes64));
+    UInt64 res = _mm512_testn_epi8_mask(vbytes, vbytes);
 #elif defined(__AVX__) && defined(__AVX2__)
     const __m256i zero32 = _mm256_setzero_si256();
     UInt64 res =
