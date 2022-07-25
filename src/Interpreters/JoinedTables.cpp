@@ -59,9 +59,18 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     if (!join || !join->table_expression)
         return;
 
-    /// TODO: Push down for CROSS JOIN is not OK [disabled]
     const auto & table_join = join->table_join->as<ASTTableJoin &>();
+
+    /// TODO: Push down for CROSS JOIN is not OK [disabled]
     if (table_join.kind == ASTTableJoin::Kind::Cross)
+        return;
+
+    /* Do not push down predicates for ASOF because it can lead to incorrect results
+     * (for example, if we will filter a suitable row before joining and will choose another, not the closest row).
+     * ANY join behavior can also be different with this optimization,
+     * but it's ok because we don't guarantee which row to choose for ANY, unlike ASOF, where we have to pick the closest one.
+     */
+    if (table_join.strictness == ASTTableJoin::Strictness::Asof)
         return;
 
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();
