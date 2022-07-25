@@ -9,17 +9,17 @@
 #include <cerrno>
 #include <memory>
 #include <iostream>
-#if defined OS_DARWIN
 
-// dependencies
-#include <machine/endian.h>
-#include <libkern/OSByteOrder.h>
-
-// define 64 bit macros
-#define htole64(x) OSSwapHostToLittleInt64(x)
-
+#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
+#   include <machine/endian.h>
 #else
-#include <endian.h>
+#   include <endian.h>
+#endif
+
+#if defined OS_DARWIN
+#   include <libkern/OSByteOrder.h>
+    // define 64 bit macros
+#   define htole64(x) OSSwapHostToLittleInt64(x)
 #endif
 
 #include "types.h"
@@ -363,7 +363,14 @@ int copy_decompressor_self(const char *self, int output_fd)
         return 1;
     }
 
-    int decompressor_size = atoi(size_str);
+    char * end = nullptr;
+    int decompressor_size = strtol(size_str, &end, 10);
+    if (*end != 0)
+    {
+        std::cerr << "Error: unable to extract decompressor" << std::endl;
+        close(input_fd);
+        return 1;
+    }
 
     if (-1 == lseek(input_fd, -(decompressor_size + 15), SEEK_END))
     {
@@ -407,7 +414,7 @@ int copy_decompressor_file(const char *path, int output_fd)
 
 inline void usage(FILE * out, const char * name)
 {
-    fprintf(out,
+    (void)fprintf(out,
         "%s [--level=<level>] [--decompressor=<path>] <output_file> <input_file> [... <input_file>]\n"
         "\t--level - compression level, max is %d, negative - prefer speed over compression\n"
         "\t          default is 5\n"
