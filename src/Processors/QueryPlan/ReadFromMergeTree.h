@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/RequestResponse.h>
 
 namespace DB
 {
@@ -8,6 +9,8 @@ namespace DB
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 class Pipe;
+
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 struct MergeTreeDataSelectSamplingData
 {
@@ -111,7 +114,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    const StorageID getStorageID() const { return data.getStorageID(); }
+    StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }

@@ -36,6 +36,8 @@ enum class RestoreAccessCreationMode
     kReplace,
 };
 
+using RestoreUDFCreationMode = RestoreAccessCreationMode;
+
 /// Settings specified in the "SETTINGS" clause of a RESTORE query.
 struct RestoreSettings
 {
@@ -98,6 +100,9 @@ struct RestoreSettings
     /// Skip dependencies of access entities which can't be resolved.
     /// For example, if an user has a profile assigned and that profile is not in the backup and doesn't exist locally.
     bool allow_unresolved_access_dependencies = false;
+
+    /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
+    RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
 
     /// Internal, should not be specified by user.
     bool internal = false;

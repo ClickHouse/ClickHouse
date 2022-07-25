@@ -31,6 +31,7 @@ RENAME TABLE test_01148_atomic.rmt4 to test_01148_atomic.rmt3;
 SHOW CREATE TABLE test_01148_atomic.rmt3;
 
 DROP DATABASE IF EXISTS test_01148_ordinary;
+set allow_deprecated_database_ordinary=1;
 CREATE DATABASE test_01148_ordinary ENGINE=Ordinary;
 RENAME TABLE test_01148_atomic.rmt3 to test_01148_ordinary.rmt3; -- { serverError 48 }
 DROP DATABASE test_01148_ordinary;

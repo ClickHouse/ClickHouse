@@ -369,6 +369,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 else
                     group_by_info = nullptr;
 
+                // We don't have information regarding the `to_stage` of the query processing, only about `from_stage` (which is passed through `processed_stage` argument).
+                // Thus we cannot assign false here since it may be a query over distributed table.
+                const bool should_produce_results_in_order_of_bucket_number = true;
+
                 auto aggregating_step = std::make_unique<AggregatingStep>(
                     query_plan->getCurrentDataStream(),
                     std::move(params),
@@ -379,8 +383,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     merge_threads,
                     temporary_data_merge_threads,
                     /* storage_has_evenly_distributed_read_= */ false,
+                    /* group_by_use_nulls */ false,
                     std::move(group_by_info),
-                    std::move(group_by_sort_description));
+                    std::move(group_by_sort_description),
+                    should_produce_results_in_order_of_bucket_number);
                 query_plan->addStep(std::move(aggregating_step));
             };
 
@@ -1464,6 +1470,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     if (!key_condition.matchesExactContinuousRange())
     {
         // Do exclusion search, where we drop ranges that do not match
+
+        if (settings.merge_tree_coarse_index_granularity <= 1)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Setting merge_tree_coarse_index_granularity should be greater than 1");
 
         size_t min_marks_for_seek = roundRowsOrBytesToMarks(
             settings.merge_tree_min_rows_for_seek,

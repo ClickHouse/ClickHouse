@@ -15,7 +15,12 @@ class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IRestoreCoordination;
 struct StorageID;
-class AccessRestoreTask;
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
+class AccessRestorerFromBackup;
+struct IAccessEntity;
+using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
+
 
 /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
 class RestorerFromBackup : private boost::noncopyable
@@ -26,63 +31,38 @@ public:
         const RestoreSettings & restore_settings_,
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
-        const ContextMutablePtr & context_,
-        std::chrono::seconds timeout_);
+        const ContextMutablePtr & context_);
 
     ~RestorerFromBackup();
 
-    /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
-    /// restoreMetadata() checks access rights internally so checkAccessRightsOnly() shouldn't be called first.
-    void restoreMetadata();
+    enum Mode
+    {
+        /// Restores databases and tables.
+        RESTORE,
 
-    /// Only checks access rights without restoring anything.
-    void checkAccessOnly();
+        /// Only checks access rights without restoring anything.
+        CHECK_ACCESS_ONLY
+    };
 
     using DataRestoreTask = std::function<void()>;
     using DataRestoreTasks = std::vector<DataRestoreTask>;
-    DataRestoreTasks getDataRestoreTasks();
+
+    /// Restores the metadata of databases and tables and returns tasks to restore the data of tables.
+    DataRestoreTasks run(Mode mode);
 
     BackupPtr getBackup() const { return backup; }
     const RestoreSettings & getRestoreSettings() const { return restore_settings; }
     bool isNonEmptyTableAllowed() const { return getRestoreSettings().allow_non_empty_tables; }
     std::shared_ptr<IRestoreCoordination> getRestoreCoordination() const { return restore_coordination; }
-    std::chrono::seconds getTimeout() const { return timeout; }
     ContextMutablePtr getContext() const { return context; }
-    void executeCreateQuery(const ASTPtr & create_query) const;
 
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
     void addDataRestoreTask(DataRestoreTask && new_task);
     void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
-    /// Adds a new data path to restore access control.
-    void checkPathInBackupToRestoreAccess(const String & path);
-
-    /// Reading a backup includes a few stages:
-    enum class Stage
-    {
-        /// Initial stage.
-        kPreparing,
-
-        /// Finding databases and tables in the backup which we're going to restore.
-        kFindingTablesInBackup,
-
-        /// Creating databases or finding them and checking their definitions.
-        kCreatingDatabases,
-
-        /// Creating tables or finding them and checking their definition.
-        kCreatingTables,
-
-        /// Inserting restored data to tables.
-        kInsertingDataToTables,
-
-        /// An error happens during any of the stages above, the backup is not restored properly.
-        kError = -1,
-    };
-    static std::string_view toString(Stage stage);
-
-    /// Throws an exception that a specified table engine doesn't support partitions.
-    [[noreturn]] static void throwPartitionsNotSupported(const StorageID & storage_id, const String & table_engine);
+    /// Returns the list of access entities to restore.
+    std::vector<std::pair<UUID, AccessEntityPtr>> getAccessEntitiesToRestore();
 
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
@@ -93,54 +73,63 @@ private:
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     BackupPtr backup;
     ContextMutablePtr context;
-    std::chrono::seconds timeout;
+    std::chrono::milliseconds create_table_timeout;
     Poco::Logger * log;
 
-    Stage current_stage = Stage::kPreparing;
-    std::vector<std::filesystem::path> root_paths_in_backup;
+    Strings all_hosts;
     DDLRenamingMap renaming_map;
+    std::vector<std::filesystem::path> root_paths_in_backup;
 
-    void run(bool only_check_access);
-    void setStage(Stage new_stage, const String & error_message = {});
     void findRootPathsInBackup();
-    void collectDatabaseAndTableInfos();
-    void collectTableInfo(const QualifiedTableName & table_name_in_backup, bool is_temporary_table, const std::optional<ASTs> & partitions);
-    void collectDatabaseInfo(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names, bool throw_if_no_database_metadata_in_backup);
-    void collectAllDatabasesInfo(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
-    void checkAccessForCollectedInfos() const;
+
+    void findDatabasesAndTablesInBackup();
+    void findTableInBackup(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions);
+    void findDatabaseInBackup(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
+    void findEverythingInBackup(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
+
+    void checkAccessForObjectsFoundInBackup() const;
+
     void createDatabases();
+    void createDatabase(const String & database_name) const;
+    void checkDatabase(const String & database_name);
+
     void createTables();
+    void createTable(const QualifiedTableName & table_name);
+    void checkTable(const QualifiedTableName & table_name);
+    void insertDataToTable(const QualifiedTableName & table_name);
+
+    DataRestoreTasks getDataRestoreTasks();
+
+    void setStatus(const String & new_status, const String & message = "");
 
     struct DatabaseInfo
     {
         ASTPtr create_database_query;
+        bool is_predefined_database = false;
+        DatabasePtr database;
     };
 
     struct TableInfo
     {
         ASTPtr create_table_query;
-        std::optional<ASTs> partitions;
-        std::filesystem::path data_path_in_backup;
+        bool is_predefined_table = false;
         std::unordered_set<QualifiedTableName> dependencies;
-        bool created = false;
+        bool has_data = false;
+        std::filesystem::path data_path_in_backup;
+        std::optional<ASTs> partitions;
+        DatabasePtr database;
         StoragePtr storage;
         TableLockHolder table_lock;
     };
 
-    struct TableKey
-    {
-        QualifiedTableName name;
-        bool is_temporary = false;
-        bool operator ==(const TableKey & right) const;
-        bool operator <(const TableKey & right) const;
-    };
+    std::vector<QualifiedTableName> findTablesWithoutDependencies() const;
 
-    std::vector<TableKey> findTablesWithoutDependencies() const;
-
+    String current_status;
     std::unordered_map<String, DatabaseInfo> database_infos;
-    std::map<TableKey, TableInfo> table_infos;
+    std::map<QualifiedTableName, TableInfo> table_infos;
     std::vector<DataRestoreTask> data_restore_tasks;
-    std::shared_ptr<AccessRestoreTask> access_restore_task;
+    std::unique_ptr<AccessRestorerFromBackup> access_restorer;
+    bool access_restored = false;
 };
 
 }

@@ -120,6 +120,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--replicated-database')
     fi
 
+    if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
+    fi
+
     set +e
     clickhouse-test -j 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time \
         --skip 00168_parallel_processing_on_replicas "${ADDITIONAL_OPTIONS[@]}" \

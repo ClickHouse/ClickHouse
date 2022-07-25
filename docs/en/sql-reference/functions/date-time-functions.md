@@ -836,7 +836,7 @@ Result:
 
 ## now
 
-Returns the current date and time.
+Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
 **Syntax**
 
@@ -884,14 +884,20 @@ Result:
 └──────────────────────┘
 ```
 
+## nowInBlock
+
+Returns the current date and time at the moment of processing of each block of data. In contrast to the function `now`, it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+
+It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
+
 ## today
 
-Accepts zero arguments and returns the current date at one of the moments of request execution.
+Accepts zero arguments and returns the current date at one of the moments of query analysis.
 The same as ‘toDate(now())’.
 
 ## yesterday
 
-Accepts zero arguments and returns yesterday’s date at one of the moments of request execution.
+Accepts zero arguments and returns yesterday’s date at one of the moments of query analysis.
 The same as ‘today() - 1’.
 
 ## timeSlot
