@@ -267,16 +267,6 @@ def extract_test_name(base_path):
     return name
 
 
-def get_instances_dir():
-    if (
-        "INTEGRATION_TESTS_RUN_ID" in os.environ
-        and os.environ["INTEGRATION_TESTS_RUN_ID"]
-    ):
-        return "_instances_" + shlex.quote(os.environ["INTEGRATION_TESTS_RUN_ID"])
-    else:
-        return "_instances"
-
-
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
