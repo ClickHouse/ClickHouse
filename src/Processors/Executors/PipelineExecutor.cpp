@@ -205,7 +205,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
     Stopwatch total_time_watch;
 #endif
 
-    // auto & node = tasks.getNode(thread_num);
     auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;
 
