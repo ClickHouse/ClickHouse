@@ -1842,6 +1842,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     bool second_stage_,
     bool only_types,
     const FilterDAGInfoPtr & filter_info_,
+    const FilterDAGInfoPtr & additional_filter,
     const Block & source_header)
     : first_stage(first_stage_)
     , second_stage(second_stage_)
@@ -1906,6 +1907,13 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             Names columns_for_final = metadata_snapshot->getColumnsRequiredForFinal();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_final.begin(), columns_for_final.end());
+        }
+
+        if (storage && additional_filter)
+        {
+            Names columns_for_additional_filter = additional_filter->actions->getRequiredColumnsNames();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_additional_filter.begin(), columns_for_additional_filter.end());
         }
 
         if (storage && filter_info_)
