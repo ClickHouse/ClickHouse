@@ -27,11 +27,6 @@
 #include <Dictionaries/DictionaryHelpers.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric Write;
-}
-
 namespace ProfileEvents
 {
     extern const Event FileOpen;
@@ -526,8 +521,6 @@ public:
             if (errno != EINTR)
                 throw Exception(ErrorCodes::CANNOT_IO_SUBMIT, "Cannot submit request for asynchronous IO on file {}", file_path);
         }
-
-        // CurrentMetrics::Increment metric_increment_write{CurrentMetrics::Write};
 
         io_event event;
 

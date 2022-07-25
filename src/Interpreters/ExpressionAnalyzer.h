@@ -281,6 +281,7 @@ struct ExpressionAnalysisResult
         bool second_stage,
         bool only_types,
         const FilterDAGInfoPtr & filter_info,
+        const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
         const Block & source_header);
 
     /// Filter for row-level security.
@@ -411,6 +412,8 @@ private:
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
     void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
+
+    void appendGroupByModifiers(ActionsDAGPtr & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
     /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
