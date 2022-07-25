@@ -12,6 +12,8 @@ struct KeeperContext
     };
 
     Phase server_state{Phase::INIT};
+
+    bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
 };
 

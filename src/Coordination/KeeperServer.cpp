@@ -114,6 +114,7 @@ KeeperServer::KeeperServer(
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
     keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    keeper_context->ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     state_machine = nuraft::cs_new<KeeperStateMachine>(
         responses_queue_,
