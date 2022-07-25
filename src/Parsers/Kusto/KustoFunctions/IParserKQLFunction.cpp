@@ -96,12 +96,7 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
         {
             if (pos->type == TokenType::BareWord )
             {
-                String converted;
-                fun = KQLFunctionFactory::get(token);
-                if ( fun && fun->convert(converted,pos))
-                    tokens.push_back(converted);
-                else
-                    tokens.push_back(token);
+                tokens.push_back(IParserKQLFunction::getExpression(pos));
             }
             else if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)
             {
@@ -136,6 +131,22 @@ void IParserKQLFunction::validateEndOfFunction(const String & fn_name, IParser::
 {
     if (pos->type != TokenType:: ClosingRoundBracket)
         throw Exception("Too many arguments in function: " + fn_name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+}
+
+String IParserKQLFunction::getExpression(IParser::Pos & pos)
+{
+    String arg = String(pos->begin, pos->end);
+    if (pos->type == TokenType::BareWord )
+    {
+        String new_arg;
+        auto fun = KQLFunctionFactory::get(arg);
+        if (fun && fun->convert(new_arg, pos))
+        {
+            validateEndOfFunction(arg, pos);
+            arg = new_arg;
+        }
+    }
+    return arg;
 }
 
 }

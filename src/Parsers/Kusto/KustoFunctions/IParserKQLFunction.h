@@ -31,6 +31,7 @@ public:
     bool convert(String & out,IParser::Pos & pos);
     virtual const char * getName() const = 0;
     virtual ~IParserKQLFunction() = default;
+    static String getExpression(IParser::Pos & pos);
 protected:
     virtual bool convertImpl(String & out,IParser::Pos & pos) = 0;
     static bool directMapping(String  &out,IParser::Pos & pos,const String & ch_fn);

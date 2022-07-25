@@ -35,11 +35,6 @@ The config setting to allow modify dialect setting.
 - **print operator** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/printoperator)  
    `print x=1, s=strcat('Hello', ', ', 'World!')`
 
-- **The following functions now support arbitrary expressions as their argument:**
-   - [ipv4_is_private](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-privatefunction)
-   - [ipv4_is_in_range](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-in-range-function)
-   - [ipv4_netmask_suffix](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-netmask-suffix-function)
-
 - **Aggregate Functions:**
  - [make_list()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/makelist-aggfunction)  
    `Customers | summarize t = make_list(FirstName) by FirstName`
@@ -59,12 +54,10 @@ The config setting to allow modify dialect setting.
 
 ## IP functions
 
-The following functions now support arbitrary expressions as their argument.
-
-- [ipv4_is_private](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-privatefunction)
-- [ipv4_is_in_range](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-in-range-function)
-- [ipv4_netmask_suffix](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-netmask-suffix-function)
-
+- **The following functions now support arbitrary expressions as their argument:**
+   - [ipv4_is_private](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-privatefunction)
+   - [ipv4_is_in_range](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-in-range-function)
+   - [ipv4_netmask_suffix](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-netmask-suffix-function)
       
 # July 17, 2022
 
