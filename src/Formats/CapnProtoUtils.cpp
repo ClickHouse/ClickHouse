@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_DATA;
     extern const int CAPN_PROTO_BAD_TYPE;
+    extern const int BAD_ARGUMENTS;
 }
 
 capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaInfo & schema_info)
