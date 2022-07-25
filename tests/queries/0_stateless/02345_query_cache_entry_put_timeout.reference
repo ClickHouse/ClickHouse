@@ -1,0 +1,14 @@
+42
+42
+42
+42
+42
+ReadFromPreparedSource (Read query result from cache)
+0
+ReadFromPreparedSource (Read query result from cache)
+0
+ReadFromPreparedSource (Read query result from cache)
+0
+Caching (Put query result in cache)
+  Expression ((Projection + Before ORDER BY))
+    ReadFromStorage (Memory)

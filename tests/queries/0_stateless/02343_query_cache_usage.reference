@@ -1,0 +1,9 @@
+Expression ((Projection + Before ORDER BY))
+  ReadFromStorage (Memory)
+Expression ((Projection + Before ORDER BY))
+  ReadFromStorage (Memory)
+Caching (Put query result in cache)
+  Expression ((Projection + Before ORDER BY))
+    ReadFromStorage (Memory)
+1
+ReadFromPreparedSource (Read query result from cache)
