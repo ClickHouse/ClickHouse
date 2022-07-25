@@ -49,19 +49,12 @@ select '-- check that distinct in order has the same result as ordinary distinct
 drop table if exists distinct_cardinality_low sync;
 CREATE TABLE distinct_cardinality_low (low UInt64, medium UInt64, high UInt64) ENGINE MergeTree() ORDER BY (low, medium);
 INSERT INTO distinct_cardinality_low SELECT number % 1e1, number % 1e2, number % 1e3 FROM numbers_mt(1e4);
+
 drop table if exists distinct_in_order sync;
 drop table if exists ordinary_distinct sync;
-create table distinct_in_order (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
-insert into distinct_in_order select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=1, optimize_distinct_in_order_memory_usage=0;
-create table ordinary_distinct (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
-insert into ordinary_distinct select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=0;
-select distinct * from distinct_in_order except select * from ordinary_distinct;
 
-select '-- check that distinct in order has the same result as ordinary distinct, optimize memory usage';
-drop table if exists distinct_in_order;
-drop table if exists ordinary_distinct;
 create table distinct_in_order (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
-insert into distinct_in_order select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=1, optimize_distinct_in_order_memory_usage=1;
+insert into distinct_in_order select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=1;
 create table ordinary_distinct (low UInt64, medium UInt64, high UInt64) engine=MergeTree() order by (low, medium);
 insert into ordinary_distinct select distinct * from distinct_cardinality_low order by high settings optimize_distinct_in_order=0;
 select distinct * from distinct_in_order except select * from ordinary_distinct;

@@ -78,4 +78,3 @@
 1	1
 0	0
 -- check that distinct in order has the same result as ordinary distinct
--- check that distinct in order has the same result as ordinary distinct, optimize memory usage

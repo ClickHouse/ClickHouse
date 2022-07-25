@@ -15,8 +15,7 @@ public:
         UInt64 limit_hint_,
         const Names & columns_,
         bool pre_distinct_, /// If is enabled, execute distinct for separate streams. Otherwise, merge streams.
-        bool optimize_distinct_in_order_,
-        bool optimize_distinct_in_order_memory_usage_);
+        bool optimize_distinct_in_order_);
 
     String getName() const override { return "Distinct"; }
 
@@ -33,7 +32,6 @@ private:
     Names columns;
     bool pre_distinct;
     bool optimize_distinct_in_order;
-    bool optimize_distinct_in_order_memory_usage;
 };
 
 }
