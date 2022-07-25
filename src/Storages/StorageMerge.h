@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Common/OptimizedRegularExpression.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 
 
 namespace DB
@@ -105,7 +107,36 @@ private:
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;
 
-protected:
+    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+
+    friend class ReadFromMerge;
+};
+
+class ReadFromMerge final : public ISourceStep
+{
+public:
+    static constexpr auto name = "ReadFromMerge";
+    String getName() const override { return name; }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    using StorageListWithLocks = std::list<StorageWithLockAndName>;
+    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
+
+private:
+    const size_t requested_num_streams;
+    const size_t required_max_block_size;
+
+    Names column_names;
+    std::shared_ptr<StorageMerge> storage_merge;
+    QueryProcessingStage::Enum common_processed_stage;
+
+    SelectQueryInfo query_info;
+    StorageSnapshotPtr merge_storage_snapshot;
+    StorageMetadataPtr merge_metadata_for_reading;
+    ContextMutablePtr context;
+
     struct AliasData
     {
         String name;
@@ -115,8 +146,7 @@ protected:
 
     using Aliases = std::vector<AliasData>;
 
-    Pipe createSources(
-        QueryPlanResourceHolder & resources,
+    QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         const QueryProcessingStage::Enum & processed_stage,
@@ -134,12 +164,7 @@ protected:
     void convertingSourceStream(
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
         ContextPtr context, ASTPtr & query,
-        Pipe & pipe, QueryProcessingStage::Enum processed_stage);
-
-    static SelectQueryInfo getModifiedQueryInfo(
-        const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & current_storage_id, bool is_merge_engine);
-
-    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
+        QueryPipelineBuilder & builder, QueryProcessingStage::Enum processed_stage);
 };
 
 }
