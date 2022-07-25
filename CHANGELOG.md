@@ -12,6 +12,7 @@
 
 #### Upgrade Notes
 * Enable setting `enable_positional_arguments` by default. It allows queries like `SELECT ... ORDER BY 1, 2` where 1, 2 are the references to the select clause. If you need to return the old behavior, disable this setting. [#38204](https://github.com/ClickHouse/ClickHouse/pull/38204) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Disable `format_csv_allow_single_quotes` by default. See [#37096](https://github.com/ClickHouse/ClickHouse/issues/37096). ([Kruglov Pavel](https://github.com/Avogar)).
 * `Ordinary` database engine and old storage definition syntax for `*MergeTree` tables are deprecated. By default it's not possible to create new databases with `Ordinary` engine. If `system` database has `Ordinary` engine it will be automatically converted to `Atomic` on server startup. There are settings to keep old behavior (`allow_deprecated_database_ordinary` and `allow_deprecated_syntax_for_merge_tree`), but these settings may be removed in future releases. [#38335](https://github.com/ClickHouse/ClickHouse/pull/38335) ([Alexander Tokmakov](https://github.com/tavplubix)).
 * Force rewriting comma join to inner by default (set default value `cross_to_inner_join_rewrite = 2`). To have old behavior set `cross_to_inner_join_rewrite = 1`. [#39326](https://github.com/ClickHouse/ClickHouse/pull/39326) ([Vladimir C](https://github.com/vdimir)). If you will face any incompatibilities, you can turn this setting back.
 

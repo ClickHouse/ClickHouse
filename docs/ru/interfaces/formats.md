@@ -19,6 +19,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
 | [CSV](#csv)                                                                             | ✔     | ✔      |
 | [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                           | ✔     | ✔      |
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
 | [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
@@ -52,6 +53,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
 | [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
 | [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
+| [RowBinaryWithNames](#rowbinarywithnames)                                               | ✔     | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
 | [Native](#native)                                                                       | ✔     | ✔      |
 | [Null](#null)                                                                           | ✗     | ✔      |
@@ -171,12 +173,26 @@ SELECT * FROM nestedt FORMAT TSV
 
 При парсинге первая строка должна содержать имена столбцов. Вы можете использовать имена столбцов, чтобы указать их порядок расположения, или чтобы проверить их корректность.
 
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+:::
+
 Этот формат также доступен под именем `TSVWithNames`.
 
 ## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 Отличается от формата `TabSeparated` тем, что в первой строке пишутся имена столбцов, а во второй - типы столбцов.
 При парсинге, первая и вторая строка полностью игнорируется.
+
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+Если включен параметр [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header),
+типы из входных данных будут сравниваться с типами соответствующих столбцов из таблицы. В противном случае вторая строка будет пропущена.
+:::
 
 Этот формат также доступен под именем `TSVWithNamesAndTypes`.
 
@@ -374,6 +390,24 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 Выводит также заголовок, аналогично [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+:::
+
+## CSVWithNamesAndTypes {#csvwithnamesandtypes}
+
+В первой строке пишутся имена столбцов, а во второй - типы столбцов, аналогично [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)
+
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+Если включен параметр [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header),
+типы из входных данных будут сравниваться с типами соответствующих столбцов из таблицы. В противном случае вторая строка будет пропущена.
+:::
+
 ## CustomSeparated {#format-customseparated}
 
 Аналогичен [Template](#format-template), но выводит (или считывает) все имена и типы столбцов, используя для них правило экранирования из настройки [format_custom_escaping_rule](../operations/settings/settings.md#format-custom-escaping-rule) и разделители из настроек [format_custom_field_delimiter](../operations/settings/settings.md#format-custom-field-delimiter), [format_custom_row_before_delimiter](../operations/settings/settings.md#format-custom-row-before-delimiter), [format_custom_row_after_delimiter](../operations/settings/settings.md#format-custom-row-after-delimiter), [format_custom_row_between_delimiter](../operations/settings/settings.md#format-custom-row-between-delimiter), [format_custom_result_before_delimiter](../operations/settings/settings.md#format-custom-result-before-delimiter) и [format_custom_result_after_delimiter](../operations/settings/settings.md#format-custom-result-after-delimiter), а не из форматных строк.
@@ -384,9 +418,23 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 Выводит также заголовок с именами столбцов, аналогичен формату [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+:::
+
 ## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
 Выводит также два заголовка с именами и типами столбцов, аналогичен формату [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+Если включен параметр [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header),
+типы из входных данных будут сравниваться с типами соответствующих столбцов из таблицы. В противном случае вторая строка будет пропущена.
+:::
 
 ## JSON {#json}
 
@@ -660,6 +708,14 @@ SELECT * FROM json_square_brackets;
 
 Отличается от `JSONCompactEachRow`/`JSONCompactStringsEachRow` тем, что имена и типы столбцов записываются как первые две строки.
 
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+Если включен параметр [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header),
+типы из входных данных будут сравниваться с типами соответствующих столбцов из таблицы. В противном случае вторая строка будет пропущена.
+:::
+
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]
 ["String", "UInt64", "Array(UInt8)"]
@@ -904,6 +960,20 @@ Array представлены как длина в формате varint (unsig
 
 Для поддержки [NULL](../sql-reference/syntax.md#null-literal) перед каждым значением типа [Nullable](../sql-reference/data-types/nullable.md) следует байт содержащий 1 или 0. Если байт 1, то значение равно NULL, и этот байт интерпретируется как отдельное значение (т.е. после него следует значение следующего поля). Если байт 0, то после байта следует значение поля (не равно NULL).
 
+
+## RowBinaryWithNames {#rowbinarywithnames}
+
+То же самое что [RowBinary](#rowbinary), но добавляется заголовок:
+
+-   Количество колонок - N, закодированное [LEB128](https://en.wikipedia.org/wiki/LEB128),
+-   N строк (`String`) с именами колонок,
+
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+:::
+   
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 То же самое что [RowBinary](#rowbinary), но добавляется заголовок:
@@ -911,6 +981,14 @@ Array представлены как длина в формате varint (unsig
 -   Количество колонок - N, закодированное [LEB128](https://en.wikipedia.org/wiki/LEB128),
 -   N строк (`String`) с именами колонок,
 -   N строк (`String`) с типами колонок.
+
+:::warning
+Если включен параметр [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header),
+столбцы из входных данных будут сопоставлены со столбцами таблицы по их именам, столбцы с неизвестными именами будут пропущены, если включен параметр [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields).
+В противном случае первая строка будет пропущена.
+Если включен параметр [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header),
+типы из входных данных будут сравниваться с типами соответствующих столбцов из таблицы. В противном случае вторая строка будет пропущена.
+:::
 
 ## Values {#data-format-values}
 
