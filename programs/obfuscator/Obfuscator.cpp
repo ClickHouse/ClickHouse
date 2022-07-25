@@ -1257,18 +1257,6 @@ try
         return 1;
     }
 
-    if (options.count("load")
-        && (options.count("order")
-            || options.count("frequency-cutoff")
-            || options.count("num-buckets-cutoff")
-            || options.count("frequency-add")
-            || options.count("frequency-desaturate")
-            || options.count("determinator-sliding-window-size")))
-    {
-        std::cerr << "Model parameters should not be specified with the --load options, as they will be loaded from the file.\n";
-        return 1;
-    }
-
     UInt64 seed = sipHash64(options["seed"].as<std::string>());
 
     std::string structure = options["structure"].as<std::string>();
@@ -1364,6 +1352,9 @@ try
     }
     else
     {
+        if (!silent)
+            std::cerr << "Loading models\n";
+
         ReadBufferFromFile model_file_in(load_from_file);
         CompressedReadBuffer model_in(model_file_in);
 
@@ -1393,6 +1384,9 @@ try
 
     if (!save_into_file.empty())
     {
+        if (!silent)
+            std::cerr << "Saving models\n";
+
         WriteBufferFromFile model_file_out(save_into_file);
         CompressedWriteBuffer model_out(model_file_out, CompressionCodecFactory::instance().get("ZSTD", 1));
 
