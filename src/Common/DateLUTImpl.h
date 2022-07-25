@@ -19,8 +19,10 @@
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM 0xFFFF
 
+#define DAYNUM_OFFSET_EPOCH 25567
+
 /// Max int value of Date32, DATE LUT cache size minus daynum_offset_epoch
-#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - 25567)
+#define DATE_LUT_MAX_EXTEND_DAY_NUM (DATE_LUT_SIZE - DAYNUM_OFFSET_EPOCH)
 
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
