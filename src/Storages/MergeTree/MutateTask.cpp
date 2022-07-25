@@ -1483,7 +1483,8 @@ bool MutateTask::prepare()
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
-        /// Always disable filtering in mutations, we want to read all rows
+        /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
+        /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of rows.
         ctx->interpreter->setApplyDeletedMask(false);
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
