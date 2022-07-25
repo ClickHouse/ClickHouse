@@ -515,44 +515,39 @@ namespace detail
 
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
+                exception = nullptr;
+
                 try
                 {
                     if (!impl)
                     {
                         initialize();
-                        switch (initialization_error)
-                        {
-                            case InitializeError::NON_RETRIABLE_ERROR:
-                            {
-                                assert(exception);
-                                break;
-                            }
-                            case InitializeError::SKIP_NOT_FOUND_URL:
-                            {
-                                return false;
-                            }
-                            case InitializeError::RETRIABLE_ERROR:
-                            {
-                                LOG_ERROR(
-                                    log,
-                                    "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
-                                    "(Current backoff wait is {}/{} ms)",
-                                    uri.toString(), i + 1, settings.http_max_tries, getOffset(),
-                                    read_range.end ? toString(*read_range.end) : "unknown",
-                                    milliseconds_to_wait, settings.http_retry_max_backoff_ms);
 
-                                assert(exception);
-                                on_retriable_error();
-                                continue;
-                            }
-                            case InitializeError::NONE:
-                            {
-                                break;
-                            }
+                        if (initialization_error == InitializeError::NON_RETRIABLE_ERROR)
+                        {
+                            assert(exception);
+                            break;
+                        }
+                        else if (initialization_error == InitializeError::SKIP_NOT_FOUND_URL)
+                        {
+                            return false;
+                        }
+                        else if (initialization_error == InitializeError::RETRIABLE_ERROR)
+                        {
+                            LOG_ERROR(
+                                log,
+                                "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
+                                "(Current backoff wait is {}/{} ms)",
+                                uri.toString(), i + 1, settings.http_max_tries, getOffset(),
+                                read_range.end ? toString(*read_range.end) : "unknown",
+                                milliseconds_to_wait, settings.http_retry_max_backoff_ms);
+
+                            assert(exception);
+                            on_retriable_error();
+                            continue;
                         }
 
-                        if (exception)
-                            break;
+                        assert(!exception);
 
                         if (use_external_buffer)
                         {
