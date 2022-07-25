@@ -27,7 +27,7 @@ class IPAddressVariant
 {
 public:
 
-    explicit IPAddressVariant(StringRef address_str)
+    explicit IPAddressVariant(std::string_view address_str)
     {
         /// IP address parser functions require that the input is
         /// NULL-terminated so we need to copy it.
@@ -85,7 +85,7 @@ IPAddressCIDR parseIPWithCIDR(std::string_view cidr_str)
         throw DB::Exception("The text does not contain '/': " + std::string(cidr_str), DB::ErrorCodes::CANNOT_PARSE_TEXT);
 
     std::string_view addr_str = cidr_str.substr(0, pos_slash);
-    IPAddressVariant addr(StringRef{addr_str.data(), addr_str.size()});
+    IPAddressVariant addr(addr_str);
 
     uint8_t prefix = 0;
     auto prefix_str = cidr_str.substr(pos_slash+1);
@@ -188,7 +188,7 @@ namespace DB
             const auto & col_addr = col_addr_const.getDataColumn();
             const auto & col_cidr = col_cidr_const.getDataColumn();
 
-            const auto addr = IPAddressVariant(col_addr.getDataAt(0));
+            const auto addr = IPAddressVariant(col_addr.getDataAt(0).toView());
             const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(0).toView());
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(1);
@@ -204,7 +204,7 @@ namespace DB
         {
             const auto & col_addr = col_addr_const.getDataColumn();
 
-            const auto addr = IPAddressVariant(col_addr.getDataAt   (0));
+            const auto addr = IPAddressVariant(col_addr.getDataAt(0).toView());
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
@@ -228,7 +228,7 @@ namespace DB
             ColumnUInt8::Container & vec_res = col_res->getData();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const auto addr = IPAddressVariant(col_addr.getDataAt(i));
+                const auto addr = IPAddressVariant(col_addr.getDataAt(i).toView());
                 vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
             }
             return col_res;
@@ -242,7 +242,7 @@ namespace DB
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const auto addr = IPAddressVariant(col_addr.getDataAt(i));
+                const auto addr = IPAddressVariant(col_addr.getDataAt(i).toView());
                 const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i).toView());
 
                 vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;

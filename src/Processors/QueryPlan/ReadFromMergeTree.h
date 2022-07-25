@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
@@ -9,6 +10,8 @@ namespace DB
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 class Pipe;
+
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 struct MergeTreeDataSelectSamplingData
 {
