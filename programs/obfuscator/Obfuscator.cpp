@@ -766,7 +766,6 @@ public:
         }
     }
 
-
     void finalize()
     {
         if (params.num_buckets_cutoff)
