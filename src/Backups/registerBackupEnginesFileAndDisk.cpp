@@ -7,6 +7,7 @@
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
+#include <Interpreters/Context.h>
 
 
 namespace DB
