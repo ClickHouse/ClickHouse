@@ -11,6 +11,7 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Interpreters/Aggregator.h>
+#include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -46,22 +47,32 @@ Block appendGroupingSetColumn(Block header)
     return res;
 }
 
-static Block appendGroupingColumn(Block block, const GroupingSetsParamsList & params)
+static inline void convertToNullable(Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        auto & column = header.getByName(key);
+
+        column.type = makeNullableSafe(column.type);
+        column.column = makeNullableSafe(column.column);
+    }
+}
+
+Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls)
+{
+    auto header = appendGroupingSetColumn(input_header);
+    if (use_nulls)
+        convertToNullable(header, keys);
+    return header;
+}
+
+
+static Block appendGroupingColumn(Block block, const Names & keys, const GroupingSetsParamsList & params, bool use_nulls)
 {
     if (params.empty())
         return block;
 
-    Block res;
-
-    size_t rows = block.rows();
-    auto column = ColumnUInt64::create(rows);
-
-    res.insert({ColumnPtr(std::move(column)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
-
-    for (auto & col : block)
-        res.insert(std::move(col));
-
-    return res;
+    return generateOutputHeader(block, keys, use_nulls);
 }
 
 AggregatingStep::AggregatingStep(
@@ -74,11 +85,12 @@ AggregatingStep::AggregatingStep(
     size_t merge_threads_,
     size_t temporary_data_merge_threads_,
     bool storage_has_evenly_distributed_read_,
+    bool group_by_use_nulls_,
     InputOrderInfoPtr group_by_info_,
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_)
     : ITransformingStep(
-        input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), grouping_sets_params_), getTraits(should_produce_results_in_order_of_bucket_number_), false)
+        input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, grouping_sets_params_, group_by_use_nulls_), getTraits(should_produce_results_in_order_of_bucket_number_), false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(final_)
@@ -87,6 +99,7 @@ AggregatingStep::AggregatingStep(
     , merge_threads(merge_threads_)
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
+    , group_by_use_nulls(group_by_use_nulls_)
     , group_by_info(std::move(group_by_info_))
     , group_by_sort_description(std::move(group_by_sort_description_))
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
@@ -217,6 +230,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             assert(ports.size() == grouping_sets_size);
             auto output_header = transform_params->getHeader();
+            if (group_by_use_nulls)
+                convertToNullable(output_header, params.keys);
 
             for (size_t set_counter = 0; set_counter < grouping_sets_size; ++set_counter)
             {
@@ -236,6 +251,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
                 const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
 
+                auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
                 for (size_t i = 0; i < output_header.columns(); ++i)
                 {
                     auto & col = output_header.getByPosition(i);
@@ -251,7 +267,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                         index.push_back(node);
                     }
                     else
-                        index.push_back(dag->getIndex()[header.getPositionByName(col.name)]);
+                    {
+                        const auto * column_node = dag->getIndex()[header.getPositionByName(col.name)];
+                        if (group_by_use_nulls && column_node->result_type->canBeInsideNullable())
+                            index.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
+                        else
+                            index.push_back(column_node);
+                    }
                 }
 
                 dag->getIndex().swap(index);
@@ -396,7 +418,7 @@ void AggregatingStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
-        appendGroupingColumn(params.getHeader(input_streams.front().header, final), grouping_sets_params),
+        appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, grouping_sets_params, group_by_use_nulls),
         getDataStreamTraits());
 }
 
