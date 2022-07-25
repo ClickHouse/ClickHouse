@@ -1275,8 +1275,13 @@ try
     std::string input_format = options["input-format"].as<std::string>();
     std::string output_format = options["output-format"].as<std::string>();
 
-    std::string load_from_file = options["load"].as<std::string>();
-    std::string save_into_file = options["save"].as<std::string>();
+    std::string load_from_file;
+    std::string save_into_file;
+
+    if (options.count("load"))
+        load_from_file = options["load"].as<std::string>();
+    else if (options.count("save"))
+        save_into_file = options["save"].as<std::string>();
 
     UInt64 limit = 0;
     if (options.count("limit"))
@@ -1411,7 +1416,7 @@ try
         model_file_out.finalize();
     }
 
-    if (!limit)
+    if (!options.count("limit"))
         limit = source_rows;
 
     /// Generation step
