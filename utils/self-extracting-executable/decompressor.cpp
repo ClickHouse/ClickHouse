@@ -15,7 +15,7 @@
 
 #if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
 #   include <machine/endian.h>
-#elif !defined(_MSC_VER)
+#else
 #   include <endian.h>
 #endif
 
