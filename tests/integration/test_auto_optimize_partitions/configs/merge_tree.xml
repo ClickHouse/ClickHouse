@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <auto_optimize_partition_interval_seconds>2</auto_optimize_partition_interval_seconds>
+    </merge_tree>
+</clickhouse>
