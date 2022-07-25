@@ -237,6 +237,18 @@ def enable_consistent_hash_plugin(rabbitmq_id):
     return p.returncode == 0
 
 
+def extract_test_name(base_path):
+    """Extracts the name of the test based to a path to its test*.py file
+    Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
+    """
+    name = p.basename(base_path)
+    if name == "test.py":
+        name = ""
+    elif name.startswith("test_") and name.endswith(".py"):
+        name = name[len("test_") : (len(name) - len(".py"))]
+    return name
+
+
 def get_instances_dir():
     if (
         "INTEGRATION_TESTS_RUN_ID" in os.environ
@@ -274,7 +286,7 @@ class ClickHouseCluster:
             logging.debug("ENV %40s %s" % (param, os.environ[param]))
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
-        self.name = name if name is not None else ""
+        self.name = name if name is not None else extract_test_name(base_path)
 
         self.base_config_dir = base_config_dir or os.environ.get(
             "CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server/"
@@ -2943,7 +2955,12 @@ class ClickHouseInstance:
         ignore_error=False,
         query_id=None,
     ):
-        logging.debug("Executing query %s on %s", sql, self.name)
+        sql_for_log = ""
+        if len(sql) > 1000:
+            sql_for_log = sql[:1000]
+        else:
+            sql_for_log = sql
+        logging.debug("Executing query %s on %s", sql_for_log, self.name)
         return self.client.query(
             sql,
             stdin=stdin,

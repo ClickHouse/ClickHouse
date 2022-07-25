@@ -28,8 +28,10 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
     : process_list_element(elem)
 {
     if (process_list_element)
+    {
         profile_processors = process_list_element->getContext()->getSettingsRef().log_processors_profiles;
-
+        trace_processors = process_list_element->getContext()->getSettingsRef().opentelemetry_trace_processors;
+    }
     try
     {
         graph = std::make_unique<ExecutingGraph>(processors, profile_processors);
@@ -276,7 +278,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     Queue queue;
     graph->initializeExecution(queue);
 
-    tasks.init(num_threads, profile_processors, read_progress_callback.get());
+    tasks.init(num_threads, profile_processors, trace_processors, read_progress_callback.get());
     tasks.fill(queue);
 
     slots = ConcurrencyControl::instance().allocate(1, num_threads);
