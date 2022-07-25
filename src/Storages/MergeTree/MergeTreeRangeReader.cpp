@@ -1150,7 +1150,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
                 block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
             }
-            else if (column_name == LightweightDeleteDescription::filter_column.name)
+            else if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
             {
                 /// Do nothing, it will be added later
             }

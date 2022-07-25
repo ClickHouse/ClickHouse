@@ -61,7 +61,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
         {
             non_const_virtual_column_names.emplace_back(*it);
         }
-        else if (*it == LightweightDeleteDescription::filter_column.name)
+        else if (*it == LightweightDeleteDescription::FILTER_COLUMN.name)
         {
             non_const_virtual_column_names.emplace_back(*it);
         }
@@ -244,7 +244,7 @@ void MergeTreeBaseSelectProcessor::initializeMergeTreeReadersForPart(
     /// Add lightweight delete filtering step
     if (reader_settings.apply_deleted_mask && data_part->hasLightweightDelete())
     {
-        pre_reader_for_step.push_back(data_part->getReader({LightweightDeleteDescription::filter_column}, metadata_snapshot, mark_ranges,
+        pre_reader_for_step.push_back(data_part->getReader({LightweightDeleteDescription::FILTER_COLUMN}, metadata_snapshot, mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 value_size_map, profile_callback));
     }
@@ -469,14 +469,14 @@ static void injectNonConstVirtualColumns(
             }
         }
 
-        if (virtual_column_name == LightweightDeleteDescription::filter_column.name)
+        if (virtual_column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
         {
                 /// If _row_exists column isn't present in the part then fill it here with 1s
                 ColumnPtr column;
                 if (rows)
-                    column = LightweightDeleteDescription::filter_column.type->createColumnConst(rows, 1)->convertToFullColumnIfConst();
+                    column = LightweightDeleteDescription::FILTER_COLUMN.type->createColumnConst(rows, 1)->convertToFullColumnIfConst();
                 else
-                    column = LightweightDeleteDescription::filter_column.type->createColumn();
+                    column = LightweightDeleteDescription::FILTER_COLUMN.type->createColumn();
 
                 inserter.insertUInt8Column(column, virtual_column_name);
         }

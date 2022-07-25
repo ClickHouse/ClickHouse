@@ -22,7 +22,7 @@ void StorageSnapshot::init()
         virtual_columns[name] = type;
 
     if (storage.hasLightweightDeletedMask())
-        system_columns[LightweightDeleteDescription::filter_column.name] = LightweightDeleteDescription::filter_column.type;
+        system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const

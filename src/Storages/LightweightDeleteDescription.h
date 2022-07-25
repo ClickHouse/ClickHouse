@@ -7,7 +7,7 @@ namespace DB
 
 struct LightweightDeleteDescription
 {
-    static const NameAndTypePair filter_column;
+    static const NameAndTypePair FILTER_COLUMN;
 };
 
 }

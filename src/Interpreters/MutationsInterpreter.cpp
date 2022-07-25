@@ -351,7 +351,7 @@ static void validateUpdateColumns(
         }
 
         /// Allow to override value of lightweight delete filter virtual column
-        if (!found && column_name == LightweightDeleteDescription::filter_column.name)
+        if (!found && column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
         {
             if (!storage->supportsLightweightDelete())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
@@ -514,8 +514,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 DataTypePtr type;
                 if (auto physical_column = columns_desc.tryGetPhysical(column))
                     type = physical_column->type;
-                else if (column == LightweightDeleteDescription::filter_column.name)
-                    type = LightweightDeleteDescription::filter_column.type;
+                else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
+                    type = LightweightDeleteDescription::FILTER_COLUMN.type;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
 
@@ -782,7 +782,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     if (auto part_storage = dynamic_pointer_cast<DB::StorageFromMergeTreeDataPart>(storage))
     {
         if (part_storage->hasLightweightDeletedMask())
-            all_columns.push_back({LightweightDeleteDescription::filter_column});
+            all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
     }
 
     /// Next, for each stage calculate columns changed by this and previous stages.

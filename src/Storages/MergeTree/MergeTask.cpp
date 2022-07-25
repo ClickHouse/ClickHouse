@@ -814,7 +814,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
         auto columns = global_ctx->merging_column_names;
 
         /// The part might have some rows masked by lightweight deletes
-        const auto lightweight_delete_filter_column = LightweightDeleteDescription::filter_column.name;
+        const auto lightweight_delete_filter_column = LightweightDeleteDescription::FILTER_COLUMN.name;
         const bool need_to_filter_deleted_rows = part->hasLightweightDelete();
         if (need_to_filter_deleted_rows)
             columns.emplace_back(lightweight_delete_filter_column);
