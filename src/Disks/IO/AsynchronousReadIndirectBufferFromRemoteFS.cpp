@@ -168,6 +168,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
     size_t size = 0;
+    size_t bytes_read = 0;
+
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
@@ -181,6 +183,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
             /// If prefetch_future is valid, size should always be greater than zero.
             assert(offset <= size);
+            bytes_read = size - offset;
+
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
@@ -200,9 +204,11 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         auto offset = result.offset;
 
         LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-        assert(offset <= size);
 
-        if (size)
+        assert(offset <= size);
+        bytes_read = size - offset;
+
+        if (bytes_read)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
             internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
@@ -222,7 +228,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     assert(file_offset_of_buffer_end <= impl->getFileSize());
 
     prefetch_future = {};
-    return size;
+    return bytes_read;
 }
 
 
