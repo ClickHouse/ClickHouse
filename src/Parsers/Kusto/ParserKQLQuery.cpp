@@ -36,7 +36,7 @@ String ParserKQLBase :: getExprFromToken(Pos &pos)
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
         String token = String(pos->begin,pos->end);
-        String new_token;
+
         if (token == "=")
         {
             ++pos;
@@ -49,18 +49,7 @@ String ParserKQLBase :: getExprFromToken(Pos &pos)
         }
         else if (!KQLOperators().convert(tokens,pos))
         {
-            if (pos->type == TokenType::BareWord )
-            {
-                kql_function = KQLFunctionFactory::get(token);
-                if (kql_function && kql_function->convert(new_token,pos))
-                    token = new_token;
-             /*   else if (!kql_function)
-                { 
-                    if ((++pos)->type == TokenType::OpeningRoundBracket)
-                        throw Exception("Unknown function  " + token, ErrorCodes::UNKNOWN_FUNCTION);
-                    --pos;
-                }*/
-            }
+            token = IParserKQLFunction::getExpression(pos);
             tokens.push_back(token);
         }
 
