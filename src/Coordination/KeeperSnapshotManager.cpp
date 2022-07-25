@@ -367,16 +367,36 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
 
         using enum PathMatchResult;
         auto match_result = matchPath(path, keeper_system_path);
-        if ((match_result == EXACT && !is_node_empty(node)) || match_result == IS_CHILD)
+
+        const std::string error_msg = fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
+        if (match_result == IS_CHILD)
         {
-            LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Cannot read node on path {} from a snapshot because it is used as a system node.", path);
-
-            if (match_result == IS_CHILD)
+            if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
+            {
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
                 continue;
-
-            node = KeeperStorage::Node{};
+            }
+            else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "{}. Ignoring it can lead to data loss. "
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                    error_msg);
         }
-
+        else if (match_result == EXACT && !is_node_empty(node))
+        {
+            if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
+            {
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                node = KeeperStorage::Node{};
+            }
+            else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "{}. Ignoring it can lead to data loss. "
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                    error_msg);
+        }
 
         storage.container.insertOrReplace(path, node);
         if (node.stat.ephemeralOwner != 0)
