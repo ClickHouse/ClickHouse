@@ -925,8 +925,8 @@ KeyCondition::KeyCondition(
 {
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
-        std::string name = key_column_names[i];
-        if (!key_columns.count(name))
+        const auto & name = key_column_names[i];
+        if (!key_columns.contains(name))
             key_columns[name] = i;
     }
 
