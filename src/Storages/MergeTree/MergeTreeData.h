@@ -1097,8 +1097,8 @@ protected:
     /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.
     /// These callbacks will be passed to the constructor of each task.
-    std::function<void(bool)> common_assignee_trigger;
-    std::function<void(bool)> moves_assignee_trigger;
+    IExecutableTask::TaskResultCallback common_assignee_trigger;
+    IExecutableTask::TaskResultCallback moves_assignee_trigger;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;
