@@ -129,8 +129,28 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
         return false;
 
     if (const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get()))
-        return lhs_state->getNameWithoutVersion()
-            == typeid_cast<const DataTypeAggregateFunction &>(*rhs_state_type).getNameWithoutVersion();
+    {
+        const auto & rhs_state = typeid_cast<const DataTypeAggregateFunction &>(*rhs_state_type);
+
+        if (lhs_state->function->getName() != rhs_state.function->getName())
+            return false;
+
+        if (lhs_state->parameters.size() != lhs_state->parameters.size())
+            return false;
+
+        for (size_t i = 0; i < lhs_state->parameters.size(); ++i)
+            if (lhs_state->parameters[i] != rhs_state.parameters[i])
+                return false;
+
+        if (lhs_state->argument_types.size() != lhs_state->argument_types.size())
+            return false;
+
+        for (size_t i = 0; i < lhs_state->argument_types.size(); ++i)
+            if (!lhs_state->argument_types[i]->equals(*rhs_state.argument_types[i]))
+                return false;
+
+        return true;
+    }
 
     return lhs_state_type->equals(*rhs_state_type);
 }
