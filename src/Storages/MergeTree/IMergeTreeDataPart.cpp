@@ -603,22 +603,6 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
     return *minimum_size_column;
 }
 
-// String IMergeTreeDataPart::getFullPath() const
-// {
-//     if (relative_path.empty())
-//         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
-
-//     return fs::path(storage.getFullPathOnDisk(volume->getDisk())) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-// }
-
-// String IMergeTreeDataPart::getRelativePath() const
-// {
-//     if (relative_path.empty())
-//         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
-
-//     return fs::path(storage.relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-// }
-
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     assertOnDisk();
@@ -626,7 +610,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     try
     {
