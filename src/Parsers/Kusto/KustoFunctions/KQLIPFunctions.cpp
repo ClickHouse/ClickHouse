@@ -67,22 +67,23 @@ bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
 
     const auto ip_address = getConvertedArgument(function_name, pos);
 
-    out += "or(";
+    out += std::format(
+        "multiIf(length(splitByChar('/', {0}) as tokens) > 2 or isNull(toIPv4OrNull(tokens[1]) as nullable_ip), null, "
+        "length(tokens) = 2 and isNull(toUInt8OrNull(tokens[-1]) as suffix), null, "
+        "ignore(assumeNotNull(nullable_ip) as ip, "
+        "IPv4CIDRToRange(ip, assumeNotNull(suffix)) as range, IPv4NumToString(tupleElement(range, 1)) as begin, "
+        "IPv4NumToString(tupleElement(range, 2)) as end), null, ",
+        ip_address);
     for (int i = 0; i < std::ssize(PRIVATE_SUBNETS); ++i)
     {
-        out += i > 0 ? ", " : "";
-
         const auto & subnet = PRIVATE_SUBNETS[i];
         out += std::format(
-            "or(and(length(splitByChar('/', {0}) as tokens) = 1, isIPAddressInRange(tokens[1] as ip, '{1}')), "
-            "and(length(tokens) = 2, isIPAddressInRange(IPv4NumToString(tupleElement((IPv4CIDRToRange(toIPv4(ip), "
-            "if(isNull(toUInt8OrNull(tokens[-1]) as suffix), throwIf(true, 'Unable to parse suffix'), assumeNotNull(suffix))) as range), "
-            "1)) as begin, '{1}'), isIPAddressInRange(IPv4NumToString(tupleElement(range, 2)) as end, '{1}')))",
-            ip_address,
+            "length(tokens) = 1 and isIPAddressInRange(IPv4NumToString(ip), '{0}') or "
+            "isIPAddressInRange(begin, '{0}') and isIPAddressInRange(end, '{0}'), true, ",
             subnet);
     }
 
-    out += ")";
+    out += "false)";
     return true;
 }
 
@@ -96,9 +97,8 @@ bool Ipv4NetmaskSuffix::convertImpl(String & out, IParser::Pos & pos)
 
     const auto ip_range = getConvertedArgument(function_name, pos);
     out = std::format(
-        "if(length(splitByChar('/', {0}) as tokens) <= 2 and isIPv4String(tokens[1]), if(length(tokens) != 2, 32, "
-        "if((toInt8OrNull(tokens[-1]) as suffix) between 1 and 32, suffix, throwIf(true, 'Suffix must be between 1 and 32'))), "
-        "throwIf(true, 'Unable to recognize and IP address with or without a suffix'))",
+        "multiIf(length(splitByChar('/', {0}) as tokens) > 2 or not isIPv4String(tokens[1]), null, "
+        "length(tokens) = 1, 32, isNull(toUInt8OrNull(tokens[-1]) as suffix), null, toUInt8(min2(suffix, 32)))",
         ip_range);
     return true;
 }
