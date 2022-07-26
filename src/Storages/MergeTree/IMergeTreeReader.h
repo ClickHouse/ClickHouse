@@ -55,16 +55,14 @@ public:
     const NamesAndTypesList & getColumns() const { return columns; }
     size_t numColumnsInResult() const { return columns.size(); }
 
-    size_t getFirstMarkToRead() const
-    {
-        return all_mark_ranges.front().begin;
-    }
+    size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeData::DataPartPtr data_part;
 
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
+
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
 

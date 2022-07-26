@@ -49,7 +49,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
 {
     auto ptr = std::static_pointer_cast<const MergeTreeDataPartWide>(shared_from_this());
     return std::make_unique<MergeTreeReaderWide>(
-        ptr, Nested::convertToSubcolumns(columns_to_read),
+        ptr, columns_to_read,
         metadata_snapshot, uncompressed_cache,
         mark_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback);
@@ -66,7 +66,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
         shared_from_this(), data_part_storage_builder,
-        Nested::convertToSubcolumns(columns_list), metadata_snapshot, indices_to_recalc,
+        columns_list, metadata_snapshot, indices_to_recalc,
         index_granularity_info.marks_file_extension,
         default_codec_, writer_settings, computed_index_granularity);
 }

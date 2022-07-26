@@ -4,6 +4,7 @@
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -60,6 +61,19 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
 }
 
+String MergeTreeReaderWide::getNameForSubstreamCache(const NameAndTypePair & column) const
+{
+    if (!column.isSubcolumn() && isArray(column.type))
+    {
+        auto split = Nested::splitName(column.name);
+        const auto & part_columns = data_part->getColumnsDescription();
+
+        if (!split.second.empty() && part_columns.hasNested(split.first))
+            return split.first;
+    }
+
+    return column.getNameInStorage();
+}
 
 size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
@@ -86,7 +100,7 @@ size_t MergeTreeReaderWide::readRows(
                 auto column_from_part = getColumnInPart(*name_and_type);
                 try
                 {
-                    auto & cache = caches[column_from_part.getNameInStorage()];
+                    auto & cache = caches[getNameForSubstreamCache(column_from_part)];
                     prefetch(column_from_part, from_mark, continue_reading, current_task_last_mark, cache, prefetched_streams);
                 }
                 catch (Exception & e)
@@ -117,7 +131,7 @@ size_t MergeTreeReaderWide::readRows(
             try
             {
                 size_t column_size_before_reading = column->size();
-                auto & cache = caches[column_from_part.getNameInStorage()];
+                auto & cache = caches[getNameForSubstreamCache(column_from_part)];
 
                 readData(
                     column_from_part, column, from_mark, continue_reading, current_task_last_mark,

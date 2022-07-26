@@ -448,12 +448,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
     for (const auto & column : columns)
         column_name_to_position.emplace(column.name, pos++);
 
-    /// For wide parts convert plain arrays to Nested for
-    /// more convinient managing of shared offsets column.
-    if (part_type == Type::Wide)
-        columns_description = ColumnsDescription(Nested::collect(columns));
-    else
-        columns_description = ColumnsDescription(columns);
+    columns_description = ColumnsDescription(columns);
 }
 
 NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const

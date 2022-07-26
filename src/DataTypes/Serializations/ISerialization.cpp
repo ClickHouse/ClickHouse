@@ -224,7 +224,11 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 
 void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
 {
-    if (cache && !path.empty())
+    if (!cache || path.empty())
+        return;
+
+    auto subcolumn_name = getSubcolumnNameForStream(path);
+    if (!subcolumn_name.empty())
         cache->emplace(getSubcolumnNameForStream(path), column);
 }
 
