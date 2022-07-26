@@ -6,13 +6,16 @@
 namespace DB
 {
 
-RestoreCoordinationRemote::RestoreCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_)
+RestoreCoordinationRemote::RestoreCoordinationRemote(
+    const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_)
     : zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , remove_zk_nodes_in_destructor(remove_zk_nodes_in_destructor_)
-    , stage_sync(zookeeper_path_ + "/stage", get_zookeeper_, &Poco::Logger::get("RestoreCoordination"))
 {
     createRootNodes();
+
+    stage_sync.emplace(
+        zookeeper_path_ + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("RestoreCoordination"));
 }
 
 RestoreCoordinationRemote::~RestoreCoordinationRemote()
@@ -28,47 +31,61 @@ RestoreCoordinationRemote::~RestoreCoordinationRemote()
     }
 }
 
+zkutil::ZooKeeperPtr RestoreCoordinationRemote::getZooKeeper() const
+{
+    std::lock_guard lock{mutex};
+    if (!zookeeper || zookeeper->expired())
+    {
+        zookeeper = get_zookeeper();
+
+        /// It's possible that we connected to different [Zoo]Keeper instance
+        /// so we may read a bit stale state.
+        zookeeper->sync(zookeeper_path);
+    }
+    return zookeeper;
+}
+
 void RestoreCoordinationRemote::createRootNodes()
 {
-    auto zookeeper = get_zookeeper();
-    zookeeper->createAncestors(zookeeper_path);
-    zookeeper->createIfNotExists(zookeeper_path, "");
-    zookeeper->createIfNotExists(zookeeper_path + "/repl_databases_tables_acquired", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/repl_tables_data_acquired", "");
-    zookeeper->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
+    auto zk = getZooKeeper();
+    zk->createAncestors(zookeeper_path);
+    zk->createIfNotExists(zookeeper_path, "");
+    zk->createIfNotExists(zookeeper_path + "/repl_databases_tables_acquired", "");
+    zk->createIfNotExists(zookeeper_path + "/repl_tables_data_acquired", "");
+    zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
 }
 
 
 void RestoreCoordinationRemote::setStage(const String & current_host, const String & new_stage, const String & message)
 {
-    stage_sync.set(current_host, new_stage, message);
+    stage_sync->set(current_host, new_stage, message);
 }
 
 void RestoreCoordinationRemote::setError(const String & current_host, const Exception & exception)
 {
-    stage_sync.setError(current_host, exception);
+    stage_sync->setError(current_host, exception);
 }
 
 Strings RestoreCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait)
 {
-    return stage_sync.wait(all_hosts, stage_to_wait);
+    return stage_sync->wait(all_hosts, stage_to_wait);
 }
 
 Strings RestoreCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout)
 {
-    return stage_sync.waitFor(all_hosts, stage_to_wait, timeout);
+    return stage_sync->waitFor(all_hosts, stage_to_wait, timeout);
 }
 
 
 bool RestoreCoordinationRemote::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
 {
-    auto zookeeper = get_zookeeper();
+    auto zk = getZooKeeper();
 
     String path = zookeeper_path + "/repl_databases_tables_acquired/" + escapeForFileName(database_zk_path);
-    zookeeper->createIfNotExists(path, "");
+    zk->createIfNotExists(path, "");
 
     path += "/" + escapeForFileName(table_name);
-    auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Persistent);
+    auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
         throw zkutil::KeeperException(code, path);
 
@@ -77,10 +94,10 @@ bool RestoreCoordinationRemote::acquireCreatingTableInReplicatedDatabase(const S
 
 bool RestoreCoordinationRemote::acquireInsertingDataIntoReplicatedTable(const String & table_zk_path)
 {
-    auto zookeeper = get_zookeeper();
+    auto zk = getZooKeeper();
 
     String path = zookeeper_path + "/repl_tables_data_acquired/" + escapeForFileName(table_zk_path);
-    auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Persistent);
+    auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
         throw zkutil::KeeperException(code, path);
 
@@ -89,10 +106,10 @@ bool RestoreCoordinationRemote::acquireInsertingDataIntoReplicatedTable(const St
 
 bool RestoreCoordinationRemote::acquireReplicatedAccessStorage(const String & access_storage_zk_path)
 {
-    auto zookeeper = get_zookeeper();
+    auto zk = getZooKeeper();
 
     String path = zookeeper_path + "/repl_access_storages_acquired/" + escapeForFileName(access_storage_zk_path);
-    auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Persistent);
+    auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
         throw zkutil::KeeperException(code, path);
 
@@ -108,8 +125,8 @@ void RestoreCoordinationRemote::removeAllNodes()
     /// at `zookeeper_path` which might cause such hosts to stop with exception "ZNONODE". Or such hosts might still do some part
     /// of their restore work before that.
 
-    auto zookeeper = get_zookeeper();
-    zookeeper->removeRecursive(zookeeper_path);
+    auto zk = getZooKeeper();
+    zk->removeRecursive(zookeeper_path);
 }
 
 }

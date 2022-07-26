@@ -32,6 +32,7 @@ public:
     bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) override;
 
 private:
+    zkutil::ZooKeeperPtr getZooKeeper() const;
     void createRootNodes();
     void removeAllNodes();
 
@@ -41,7 +42,10 @@ private:
     const zkutil::GetZooKeeper get_zookeeper;
     const bool remove_zk_nodes_in_destructor;
 
-    BackupCoordinationStageSync stage_sync;
+    std::optional<BackupCoordinationStageSync> stage_sync;
+
+    mutable std::mutex mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper;
 };
 
 }
