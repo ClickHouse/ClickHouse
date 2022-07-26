@@ -776,7 +776,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectOnePartitionTo
     std::unordered_map<String, Int32> partition_parts_sum_diff;
     ssize_t base = time(nullptr) - getSettings()->auto_optimize_partition_after_seconds;
     auto data_parts = getDataPartsForInternalUsage();
-    for (auto part : data_parts)
+    for (const auto & part : data_parts)
     {
         if (part->modification_time < base)
             partition_parts_sum_diff[part->info.partition_id] += (base - part->modification_time);
