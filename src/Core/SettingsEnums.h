@@ -38,7 +38,8 @@ DECLARE_SETTING_ENUM(JoinStrictness)
 
 enum class JoinAlgorithm
 {
-    AUTO = 0,
+    DEFAULT = 0,
+    AUTO,
     HASH,
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
