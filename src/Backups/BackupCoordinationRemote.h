@@ -57,6 +57,8 @@ public:
     Strings getAllArchiveSuffixes() const override;
 
 private:
+    zkutil::ZooKeeperPtr getZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeperNoLock() const;
     void createRootNodes();
     void removeAllNodes();
     void prepareReplicatedTables() const;
@@ -66,9 +68,10 @@ private:
     const zkutil::GetZooKeeper get_zookeeper;
     const bool remove_zk_nodes_in_destructor;
 
-    BackupCoordinationStageSync stage_sync;
+    std::optional<BackupCoordinationStageSync> stage_sync;
 
     mutable std::mutex mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper;
     mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
 };
