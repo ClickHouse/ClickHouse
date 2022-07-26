@@ -69,13 +69,13 @@ public:
 
 private:
     OperationID startMakingBackup(const ASTPtr & query, const ContextPtr & context);
-    
+
     void doBackup(const std::shared_ptr<ASTBackupQuery> & backup_query, const OperationID & backup_id, BackupSettings backup_settings,
                   const BackupInfo & backup_info, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context,
                   ContextMutablePtr mutable_context, bool called_async);
 
     OperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
-    
+
     void doRestore(const std::shared_ptr<ASTBackupQuery> & restore_query, const OperationID & restore_id, const UUID & restore_uuid,
                    RestoreSettings restore_settings, const BackupInfo & backup_info,
                    std::shared_ptr<IRestoreCoordination> restore_coordination, ContextMutablePtr context, bool called_async);
