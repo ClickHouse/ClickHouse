@@ -54,6 +54,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     WhichDataType which(type);
     DataTypePtr to_type;
 
+    /// For Date/DateTime types TO/FROM type should match column type 
     if (descr.fill_from_type)
     {
         WhichDataType which_from(descr.fill_from_type);
