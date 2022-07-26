@@ -2,8 +2,8 @@ CREATE TABLE default.t_index\n(\n    `a` Int32,\n    `b` String,\n    INDEX i_a 
 t_index	i_a	minmax	a	4
 t_index	i_b	bloom_filter	b	2
 t_index	i_b	bloom_filter	b	2
-CREATE TABLE default.t_index\n(\n    `a` Int32,\n    `b` String,\n    INDEX i_a a TYPE minmax GRANULARITY 4,\n    INDEX i_b b TYPE bloom_filter GRANULARITY 2\n)\nENGINE = ReplicatedMergeTree(\'/test/2319/default/\', \'1\')\nORDER BY a\nSETTINGS index_granularity = 8192
-CREATE TABLE default.t_index_replica\n(\n    `a` Int32,\n    `b` String,\n    INDEX i_a a TYPE minmax GRANULARITY 4,\n    INDEX i_b b TYPE bloom_filter GRANULARITY 2\n)\nENGINE = ReplicatedMergeTree(\'/test/2319/default/\', \'2\')\nORDER BY a\nSETTINGS index_granularity = 8192
+CREATE TABLE default.t_index\n(\n    `a` Int32,\n    `b` String,\n    INDEX i_a a TYPE minmax GRANULARITY 4,\n    INDEX i_b b TYPE bloom_filter GRANULARITY 2\n)\nENGINE = ReplicatedMergeTree(\'/test/2319/default\', \'1\')\nORDER BY a\nSETTINGS index_granularity = 8192
+CREATE TABLE default.t_index_replica\n(\n    `a` Int32,\n    `b` String,\n    INDEX i_a a TYPE minmax GRANULARITY 4,\n    INDEX i_b b TYPE bloom_filter GRANULARITY 2\n)\nENGINE = ReplicatedMergeTree(\'/test/2319/default\', \'2\')\nORDER BY a\nSETTINGS index_granularity = 8192
 t_index	i_a	minmax	a	4
 t_index	i_b	bloom_filter	b	2
 t_index	i_b	bloom_filter	b	2
