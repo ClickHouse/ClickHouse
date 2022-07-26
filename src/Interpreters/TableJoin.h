@@ -193,24 +193,20 @@ public:
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
-    bool allowMergeJoin() const;
 
-    bool isAllowedAlgorithm(JoinAlgorithm val) const { return join_algorithm.isSet(val) || join_algorithm.isSet(JoinAlgorithm::AUTO); }
-    bool isForcedAlgorithm(JoinAlgorithm val) const { return join_algorithm == MultiEnum<JoinAlgorithm>(val); }
-
-    bool preferMergeJoin() const { return join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PREFER_PARTIAL_MERGE); }
-    bool forceMergeJoin() const { return join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARTIAL_MERGE); }
+    bool isEnabledAlgorithm(JoinAlgorithm val) const
+    {
+        /// When join_algorithm = 'default' (not specified by user) we use hash or direct algorithm.
+        /// It's behaviour that was initially supported by clickhouse.
+        bool is_enbaled_by_default = val == JoinAlgorithm::DEFAULT
+                                  || val == JoinAlgorithm::HASH
+                                  || val == JoinAlgorithm::DIRECT;
+        if (join_algorithm.isSet(JoinAlgorithm::DEFAULT) && is_enbaled_by_default)
+            return true;
+        return join_algorithm.isSet(val);
+    }
 
     bool allowParallelHashJoin() const;
-    bool forceFullSortingMergeJoin() const { return !isSpecialStorage() && join_algorithm.isSet(JoinAlgorithm::FULL_SORTING_MERGE); }
-
-    bool forceHashJoin() const
-    {
-        /// HashJoin always used for DictJoin
-        return dictionary_reader
-            || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::HASH)
-            || join_algorithm == MultiEnum<JoinAlgorithm>(JoinAlgorithm::PARALLEL_HASH);
-    }
 
     bool joinUseNulls() const { return join_use_nulls; }
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }

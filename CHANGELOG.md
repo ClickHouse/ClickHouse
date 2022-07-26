@@ -1,12 +1,12 @@
 ### Table of Contents
-**[ClickHouse release v22.7, 2022-07-21](#226)**<br>
-**[ClickHouse release v22.6, 2022-06-16](#226)**<br>
-**[ClickHouse release v22.5, 2022-05-19](#225)**<br>
-**[ClickHouse release v22.4, 2022-04-20](#224)**<br>
-**[ClickHouse release v22.3-lts, 2022-03-17](#223)**<br>
-**[ClickHouse release v22.2, 2022-02-17](#222)**<br>
-**[ClickHouse release v22.1, 2022-01-18](#221)**<br>
-**[Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021/)**<br>
+**[ClickHouse release v22.7, 2022-07-21](#227)**<br/>
+**[ClickHouse release v22.6, 2022-06-16](#226)**<br/>
+**[ClickHouse release v22.5, 2022-05-19](#225)**<br/>
+**[ClickHouse release v22.4, 2022-04-20](#224)**<br/>
+**[ClickHouse release v22.3-lts, 2022-03-17](#223)**<br/>
+**[ClickHouse release v22.2, 2022-02-17](#222)**<br/>
+**[ClickHouse release v22.1, 2022-01-18](#221)**<br/>
+**[Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021/)**<br/>
 
 ### <a id="227"></a> ClickHouse release 22.7, 2022-07-21
 
