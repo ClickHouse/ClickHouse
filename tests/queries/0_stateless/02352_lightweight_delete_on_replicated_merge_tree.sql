@@ -6,7 +6,7 @@ CREATE TABLE replicated_table_r2(id Int32, name String) ENGINE = ReplicatedMerge
 
 INSERT INTO replicated_table_r1 select number, toString(number) FROM numbers(100);
 
-SET mutations_sync = 1;
+SET mutations_sync = 2;
 SET allow_experimental_lightweight_delete = 1;
 
 DELETE FROM replicated_table_r1 WHERE id = 10;
