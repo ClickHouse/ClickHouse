@@ -726,7 +726,6 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             }
 
             total_memory_tracker.setRSS(rss);
-            // CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
         }
     }
 #endif

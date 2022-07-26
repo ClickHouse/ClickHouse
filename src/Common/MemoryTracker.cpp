@@ -204,7 +204,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     /// We can't track all memory allocations from external libraries (yet).
     if (level == VariableContext::Global)
     {
-        if (Int64 current_rss = size + rss.fetch_add(size, std::memory_order_relaxed); unlikely(current_rss > will_be))
+        if (Int64 current_rss = size + rss.fetch_add(size, std::memory_order_relaxed); current_rss > will_be)
         {
             used_rss_counter = true;
             amount_to_check = current_rss;
@@ -306,7 +306,7 @@ void MemoryTracker::free(Int64 size)
             amount.fetch_sub(size, std::memory_order_relaxed);
             auto metric_loaded = metric.load(std::memory_order_relaxed);
             if (metric_loaded != CurrentMetrics::end())
-                CurrentMetrics::add(metric_loaded, size);
+                CurrentMetrics::sub(metric_loaded, size);
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
