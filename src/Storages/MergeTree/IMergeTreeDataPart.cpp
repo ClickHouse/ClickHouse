@@ -294,7 +294,6 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
     }
 }
 
-
 IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreeData & storage_,
     const String & name_,
@@ -1190,6 +1189,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
     setColumns(loaded_columns);
     setSerializationInfos(infos);
+}
+
+/// Project part / part with project parts / compact part doesn't support LWD.
+bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
+{
+    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact) &&
+        parent_part == nullptr && projection_parts.empty();
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
