@@ -23,6 +23,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -34,6 +35,8 @@
 #include <base/range.h>
 #include <algorithm>
 
+
+using std::operator""sv;
 
 namespace DB
 {
@@ -251,10 +254,49 @@ void StorageMerge::read(
     /** Just in case, turn off optimization "transfer to PREWHERE",
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
-    auto modified_context = Context::createCopy(context);
+    auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
 
     query_plan.addInterpreterContext(modified_context);
+
+    /// What will be result structure depending on query processed stage in source tables?
+    Block common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
+
+    auto step = std::make_unique<ReadFromMerge>(
+        common_header,
+        column_names,
+        max_block_size,
+        num_streams,
+        shared_from_this(),
+        storage_snapshot,
+        query_info,
+        std::move(modified_context),
+        processed_stage);
+
+    query_plan.addStep(std::move(step));
+}
+
+ReadFromMerge::ReadFromMerge(
+    Block common_header_,
+    Names column_names_,
+    size_t max_block_size,
+    size_t num_streams,
+    StoragePtr storage,
+    StorageSnapshotPtr storage_snapshot,
+    const SelectQueryInfo & query_info_,
+    ContextMutablePtr context_,
+    QueryProcessingStage::Enum processed_stage)
+    : ISourceStep(DataStream{.header = common_header_ /*addVirtualColumns(common_header_, column_names_, *storage, *storage_snapshot)*/})
+    , required_max_block_size(max_block_size)
+    , requested_num_streams(num_streams)
+    , common_header(std::move(common_header_))
+    , column_names(std::move(column_names_))
+    , storage_merge(std::move(storage))
+    , merge_storage_snapshot(std::move(storage_snapshot))
+    , query_info(query_info_)
+    , context(std::move(context_))
+    , common_processed_stage(processed_stage)
+{
 }
 
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -276,22 +318,15 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             real_column_names.push_back(column_name);
     }
 
-    /// What will be result structure depending on query processed stage in source tables?
-    Block header = getHeaderForProcessingStage(column_names, merge_storage_snapshot, query_info, context, common_processed_stage);
-
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
     StorageListWithLocks selected_tables
-        = storage_merge->getSelectedTables(context, query_info.query, has_database_virtual_column, has_table_virtual_column);
+        = storage_merge->as<const StorageMerge &>().getSelectedTables(context, query_info.query, has_database_virtual_column, has_table_virtual_column);
 
     if (selected_tables.empty())
     {
-        pipeline = InterpreterSelectQuery(
-            query_info.query, context,
-            Pipe(std::make_shared<SourceFromSingleChunk>(header)),
-            SelectQueryOptions(common_processed_stage).analyze()).buildQueryPipeline();
-
+        pipeline.init(Pipe(std::make_shared<NullSource>(output_stream->header)));
         return;
     }
 
@@ -323,7 +358,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         query_info.input_order_info = input_sorting_info;
     }
 
-    auto sample_block = merge_metadata_for_reading->getSampleBlock();
+    auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
 
     for (const auto & table : selected_tables)
     {
@@ -394,7 +429,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             modified_query_info,
             common_processed_stage,
             required_max_block_size,
-            header,
+            common_header,
             aliases,
             table,
             column_names_as_aliases.empty() ? real_column_names : column_names_as_aliases,
@@ -403,13 +438,19 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             has_database_virtual_column,
             has_table_virtual_column);
 
-        if (!source_pipeline->initialized())
+        if (source_pipeline->initialized())
         {
             resources.storage_holders.push_back(std::get<1>(table));
             resources.table_locks.push_back(std::get<2>(table));
 
             pipelines.emplace_back(std::move(source_pipeline));
         }
+    }
+
+    if (pipelines.empty())
+    {
+        pipeline.init(Pipe(std::make_shared<NullSource>(output_stream->header)));
+        return;
     }
 
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
@@ -480,7 +521,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         if (!plan.isInitialized())
             return {};
 
-        return plan.buildQueryPipeline(
+        builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),
             BuildQueryPipelineSettings::fromContext(modified_context));
     }
