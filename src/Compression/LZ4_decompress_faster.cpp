@@ -24,6 +24,12 @@
 #include <arm_neon.h>
 #endif
 
+static inline UInt16 LZ4_readLE16(const void* mem_ptr)
+{
+        const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
+        return static_cast<UInt16>(p[0]) + (p[1] << 8);
+}
+
 namespace LZ4
 {
 
@@ -561,7 +567,7 @@ bool NO_INLINE decompressImpl(
 
         /// Get match offset.
 
-        size_t offset = unalignedLoad<UInt16>(ip);
+        size_t offset = LZ4_readLE16(ip);
         ip += 2;
         const UInt8 * match = op - offset;
 
