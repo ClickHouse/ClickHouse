@@ -232,6 +232,18 @@ void BackupImpl::close()
     coordination.reset();
 }
 
+size_t BackupImpl::getTotalNumFiles() const
+{
+    std::lock_guard lock{mutex};
+    return total_num_files;
+}
+
+UInt64 BackupImpl::getTotalSize() const
+{
+    std::lock_guard lock{mutex};
+    return total_size;
+}
+
 void BackupImpl::writeBackupMetadata()
 {
     assert(!is_internal_backup);
@@ -284,6 +296,7 @@ void BackupImpl::writeBackupMetadata()
             if (info.pos_in_archive != static_cast<size_t>(-1))
                 config->setUInt64(prefix + "pos_in_archive", info.pos_in_archive);
         }
+        updateTotals(info);
         ++index;
     }
 
@@ -300,6 +313,8 @@ void BackupImpl::writeBackupMetadata()
         out = writer->writeFile(".backup");
     out->write(str.data(), str.size());
     out->finalize();
+
+    updateTotals(str.size());
 }
 
 void BackupImpl::readBackupMetadata()
@@ -320,6 +335,7 @@ void BackupImpl::readBackupMetadata()
 
     String str;
     readStringUntilEOF(str, *in);
+    updateTotals(str.size());
     std::istringstream stream(str); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->load(stream);
@@ -376,6 +392,7 @@ void BackupImpl::readBackupMetadata()
             }
 
             coordination->addFileInfo(info);
+            updateTotals(info);
         }
     }
 }
@@ -788,6 +805,18 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
     archive_writers[pos] = {suffix, new_archive_writer};
 
     return new_archive_writer;
+}
+
+void BackupImpl::updateTotals(UInt64 file_size)
+{
+    total_size += file_size;
+    ++total_num_files;
+}
+
+void BackupImpl::updateTotals(const FileInfo & info)
+{
+    if ((info.size > info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)))
+        updateTotals(info.size - info.base_size);
 }
 
 void BackupImpl::removeAllFilesAfterFailure()

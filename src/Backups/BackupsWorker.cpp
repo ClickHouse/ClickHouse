@@ -316,16 +316,26 @@ void BackupsWorker::doBackup(
             backup_coordination->setStage(backup_settings.host_id, Stage::COMPLETED, "");
         }
 
+        size_t num_files = 0;
+        UInt64 total_size = 0;
+
         /// Finalize backup (write its metadata).
         if (!backup_settings.internal)
+        {
             backup->finalizeWriting();
+            num_files = backup->getTotalNumFiles();
+            total_size = backup->getTotalSize();
+        }
 
         /// Close the backup.
         backup.reset();
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_info.toString());
         if (!backup_settings.internal)
+        {
             setStatus(backup_id, BackupStatus::BACKUP_COMPLETE);
+            setNumFilesAndTotalSize(backup_id, num_files, total_size);
+        }
     }
     catch (...)
     {
@@ -451,6 +461,9 @@ void BackupsWorker::doRestore(
         backup_open_params.base_backup_info = restore_settings.base_backup_info;
         backup_open_params.password = restore_settings.password;
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
+
+        if (!restore_settings.internal)
+            setNumFilesAndTotalSize(restore_id, backup->getTotalNumFiles(), backup->getTotalSize());
 
         String current_database = context->getCurrentDatabase();
 
@@ -605,6 +618,19 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status)
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);
+}
+
+
+void BackupsWorker::setNumFilesAndTotalSize(const String & id, size_t num_files, UInt64 total_size)
+{
+    std::lock_guard lock{infos_mutex};
+    auto it = infos.find(id);
+    if (it == infos.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup's id={}", id);
+
+    auto & info = it->second;
+    info.num_files = num_files;
+    info.total_size = total_size;
 }
 
 
