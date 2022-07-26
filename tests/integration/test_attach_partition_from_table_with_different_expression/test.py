@@ -32,7 +32,7 @@ def create_more_granular_table(name):
 
 
 def test_attach_partition_from_table_with_more_granular_partition_expression_data_not_split(
-        started_cluster,
+    started_cluster,
 ):
     cleanup()
 
@@ -52,7 +52,7 @@ def test_attach_partition_from_table_with_more_granular_partition_expression_dat
 
 
 def test_attach_partition_from_table_with_more_granular_partition_expression_data_split(
-        started_cluster
+    started_cluster
 ):
     cleanup()
 
@@ -72,7 +72,7 @@ def test_attach_partition_from_table_with_more_granular_partition_expression_dat
 
 
 def test_attach_partition_from_table_with_less_granular_partition_expression_data_not_split(
-        started_cluster
+    started_cluster
 ):
     cleanup()
 
@@ -92,14 +92,16 @@ def test_attach_partition_from_table_with_less_granular_partition_expression_dat
 
 
 def test_attach_partition_from_table_with_less_granular_partition_expression_data_split(
-        started_cluster
+    started_cluster
 ):
     cleanup()
 
     create_less_granular_table("destination")
     create_more_granular_table("source")
 
-    node.query("INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-03 02:01:03')")
+    node.query(
+        "INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-03 02:01:03')"
+    )
 
     node.query("ALTER TABLE destination ATTACH PARTITION '20100302' FROM source")
 
