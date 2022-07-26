@@ -118,6 +118,17 @@ public:
     static constexpr auto name = "ReadFromMerge";
     String getName() const override { return name; }
 
+    ReadFromMerge(
+        Block common_header_,
+        Names column_names_,
+        size_t max_block_size,
+        size_t num_streams,
+        StoragePtr storage,
+        StorageSnapshotPtr storage_snapshot,
+        const SelectQueryInfo & query_info_,
+        ContextMutablePtr context_,
+        QueryProcessingStage::Enum processed_stage);
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
@@ -125,17 +136,17 @@ public:
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
 
 private:
-    const size_t requested_num_streams;
     const size_t required_max_block_size;
+    const size_t requested_num_streams;
+    const Block common_header;
 
     Names column_names;
-    std::shared_ptr<StorageMerge> storage_merge;
-    QueryProcessingStage::Enum common_processed_stage;
+    StoragePtr storage_merge;
+    StorageSnapshotPtr merge_storage_snapshot;
 
     SelectQueryInfo query_info;
-    StorageSnapshotPtr merge_storage_snapshot;
-    StorageMetadataPtr merge_metadata_for_reading;
     ContextMutablePtr context;
+    QueryProcessingStage::Enum common_processed_stage;
 
     struct AliasData
     {
