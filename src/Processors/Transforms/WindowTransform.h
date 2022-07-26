@@ -198,6 +198,13 @@ public:
         ++x.block;
     }
 
+    RowNumber nextRowNumber(const RowNumber & x) const
+    {
+        RowNumber result = x;
+        advanceRowNumber(result);
+        return result;
+    }
+
     void retreatRowNumber(RowNumber & x) const
     {
         if (x.row > 0)
@@ -217,6 +224,13 @@ public:
         advanceRowNumber(xx);
         assert(xx == x);
 #endif
+    }
+
+    RowNumber prevRowNumber(const RowNumber & x) const
+    {
+        RowNumber result = x;
+        retreatRowNumber(result);
+        return result;
     }
 
     auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
