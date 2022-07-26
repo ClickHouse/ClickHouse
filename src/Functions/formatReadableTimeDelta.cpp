@@ -94,19 +94,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        StringRef maximum_unit_str;
+        std::string_view maximum_unit_str;
         if (arguments.size() == 2)
         {
             const ColumnPtr & maximum_unit_column = arguments[1].column;
             const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get());
             if (maximum_unit_const_col)
-                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0);
+                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0).toView();
         }
 
         Unit max_unit;
 
         /// Default means "use all available units".
-        if (maximum_unit_str.size == 0 || maximum_unit_str == "years")
+        if (maximum_unit_str.empty() || maximum_unit_str == "years")
             max_unit = Years;
         else if (maximum_unit_str == "months")
             max_unit = Months;
@@ -122,7 +122,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected value of maximum unit argument ({}) for function {}, the only allowed values are:"
                 " 'seconds', 'minutes', 'hours', 'days', 'months', 'years'.",
-                maximum_unit_str.toString(), getName());
+                maximum_unit_str, getName());
 
         auto col_to = ColumnString::create();
 

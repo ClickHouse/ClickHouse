@@ -23,7 +23,7 @@ from rerun_helper import RerunHelper
 DOCKER_IMAGE = "clickhouse/split-build-smoke-test"
 DOWNLOAD_RETRIES_COUNT = 5
 RESULT_LOG_NAME = "run.log"
-CHECK_NAME = "Split build smoke test (actions)"
+CHECK_NAME = "Split build smoke test"
 
 
 def process_result(result_folder, server_log_folder):

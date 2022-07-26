@@ -603,22 +603,6 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
     return *minimum_size_column;
 }
 
-// String IMergeTreeDataPart::getFullPath() const
-// {
-//     if (relative_path.empty())
-//         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
-
-//     return fs::path(storage.getFullPathOnDisk(volume->getDisk())) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-// }
-
-// String IMergeTreeDataPart::getRelativePath() const
-// {
-//     if (relative_path.empty())
-//         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
-
-//     return fs::path(storage.relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-// }
-
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     assertOnDisk();
