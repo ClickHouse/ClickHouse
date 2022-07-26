@@ -1,18 +1,17 @@
 #include "Loggers.h"
 
 #include <iostream>
-#include <Poco/ConsoleChannel.h>
-#include <Poco/Logger.h>
-#include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
-#include "OwnJSONPatternFormatter.h"
 #include "OwnPatternFormatter.h"
 #include "OwnSplitChannel.h"
+#include <Poco/ConsoleChannel.h>
+#include <Poco/Logger.h>
+#include <Poco/Net/RemoteSyslogChannel.h>
 
 #ifdef WITH_TEXT_LOG
-#    include <Interpreters/TextLog.h>
+    #include <Interpreters/TextLog.h>
 #endif
 
 #include <filesystem>
@@ -21,8 +20,9 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-class SensitiveDataMasker;
+    class SensitiveDataMasker;
 }
+
 
 // TODO: move to libcommon
 static std::string createDirectory(const std::string & file)
@@ -49,6 +49,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         if (auto log = text_log.lock())
             split->addTextLog(log, text_log_max_priority);
 #endif
+
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger) //-V1051
         return;
@@ -138,6 +139,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
+
         if (config.has("logger.json"))
             pf = new OwnJSONPatternFormatter;
         else
@@ -179,6 +181,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
         }
         syslog_channel->open();
+
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
         if (config.has("logger.json"))
@@ -194,7 +197,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
     bool color_logs_by_default = isatty(STDERR_FILENO);
-    if (config.getBool("logger.console", false) || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+
+    if (config.getBool("logger.console", false)
+        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
     {
         bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
@@ -205,17 +210,15 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             max_log_level = console_log_level;
         }
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnPatternFormatter> pf;
         if (config.has("logger.json"))
             pf = new OwnJSONPatternFormatter;
         else
-            pf = new OwnPatternFormatter(true);
-
+            pf = new OwnPatternFormatter(color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
         log->setLevel(console_log_level);
         split->addChannel(log, "console");
     }
-
 
     split->open();
     logger.close();
@@ -276,7 +279,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     // Set level to console
     bool is_daemon = config.getBool("application.runAsDaemon", false);
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
-    if (config.getBool("logger.console", false) || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+    if (config.getBool("logger.console", false)
+        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
         split->setLevel("console", log_level);
     else
         split->setLevel("console", 0);

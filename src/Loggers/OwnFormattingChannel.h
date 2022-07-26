@@ -20,12 +20,6 @@ public:
     {
     }
 
-    explicit OwnFormattingChannel(
-        Poco::AutoPtr<OwnJSONPatternFormatter> pFormatterJSON_ = nullptr, Poco::AutoPtr<Poco::Channel> pChannel_ = nullptr)
-        : pFormatterJSON(std::move(pFormatterJSON_)), pChannel(std::move(pChannel_)), priority(Poco::Message::PRIO_TRACE)
-    {
-    }
-
     void setChannel(Poco::AutoPtr<Poco::Channel> pChannel_) { pChannel = std::move(pChannel_); }
 
     void setLevel(Poco::Message::Priority priority_) { priority = priority_; }
@@ -52,7 +46,6 @@ public:
 
 private:
     Poco::AutoPtr<OwnPatternFormatter> pFormatter;
-    Poco::AutoPtr<OwnJSONPatternFormatter> pFormatterJSON;
     Poco::AutoPtr<Poco::Channel> pChannel;
     std::atomic<Poco::Message::Priority> priority;
 };
