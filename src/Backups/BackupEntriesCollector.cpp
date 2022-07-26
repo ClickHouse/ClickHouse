@@ -1,6 +1,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackupCoordination.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/IDatabase.h>
@@ -31,25 +32,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+namespace Stage = BackupCoordinationStage;
+
 namespace
 {
-    /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
-    constexpr const char * kGatheringMetadataStage = "gathering metadata";
-
-    String formatGatheringMetadataStage(size_t pass)
-    {
-        return fmt::format("{} ({})", kGatheringMetadataStage, pass);
-    }
-
-    /// Making temporary hard links and prepare backup entries.
-    constexpr const char * kExtractingDataFromTablesStage = "extracting data from tables";
-
-    /// Running special tasks for replicated tables which can also prepare some backup entries.
-    constexpr const char * kRunningPostTasksStage = "running post-tasks";
-
-    /// Writing backup entries to the backup and removing temporary hard links.
-    constexpr const char * kWritingBackupStage = "writing backup";
-
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
     {
@@ -129,15 +116,15 @@ BackupEntries BackupEntriesCollector::run()
     makeBackupEntriesForTablesDefs();
 
     /// Make backup entries for the data of the found tables.
-    setStage(kExtractingDataFromTablesStage);
+    setStage(Stage::EXTRACTING_DATA_FROM_TABLES);
     makeBackupEntriesForTablesData();
 
     /// Run all the tasks added with addPostCollectingTask().
-    setStage(kRunningPostTasksStage);
+    setStage(Stage::RUNNING_POST_TASKS);
     runPostTasks();
 
     /// No more backup entries or tasks are allowed after this point.
-    setStage(kWritingBackupStage);
+    setStage(Stage::WRITING_BACKUP);
 
     return std::move(backup_entries);
 }
@@ -149,11 +136,11 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
 
     backup_coordination->setStage(backup_settings.host_id, new_stage, message);
 
-    if (new_stage == formatGatheringMetadataStage(1))
+    if (new_stage == Stage::formatGatheringMetadata(1))
     {
         return backup_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
     }
-    else if (new_stage.starts_with(kGatheringMetadataStage))
+    else if (new_stage.starts_with(Stage::GATHERING_METADATA))
     {
         auto current_time = std::chrono::steady_clock::now();
         auto end_of_timeout = std::max(current_time, consistent_metadata_snapshot_end_time);
@@ -183,13 +170,13 @@ void BackupEntriesCollector::calculateRootPathInBackup()
 /// Finds databases and tables which we will put to the backup.
 void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
 {
-    setStage(formatGatheringMetadataStage(1));
+    setStage(Stage::formatGatheringMetadata(1));
 
     consistent_metadata_snapshot_end_time = std::chrono::steady_clock::now() + consistent_metadata_snapshot_timeout;
 
     for (size_t pass = 1;; ++pass)
     {
-        String next_stage = formatGatheringMetadataStage(pass + 1);
+        String next_stage = Stage::formatGatheringMetadata(pass + 1);
         std::optional<Exception> inconsistency_error;
         if (tryGatherMetadataAndCompareWithPrevious(inconsistency_error))
         {
@@ -722,7 +709,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
 void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
 {
-    if (current_stage == kWritingBackupStage)
+    if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     backup_entries.emplace_back(file_name, backup_entry);
 }
@@ -734,21 +721,21 @@ void BackupEntriesCollector::addBackupEntry(const std::pair<String, BackupEntryP
 
 void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entries_)
 {
-    if (current_stage == kWritingBackupStage)
+    if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, backup_entries_);
 }
 
 void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 {
-    if (current_stage == kWritingBackupStage)
+    if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, std::move(backup_entries_));
 }
 
 void BackupEntriesCollector::addPostTask(std::function<void()> task)
 {
-    if (current_stage == kWritingBackupStage)
+    if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of post tasks is not allowed");
     post_tasks.push(std::move(task));
 }

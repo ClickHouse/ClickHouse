@@ -1,5 +1,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
@@ -38,20 +39,10 @@ namespace ErrorCodes
 }
 
 
+namespace Stage = BackupCoordinationStage;
+
 namespace
 {
-    /// Finding databases and tables in the backup which we're going to restore.
-    constexpr const char * kFindingTablesInBackupStage = "finding tables in backup";
-
-    /// Creating databases or finding them and checking their definitions.
-    constexpr const char * kCreatingDatabasesStage = "creating databases";
-
-    /// Creating tables or finding them and checking their definition.
-    constexpr const char * kCreatingTablesStage = "creating tables";
-
-    /// Inserting restored data to tables.
-    constexpr const char * kInsertingDataToTablesStage = "inserting data to tables";
-
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
     {
@@ -127,7 +118,7 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
     findRootPathsInBackup();
 
     /// Find all the databases and tables which we will read from the backup.
-    setStage(kFindingTablesInBackupStage);
+    setStage(Stage::FINDING_TABLES_IN_BACKUP);
     findDatabasesAndTablesInBackup();
 
     /// Check access rights.
@@ -137,16 +128,16 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
         return {};
 
     /// Create databases using the create queries read from the backup.
-    setStage(kCreatingDatabasesStage);
+    setStage(Stage::CREATING_DATABASES);
     createDatabases();
 
     /// Create tables using the create queries read from the backup.
-    setStage(kCreatingTablesStage);
+    setStage(Stage::CREATING_TABLES);
     createTables();
 
     /// All what's left is to insert data to tables.
     /// No more data restoring tasks are allowed after this point.
-    setStage(kInsertingDataToTablesStage);
+    setStage(Stage::INSERTING_DATA_TO_TABLES);
     return getDataRestoreTasks();
 }
 
@@ -158,7 +149,7 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     if (restore_coordination)
     {
         restore_coordination->setStage(restore_settings.host_id, new_stage, message);
-        if (new_stage == kFindingTablesInBackupStage)
+        if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
             restore_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
         else
             restore_coordination->waitForStage(all_hosts, new_stage);
@@ -819,14 +810,14 @@ std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencie
 
 void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 {
-    if (current_stage == kInsertingDataToTablesStage)
+    if (current_stage == Stage::INSERTING_DATA_TO_TABLES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
     data_restore_tasks.push_back(std::move(new_task));
 }
 
 void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
 {
-    if (current_stage == kInsertingDataToTablesStage)
+    if (current_stage == Stage::INSERTING_DATA_TO_TABLES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
     insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }

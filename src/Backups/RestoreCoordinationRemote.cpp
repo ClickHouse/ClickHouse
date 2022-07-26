@@ -101,6 +101,13 @@ bool RestoreCoordinationRemote::acquireReplicatedAccessStorage(const String & ac
 
 void RestoreCoordinationRemote::removeAllNodes()
 {
+    /// Usually this function is called by the initiator when a restore operation is complete so we don't need the coordination anymore.
+    ///
+    /// However there can be a rare situation when this function is called after an error occurs on the initiator of a query
+    /// while some hosts are still restoring something. Removing all the nodes will remove the parent node of the restore coordination
+    /// at `zookeeper_path` which might cause such hosts to stop with exception "ZNONODE". Or such hosts might still do some part
+    /// of their restore work before that.
+
     auto zookeeper = get_zookeeper();
     zookeeper->removeRecursive(zookeeper_path);
 }

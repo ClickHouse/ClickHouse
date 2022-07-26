@@ -54,7 +54,7 @@ public:
         bool internal = false;
     };
 
-    std::optional<Info> tryGetInfo(const UUID & backup_or_restore_uuid, bool internal) const;
+    Info getInfo(const UUID & backup_or_restore_uuid, bool internal) const;
     std::vector<Info> getAllInfos() const;
 
 private:
