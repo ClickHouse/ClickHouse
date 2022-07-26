@@ -1018,7 +1018,10 @@ void BaseDaemon::setupWatchdog()
                 pf = new OwnJSONPatternFormatter;
             else
                 pf = new OwnPatternFormatter(true);
+<<<<<<< HEAD
 
+=======
+>>>>>>> removed pFormattterJSON pointer from OwnFormattingChannel and reformatted Loggers and BaseDaemon to look nicer
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }
