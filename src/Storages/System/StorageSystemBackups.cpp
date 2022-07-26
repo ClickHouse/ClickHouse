@@ -34,8 +34,8 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     auto & column_id = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_status = assert_cast<ColumnInt8 &>(*res_columns[column_index++]);
-    auto & column_num_files = assert_cast<ColumnInt64 &>(*res_columns[column_index++]);
-    auto & column_total_size = assert_cast<ColumnInt64 &>(*res_columns[column_index++]);
+    auto & column_num_files = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
+    auto & column_total_size = assert_cast<ColumnUInt64 &>(*res_columns[column_index++]);
     auto & column_error = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_start_time = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]);
     auto & column_end_time = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]);
