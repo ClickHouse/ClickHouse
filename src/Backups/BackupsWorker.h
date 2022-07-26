@@ -50,6 +50,12 @@ public:
         /// Status of backup or restore operation.
         BackupStatus status;
 
+        /// Number of files in the backup (including backup's metadata; only unique files are counted).
+        size_t num_files = 0;
+
+        /// Total size of files in the backup (including backup's metadata; only unique files are counted).
+        UInt64 total_size = 0;
+
         /// Set only if there was an error.
         std::exception_ptr exception;
         String error_message;
@@ -76,6 +82,7 @@ private:
 
     void addInfo(const OperationID & id, const String & name, BackupStatus status);
     void setStatus(const OperationID & id, BackupStatus status);
+    void setNumFilesAndTotalSize(const OperationID & id, size_t num_files, UInt64 total_size);
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
