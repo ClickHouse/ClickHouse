@@ -59,7 +59,9 @@ private:
     PreviousChunk prev_chunk;
 
     Names column_names;
-    ColumnNumbers column_positions;
+    ColumnNumbers column_positions;      /// DISTINCT columns positions in header
+    ColumnNumbers sort_prefix_positions; /// DISTINCT columns positions which form sort prefix of sort description
+
     ClearableSetVariants data;
     Sizes key_sizes;
     UInt64 limit_hint;
