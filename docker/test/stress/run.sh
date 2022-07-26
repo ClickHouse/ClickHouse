@@ -7,29 +7,26 @@ set -x
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
-#
-# But under thread fuzzer, TSan build is too slow and this produces some flaky
-# tests, so for now, as a temporary solution it had been disabled.
-if ! test -f package_folder/clickhouse-server*tsan*.deb; then
-    export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-    export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-    export THREAD_FUZZER_SLEEP_TIME_US=100000
 
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
+export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+export THREAD_FUZZER_SLEEP_TIME_US=100000
 
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
 
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
-fi
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
+
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+
 
 function install_packages()
 {
