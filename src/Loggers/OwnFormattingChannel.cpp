@@ -13,7 +13,7 @@ void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
             formatter->formatExtended(msg, text);
             pChannel->log(Poco::Message(msg.base, text));
         }
-        else if(pFormatter)
+        else if (pFormatter)
         {
             pFormatter->formatExtended(msg, text);
             pChannel->log(Poco::Message(msg.base, text));
