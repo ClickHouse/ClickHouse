@@ -6028,9 +6028,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithD
 
     dst_data_part->minmax_idx->replace(new_min_max_index);
 
-    auto volume = getStoragePolicy()->getVolume(0);
-
-    auto data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(volume, getRelativeDataPath(), tmp_dst_part_name);
+    auto data_part_storage_builder = dst_data_part->data_part_storage->getBuilder();
 
     data_part_storage_builder->removeFile("partition.dat");
 
