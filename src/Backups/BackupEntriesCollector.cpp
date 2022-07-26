@@ -537,12 +537,11 @@ void BackupEntriesCollector::lockTablesForReading()
     for (auto & [table_name, table_info] : table_infos)
     {
         auto storage = table_info.storage;
-        TableLockHolder table_lock;
         if (storage)
         {
             try
             {
-                table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+                table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
             }
             catch (Exception & e)
             {
