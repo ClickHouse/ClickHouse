@@ -31,23 +31,69 @@ def create_more_granular_table(name):
     node.query(query)
 
 
-def test_attach_partition_from_table_with_more_granular_partition_expression_data_not_split(started_cluster):
+def test_attach_partition_from_table_with_more_granular_partition_expression_data_not_split(
+        started_cluster,
+):
     cleanup()
 
     create_more_granular_table("source")
     create_less_granular_table("destination")
 
-    node.query("INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03')")
+    node.query(
+        "INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03')"
+    )
 
     node.query("ALTER TABLE destination ATTACH PARTITION '20100302' FROM source")
 
     source_data = node.query("SELECT * FROM source")
     destination_data = node.query("SELECT * FROM destination")
 
-    assert(source_data == destination_data)
+    assert source_data == destination_data
 
 
-def test_attach_partition_from_table_with_more_granular_partition_expression_data_split(started_cluster):
+def test_attach_partition_from_table_with_more_granular_partition_expression_data_split(
+        started_cluster
+):
+    cleanup()
+
+    create_less_granular_table("destination")
+    create_more_granular_table("source")
+
+    node.query(
+        "INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-03 02:01:03')"
+    )
+
+    node.query("ALTER TABLE destination ATTACH PARTITION '20100302' FROM source")
+
+    source_data = node.query("SELECT * FROM source")
+    destination_data = node.query("SELECT * FROM destination")
+
+    assert source_data != destination_data
+
+
+def test_attach_partition_from_table_with_less_granular_partition_expression_data_not_split(
+        started_cluster
+):
+    cleanup()
+
+    create_more_granular_table("source")
+    create_less_granular_table("destination")
+
+    node.query(
+        "INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03')"
+    )
+
+    node.query("ALTER TABLE destination ATTACH PARTITION '20100302' FROM source")
+
+    source_data = node.query("SELECT * FROM source")
+    destination_data = node.query("SELECT * FROM destination")
+
+    assert source_data == destination_data
+
+
+def test_attach_partition_from_table_with_less_granular_partition_expression_data_split(
+        started_cluster
+):
     cleanup()
 
     create_less_granular_table("destination")
@@ -60,36 +106,4 @@ def test_attach_partition_from_table_with_more_granular_partition_expression_dat
     source_data = node.query("SELECT * FROM source")
     destination_data = node.query("SELECT * FROM destination")
 
-    assert(source_data != destination_data)
-
-
-def test_attach_partition_from_table_with_less_granular_partition_expression_data_not_split(started_cluster):
-    cleanup()
-
-    create_more_granular_table("source")
-    create_less_granular_table("destination")
-
-    node.query("INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-02 02:01:03')")
-
-    node.query("ALTER TABLE destination ATTACH PARTITION '20100302' FROM source")
-
-    source_data = node.query("SELECT * FROM source")
-    destination_data = node.query("SELECT * FROM destination")
-
-    assert(source_data == destination_data)
-
-
-def test_attach_partition_from_table_with_less_granular_partition_expression_data_split(started_cluster):
-    cleanup()
-
-    create_less_granular_table("destination")
-    create_more_granular_table("source")
-
-    node.query("INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-03 02:01:03')")
-
-    node.query("ALTER TABLE destination ATTACH PARTITION '20100302' FROM source")
-
-    source_data = node.query("SELECT * FROM source")
-    destination_data = node.query("SELECT * FROM destination")
-
-    assert(source_data != destination_data)
+    assert source_data != destination_data

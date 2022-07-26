@@ -6038,7 +6038,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithD
 
     partition_store_write_buffer->finalize();
 
-    for (const auto & column : src_part->getColumns()) {
+    for (const auto & column : src_part->getColumns())
+    {
         auto file = "minmax_" + escapeForFileName(column.name) + ".idx";
         data_part_storage_builder->removeFile(file);
     }

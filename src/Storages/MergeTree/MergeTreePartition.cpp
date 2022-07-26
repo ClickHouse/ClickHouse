@@ -464,7 +464,8 @@ void MergeTreePartition::createAndValidateMinMaxPartitionIds(const StorageMetada
         const auto extracted_min_partition_id = extracted_min_partition_id_field.get<uint64_t>();
         const auto extracted_max_partition_id = extracted_max_partition_id_field.get<uint64_t>();
 
-        if (extracted_min_partition_id != extracted_max_partition_id) {
+        if (extracted_min_partition_id != extracted_max_partition_id)
+        {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not create the partition. A partition can not contain values that have different partition ids.");
         }
 

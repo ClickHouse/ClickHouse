@@ -96,7 +96,8 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
     initialized = true;
 }
 
-Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) {
+Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data)
+{
     if (!initialized)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

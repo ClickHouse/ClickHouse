@@ -33,7 +33,6 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
-#include <base/sort.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -1608,8 +1607,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        if (is_partition_exp_different) {
-
+        if (is_partition_exp_different)
+        {
             auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
 
             IMergeTreeDataPart::MinMaxIndex min_max_index;
@@ -1631,7 +1630,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             dst_parts.emplace_back(std::move(dst_part));
 
-        } else {
+        }
+        else
+        {
             /// This will generate unique name in scope of current server process.
             Int64 temp_index = insert_increment.get();
             MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
