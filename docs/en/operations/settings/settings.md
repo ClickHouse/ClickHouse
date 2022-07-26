@@ -308,7 +308,7 @@ Possible values:
 
 - `default` — `hash` or `direct`, if possible (same as `direct,hash`)
 
-- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
 - `parallel_hash` - a variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
