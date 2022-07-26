@@ -27,6 +27,21 @@ DistinctSortedTransform::DistinctSortedTransform(
         if (col && !isColumnConst(*col))
             column_positions.emplace_back(pos);
     }
+    /// pre-calculate DISTINCT column positions which form sort prefix of sort description
+    sort_prefix_positions.reserve(description.size());
+    for (const auto & column_sort_descr : description)
+    {
+        /// check if there is such column in header
+        if (!header.has(column_sort_descr.column_name))
+            break;
+
+        /// check if sorted column position matches any DISTINCT column
+        const auto pos = header.getPositionByName(column_sort_descr.column_name);
+        if (std::find(begin(column_positions), end(column_positions), pos) == column_positions.end())
+            break;
+
+        sort_prefix_positions.emplace_back(pos);
+    }
 }
 
 void DistinctSortedTransform::transform(Chunk & chunk)
@@ -142,24 +157,11 @@ ColumnRawPtrs DistinctSortedTransform::getKeyColumns(const Chunk & chunk) const
 ColumnRawPtrs DistinctSortedTransform::getClearingColumns(const ColumnRawPtrs & key_columns) const
 {
     ColumnRawPtrs clearing_hint_columns;
-    clearing_hint_columns.reserve(description.size());
-    try
-    {
-        const size_t max_num_of_clearing_columns = std::min(description.size(), column_positions.size());
-        for (size_t i = 0; i < max_num_of_clearing_columns; ++i)
-        {
-            const auto pos = header.getPositionByName(description[i].column_name); // can throw
-            if (std::find(begin(column_positions), end(column_positions), pos) == column_positions.end())
-                break;
+    clearing_hint_columns.reserve(sort_prefix_positions.size());
+    for (const auto pos : sort_prefix_positions)
+        clearing_hint_columns.emplace_back(key_columns[pos]);
 
-            clearing_hint_columns.emplace_back(key_columns[pos]);
-        }
-        return clearing_hint_columns;
-    }
-    catch (const Exception &)
-    {
-        return clearing_hint_columns;
-    }
+    return clearing_hint_columns;
 }
 
 bool DistinctSortedTransform::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m)
