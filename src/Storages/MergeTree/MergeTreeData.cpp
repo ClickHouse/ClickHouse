@@ -216,8 +216,8 @@ MergeTreeData::MergeTreeData(
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
-    , log_name(table_id_.getNameForLogs())
-    , log(&Poco::Logger::get(log_name))
+    , log_name(std::make_shared<String>(table_id_.getNameForLogs()))
+    , log(&Poco::Logger::get(*log_name))
     , storage_settings(std::move(storage_settings_))
     , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
@@ -2033,8 +2033,13 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     relative_data_path = new_table_path;
 
     renameInMemory(new_table_id);
+}
 
-
+void MergeTreeData::renameInMemory(const StorageID & new_table_id)
+{
+    IStorage::renameInMemory(new_table_id);
+    std::atomic_store(&log_name, std::make_shared<String>(new_table_id.getNameForLogs()));
+    log = &Poco::Logger::get(*log_name);
 }
 
 void MergeTreeData::dropAllData()
@@ -4734,11 +4739,19 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
         if (!destination_ptr)
         {
             if (move_ttl_entry->destination_type == DataDestinationType::VOLUME && !move_ttl_entry->if_exists)
-                LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found or rule is not applicable at the moment",
-                    move_ttl_entry->destination_name, log_name);
+                LOG_WARNING(
+                    log,
+                    "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found or rule is not "
+                    "applicable at the moment",
+                    move_ttl_entry->destination_name,
+                    *std::atomic_load(&log_name));
             else if (move_ttl_entry->destination_type == DataDestinationType::DISK && !move_ttl_entry->if_exists)
-                LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found or rule is not applicable at the moment",
-                    move_ttl_entry->destination_name, log_name);
+                LOG_WARNING(
+                    log,
+                    "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found or rule is not applicable "
+                    "at the moment",
+                    move_ttl_entry->destination_name,
+                    *std::atomic_load(&log_name));
         }
         else
         {
@@ -4747,11 +4760,17 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
                 return reservation;
             else
                 if (move_ttl_entry->destination_type == DataDestinationType::VOLUME)
-                    LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space",
-                    move_ttl_entry->destination_name, log_name);
+                    LOG_WARNING(
+                        log,
+                        "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space",
+                        move_ttl_entry->destination_name,
+                        *std::atomic_load(&log_name));
                 else if (move_ttl_entry->destination_type == DataDestinationType::DISK)
-                    LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
-                        move_ttl_entry->destination_name, log_name);
+                    LOG_WARNING(
+                        log,
+                        "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
+                        move_ttl_entry->destination_name,
+                        *std::atomic_load(&log_name));
         }
     }
 
@@ -6597,7 +6616,10 @@ bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t m
         return false;
     if (query_id_set.size() >= max_queries)
         throw Exception(
-            ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for table {}. Maximum is: {}", log_name, max_queries);
+            ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+            "Too many simultaneous queries for table {}. Maximum is: {}",
+            *std::atomic_load(&log_name),
+            max_queries);
     query_id_set.insert(query_id);
     return true;
 }
