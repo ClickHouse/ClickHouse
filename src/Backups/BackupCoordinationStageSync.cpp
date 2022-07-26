@@ -43,7 +43,7 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
         throw zkutil::KeeperException(code, alive_node_path);
 
     zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
-    zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
+    zookeeper->create(zookeeper_path + "/current|" + current_host + "|" + new_stage, message, zkutil::CreateMode::Persistent);
 }
 
 void BackupCoordinationStageSync::setError(const String & current_host, const Exception & exception)

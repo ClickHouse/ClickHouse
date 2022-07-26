@@ -5,6 +5,7 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupCoordinationRemote.h>
 #include <Backups/BackupCoordinationLocal.h>
 #include <Backups/RestoreCoordinationRemote.h>
@@ -24,11 +25,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace Stage = BackupCoordinationStage;
+
 namespace
 {
-    /// Coordination status meaning that a host finished its work.
-    constexpr const char * kCompletedStage = "completed";
-
     std::shared_ptr<IBackupCoordination> makeBackupCoordination(const String & coordination_zk_path, const ContextPtr & context, bool is_internal_backup)
     {
         if (!coordination_zk_path.empty())
@@ -130,8 +135,14 @@ std::pair<UUID, bool> BackupsWorker::startMakingBackup(const ASTPtr & query, con
     UUID backup_uuid = *backup_settings.backup_uuid;
 
     std::shared_ptr<IBackupCoordination> backup_coordination;
-    if (!backup_settings.coordination_zk_path.empty())
+
+    if (backup_settings.internal)
+    {
+        /// The following call of makeBackupCoordination() is not essential because doBackup() will later create a backup coordination
+        /// if it's not created here. However to handle errors better it's better to make a coordination here because this way
+        /// if an exception will be thrown in startMakingBackup() other hosts will know about that.
         backup_coordination = makeBackupCoordination(backup_settings.coordination_zk_path, context, backup_settings.internal);
+    }
 
     try
     {
@@ -161,12 +172,20 @@ std::pair<UUID, bool> BackupsWorker::startMakingBackup(const ASTPtr & query, con
                         backup_coordination,
                         context_in_use,
                         mutable_context,
-                        true);
+                        /* called_async= */ true);
                 });
         }
         else
         {
-            doBackup(backup_uuid, backup_query, backup_settings, backup_info, backup_coordination, context_in_use, mutable_context, false);
+            doBackup(
+                backup_uuid,
+                backup_query,
+                backup_settings,
+                backup_info,
+                backup_coordination,
+                context_in_use,
+                mutable_context,
+                /* called_async= */ false);
         }
 
         return {backup_uuid, backup_settings.internal};
@@ -258,7 +277,7 @@ void BackupsWorker::doBackup(
             /// Wait until all the hosts have written their backup entries.
             auto all_hosts = BackupSettings::Util::filterHostIDs(
                 backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
-            backup_coordination->waitForStage(all_hosts, kCompletedStage);
+            backup_coordination->waitForStage(all_hosts, Stage::COMPLETED);
         }
         else
         {
@@ -275,7 +294,7 @@ void BackupsWorker::doBackup(
             writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
-            backup_coordination->setStage(backup_settings.host_id, kCompletedStage, "");
+            backup_coordination->setStage(backup_settings.host_id, Stage::COMPLETED, "");
         }
 
         /// Finalize backup (write its metadata).
@@ -313,8 +332,14 @@ std::pair<UUID, bool> BackupsWorker::startRestoring(const ASTPtr & query, Contex
     UUID restore_uuid = UUIDHelpers::generateV4();
 
     std::shared_ptr<IRestoreCoordination> restore_coordination;
-    if (!restore_settings.coordination_zk_path.empty())
+
+    if (restore_settings.internal)
+    {
+        /// The following call of makeRestoreCoordination() is not essential because doRestore() will later create a restore coordination
+        /// if it's not created here. However to handle errors better it's better to make a coordination here because this way
+        /// if an exception will be thrown in startRestoring() other hosts will know about that.
         restore_coordination = makeRestoreCoordination(restore_settings.coordination_zk_path, context, restore_settings.internal);
+    }
 
     try
     {
@@ -334,12 +359,27 @@ std::pair<UUID, bool> BackupsWorker::startRestoring(const ASTPtr & query, Contex
         if (restore_settings.async)
         {
             backups_thread_pool.scheduleOrThrowOnError(
-                [this, restore_uuid, restore_query, restore_settings, backup_info, restore_coordination, context_in_use]
-                { doRestore(restore_uuid, restore_query, restore_settings, backup_info, restore_coordination, context_in_use, true); });
+                [this, restore_uuid, restore_query, restore_settings, backup_info, restore_coordination, context_in_use] {
+                    doRestore(
+                        restore_uuid,
+                        restore_query,
+                        restore_settings,
+                        backup_info,
+                        restore_coordination,
+                        context_in_use,
+                        /* called_async= */ true);
+                });
         }
         else
         {
-            doRestore(restore_uuid, restore_query, restore_settings, backup_info, restore_coordination, context_in_use, false);
+            doRestore(
+                restore_uuid,
+                restore_query,
+                restore_settings,
+                backup_info,
+                restore_coordination,
+                context_in_use,
+                /* called_async= */ false);
         }
 
         return {restore_uuid, restore_settings.internal};
@@ -438,7 +478,7 @@ void BackupsWorker::doRestore(
             /// Wait until all the hosts have written their backup entries.
             auto all_hosts = BackupSettings::Util::filterHostIDs(
                 restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
-            restore_coordination->waitForStage(all_hosts, kCompletedStage);
+            restore_coordination->waitForStage(all_hosts, Stage::COMPLETED);
         }
         else
         {
@@ -456,7 +496,7 @@ void BackupsWorker::doRestore(
             restoreTablesData(std::move(data_restore_tasks), restores_thread_pool);
 
             /// We have restored everything, we need to tell other hosts (they could be waiting for it).
-            restore_coordination->setStage(restore_settings.host_id, kCompletedStage, "");
+            restore_coordination->setStage(restore_settings.host_id, Stage::COMPLETED, "");
         }
 
         LOG_INFO(log, "Restored from {} {} successfully", (restore_settings.internal ? "internal backup" : "backup"), backup_info.toString());
@@ -490,7 +530,9 @@ void BackupsWorker::addInfo(const UUID & uuid, bool internal, const String & bac
     info.internal = internal;
 
     std::lock_guard lock{infos_mutex};
-    infos[{uuid, internal}] = std::move(info);
+    bool inserted = infos.try_emplace({uuid, internal}, std::move(info)).second;
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pair of UUID={} and internal={} is already in use", uuid, internal);
 
     num_active_backups += getNumActiveBackupsChange(status);
     num_active_restores += getNumActiveRestoresChange(status);
@@ -502,7 +544,7 @@ void BackupsWorker::setStatus(const UUID & uuid, bool internal, BackupStatus sta
     std::lock_guard lock{infos_mutex};
     auto it = infos.find({uuid, internal});
     if (it == infos.end())
-        return;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown pair of UUID={} and internal={}", uuid, internal);
 
     auto & info = it->second;
     auto old_status = info.status;
@@ -520,7 +562,7 @@ void BackupsWorker::wait(const UUID & backup_or_restore_uuid, bool internal, boo
     {
         auto it = infos.find({backup_or_restore_uuid, internal});
         if (it == infos.end())
-            return true;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown pair of UUID={} and internal={}", backup_or_restore_uuid, internal);
         const auto & info = it->second;
         auto current_status = info.status;
         if (rethrow_exception && ((current_status == BackupStatus::FAILED_TO_BACKUP) || (current_status == BackupStatus::FAILED_TO_RESTORE)))
@@ -529,12 +571,12 @@ void BackupsWorker::wait(const UUID & backup_or_restore_uuid, bool internal, boo
     });
 }
 
-std::optional<BackupsWorker::Info> BackupsWorker::tryGetInfo(const UUID & backup_or_restore_uuid, bool internal) const
+BackupsWorker::Info BackupsWorker::getInfo(const UUID & backup_or_restore_uuid, bool internal) const
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find({backup_or_restore_uuid, internal});
     if (it == infos.end())
-        return std::nullopt;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown pair of UUID={} and internal={}", backup_or_restore_uuid, internal);
     return it->second;
 }
 

@@ -17,18 +17,15 @@ namespace DB
 
 namespace
 {
-    Block getResultRow(const std::optional<BackupsWorker::Info> & info)
+    Block getResultRow(const BackupsWorker::Info & info)
     {
         auto column_uuid = ColumnUUID::create();
         auto column_backup_name = ColumnString::create();
         auto column_status = ColumnInt8::create();
 
-        if (info)
-        {
-            column_uuid->insert(info->uuid);
-            column_backup_name->insert(info->backup_name);
-            column_status->insert(static_cast<Int8>(info->status));
-        }
+        column_uuid->insert(info.uuid);
+        column_backup_name->insert(info.backup_name);
+        column_status->insert(static_cast<Int8>(info.status));
 
         Block res_columns;
         res_columns.insert(0, {std::move(column_uuid), std::make_shared<DataTypeUUID>(), "uuid"});
@@ -44,7 +41,7 @@ BlockIO InterpreterBackupQuery::execute()
     auto & backups_worker = context->getBackupsWorker();
     auto [uuid, internal] = backups_worker.start(query_ptr, context);
     BlockIO res_io;
-    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(backups_worker.tryGetInfo(uuid, internal))));
+    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(backups_worker.getInfo(uuid, internal))));
     return res_io;
 }
 

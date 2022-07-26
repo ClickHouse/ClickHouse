@@ -204,6 +204,12 @@ void BackupCoordinationRemote::createRootNodes()
 
 void BackupCoordinationRemote::removeAllNodes()
 {
+    /// Usually this function is called by the initiator when a backup is complete so we don't need the coordination anymore.
+    ///
+    /// However there can be a rare situation when this function is called after an error occurs on the initiator of a query
+    /// while some hosts are still making the backup. Removing all the nodes will remove the parent node of the backup coordination
+    /// at `zookeeper_path` which might cause such hosts to stop with exception "ZNONODE". Or such hosts might still do some useless part
+    /// of their backup work before that. Anyway in this case backup won't be finalized (because only an initiator can do that).
     auto zookeeper = get_zookeeper();
     zookeeper->removeRecursive(zookeeper_path);
 }
