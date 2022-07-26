@@ -1,0 +1,1 @@
+SELECT * FROM (SELECT sqrt(0.5) AS a UNION ALL SELECT sqrt(dummy IN (SELECT 0))) ORDER BY a;

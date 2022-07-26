@@ -39,6 +39,7 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/EnabledQuota.h>
+#include <Interpreters/AddAliasToAnonymousSubqueryVisitor.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -644,6 +645,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             }
 
+            AddAliasToAnonymousSubqueryVisitor().visit(ast.get());
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
             if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
