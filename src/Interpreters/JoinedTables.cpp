@@ -320,7 +320,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
             {
                 table_join->setStorageJoin(storage_join);
             }
-            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
+            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
+                     storage_dict && join_algorithm.isSet(JoinAlgorithm::DIRECT))
             {
                 table_join->setStorageJoin(storage_dict);
             }
