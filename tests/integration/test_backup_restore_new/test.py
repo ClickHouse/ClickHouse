@@ -888,11 +888,11 @@ def test_operation_id():
     create_and_fill_table(n=30)
 
     backup_name = new_backup_name()
-    
+
     [id, status] = instance.query(
         f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='first' ASYNC"
     ).split("\t")
-    
+
     assert id == "first"
     assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
 
@@ -923,9 +923,37 @@ def test_operation_id():
     [id, status] = instance.query(
         f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='first'"
     ).split("\t")
-    
+
     assert id == "first"
     assert status == "RESTORED\n"
+
+
+def test_system_backups():
+    create_and_fill_table(n=30)
+
+    backup_name = new_backup_name()
+
+    id = instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[0]
+
+    escaped_backup_name = backup_name.replace("'", "\\'")
+    assert instance.query(
+        f"SELECT name, status, num_files, total_size, error FROM system.backups WHERE id='{id}'"
+    ) == TSV([[escaped_backup_name, "BACKUP_CREATED", 56, 19656, ""]])
+
+    backup_name2 = new_backup_name()
+    expected_error = "Table test.non_existent_table was not found"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.non_existent_table TO {backup_name2}"
+    )
+
+    escaped_backup_name2 = backup_name2.replace("'", "\\'")
+    assert instance.query(
+        f"SELECT status, num_files, total_size FROM system.backups WHERE name='{escaped_backup_name2}'"
+    ) == TSV([["BACKUP_FAILED", 0, 0]])
+
+    assert expected_error in instance.query(
+        f"SELECT error FROM system.backups WHERE name='{escaped_backup_name2}'"
+    )
 
 
 def test_mutation():
