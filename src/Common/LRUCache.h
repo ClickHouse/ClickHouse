@@ -328,9 +328,11 @@ private:
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
-
+        LOG_DEBUG(&Poco::Logger::get("removeOverflow"), "Trying to remove overflow:"
+                                                        "current_size = {}, max_size = {}", current_size, max_size);
         while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) && (queue_size > 1))
         {
+            LOG_DEBUG(&Poco::Logger::get("removeOverflow"), "REMOVING CACHE ENTRY ...");
             const Key & key = queue.front();
 
             auto it = cells.find(key);
@@ -348,6 +350,8 @@ private:
             cells.erase(it);
             queue.pop_front();
             --queue_size;
+            LOG_DEBUG(&Poco::Logger::get("removeOverflow"), "REMOVED, current_size = {}", current_size);
+
         }
 
         onRemoveOverflowWeightLoss(current_weight_lost);
