@@ -93,4 +93,3 @@ def test_attach_partition_from_table_with_less_granular_partition_expression_dat
     destination_data = node.query("SELECT * FROM destination")
 
     assert(source_data != destination_data)
-

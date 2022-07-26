@@ -1587,7 +1587,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     Stopwatch watch;
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
+    String partition_id = src_data.getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
     MutableDataPartsVector dst_parts;
@@ -1623,7 +1623,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// This will generate unique name in scope of current server process.
             Int64 temp_index = insert_increment.get();
 
-            MergeTreePartInfo dst_part_info(new_partition.getID(*this), temp_index, temp_index, src_part->info.level);
+            partition_id = new_partition.getID(*this);
+
+            MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
             auto dst_part = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, new_partition, min_max_index, local_context->getCurrentTransaction(), {});
 
