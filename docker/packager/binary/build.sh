@@ -104,6 +104,7 @@ if [ -n "$MAKE_DEB" ]; then
 fi
 
 mv ./programs/clickhouse* /output
+mkdir /output/self-extracting && mv ./programs/self-extracting/clickhouse /output/self-extracting ||:
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
