@@ -305,12 +305,12 @@ def test_async():
         f"BACKUP TABLE test.table TO {backup_name} ASYNC"
     ).split("\t")
 
-    assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
+    assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
 
     assert_eq_with_retry(
         instance,
         f"SELECT status, error FROM system.backups WHERE id='{id}'",
-        TSV([["BACKUP_COMPLETE", ""]]),
+        TSV([["BACKUP_CREATED", ""]]),
     )
 
     instance.query("DROP TABLE test.table")
@@ -347,17 +347,17 @@ def test_async_backups_to_same_destination(interface):
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status FROM system.backups WHERE id IN ['{id1}', '{id2}'] AND status == 'MAKING_BACKUP'",
+        f"SELECT status FROM system.backups WHERE id IN ['{id1}', '{id2}'] AND status == 'CREATING_BACKUP'",
         "",
     )
 
     assert instance.query(
         f"SELECT status, error FROM system.backups WHERE id='{id1}'"
-    ) == TSV([["BACKUP_COMPLETE", ""]])
+    ) == TSV([["BACKUP_CREATED", ""]])
 
     assert (
         instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
-        == "FAILED_TO_BACKUP\n"
+        == "BACKUP_FAILED\n"
     )
 
     instance.query("DROP TABLE test.table")
@@ -759,7 +759,7 @@ def test_system_users_async():
     assert_eq_with_retry(
         instance,
         f"SELECT status, error FROM system.backups WHERE id='{id}'",
-        TSV([["BACKUP_COMPLETE", ""]]),
+        TSV([["BACKUP_CREATED", ""]]),
     )
 
     instance.query("DROP USER u1")
@@ -894,12 +894,12 @@ def test_operation_id():
     ).split("\t")
     
     assert id == "first"
-    assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
+    assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
 
     assert_eq_with_retry(
         instance,
         f"SELECT status, error FROM system.backups WHERE id='first'",
-        TSV([["BACKUP_COMPLETE", ""]]),
+        TSV([["BACKUP_CREATED", ""]]),
     )
 
     instance.query("DROP TABLE test.table")

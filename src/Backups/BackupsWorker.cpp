@@ -95,19 +95,19 @@ namespace
 
     bool isFinalStatus(BackupStatus status)
     {
-        return (status == BackupStatus::BACKUP_COMPLETE) || (status == BackupStatus::FAILED_TO_BACKUP) || (status == BackupStatus::RESTORED)
-            || (status == BackupStatus::FAILED_TO_RESTORE);
+        return (status == BackupStatus::BACKUP_CREATED) || (status == BackupStatus::BACKUP_FAILED) || (status == BackupStatus::RESTORED)
+            || (status == BackupStatus::RESTORE_FAILED);
     }
 
     bool isErrorStatus(BackupStatus status)
     {
-        return (status == BackupStatus::FAILED_TO_BACKUP) || (status == BackupStatus::FAILED_TO_RESTORE);
+        return (status == BackupStatus::BACKUP_FAILED) || (status == BackupStatus::RESTORE_FAILED);
     }
 
     /// Used to change num_active_backups.
     size_t getNumActiveBackupsChange(BackupStatus status)
     {
-        return status == BackupStatus::MAKING_BACKUP;
+        return status == BackupStatus::CREATING_BACKUP;
     }
 
     /// Used to change num_active_restores.
@@ -164,7 +164,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
 
         if (!backup_settings.internal)
-            addInfo(backup_id, backup_info.toString(), BackupStatus::MAKING_BACKUP);
+            addInfo(backup_id, backup_info.toString(), BackupStatus::CREATING_BACKUP);
 
         /// Prepare context to use.
         ContextPtr context_in_use = context;
@@ -212,7 +212,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     {
         /// Something bad happened, the backup has not built.
         if (!backup_settings.internal)
-            setStatus(backup_id, BackupStatus::FAILED_TO_BACKUP);
+            setStatus(backup_id, BackupStatus::BACKUP_FAILED);
         sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);
         throw;
     }
@@ -333,7 +333,7 @@ void BackupsWorker::doBackup(
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_info.toString());
         if (!backup_settings.internal)
         {
-            setStatus(backup_id, BackupStatus::BACKUP_COMPLETE);
+            setStatus(backup_id, BackupStatus::BACKUP_CREATED);
             setNumFilesAndTotalSize(backup_id, num_files, total_size);
         }
     }
@@ -344,7 +344,7 @@ void BackupsWorker::doBackup(
         {
             tryLogCurrentException(log, fmt::format("Failed to make {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_info.toString()));
             if (!backup_settings.internal)
-                setStatus(backup_id, BackupStatus::FAILED_TO_BACKUP);
+                setStatus(backup_id, BackupStatus::BACKUP_FAILED);
             sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);
         }
         else
@@ -427,7 +427,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     {
         /// Something bad happened, the backup has not built.
         if (!restore_settings.internal)
-            setStatus(restore_id, BackupStatus::FAILED_TO_RESTORE);
+            setStatus(restore_id, BackupStatus::RESTORE_FAILED);
         sendCurrentExceptionToCoordination(restore_coordination, restore_settings.host_id);
         throw;
     }
@@ -554,7 +554,7 @@ void BackupsWorker::doRestore(
         {
             tryLogCurrentException(log, fmt::format("Failed to restore from {} {}", (restore_settings.internal ? "internal backup" : "backup"), backup_info.toString()));
             if (!restore_settings.internal)
-                setStatus(restore_id, BackupStatus::FAILED_TO_RESTORE);
+                setStatus(restore_id, BackupStatus::RESTORE_FAILED);
             sendCurrentExceptionToCoordination(restore_coordination, restore_settings.host_id);
         }
         else
