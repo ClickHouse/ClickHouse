@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 using OperationID = BackupsWorker::OperationID;
@@ -589,7 +590,7 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, BackupS
     }
 
     infos[id] = std::move(info);
-    
+
     num_active_backups += getNumActiveBackupsChange(status);
     num_active_restores += getNumActiveRestoresChange(status);
 }
