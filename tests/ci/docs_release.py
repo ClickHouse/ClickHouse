@@ -18,7 +18,7 @@ from commit_status_helper import get_commit
 from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
-NAME = "Docs Release (actions)"
+NAME = "Docs Release"
 
 
 def parse_args() -> argparse.Namespace:
