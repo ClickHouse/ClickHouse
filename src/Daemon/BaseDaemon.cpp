@@ -1015,13 +1015,10 @@ void BaseDaemon::setupWatchdog()
         {
             Poco::AutoPtr<OwnPatternFormatter> pf;
             if (config().has("logger.json"))
-            {
                 pf = new OwnJSONPatternFormatter;
-            }
             else
-            {
                 pf = new OwnPatternFormatter(true);
-            }
+
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }
