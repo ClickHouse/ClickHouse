@@ -16,7 +16,6 @@ private:
     explicit MemoryTrackerBlockerInThread(VariableContext level_);
 
 public:
-    /// level_ - block in level and above
     explicit MemoryTrackerBlockerInThread();
     ~MemoryTrackerBlockerInThread();
 
