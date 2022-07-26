@@ -8,7 +8,8 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/zookeeper_config.xml", "configs/merge_tree.xml"],
-    with_zookeeper=True)
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -29,11 +30,15 @@ def test_without_auto_optimize_merge_tree(start_cluster):
 
     time.sleep(5)
 
-    expected = TSV('''3\n''')
-    assert TSV(
-        node.query(
-            "SELECT count(*) FROM system.parts where table='test' and active=1"
-        )) == expected
+    expected = TSV("""3\n""")
+    assert (
+        TSV(
+            node.query(
+                "SELECT count(*) FROM system.parts where table='test' and active=1"
+            )
+        )
+        == expected
+    )
 
     node.query("DROP TABLE test;")
 
@@ -48,11 +53,15 @@ def test_auto_optimize_merge_tree(start_cluster):
 
     time.sleep(10)
 
-    expected = TSV('''1\n''')
-    assert TSV(
-        node.query(
-            "SELECT count(*) FROM system.parts where table='test' and active=1"
-        )) == expected
+    expected = TSV("""1\n""")
+    assert (
+        TSV(
+            node.query(
+                "SELECT count(*) FROM system.parts where table='test' and active=1"
+            )
+        )
+        == expected
+    )
 
     node.query("DROP TABLE test;")
 
@@ -67,10 +76,14 @@ def test_auto_optimize_replicated_merge_tree(start_cluster):
 
     time.sleep(10)
 
-    expected = TSV('''1\n''')
-    assert TSV(
-        node.query(
-            "SELECT count(*) FROM system.parts where table='test' and active=1"
-        )) == expected
+    expected = TSV("""1\n""")
+    assert (
+        TSV(
+            node.query(
+                "SELECT count(*) FROM system.parts where table='test' and active=1"
+            )
+        )
+        == expected
+    )
 
     node.query("DROP TABLE test;")
