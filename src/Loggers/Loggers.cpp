@@ -204,20 +204,16 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         {
             max_log_level = console_log_level;
         }
+
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
         if (config.has("logger.json"))
-        {
-            Poco::AutoPtr<OwnJSONPatternFormatter> pf = new OwnJSONPatternFormatter();
-            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
-            log->setLevel(console_log_level);
-            split->addChannel(log, "console");
-        }
+            pf = new OwnJSONPatternFormatter;
         else
-        {
-            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(color_enabled);
-            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
-            log->setLevel(console_log_level);
-            split->addChannel(log, "console");
-        }
+            pf = new OwnPatternFormatter(true);
+
+        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
+        log->setLevel(console_log_level);
+        split->addChannel(log, "console");
     }
 
 
