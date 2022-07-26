@@ -319,7 +319,6 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute(f"DROP TABLE test_table ")
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
 
-
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
