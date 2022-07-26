@@ -17,7 +17,7 @@ from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 
-NAME = "Run Check (actions)"
+NAME = "Run Check"
 
 TRUSTED_ORG_IDS = {
     7409213,  # yandex
