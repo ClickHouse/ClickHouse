@@ -7,16 +7,13 @@ void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
 {
     if (pChannel && priority >= msg.base.getPriority())
     {
-        if (pFormatterJSON)
+        if (pFormatterJSON || pFormatter)
         {
             std::string text;
-            pFormatterJSON->formatExtendedJSON(msg, text);
-            pChannel->log(Poco::Message(msg.base, text));
-        }
-        else if (pFormatter)
-        {
-            std::string text;
-            pFormatter->formatExtended(msg, text);
+            if (pFormatterJSON)
+                pFormatterJSON->formatExtended(msg, text);
+            else
+                pFormatter->formatExtended(msg, text);
             pChannel->log(Poco::Message(msg.base, text));
         }
         else

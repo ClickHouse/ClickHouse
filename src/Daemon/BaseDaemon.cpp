@@ -5,17 +5,17 @@
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/resource.h>
 #if defined(OS_LINUX)
-    #include <sys/prctl.h>
+#    include <sys/prctl.h>
 #endif
 #include <cerrno>
-#include <cstring>
 #include <csignal>
+#include <cstring>
 #include <unistd.h>
 
 #include <fstream>
@@ -71,11 +71,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_SET_SIGNAL_HANDLER;
-        extern const int CANNOT_SEND_SIGNAL;
-    }
+namespace ErrorCodes
+{
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int CANNOT_SEND_SIGNAL;
+}
 }
 
 DB::PipeFDs signal_pipe;
@@ -367,8 +367,11 @@ private:
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
         {
-            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read."
-                " (calculated checksum: {})", calculated_binary_hash);
+            LOG_FATAL(
+                log,
+                "Integrity check of the executable skipped because the reference checksum could not be read."
+                " (calculated checksum: {})",
+                calculated_binary_hash);
         }
         else if (calculated_binary_hash == daemon.stored_binary_hash)
         {
@@ -376,15 +379,18 @@ private:
         }
         else
         {
-            LOG_FATAL(log, "Calculated checksum of the executable ({0}) does not correspond"
+            LOG_FATAL(
+                log,
+                "Calculated checksum of the executable ({0}) does not correspond"
                 " to the reference checksum stored in the executable ({1})."
                 " This may indicate one of the following:"
                 " - the executable was changed just after startup;"
                 " - the executable was corrupted on disk due to faulty hardware;"
                 " - the loaded executable was corrupted in memory due to faulty hardware;"
                 " - the file was intentionally modified;"
-                " - a logical error in the code."
-                , calculated_binary_hash, daemon.stored_binary_hash);
+                " - a logical error in the code.",
+                calculated_binary_hash,
+                daemon.stored_binary_hash);
         }
 #endif
 
@@ -1009,18 +1015,15 @@ void BaseDaemon::setupWatchdog()
         /// If streaming compression of logs is used then we write watchdog logs to cerr
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
+            Poco::AutoPtr<OwnPatternFormatter> pf;
+
             if (config().has("logger.json"))
-            {
-                Poco::AutoPtr<OwnJSONPatternFormatter> pf = new OwnJSONPatternFormatter;
-                Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
-                logger().setChannel(log);
-            }
+                pf = new OwnJSONPatternFormatter;
             else
-            {
-                Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-                Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
-                logger().setChannel(log);
-            }
+                pf = new OwnPatternFormatter(true);
+
+            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+            logger().setChannel(log);
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
@@ -1028,8 +1031,7 @@ void BaseDaemon::setupWatchdog()
         /// Forward signals to the child process.
         addSignalHandler(
             {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
-            [](int sig, siginfo_t *, void *)
-            {
+            [](int sig, siginfo_t *, void *) {
                 /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
                 /// and we process double delivery of this signal as immediate termination.
                 if (sig == SIGINT)

@@ -3,6 +3,7 @@
 
 #include <Poco/PatternFormatter.h>
 #include "ExtendedLogChannel.h"
+#include "OwnPatternFormatter.h"
 
 
 /** Format log messages own way in JSON.
@@ -21,11 +22,11 @@
 
 class Loggers;
 
-class OwnJSONPatternFormatter : public Poco::PatternFormatter
+class OwnJSONPatternFormatter : public OwnPatternFormatter
 {
 public:
     OwnJSONPatternFormatter();
 
     void format(const Poco::Message & msg, std::string & text) override;
-    static void formatExtendedJSON(const DB::ExtendedLogMessage & msg_ext, std::string & text);
+    static void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text);
 };
