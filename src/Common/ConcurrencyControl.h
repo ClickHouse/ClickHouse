@@ -96,6 +96,11 @@ public:
             return {}; // avoid unnecessary locking
         }
 
+        SlotCount grantedCount() const
+        {
+            return granted;
+        }
+
     private:
         friend struct Slot; // for release()
         friend class ConcurrencyControl; // for grant(), free() and ctor
