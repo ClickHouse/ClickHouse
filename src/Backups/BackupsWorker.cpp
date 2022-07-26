@@ -559,7 +559,10 @@ void BackupsWorker::addInfo(const OperationID & id, const String & name, BackupS
     info.id = id;
     info.name = name;
     info.status = status;
-    info.status_changed_time = time(nullptr);
+    info.start_time = std::chrono::system_clock::now();
+
+    if (isFinalStatus(status))
+        info.end_time = info.start_time;
 
     std::lock_guard lock{infos_mutex};
 
@@ -590,7 +593,9 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status)
     auto old_status = info.status;
 
     info.status = status;
-    info.status_changed_time = time(nullptr);
+
+    if (isFinalStatus(status))
+        info.end_time = std::chrono::system_clock::now();
 
     if (isErrorStatus(status))
     {

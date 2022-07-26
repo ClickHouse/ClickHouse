@@ -49,11 +49,13 @@ public:
 
         /// Status of backup or restore operation.
         BackupStatus status;
-        time_t status_changed_time;
 
         /// Set only if there was an error.
         std::exception_ptr exception;
         String error_message;
+
+        std::chrono::system_clock::time_point start_time;
+        std::chrono::system_clock::time_point end_time;
     };
 
     Info getInfo(const OperationID & id) const;
