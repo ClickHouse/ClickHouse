@@ -16,7 +16,7 @@ main_configs = [
 ]
 
 user_configs = [
-    "configs/allow_experimental_database_replicated.xml",
+    "configs/allow_database_types.xml",
 ]
 
 node1 = cluster.add_instance(

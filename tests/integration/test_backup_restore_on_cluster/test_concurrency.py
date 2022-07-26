@@ -30,7 +30,7 @@ def generate_cluster_def():
 
 main_configs = ["configs/backups_disk.xml", generate_cluster_def()]
 
-user_configs = ["configs/allow_experimental_database_replicated.xml"]
+user_configs = ["configs/allow_database_types.xml"]
 
 nodes = []
 for i in range(num_nodes):
@@ -63,6 +63,7 @@ def drop_after_test():
         yield
     finally:
         node0.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
+        node0.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster' NO DELAY")
 
 
 backup_id_counter = 0
@@ -172,10 +173,17 @@ def test_concurrent_backups_on_different_nodes():
             assert nodes[j].query("SELECT sum(x) FROM tbl") == TSV([expected_sum])
 
 
-def test_create_or_drop_tables_during_backup():
-    node0.query(
-        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
-    )
+@pytest.mark.parametrize(
+    "db_engine, table_engine",
+    [("Replicated", "ReplicatedMergeTree"), ("Ordinary", "MergeTree")],
+)
+def test_create_or_drop_tables_during_backup(db_engine, table_engine):
+    if db_engine == "Replicated":
+        db_engine = "Replicated('/clickhouse/path/','{shard}','{replica}')"
+    if table_engine.endswith("MergeTree"):
+        table_engine += " ORDER BY tuple()"
+
+    node0.query(f"CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE={db_engine}")
 
     # Will do this test for 60 seconds
     start_time = time.time()
@@ -186,7 +194,7 @@ def test_create_or_drop_tables_during_backup():
             node = nodes[randint(0, num_nodes - 1)]
             table_name = f"mydb.tbl{randint(1, num_nodes)}"
             node.query(
-                f"CREATE TABLE IF NOT EXISTS {table_name}(x Int32) ENGINE=ReplicatedMergeTree ORDER BY x"
+                f"CREATE TABLE IF NOT EXISTS {table_name}(x Int32) ENGINE={table_engine}"
             )
             node.query_and_get_answer_with_error(
                 f"INSERT INTO {table_name} SELECT rand32() FROM numbers(10)"
