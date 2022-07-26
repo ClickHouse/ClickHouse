@@ -328,7 +328,7 @@ The `direct` algorithm performs a lookup in the right table using rows from the 
 
 - `full_sorting_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
 
-- `prefer_partial_merge` — ClickHouse always tries to use `partial_merge` join if possible, otherwise uses `hash`. *Deprecated*, same as `partial_merge,hash`.
+- `prefer_partial_merge` — ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
 
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
