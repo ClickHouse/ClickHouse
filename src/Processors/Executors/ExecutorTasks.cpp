@@ -32,13 +32,16 @@ void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & se
 {
     if (!task_queue.empty() && !threads_queue.empty() && !finished)
     {
-        size_t next_thread = self.thread_number + 1 == num_threads ? 0 : (self.thread_number + 1);
+        size_t next_thread = (self.thread_number + 1) % use_threads;
         auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
 
         if (threads_queue.has(thread_to_wake))
             threads_queue.pop(thread_to_wake);
         else
             thread_to_wake = threads_queue.popAny();
+
+        if (thread_to_wake >= use_threads)
+            throw Exception("Non-empty queue without allocated thread", ErrorCodes::LOGICAL_ERROR);
 
         lock.unlock();
         executor_contexts[thread_to_wake]->wakeUp();
@@ -50,6 +53,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
     {
         std::unique_lock lock(mutex);
 
+        /// Try get async task assigned to this thread or any other task from queue.
         if (auto * async_task = context.tryPopAsyncTask())
         {
             context.setTask(async_task);
@@ -58,13 +62,18 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         else if (!task_queue.empty())
             context.setTask(task_queue.pop(context.thread_number));
 
+        /// Task found.
         if (context.hasTask())
         {
+            /// We have to wake up at least one thread if there are pending tasks.
+            /// That thread will wake up other threads during its `tryGetTask()` call if any.
             tryWakeUpAnyOtherThreadWithTasks(context, lock);
             return;
         }
 
-        if (threads_queue.size() + 1 == num_threads && async_task_queue.empty() && num_waiting_async_tasks == 0)
+        /// This thread has no tasks to do and is going to wait.
+        /// Finish execution if this was the last active thread.
+        if (threads_queue.size() + 1 == use_threads && async_task_queue.empty() && num_waiting_async_tasks == 0)
         {
             lock.unlock();
             finish();
@@ -88,6 +97,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         }
     #endif
 
+        /// Enqueue thread into stack of waiting threads.
         threads_queue.push(context.thread_number);
     }
 
@@ -124,13 +134,15 @@ void ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThrea
             queue.pop();
         }
 
+        /// Wake up at least one thread that will wake up other threads if required
         tryWakeUpAnyOtherThreadWithTasks(context, lock);
     }
 }
 
-void ExecutorTasks::init(size_t num_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
+void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
 {
     num_threads = num_threads_;
+    use_threads = use_threads_;
     threads_queue.init(num_threads);
     task_queue.init(num_threads);
 
@@ -154,9 +166,19 @@ void ExecutorTasks::fill(Queue & queue)
         queue.pop();
 
         ++next_thread;
-        if (next_thread >= num_threads)
+
+        /// It is important to keep queues empty for threads that are not started yet.
+        /// Otherwise that thread can be selected by `tryWakeUpAnyOtherThreadWithTasks()`, leading to deadlock.
+        if (next_thread >= use_threads)
             next_thread = 0;
     }
+}
+
+void ExecutorTasks::upscale(size_t use_threads_)
+{
+    std::lock_guard lock(mutex);
+    if (use_threads < use_threads_)
+        use_threads = use_threads_;
 }
 
 void ExecutorTasks::processAsyncTasks()
