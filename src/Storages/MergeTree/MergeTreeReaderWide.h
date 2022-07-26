@@ -38,6 +38,8 @@ public:
 private:
     FileStreams streams;
 
+    String getNameForSubstreamCache(const NameAndTypePair & column) const;
+
     void addStreams(const NameAndTypePair & name_and_type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
