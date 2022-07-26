@@ -52,7 +52,7 @@ def test_attach_partition_from_table_with_more_granular_partition_expression_dat
 
 
 def test_attach_partition_from_table_with_more_granular_partition_expression_data_split(
-    started_cluster
+    started_cluster,
 ):
     cleanup()
 
@@ -72,7 +72,7 @@ def test_attach_partition_from_table_with_more_granular_partition_expression_dat
 
 
 def test_attach_partition_from_table_with_less_granular_partition_expression_data_not_split(
-    started_cluster
+    started_cluster,
 ):
     cleanup()
 
@@ -92,7 +92,7 @@ def test_attach_partition_from_table_with_less_granular_partition_expression_dat
 
 
 def test_attach_partition_from_table_with_less_granular_partition_expression_data_split(
-    started_cluster
+    started_cluster,
 ):
     cleanup()
 
