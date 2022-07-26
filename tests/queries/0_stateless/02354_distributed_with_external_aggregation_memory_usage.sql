@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-tsan, no-msan, no-asan, no-ubsan
 
 create table t_2354_dist_with_external_aggr(a UInt64, b String, c FixedString(100)) engine = MergeTree order by tuple();
 
@@ -18,6 +18,6 @@ format Null;
 
 system flush logs;
 
-select memory_usage < 3.5 * 1024 * 1024 * 1024 -- whole aggregation state of local aggregation uncompressed is 5.8G
+select memory_usage < 4 * 1024 * 1024 * 1024 -- whole aggregation state of local aggregation uncompressed is 5.8G
 from system.query_log
-where type = 'QueryFinish' and is_initial_query and query like '%t_2354_dist_with_external_aggr%group_by%' and current_database = currentDatabase();
+where event_time >= now() - interval '15 minute' and type = 'QueryFinish' and is_initial_query and query like '%t_2354_dist_with_external_aggr%group_by%' and current_database = currentDatabase();
