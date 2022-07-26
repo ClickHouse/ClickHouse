@@ -439,7 +439,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             has_database_virtual_column,
             has_table_virtual_column);
 
-        if (source_pipeline->initialized())
+        if (source_pipeline && source_pipeline->initialized())
         {
             resources.storage_holders.push_back(std::get<1>(table));
             resources.table_locks.push_back(std::get<2>(table));
