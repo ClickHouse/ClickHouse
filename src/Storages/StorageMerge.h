@@ -131,6 +131,12 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void addFilter(ActionsDAGPtr expression, std::string column_name)
+    {
+        added_filter = std::move(expression);
+        added_filter_column_name = std::move(column_name);
+    }
+
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
@@ -147,6 +153,9 @@ private:
     SelectQueryInfo query_info;
     ContextMutablePtr context;
     QueryProcessingStage::Enum common_processed_stage;
+
+    ActionsDAGPtr added_filter;
+    std::string added_filter_column_name;
 
     struct AliasData
     {
