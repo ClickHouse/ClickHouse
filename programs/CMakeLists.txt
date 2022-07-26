@@ -18,7 +18,7 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-if (CLICKHOUSE_SPLIT_BINARY OR NOT ENABLE_UTILS)
+if (CLICKHOUSE_SPLIT_BINARY)
     option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
 else ()
     option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
@@ -434,6 +434,9 @@ else ()
     endif ()
 
     set (CLICKHOUSE_BUNDLE)
+    if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+        list(APPEND CLICKHOUSE_BUNDLE self-extracting)
+    endif ()
     if (ENABLE_CLICKHOUSE_SERVER)
         add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-server" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
