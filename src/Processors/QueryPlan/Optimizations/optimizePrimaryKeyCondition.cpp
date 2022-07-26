@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/StorageMerge.h>
 #include <Interpreters/ActionsDAG.h>
 #include <stack>
 
@@ -37,6 +38,8 @@ void optimizePrimaryKeyCondition(QueryPlan::Node & root)
             if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(child->step.get()))
                 read_from_merge_tree->addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
 
+            if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child->step.get()))
+                read_from_merge->addFilter(filter_step->getExpression(), filter_step->getFilterColumnName());
         }
 
         stack.pop();
