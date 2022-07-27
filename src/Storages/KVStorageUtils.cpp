@@ -168,7 +168,7 @@ std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & 
 size_t getPrimaryKeyPos(const Block & header, const Names & primary_key)
 {
     if (primary_key.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB: only one primary key is supported");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only one primary key is supported");
     return header.getPositionByName(primary_key[0]);
 }
 
