@@ -112,7 +112,8 @@ MergeTreeIndexAggregatorAnnoy::MergeTreeIndexAggregatorAnnoy(
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorAnnoy::getGranuleAndReset()
 {
-    index->build(number_of_trees);
+    // NOLINTNEXTLINE(*)
+    index->build(number_of_trees, /*number_of_threads=*/1);
     auto granule = std::make_shared<MergeTreeIndexGranuleAnnoy>(index_name, index_sample_block, index);
     index = nullptr;
     return granule;
