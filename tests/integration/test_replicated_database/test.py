@@ -3,6 +3,7 @@ import shutil
 import time
 import re
 import pytest
+import threading
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
@@ -867,3 +868,67 @@ def test_sync_replica(started_cluster):
     )
     assert lp1 == max_lp
     assert lp2 == max_lp
+
+
+def test_force_synchronous_settings(started_cluster):
+    main_node.query(
+        "CREATE DATABASE test_force_synchronous_settings ENGINE = Replicated('/clickhouse/databases/test2', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE test_force_synchronous_settings ENGINE = Replicated('/clickhouse/databases/test2', 'shard1', 'replica2');"
+    )
+    snapshotting_node.query(
+        "CREATE DATABASE test_force_synchronous_settings ENGINE = Replicated('/clickhouse/databases/test2', 'shard2', 'replica1');"
+    )
+    main_node.query(
+        "CREATE TABLE test_force_synchronous_settings.t (n int) ENGINE=ReplicatedMergeTree('/test/same/path/{shard}', '{replica}') ORDER BY tuple()"
+    )
+    main_node.query(
+        "INSERT INTO test_force_synchronous_settings.t SELECT * FROM numbers(10)"
+    )
+    snapshotting_node.query(
+        "INSERT INTO test_force_synchronous_settings.t SELECT * FROM numbers(10)"
+    )
+    snapshotting_node.query(
+        "SYSTEM SYNC DATABASE REPLICA test_force_synchronous_settings"
+    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA test_force_synchronous_settings")
+
+    snapshotting_node.query("SYSTEM STOP MERGES test_force_synchronous_settings.t")
+
+    def start_merges_func():
+        time.sleep(5)
+        snapshotting_node.query("SYSTEM START MERGES test_force_synchronous_settings.t")
+
+    start_merges_thread = threading.Thread(target=start_merges_func)
+    start_merges_thread.start()
+
+    settings = {
+        "mutations_sync": 2,
+        "database_replicated_enforce_synchronous_settings": 1,
+    }
+    main_node.query(
+        "ALTER TABLE test_force_synchronous_settings.t UPDATE n = n * 10 WHERE 1",
+        settings=settings,
+    )
+    assert "10\t450\n" == snapshotting_node.query(
+        "SELECT count(), sum(n) FROM test_force_synchronous_settings.t"
+    )
+    start_merges_thread.join()
+
+    def select_func():
+        dummy_node.query(
+            "SELECT sleepEachRow(1) FROM test_force_synchronous_settings.t"
+        )
+
+    select_thread = threading.Thread(target=select_func)
+    select_thread.start()
+
+    settings = {"database_replicated_enforce_synchronous_settings": 1}
+    snapshotting_node.query(
+        "DROP TABLE test_force_synchronous_settings.t SYNC", settings=settings
+    )
+    main_node.query(
+        "CREATE TABLE test_force_synchronous_settings.t (n String) ENGINE=ReplicatedMergeTree('/test/same/path/{shard}', '{replica}') ORDER BY tuple()"
+    )
+    select_thread.join()

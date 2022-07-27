@@ -6,6 +6,7 @@
             <database_replicated_initial_query_timeout_sec>120</database_replicated_initial_query_timeout_sec>
             <distributed_ddl_task_timeout>120</distributed_ddl_task_timeout>
             <database_replicated_always_detach_permanently>1</database_replicated_always_detach_permanently>
+            <database_replicated_enforce_synchronous_settings>1</database_replicated_enforce_synchronous_settings>
         </default>
     </profiles>
 </clickhouse>

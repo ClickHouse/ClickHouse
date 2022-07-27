@@ -113,9 +113,12 @@ struct DDLTaskBase
     virtual ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper);
     virtual Coordination::RequestPtr getOpToUpdateLogPointer() { return nullptr; }
 
+    virtual void createSyncedNodeIfNeed(const ZooKeeperPtr & /*zookeeper*/) {}
+
     inline String getActiveNodePath() const { return fs::path(entry_path) / "active" / host_id_str; }
     inline String getFinishedNodePath() const { return fs::path(entry_path) / "finished" / host_id_str; }
     inline String getShardNodePath() const { return fs::path(entry_path) / "shards" / getShardID(); }
+    inline String getSyncedNodePath() const { return fs::path(entry_path) / "synced" / host_id_str; }
 
     static String getLogEntryName(UInt32 log_entry_number);
     static UInt32 getLogEntryNumber(const String & log_entry_name);
@@ -151,6 +154,7 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     void parseQueryFromEntry(ContextPtr context) override;
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
+    void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
 
     DatabaseReplicated * database;
 };
