@@ -45,30 +45,30 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 {
     try
     {
-        size_t columns_num = columns.size();
+        size_t columns_num = columns_to_read.size();
 
         column_positions.resize(columns_num);
         read_only_offsets.resize(columns_num);
-        auto name_and_type = columns.begin();
-        for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
+
+        for (size_t i = 0; i < columns_num; ++i)
         {
-            if (name_and_type->isSubcolumn())
+            const auto & column_to_read = columns_to_read[i];
+
+            if (column_to_read.isSubcolumn())
             {
                 auto storage_column_from_part = getColumnInPart(
-                    {name_and_type->getNameInStorage(), name_and_type->getTypeInStorage()});
+                    {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
 
-                if (!storage_column_from_part.type->tryGetSubcolumnType(name_and_type->getSubcolumnName()))
+                if (!storage_column_from_part.type->tryGetSubcolumnType(column_to_read.getSubcolumnName()))
                     continue;
             }
 
-            auto column_from_part = getColumnInPart(*name_and_type);
-
-            auto position = data_part->getColumnPosition(column_from_part.getNameInStorage());
-            if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
+            auto position = data_part->getColumnPosition(column_to_read.getNameInStorage());
+            if (!position && typeid_cast<const DataTypeArray *>(column_to_read.type.get()))
             {
                 /// If array of Nested column is missing in part,
                 /// we have to read its offsets if they exist.
-                position = findColumnForOffsets(column_from_part.name);
+                position = findColumnForOffsets(column_to_read.name);
                 read_only_offsets[i] = (position != std::nullopt);
             }
 
@@ -143,42 +143,31 @@ size_t MergeTreeReaderCompact::readRows(
         from_mark = next_mark;
 
     size_t read_rows = 0;
-    size_t num_columns = columns.size();
+    size_t num_columns = columns_to_read.size();
     checkNumberOfColumns(num_columns);
 
     MutableColumns mutable_columns(num_columns);
-    auto column_it = columns.begin();
-    for (size_t i = 0; i < num_columns; ++i, ++column_it)
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        if (!column_positions[i])
-            continue;
-
-        auto column_from_part = getColumnInPart(*column_it);
-        if (res_columns[i] == nullptr)
-        {
-            auto serialization = data_part->getSerialization(column_from_part);
-            res_columns[i] = column_from_part.type->createColumn(*serialization);
-        }
+        if (column_positions[i] && res_columns[i] == nullptr)
+            res_columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
     }
 
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
 
-        auto name_and_type = columns.begin();
-        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        for (size_t pos = 0; pos < num_columns; ++pos)
         {
             if (!res_columns[pos])
                 continue;
-
-            auto column_from_part = getColumnInPart(*name_and_type);
 
             try
             {
                 auto & column = res_columns[pos];
                 size_t column_size_before_reading = column->size();
 
-                readData(column_from_part, column, from_mark, current_task_last_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
+                readData(columns_to_read[pos], column, from_mark, current_task_last_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
                 if (read_rows_in_column != rows_to_read)
@@ -192,7 +181,7 @@ size_t MergeTreeReaderCompact::readRows(
                     storage.reportBrokenPart(data_part);
 
                 /// Better diagnostics.
-                e.addMessage("(while reading column " + column_from_part.name + ")");
+                e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
                 throw;
             }
             catch (...)
@@ -240,7 +229,7 @@ void MergeTreeReaderCompact::readData(
         const auto & type_in_storage = name_and_type.getTypeInStorage();
         const auto & name_in_storage = name_and_type.getNameInStorage();
 
-        auto serialization = data_part->getSerialization(NameAndTypePair{name_in_storage, type_in_storage});
+        auto serialization = getSerializationInPart({name_in_storage, type_in_storage});
         ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
 
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
@@ -256,7 +245,7 @@ void MergeTreeReaderCompact::readData(
     }
     else
     {
-        auto serialization = data_part->getSerialization(name_and_type);
+        auto serialization = getSerializationInPart(name_and_type);
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }

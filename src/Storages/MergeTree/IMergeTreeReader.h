@@ -37,7 +37,7 @@ public:
 
     virtual bool canReadIncompleteGranules() const = 0;
 
-    virtual ~IMergeTreeReader();
+    virtual ~IMergeTreeReader() = default;
 
     const ValueSizeMap & getAvgValueSizeHints() const;
 
@@ -52,8 +52,8 @@ public:
     /// try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
-    const NamesAndTypesList & getColumns() const { return columns; }
-    size_t numColumnsInResult() const { return columns.size(); }
+    const NamesAndTypesList & getColumns() const { return requested_columns; }
+    size_t numColumnsInResult() const { return requested_columns.size(); }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -65,6 +65,8 @@ protected:
 
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
+    /// Returns actual serialization in part, which can differ from table metadata.
+    SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
@@ -73,8 +75,8 @@ protected:
     /// Stores states for IDataType::deserializeBinaryBulk
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
 
-    /// Columns that are read.
-    NamesAndTypesList columns;
+    NamesAndTypes columns_to_read;
+    Serializations serializations;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
@@ -91,6 +93,12 @@ protected:
 private:
     /// Alter conversions, which must be applied on fly if required
     MergeTreeData::AlterConversions alter_conversions;
+
+    /// Columns that are requested to read.
+    NamesAndTypesList requested_columns;
+
+    /// Actual columns description in part.
+    ColumnsDescription part_columns;
 };
 
 }

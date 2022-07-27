@@ -441,7 +441,8 @@ NameSet collectFilesToSkip(
             files_to_skip.insert(stream_name + mrk_extension);
         };
 
-        source_part->getSerialization({entry.name, entry.type})->enumerateStreams(callback);
+        if (auto serialization = source_part->tryGetSerialization(entry.name))
+            serialization->enumerateStreams(callback);
     }
     for (const auto & index : indices_to_recalc)
     {
@@ -466,11 +467,14 @@ static NameToNameVector collectFilesForRenames(
     std::map<String, size_t> stream_counts;
     for (const auto & column : source_part->getColumns())
     {
-        source_part->getSerialization(column)->enumerateStreams(
-            [&](const ISerialization::SubstreamPath & substream_path)
-            {
-                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-            });
+        if (auto serialization = source_part->tryGetSerialization(column.name))
+        {
+            serialization->enumerateStreams(
+                [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
+                });
+        }
     }
 
     NameToNameVector rename_vector;
@@ -508,9 +512,9 @@ static NameToNameVector collectFilesForRenames(
                 }
             };
 
-            auto column = source_part->getColumns().tryGetByName(command.column_name);
-            if (column)
-                source_part->getSerialization(*column)->enumerateStreams(callback);
+
+            if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                serialization->enumerateStreams(callback);
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
@@ -530,9 +534,8 @@ static NameToNameVector collectFilesForRenames(
                 }
             };
 
-            auto column = source_part->getColumns().tryGetByName(command.column_name);
-            if (column)
-                source_part->getSerialization(*column)->enumerateStreams(callback);
+            if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                serialization->enumerateStreams(callback);
         }
     }
 
@@ -1494,8 +1497,7 @@ bool MutateTask::prepare()
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
         ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
 
-    ctx->new_data_part->setColumns(new_columns);
-    ctx->new_data_part->setSerializationInfos(new_infos);
+    ctx->new_data_part->setColumns(new_columns, new_infos);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     /// Don't change granularity type while mutating subset of columns
