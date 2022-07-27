@@ -10,6 +10,7 @@ from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
 from github import Github
 from github.Commit import Commit
 from pr_info import SKIP_SIMPLE_CHECK_LABEL
+from s3_helper import S3Helper
 
 RETRY = 5
 
@@ -82,9 +83,14 @@ def post_labels(gh, pr_info, labels_names):
         pull_request.add_to_labels(label)
 
 
-def fail_simple_check(gh, pr_info, description):
+def fail_simple_check(gh, pr_info, name, description):
     if SKIP_SIMPLE_CHECK_LABEL in pr_info.labels:
         return
+
+    s3_helper = S3Helper("https://s3.amazonaws.com")
+    flag = f"{pr_info.number}/{pr_info.sha}/simple_check/{name}"
+    s3_helper.flag_set(flag)
+
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(
         context="Simple Check",
@@ -93,12 +99,29 @@ def fail_simple_check(gh, pr_info, description):
         target_url=GITHUB_RUN_URL,
     )
 
+def reset_simple_check(gh, pr_info, name, description=""):
+    if SKIP_SIMPLE_CHECK_LABEL in pr_info.labels:
+        return
+    s3_helper = S3Helper("https://s3.amazonaws.com")
+    flag = f"{pr_info.number}/{pr_info.sha}/simple_check/{name}"
+    s3_helper.flag_clear(flag)
+    if s3_helper.flag_check(f"{pr_info.number}/{pr_info.sha}/simple_check/"):
+        return
+    commit = get_commit(gh, pr_info.sha)
+    commit.create_status(
+        context="Simple Check",
+        description=description,
+        state="success",
+        target_url=GITHUB_RUN_URL,
+    )
 
 def create_simple_check(gh, pr_info):
-    commit = get_commit(gh, pr_info.sha)
-    for status in commit.get_statuses():
-        if "Simple Check" in status.context:
-            return
+    if SKIP_SIMPLE_CHECK_LABEL not in pr_info.labels:
+        commit = get_commit(gh, pr_info.sha)
+        for status in commit.get_statuses():
+            if "Simple Check" in status.context:
+                return
+
     commit.create_status(
         context="Simple Check",
         description="Skipped",

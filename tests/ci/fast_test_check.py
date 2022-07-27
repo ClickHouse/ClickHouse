@@ -17,6 +17,7 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import (
     post_commit_status,
     fail_simple_check,
+    reset_simple_check,
 )
 from clickhouse_helper import (
     ClickHouseHelper,
@@ -222,5 +223,7 @@ if __name__ == "__main__":
         if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
-            fail_simple_check(gh, pr_info, f"{NAME} failed")
+            fail_simple_check(gh, pr_info, NAME, f"{NAME} failed")
             sys.exit(1)
+
+    reset_simple_check(gh, pr_info, NAME, f"{NAME} failed")

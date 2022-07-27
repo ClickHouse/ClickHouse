@@ -9,7 +9,13 @@ from multiprocessing.dummy import Pool
 
 import boto3  # type: ignore
 
-from env_helper import S3_TEST_REPORTS_BUCKET, S3_BUILDS_BUCKET, RUNNER_TEMP, CI
+from env_helper import (
+    S3_FLAGS_BUCKET,
+    S3_TEST_REPORTS_BUCKET,
+    S3_BUILDS_BUCKET,
+    RUNNER_TEMP,
+    CI,
+)
 from compress_files import compress_file_fast
 
 
@@ -298,3 +304,15 @@ class S3Helper:
 
         logging.info("Copied %s to %s", file_path, local_path)
         return f"file://{local_path}"
+
+    def flag_set(self, name):
+        logging.info("Setting flag %s", name)
+        self.client.put_object(Bucket=S3_FLAGS_BUCKET, Key=name)
+
+    def flag_clear(self, name):
+        logging.info("Clearing flag %s", name)
+        self.client.delete_object(Bucket=S3_FLAGS_BUCKET, Key=name)
+
+    def flag_check(self, name):
+        objects = self.client.list_objects_v2(Bucket=S3_FLAGS_BUCKET, Prefix=name)
+        return "Contents" in objects

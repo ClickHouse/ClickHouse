@@ -22,6 +22,7 @@ from pr_info import PRInfo
 from commit_status_helper import (
     get_commit,
     fail_simple_check,
+    reset_simple_check,
 )
 from ci_config import CI_CONFIG
 from rerun_helper import RerunHelper
@@ -238,7 +239,7 @@ def main():
     logging.info("Totally got %s artifact groups", total_groups)
     if total_groups == 0:
         if not all_skipped:
-            fail_simple_check(gh, pr_info, f"{build_check_name} failed")
+            fail_simple_check(gh, pr_info, build_check_name, f"{build_check_name} failed")
         logging.error("No success builds, failing check")
         sys.exit(1)
 
@@ -307,9 +308,13 @@ def main():
         target_url=url,
     )
 
+    if not all_skipped:
+        if summary_status == "success":
+            reset_simple_check(gh, pr_info, build_check_name)
+        else:
+            fail_simple_check(gh, pr_info, build_check_name, f"{build_check_name} {summary_status}")
+
     if summary_status == "error":
-        if not all_skipped:
-            fail_simple_check(gh, pr_info, f"{build_check_name} failed")
         sys.exit(1)
 
 

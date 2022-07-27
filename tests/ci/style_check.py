@@ -12,7 +12,11 @@ from clickhouse_helper import (
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import fail_simple_check, post_commit_status
+from commit_status_helper import (
+    fail_simple_check,
+    post_commit_status,
+    reset_simple_check,
+)
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
@@ -202,5 +206,7 @@ if __name__ == "__main__":
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state in ["error", "failure"]:
-        fail_simple_check(gh, pr_info, f"{NAME} failed")
+        fail_simple_check(gh, pr_info, NAME, f"{NAME} failed")
         sys.exit(1)
+
+    reset_simple_check(gh, pr_info, NAME)
