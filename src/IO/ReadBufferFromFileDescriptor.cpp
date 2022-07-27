@@ -10,6 +10,7 @@
 #include <IO/Progress.h>
 #include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
+#include <Interpreters/Context.h>
 
 
 #ifdef HAS_RESERVED_IDENTIFIER
