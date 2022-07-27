@@ -37,8 +37,6 @@
 #include <algorithm>
 
 
-using std::operator""sv;
-
 namespace DB
 {
 
