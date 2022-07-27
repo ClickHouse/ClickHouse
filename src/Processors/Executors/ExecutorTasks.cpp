@@ -32,7 +32,7 @@ void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & se
 {
     if (!task_queue.empty() && !threads_queue.empty() && !finished)
     {
-        size_t next_thread = (self.thread_number + 1) % use_threads;
+        size_t next_thread = self.thread_number + 1 >= use_threads ? 0 : (self.thread_number + 1);
         auto thread_to_wake = task_queue.getAnyThreadWithTasks(next_thread);
 
         if (threads_queue.has(thread_to_wake))
