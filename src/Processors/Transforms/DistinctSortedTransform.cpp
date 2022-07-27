@@ -27,6 +27,8 @@ DistinctSortedTransform::DistinctSortedTransform(
         if (col && !isColumnConst(*col))
             column_positions.emplace_back(pos);
     }
+    column_ptrs.reserve(column_positions.size());
+
     /// pre-calculate DISTINCT column positions which form sort prefix of sort description
     sort_prefix_positions.reserve(description.size());
     for (const auto & column_sort_descr : description)
@@ -42,6 +44,7 @@ DistinctSortedTransform::DistinctSortedTransform(
 
         sort_prefix_positions.emplace_back(pos);
     }
+    sort_prefix_columns.reserve(sort_prefix_positions.size());
 }
 
 void DistinctSortedTransform::transform(Chunk & chunk)
@@ -50,8 +53,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
         return;
 
     /// get DISTINCT columns from chunk
-    ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(column_positions.size());
+    column_ptrs.clear();
     for (const auto pos : column_positions)
     {
         const auto & column = chunk.getColumns()[pos];
@@ -59,12 +61,11 @@ void DistinctSortedTransform::transform(Chunk & chunk)
     }
 
     /// get DISTINCT columns from chunk which form sort prefix of sort description
-    ColumnRawPtrs clearing_hint_columns;
-    clearing_hint_columns.reserve(sort_prefix_positions.size());
+    sort_prefix_columns.clear();
     for (const auto pos : sort_prefix_positions)
     {
         const auto & column = chunk.getColumns()[pos];
-        clearing_hint_columns.emplace_back(column.get());
+        sort_prefix_columns.emplace_back(column.get());
     }
 
     if (data.type == ClearableSetVariants::Type::EMPTY)
@@ -81,7 +82,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
             // clang-format off
 #define M(NAME) \
         case ClearableSetVariants::Type::NAME: \
-            has_new_data = buildFilter(*data.NAME, column_ptrs, clearing_hint_columns, filter, rows, data); \
+            has_new_data = buildFilter(*data.NAME, column_ptrs, sort_prefix_columns, filter, rows, data); \
             break;
 
         APPLY_FOR_SET_VARIANTS(M)
@@ -108,7 +109,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
         stopReading();
 
     prev_chunk.chunk = std::move(chunk);
-    prev_chunk.clearing_hint_columns = std::move(clearing_hint_columns);
+    prev_chunk.clearing_hint_columns = std::move(sort_prefix_columns);
 
     size_t all_columns = prev_chunk.chunk.getNumColumns();
     Chunk res_chunk;
