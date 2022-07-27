@@ -6015,6 +6015,11 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
     return CancellationCode::CancelSent;
 }
 
+bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
+{
+    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
+}
+
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
     auto table_lock = lockForShare(
