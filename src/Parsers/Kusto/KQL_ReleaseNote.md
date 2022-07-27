@@ -1,6 +1,15 @@
 # KQL implemented features.
+The config setting to allow dialect setting from configuration XMLs.
+   - Set dialect setting during command line in batch mode ./clickhouse-client --dialect='kusto_auto' -q "KQL query"
+   - Set dialect setting client configuration XML and create a client connection using --config-file option.
+      For example: Clickouse-client.xml looks like as below 
+      
+      `<config>
+      <dialect>kusto_auto</dialect>
+      </config>`
 
-
+      Establish clickhouse-client connection using command  `clickhouse-client --config-file=clickhouse-client.xml`
+   Note: Since it is user level setting, It is not required to udpate config.xml.
 # July 17, 2022
 
 ## Renamed dialect from sql_dialect to dialect
