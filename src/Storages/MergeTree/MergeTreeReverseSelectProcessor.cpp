@@ -44,9 +44,9 @@ catch (...)
     throw;
 }
 
-Chunk MergeTreeReverseSelectProcessor::readFromPart()
+MergeTreeBaseSelectProcessor::BlockAndRowCount MergeTreeReverseSelectProcessor::readFromPart()
 {
-    Chunk res;
+    BlockAndRowCount res;
 
     if (!chunks.empty())
     {
@@ -60,7 +60,7 @@ Chunk MergeTreeReverseSelectProcessor::readFromPart()
 
     while (!task->isFinished())
     {
-        Chunk chunk = readFromPartImpl();
+        auto chunk = readFromPartImpl();
         chunks.push_back(std::move(chunk));
     }
 

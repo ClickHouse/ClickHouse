@@ -22,4 +22,3 @@ select distinct * from distinct_in_order except select * from ordinary_distinct;
 
 drop table if exists distinct_in_order sync;
 drop table if exists ordinary_distinct sync;
-

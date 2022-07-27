@@ -443,6 +443,8 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
+    bool supportsLightweightDelete() const override;
+
     NamesAndTypesList getVirtuals() const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
@@ -942,6 +944,9 @@ public:
     SimpleIncrement insert_increment;
 
     bool has_non_adaptive_index_granularity_parts = false;
+
+    /// True if at least one part contains lightweight delete.
+    mutable std::atomic_bool has_lightweight_delete_parts = false;
 
     /// Parts that currently moving from disk/volume to another.
     /// This set have to be used with `currently_processing_in_background_mutex`.
