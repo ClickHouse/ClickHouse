@@ -4,6 +4,8 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -51,6 +53,37 @@ namespace
         else
             return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
+
+#ifndef KEEPER_STANDALONE_BUILD
+    Map stringToMap(const String & str)
+    {
+        /// Allow empty string as an empty map
+        if (str.empty())
+            return {};
+
+        auto type_string = std::make_shared<DataTypeString>();
+        DataTypeMap type_map(type_string, type_string);
+        auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
+        auto column = type_map.createColumn();
+
+        ReadBufferFromString buf(str);
+        serialization->deserializeTextEscaped(*column, buf, {});
+        return (*column)[0].safeGet<Map>();
+    }
+
+    Map fieldToMap(const Field & f)
+    {
+        if (f.getType() == Field::Types::String)
+        {
+            /// Allow to parse Map from string field. For the convenience.
+            const auto & str = f.get<const String &>();
+            return stringToMap(str);
+        }
+
+        return f.safeGet<const Map &>();
+    }
+#endif
+
 }
 
 template <typename T>
@@ -291,6 +324,48 @@ void SettingFieldString::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
+#ifndef KEEPER_STANDALONE_BUILD
+
+SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
+
+String SettingFieldMap::toString() const
+{
+    auto type_string = std::make_shared<DataTypeString>();
+    DataTypeMap type_map(type_string, type_string);
+    auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
+    auto column = type_map.createColumn();
+    column->insert(value);
+
+    WriteBufferFromOwnString out;
+    serialization->serializeTextEscaped(*column, 0, out, {});
+    return out.str();
+}
+
+
+SettingFieldMap & SettingFieldMap::operator =(const Field & f)
+{
+    *this = fieldToMap(f);
+    return *this;
+}
+
+void SettingFieldMap::parseFromString(const String & str)
+{
+    *this = stringToMap(str);
+}
+
+void SettingFieldMap::writeBinary(WriteBuffer & out) const
+{
+    DB::writeBinary(value, out);
+}
+
+void SettingFieldMap::readBinary(ReadBuffer & in)
+{
+    Map map;
+    DB::readBinary(map, in);
+    *this = map;
+}
+
+#endif
 
 namespace
 {
@@ -350,7 +425,7 @@ void SettingFieldURI::readBinary(ReadBuffer & in)
 }
 
 
-void SettingFieldEnumHelpers::writeBinary(const std::string_view & str, WriteBuffer & out)
+void SettingFieldEnumHelpers::writeBinary(std::string_view str, WriteBuffer & out)
 {
     writeStringBinary(str, out);
 }

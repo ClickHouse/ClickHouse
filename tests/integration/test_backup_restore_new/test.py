@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 import re
 import os.path
 from helpers.cluster import ClickHouseCluster
@@ -303,11 +304,13 @@ def test_async():
     [id, _, status] = instance.query(
         f"BACKUP TABLE test.table TO {backup_name} ASYNC"
     ).split("\t")
+
     assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
+
     assert_eq_with_retry(
         instance,
-        f"SELECT status FROM system.backups WHERE uuid='{id}'",
-        "BACKUP_COMPLETE\n",
+        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        TSV([["BACKUP_COMPLETE", ""]]),
     )
 
     instance.query("DROP TABLE test.table")
@@ -315,11 +318,50 @@ def test_async():
     [id, _, status] = instance.query(
         f"RESTORE TABLE test.table FROM {backup_name} ASYNC"
     ).split("\t")
+
     assert status == "RESTORING\n" or status == "RESTORED\n"
+
     assert_eq_with_retry(
-        instance, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"
+        instance,
+        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        TSV([["RESTORED", ""]]),
     )
 
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+@pytest.mark.parametrize("interface", ["native", "http"])
+def test_async_backups_to_same_destination(interface):
+    create_and_fill_table()
+    backup_name = new_backup_name()
+
+    ids = []
+    for _ in range(2):
+        if interface == "http":
+            res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+        else:
+            res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+        ids.append(res.split("\t")[0])
+
+    [id1, id2] = ids
+
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status FROM system.backups WHERE uuid IN ['{id1}', '{id2}'] AND status == 'MAKING_BACKUP'",
+        "",
+    )
+
+    assert instance.query(
+        f"SELECT status, error FROM system.backups WHERE uuid='{id1}'"
+    ) == TSV([["BACKUP_COMPLETE", ""]])
+
+    assert (
+        instance.query(f"SELECT status FROM system.backups WHERE uuid='{id2}'")
+        == "FAILED_TO_BACKUP\n"
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
@@ -710,24 +752,26 @@ def test_system_users_async():
     instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_c = 3")
 
     backup_name = new_backup_name()
-    [id, _, status] = instance.query(
+    id = instance.query(
         f"BACKUP DATABASE default, TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas TO {backup_name} ASYNC"
-    ).split("\t")
+    ).split("\t")[0]
+
     assert_eq_with_retry(
         instance,
-        f"SELECT status FROM system.backups WHERE uuid='{id}'",
-        "BACKUP_COMPLETE\n",
+        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        TSV([["BACKUP_COMPLETE", ""]]),
     )
 
     instance.query("DROP USER u1")
 
-    [id, _, status] = instance.query(
+    id = instance.query(
         f"RESTORE DATABASE default, TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas FROM {backup_name} ASYNC"
-    ).split("\t")
+    ).split("\t")[0]
+
     assert_eq_with_retry(
         instance,
-        f"SELECT status FROM system.backups WHERE uuid='{id}'",
-        "RESTORED\n",
+        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        TSV([["RESTORED", ""]]),
     )
 
     assert (
@@ -852,8 +896,8 @@ def test_mutation():
     )
 
     instance.query("ALTER TABLE test.table UPDATE x=x+1 WHERE 1")
-    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(1) WHERE 1")
-    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(2) WHERE 1")
+    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(3) WHERE 1")
+    instance.query("ALTER TABLE test.table UPDATE x=x+1+sleep(3) WHERE 1")
 
     backup_name = new_backup_name()
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
