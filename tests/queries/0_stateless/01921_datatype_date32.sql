@@ -118,4 +118,15 @@ select toDate32OrZero('1924-01-01'), toDate32OrNull('1924-01-01');
 select toDate32OrZero(''), toDate32OrNull('');
 select (select toDate32OrZero(''));
 select (select toDate32OrNull(''));
+SELECT toString(T.d) dateStr
+FROM
+    (
+    SELECT '1925-01-01'::Date32 d
+    UNION ALL SELECT '1969-12-31'::Date32
+    UNION ALL SELECT '1970-01-01'::Date32
+    UNION ALL SELECT '2149-06-06'::Date32
+    UNION ALL SELECT '2149-06-07'::Date32
+    UNION ALL SELECT '2283-11-11'::Date32
+    ) AS T
+ORDER BY T.d
 

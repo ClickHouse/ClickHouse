@@ -1,10 +1,10 @@
 #pragma once
 #include <filesystem>
 #include <system_error>
-#include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperStorage.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <libnuraft/nuraft.hxx>
 
 namespace DB
 {
@@ -21,9 +21,10 @@ enum SnapshotVersion : uint8_t
     V2 = 2, /// with 64 bit buffer header
     V3 = 3, /// compress snapshots with ZSTD codec
     V4 = 4, /// add Node size to snapshots
+    V5 = 5, /// add ZXID and digest to snapshots
 };
 
-static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V4;
+static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V5;
 
 /// What is stored in binary shapsnot
 struct SnapshotDeserializationResult
@@ -49,7 +50,8 @@ struct KeeperStorageSnapshot
 public:
     KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_ = nullptr);
 
-    KeeperStorageSnapshot(KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_ = nullptr);
+    KeeperStorageSnapshot(
+        KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_ = nullptr);
 
     ~KeeperStorageSnapshot();
 
@@ -77,6 +79,10 @@ public:
     std::unordered_map<uint64_t, Coordination::ACLs> acl_map;
     /// Cluster config from snapshot, can be empty
     ClusterConfigPtr cluster_config;
+    /// Last committed ZXID
+    int64_t zxid;
+    /// Current digest of committed nodes
+    uint64_t nodes_digest;
 };
 
 using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
@@ -91,8 +97,12 @@ class KeeperSnapshotManager
 {
 public:
     KeeperSnapshotManager(
-        const std::string & snapshots_path_, size_t snapshots_to_keep_,
-        bool compress_snapshots_zstd_ = true, const std::string & superdigest_ = "", size_t storage_tick_time_ = 500);
+        const std::string & snapshots_path_,
+        size_t snapshots_to_keep_,
+        bool compress_snapshots_zstd_ = true,
+        const std::string & superdigest_ = "",
+        size_t storage_tick_time_ = 500,
+        bool digest_enabled_ = true);
 
     /// Restore storage from latest available snapshot
     SnapshotDeserializationResult restoreFromLatestSnapshot();
@@ -118,10 +128,7 @@ public:
     void removeSnapshot(uint64_t log_idx);
 
     /// Total amount of snapshots
-    size_t totalSnapshots() const
-    {
-        return existing_snapshots.size();
-    }
+    size_t totalSnapshots() const { return existing_snapshots.size(); }
 
     /// The most fresh snapshot log index we have
     size_t getLatestSnapshotIndex() const
@@ -161,6 +168,7 @@ private:
     const std::string superdigest;
     /// Storage sessions timeout check interval (also for deserializatopn)
     size_t storage_tick_time;
+    const bool digest_enabled;
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

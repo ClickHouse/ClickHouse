@@ -12,13 +12,16 @@
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <base/getFQDNOrHostName.h>
 #include <IO/S3Common.h>
-#include <Disks/DiskCacheWrapper.h>
+
 #include <Storages/StorageS3Settings.h>
+#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/ProxyConfiguration.h>
 #include <Disks/ObjectStorages/S3/ProxyListConfiguration.h>
 #include <Disks/ObjectStorages/S3/ProxyResolverConfiguration.h>
+#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskLocal.h>
+
 #include <Common/FileCacheFactory.h>
 
 namespace DB
@@ -128,7 +131,7 @@ std::unique_ptr<Aws::S3::S3Client> getClient(const Poco::Util::AbstractConfigura
     auto proxy_config = getProxyConfiguration(config_prefix, config);
     if (proxy_config)
     {
-        client_configuration.perRequestConfiguration
+        client_configuration.per_request_configuration
             = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
         client_configuration.error_report
             = [proxy_config](const auto & request_config) { proxy_config->errorReport(request_config); };

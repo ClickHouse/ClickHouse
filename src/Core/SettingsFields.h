@@ -124,7 +124,7 @@ struct SettingFieldTimespan
     operator std::chrono::duration<Rep, Period>() const { return std::chrono::duration_cast<std::chrono::duration<Rep, Period>>(std::chrono::microseconds(value.totalMicroseconds())); } /// NOLINT
 
     explicit operator UInt64() const { return value.totalMicroseconds() / microseconds_per_unit; }
-    explicit operator Field() const { return operator UInt64(); }
+    explicit operator Field() const;
 
     Poco::Timespan::TimeDiff totalMicroseconds() const { return value.totalMicroseconds(); }
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
@@ -146,13 +146,13 @@ struct SettingFieldString
     String value;
     bool changed = false;
 
-    explicit SettingFieldString(const std::string_view & str = {}) : value(str) {}
+    explicit SettingFieldString(std::string_view str = {}) : value(str) {}
     explicit SettingFieldString(const String & str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(String && str) : value(std::move(str)) {}
     explicit SettingFieldString(const char * str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(const Field & f) : SettingFieldString(f.safeGet<const String &>()) {}
 
-    SettingFieldString & operator =(const std::string_view & str) { value = str; changed = true; return *this; }
+    SettingFieldString & operator =(std::string_view str) { value = str; changed = true; return *this; }
     SettingFieldString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
     SettingFieldString & operator =(String && str) { value = std::move(str); changed = true; return *this; }
     SettingFieldString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
@@ -256,7 +256,7 @@ struct SettingFieldEnum
 
 struct SettingFieldEnumHelpers
 {
-    static void writeBinary(const std::string_view & str, WriteBuffer & out);
+    static void writeBinary(std::string_view str, WriteBuffer & out);
     static String readBinary(ReadBuffer & in);
 };
 
@@ -286,7 +286,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     { \
         using EnumType = ENUM_TYPE; \
         static const String & toString(EnumType value); \
-        static EnumType fromString(const std::string_view & str); \
+        static EnumType fromString(std::string_view str); \
     }; \
     \
     using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
@@ -310,7 +310,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
             ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
     \
-    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(const std::string_view & str) \
+    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
     { \
         static const std::unordered_map<std::string_view, EnumType> map = [] { \
             std::unordered_map<std::string_view, EnumType> res; \
@@ -430,7 +430,7 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         using EnumType = ENUM_TYPE; \
         static size_t getEnumSize(); \
         static const String & toString(EnumType value); \
-        static EnumType fromString(const std::string_view & str); \
+        static EnumType fromString(std::string_view str); \
     }; \
     \
     using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;

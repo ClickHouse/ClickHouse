@@ -44,9 +44,9 @@ struct Packet
 struct ExternalTableData
 {
     /// Pipe of data form table;
-    std::unique_ptr<Pipe> pipe;
+    std::unique_ptr<QueryPipelineBuilder> pipe;
     std::string table_name;
-    std::function<std::unique_ptr<Pipe>()> creating_pipe_callback;
+    std::function<std::unique_ptr<QueryPipelineBuilder>()> creating_pipe_callback;
     /// Flag if need to stop reading.
     std::atomic_bool is_cancelled = false;
 };

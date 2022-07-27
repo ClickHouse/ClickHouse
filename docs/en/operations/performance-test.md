@@ -3,7 +3,7 @@ sidebar_position: 54
 sidebar_label: Testing Hardware
 ---
 
-# How to Test Your Hardware with ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# How to Test Your Hardware with ClickHouse
 
 You can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
@@ -14,7 +14,7 @@ You can run benchmark with a single script.
 
 1. Download the script.
 ```
-wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware.sh
+wget https://raw.githubusercontent.com/ClickHouse/ClickBench/main/hardware/hardware.sh
 ```
 
 2. Run the script.
@@ -55,9 +55,9 @@ chmod a+x clickhouse
 ```
 2.  Download benchmark files:
 ```bash
-wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/benchmark-new.sh
+wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware/benchmark-new.sh
 chmod a+x benchmark-new.sh
-wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
+wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware/queries.sql
 ```
 3.  Download the [web analytics dataset](../getting-started/example-datasets/metrica.md) (“hits” table containing 100 million rows).
 ```bash

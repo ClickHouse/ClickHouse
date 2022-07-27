@@ -19,7 +19,7 @@ class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-        DiskPtr disk_,
+        DataPartStoragePtr data_part_storage_,
         const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
@@ -52,7 +52,7 @@ private:
     size_t file_size;
     UncompressedCache * uncompressed_cache;
 
-    DiskPtr disk;
+    DataPartStoragePtr data_part_storage;
     std::string path_prefix;
     std::string data_file_extension;
 

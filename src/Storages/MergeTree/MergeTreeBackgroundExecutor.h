@@ -2,7 +2,6 @@
 
 #include <deque>
 #include <functional>
-#include <atomic>
 #include <mutex>
 #include <future>
 #include <condition_variable>
@@ -15,7 +14,9 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
+#include <base/defines.h>
 #include <Storages/MergeTree/IExecutableTask.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -50,7 +51,8 @@ struct TaskRuntimeData
 
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
-    std::atomic_bool is_currently_deleting{false};
+    /// Guarded by MergeTreeBackgroundExecutor<>::mutex
+    bool is_currently_deleting{false};
     /// Actually autoreset=false is needed only for unit test
     /// where multiple threads could remove tasks corresponding to the same storage
     /// This scenario in not possible in reality.
@@ -200,19 +202,21 @@ public:
 
 private:
     String name;
-    size_t threads_count{0};
-    size_t max_tasks_count{0};
+    size_t threads_count TSA_GUARDED_BY(mutex) = 0;
+    size_t max_tasks_count TSA_GUARDED_BY(mutex) = 0;
     CurrentMetrics::Metric metric;
 
     void routine(TaskRuntimeDataPtr item);
-    void threadFunction();
+
+    /// libc++ does not provide TSA support for std::unique_lock -> TSA_NO_THREAD_SAFETY_ANALYSIS
+    void threadFunction() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Initially it will be empty
-    Queue pending{};
-    boost::circular_buffer<TaskRuntimeDataPtr> active{0};
+    Queue pending TSA_GUARDED_BY(mutex);
+    boost::circular_buffer<TaskRuntimeDataPtr> active TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
-    std::condition_variable has_tasks;
-    std::atomic_bool shutdown{false};
+    std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
+    bool shutdown TSA_GUARDED_BY(mutex) = false;
     ThreadPool pool;
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };

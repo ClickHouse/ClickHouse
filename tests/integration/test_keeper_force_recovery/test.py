@@ -132,7 +132,17 @@ def test_cluster_recovery(started_cluster):
 
         nodes[0].stop_clickhouse()
 
-        add_data(node_zks[1], "/test_force_recovery_extra", "somedataextra")
+        # we potentially killed the leader node so we give time for election
+        for _ in range(100):
+            try:
+                node_zks[1] = get_fake_zk(nodes[1].name, timeout=30.0)
+                add_data(node_zks[1], "/test_force_recovery_extra", "somedataextra")
+                break
+            except Exception as ex:
+                time.sleep(0.5)
+                print(f"Retrying create on {nodes[1].name}, exception {ex}")
+        else:
+            raise Exception(f"Failed creating a node on {nodes[1].name}")
 
         for node_zk in node_zks[2:CLUSTER_SIZE]:
             wait_and_assert_data(node_zk, "/test_force_recovery_extra", "somedataextra")

@@ -66,7 +66,8 @@ def create_tables_old_format(name, nodes, shard):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/{name}', '{repl}', date, id, 64)
             """.format(
                 name=name, shard=shard, repl=i
-            )
+            ),
+            settings={"allow_deprecated_syntax_for_merge_tree": 1},
         )
 
 
@@ -495,7 +496,7 @@ def test_polymorphic_parts_diff_versions_2(start_cluster_diff_versions):
     with pytest.raises(Exception):
         node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=3)
 
-    node_old.restart_with_latest_version()
+    node_old.restart_with_latest_version(fix_metadata=True)
 
     node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=20)
 
@@ -698,10 +699,8 @@ def test_in_memory_alters(start_cluster):
     expected = "1\tab\t0\n2\tcd\t0\n"
     assert node9.query("SELECT id, s, col1 FROM alters_table ORDER BY id") == expected
     check_parts_type(1)
-    # After hard restart table can be in readonly mode
-    exec_query_with_retry(
-        node9,
-        "INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)",
+    node9.query(
+        "INSERT INTO alters_table (date, id, col1) VALUES (toDate('2020-10-10'), 3, 100)"
     )
     node9.query("ALTER TABLE alters_table MODIFY COLUMN col1 String")
     node9.query("ALTER TABLE alters_table DROP COLUMN s")
@@ -722,7 +721,8 @@ def test_in_memory_alters(start_cluster):
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query(
-        "CREATE DATABASE test_index ENGINE=Ordinary"
+        "CREATE DATABASE test_index ENGINE=Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
     )  # Different paths with Atomic
     node1.query(
         """

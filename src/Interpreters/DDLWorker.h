@@ -124,7 +124,7 @@ protected:
     std::string queue_dir;      /// dir with queue of queries
 
     mutable std::mutex zookeeper_mutex;
-    ZooKeeperPtr current_zookeeper;
+    ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(zookeeper_mutex);
 
     /// Save state of executed task to avoid duplicate execution on ZK error
     std::optional<String> last_skipped_entry_name;
