@@ -2,6 +2,7 @@
 
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
+
 namespace DB
 {
 class IParserKQLFunction
@@ -35,10 +36,9 @@ public:
 protected:
     virtual bool convertImpl(String & out,IParser::Pos & pos) = 0;
     static bool directMapping(String  &out,IParser::Pos & pos,const String & ch_fn);
-    static String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
     static void validateEndOfFunction(const String & fn_name, IParser::Pos & pos);
     static String getKQLFunctionName(IParser::Pos & pos);
 };
 
+String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
 }
-
