@@ -303,7 +303,7 @@ def main():
     image = DockerImage(args.image_path, args.image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
-    NAME = f"Docker image {image.repo} building check (actions)"
+    NAME = f"Docker image {image.repo} building check"
     pr_info = None
     if CI:
         pr_info = PRInfo()
@@ -320,7 +320,7 @@ def main():
             encoding="utf-8",
             shell=True,
         )
-        NAME = f"Docker image {image.repo} build and push (actions)"
+        NAME = f"Docker image {image.repo} build and push"
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
     status = "success"
