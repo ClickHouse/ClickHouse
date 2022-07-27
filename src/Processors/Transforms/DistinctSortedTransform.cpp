@@ -46,7 +46,7 @@ DistinctSortedTransform::DistinctSortedTransform(
 
 void DistinctSortedTransform::transform(Chunk & chunk)
 {
-    if (!chunk.hasRows())
+    if (unlikely(!chunk.hasRows()))
         return;
 
     /// get DISTINCT columns from chunk
@@ -78,12 +78,15 @@ void DistinctSortedTransform::transform(Chunk & chunk)
     {
         case ClearableSetVariants::Type::EMPTY:
             break;
+            // clang-format off
 #define M(NAME) \
-    case ClearableSetVariants::Type::NAME: \
-        has_new_data = buildFilter(*data.NAME, column_ptrs, clearing_hint_columns, filter, rows, data); \
-        break;
-            APPLY_FOR_SET_VARIANTS(M)
+        case ClearableSetVariants::Type::NAME: \
+            has_new_data = buildFilter(*data.NAME, column_ptrs, clearing_hint_columns, filter, rows, data); \
+            break;
+
+        APPLY_FOR_SET_VARIANTS(M)
 #undef M
+            // clang-format on
     }
 
     /// Just go to the next block if there isn't any new record in the current one.
