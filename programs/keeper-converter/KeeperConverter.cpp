@@ -42,7 +42,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
         auto keeper_context = std::make_shared<KeeperContext>();
         keeper_context->digest_enabled = true;
 
-        DB::KeeperStorage storage(500, "", keeper_context, false);
+        DB::KeeperStorage storage(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
 
         DB::deserializeKeeperStorageFromSnapshotsDir(storage, options["zookeeper-snapshots-dir"].as<std::string>(), logger);
         storage.initializeSystemNodes();

@@ -656,7 +656,7 @@ SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuff
         compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
 
     SnapshotDeserializationResult result;
-    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, keeper_context, false);
+    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
     KeeperStorageSnapshot::deserialize(result, *compressed_reader, keeper_context);
     result.storage->initializeSystemNodes();
     return result;
