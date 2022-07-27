@@ -404,7 +404,6 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
     for (const auto & key : keys)
         slices_keys.emplace_back(key);
 
-
     auto statuses = multiGet(slices_keys, values);
     if (null_map)
     {

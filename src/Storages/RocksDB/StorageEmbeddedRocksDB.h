@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <shared_mutex>
 #include <Storages/IStorage.h>
 #include <Storages/IKVStorage.h>
