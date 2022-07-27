@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int BAD_TTL_FILE;
     extern const int NOT_IMPLEMENTED;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
@@ -437,16 +438,32 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos)
 {
     columns = new_columns;
+    serialization_infos = new_infos;
 
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
-
     for (const auto & column : columns)
         column_name_to_position.emplace(column.name, pos++);
+
+    for (const auto & column : columns)
+    {
+        auto it = serialization_infos.find(column.name);
+        auto serialization = it == serialization_infos.end()
+            ? IDataType::getSerialization(column)
+            : IDataType::getSerialization(column, *it->second);
+
+        serializations.emplace(column.name, serialization);
+
+        IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
+        {
+            auto full_name = Nested::concatenateName(column.name, subname);
+            serializations.emplace(full_name, subdata.serialization);
+        }, {serialization, nullptr, nullptr, nullptr});
+    }
 
     columns_description = ColumnsDescription(columns);
 }
@@ -461,22 +478,20 @@ std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & c
     return columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
-void IMergeTreeDataPart::setSerializationInfos(const SerializationInfoByName & new_infos)
+SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
 {
-    serialization_infos = new_infos;
+    auto serialization = tryGetSerialization(column_name);
+    if (!serialization)
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "There is no column or subcolumn {} in part {}", column_name, name);
+
+    return serialization;
 }
 
-SerializationPtr IMergeTreeDataPart::getSerialization(const NameAndTypePair & column) const
+SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_name) const
 {
-    auto column_in_part = tryGetColumn(column.name);
-    if (!column_in_part)
-        return IDataType::getSerialization(column);
-
-    auto it = serialization_infos.find(column_in_part->getNameInStorage());
-    if (it == serialization_infos.end())
-        return IDataType::getSerialization(*column_in_part);
-
-    return IDataType::getSerialization(*column_in_part, *it->second);
+    auto it = serializations.find(column_name);
+    return it == serializations.end() ? nullptr : it->second;
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -585,36 +600,23 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 
 String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const
 {
-    auto find_column_with_minimum_size = [&](const auto & columns_list)
-    {
-        std::optional<std::string> minimum_size_column;
-        UInt64 minimum_size = std::numeric_limits<UInt64>::max();
-
-        for (const auto & column : columns_list)
-        {
-            if (!hasColumnFiles(column))
-                continue;
-
-            const auto size = getColumnSize(column.name).data_compressed;
-            if (size < minimum_size)
-            {
-                minimum_size = size;
-                minimum_size_column = column.name;
-            }
-        }
-
-        return minimum_size_column;
-    };
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(with_subcolumns);
+    auto columns_list = columns_description.get(options);
 
     std::optional<std::string> minimum_size_column;
-    if (with_subcolumns)
+    UInt64 minimum_size = std::numeric_limits<UInt64>::max();
+
+    for (const auto & column : columns_list)
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-        minimum_size_column = find_column_with_minimum_size(columns_description.get(options));
-    }
-    else
-    {
-        minimum_size_column = find_column_with_minimum_size(columns);
+        if (!hasColumnFiles(column))
+            continue;
+
+        const auto size = getColumnSize(column.name).data_compressed;
+        if (size < minimum_size)
+        {
+            minimum_size = size;
+            minimum_size_column = column.name;
+        }
     }
 
     if (!minimum_size_column)
@@ -868,7 +870,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
             String path_to_data_file;
-            getSerialization(part_column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 if (path_to_data_file.empty())
                 {
@@ -1066,7 +1068,7 @@ void IMergeTreeDataPart::loadRowsCount()
 
         for (const NameAndTypePair & column : columns)
         {
-            ColumnPtr column_col = column.type->createColumn(*getSerialization(column));
+            ColumnPtr column_col = column.type->createColumn(*getSerialization(column.name));
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
@@ -1208,8 +1210,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
         infos.readJSON(*in);
     }
 
-    setColumns(loaded_columns);
-    setSerializationInfos(infos);
+    setColumns(loaded_columns, infos);
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const

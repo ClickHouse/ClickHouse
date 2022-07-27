@@ -133,19 +133,17 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns);
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos);
 
     const NamesAndTypesList & getColumns() const { return columns; }
-    const ColumnsDescription & getColumnsDescription() const { return columns_description; }
 
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
-    void setSerializationInfos(const SerializationInfoByName & new_infos);
-
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const;
+    SerializationPtr getSerialization(const String & column_name) const;
+    SerializationPtr tryGetSerialization(const String & column_name) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -524,6 +522,8 @@ private:
 
     /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos;
+
+    SerializationByName serializations;
 
         /// Columns description for more convenient access
     /// to columns by name and getting subcolumns.

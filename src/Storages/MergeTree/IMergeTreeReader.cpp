@@ -33,7 +33,6 @@ IMergeTreeReader::IMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints_)
     : data_part(data_part_)
     , avg_value_size_hints(avg_value_size_hints_)
-    , columns(columns_)
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
@@ -41,11 +40,18 @@ IMergeTreeReader::IMergeTreeReader(
     , metadata_snapshot(metadata_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
+    , requested_columns(isWidePart(data_part) ? Nested::convertToSubcolumns(columns_) : columns_)
+    , part_columns(isWidePart(data_part) ? Nested::collect(data_part->getColumns()) : data_part->getColumns())
 {
+    columns_to_read.reserve(requested_columns.size());
+    serializations.reserve(requested_columns.size());
+
+    for (const auto & column : requested_columns)
+    {
+        columns_to_read.emplace_back(getColumnInPart(column));
+        serializations.emplace_back(getSerializationInPart(column));
+    }
 }
-
-IMergeTreeReader::~IMergeTreeReader() = default;
-
 
 const IMergeTreeReader::ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 {
@@ -56,7 +62,7 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
 {
     try
     {
-        DB::fillMissingColumns(res_columns, num_rows, columns, metadata_snapshot);
+        DB::fillMissingColumns(res_columns, num_rows, requested_columns, metadata_snapshot);
         should_evaluate_missing_defaults = std::any_of(
             res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
     }
@@ -72,7 +78,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 {
     try
     {
-        size_t num_columns = columns.size();
+        size_t num_columns = requested_columns.size();
 
         if (res_columns.size() != num_columns)
             throw Exception("invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
@@ -81,7 +87,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
         /// Convert columns list to block.
         /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
-        auto name_and_type = columns.begin();
+        auto name_and_type = requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
@@ -91,7 +97,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         }
 
         auto dag = DB::evaluateMissingDefaults(
-                additional_columns, columns, metadata_snapshot->getColumns(), storage.getContext());
+                additional_columns, requested_columns, metadata_snapshot->getColumns(), storage.getContext());
         if (dag)
         {
             dag->addMaterializingOutputActions();
@@ -102,7 +108,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         }
 
         /// Move columns from block.
-        name_and_type = columns.begin();
+        name_and_type = requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
             res_columns[pos] = std::move(additional_columns.getByName(name_and_type->name).column);
     }
@@ -128,18 +134,33 @@ String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_co
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
 {
-    auto column_in_part = data_part->tryGetColumn(getColumnNameInPart(required_column));
+    auto name_in_part = getColumnNameInPart(required_column);
+    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
     if (column_in_part)
         return *column_in_part;
 
     return required_column;
 }
 
+SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
+{
+    auto name_in_part = getColumnNameInPart(required_column);
+    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    if (!column_in_part)
+        return IDataType::getSerialization(required_column);
+
+    const auto & infos = data_part->getSerializationInfos();
+    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
+        return IDataType::getSerialization(*column_in_part, *it->second);
+
+    return IDataType::getSerialization(*column_in_part);
+}
+
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 {
     try
     {
-        size_t num_columns = columns.size();
+        size_t num_columns = requested_columns.size();
 
         if (res_columns.size() != num_columns)
         {
@@ -154,7 +175,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         }
 
         Block copy_block;
-        auto name_and_type = columns.begin();
+        auto name_and_type = requested_columns.begin();
 
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
@@ -164,14 +185,12 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             copy_block.insert({res_columns[pos], getColumnInPart(*name_and_type).type, name_and_type->name});
         }
 
-        DB::performRequiredConversions(copy_block, columns, storage.getContext());
+        DB::performRequiredConversions(copy_block, requested_columns, storage.getContext());
 
         /// Move columns from block.
-        name_and_type = columns.begin();
+        name_and_type = requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
-        {
             res_columns[pos] = std::move(copy_block.getByName(name_and_type->name).column);
-        }
     }
     catch (Exception & e)
     {
@@ -199,9 +218,9 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const St
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 {
-    if (num_columns_to_read != columns.size())
+    if (num_columns_to_read != requested_columns.size())
         throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
-                        "Expected " + toString(columns.size()) + ", "
+                        "Expected " + toString(requested_columns.size()) + ", "
                         "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);
 }
 
