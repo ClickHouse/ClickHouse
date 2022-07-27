@@ -1215,6 +1215,10 @@ static void selectColumnNames(
         {
             virt_column_names.push_back(name);
         }
+        else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
+        {
+            virt_column_names.push_back(name);
+        }
         else if (name == "_part_uuid")
         {
             virt_column_names.push_back(name);

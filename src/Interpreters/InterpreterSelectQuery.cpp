@@ -2004,6 +2004,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !settings.empty_result_for_aggregation_by_empty_set
         && storage
         && storage->getName() != "MaterializedMySQL"
+        && !storage->hasLightweightDeletedMask()
         && !row_policy_filter
         && !query_info.additional_filter_ast
         && processing_stage == QueryProcessingStage::FetchColumns
