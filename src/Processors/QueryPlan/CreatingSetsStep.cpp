@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -121,9 +122,11 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(
-    QueryPlan & query_plan, PreparedSets & prepared_sets, const SizeLimits & limits, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
 {
+    if (!prepared_sets || prepared_sets->empty())
+        return;
+
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
 
@@ -131,18 +134,19 @@ void addCreatingSetsStep(
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & [description, subquery_for_set] : prepared_sets.moveSubqueries())
+    for (auto & [description, subquery_for_set] : prepared_sets->detachSubqueries())
     {
         if (!subquery_for_set.hasSource())
             continue;
 
-        auto plan = subquery_for_set.moveSource();
+        auto plan = subquery_for_set.detachSource();
 
+        const Settings & settings = context->getSettingsRef();
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
                 description,
                 std::move(subquery_for_set),
-                limits,
+                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
                 context);
         creating_set->setStepDescription("Create set for subquery");
         plan->addStep(std::move(creating_set));

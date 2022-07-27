@@ -1,6 +1,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/Set.h>
 
 namespace DB
 {
@@ -42,7 +43,8 @@ bool PreparedSetKey::operator==(const PreparedSetKey & other) const
     return true;
 }
 
-SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key, SetPtr set_)
+SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
+                                                   SizeLimits set_size_limit, bool transform_null_in)
 {
     SubqueryForSet & subquery = subqueries[subquery_id];
 
@@ -52,15 +54,17 @@ SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, c
     if (subquery.set)
         sets[key] = subquery.set;
     else
-        sets[key] = subquery.set = set_;
+        sets[key] = subquery.set = std::make_shared<Set>(set_size_limit, false, transform_null_in);
     return subquery;
 }
 
+/// If the subquery is not associated with any set, create default-constructed SubqueryForSet.
+/// It's aimed to fill external table passed to SubqueryForSet::createSource.
 SubqueryForSet & PreparedSets::getSubquery(const String & subquery_id) { return subqueries[subquery_id]; }
 
-void PreparedSets::setSet(const PreparedSetKey & key, SetPtr set_) { sets[key] = set_; }
+void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = set_; }
 
-SetPtr & PreparedSets::getSet(const PreparedSetKey & key) { return sets[key]; }
+SetPtr & PreparedSets::get(const PreparedSetKey & key) { return sets[key]; }
 
 std::vector<SetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash)
 {
@@ -73,7 +77,7 @@ std::vector<SetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash)
     return res;
 }
 
-PreparedSets::SubqueriesForSets PreparedSets::moveSubqueries()
+PreparedSets::SubqueriesForSets PreparedSets::detachSubqueries()
 {
     auto res = std::move(subqueries);
     subqueries = SubqueriesForSets();
@@ -82,13 +86,7 @@ PreparedSets::SubqueriesForSets PreparedSets::moveSubqueries()
 
 bool PreparedSets::empty() const { return sets.empty(); }
 
-SubqueryForSet::SubqueryForSet() = default;
-
-SubqueryForSet::~SubqueryForSet() = default;
-
-SubqueryForSet::SubqueryForSet(SubqueryForSet &&) noexcept = default;
-
-void SubqueryForSet::setSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_)
+void SubqueryForSet::createSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_)
 {
     source = std::make_unique<QueryPlan>();
     interpreter.buildQueryPlan(*source);
@@ -101,7 +99,7 @@ bool SubqueryForSet::hasSource() const
     return source != nullptr;
 }
 
-QueryPlanPtr SubqueryForSet::moveSource()
+QueryPlanPtr SubqueryForSet::detachSource()
 {
     auto res = std::move(source);
     source = nullptr;

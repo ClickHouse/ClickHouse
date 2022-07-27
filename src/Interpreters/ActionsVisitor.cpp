@@ -401,7 +401,7 @@ SetPtr makeExplicitSet(
             element_type = low_cardinality_type->getDictionaryType();
 
     auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
-    if (auto set = prepared_sets.getSet(set_key))
+    if (auto set = prepared_sets.get(set_key))
         return set; /// Already prepared.
 
     Block block;
@@ -417,7 +417,7 @@ SetPtr makeExplicitSet(
     set->insertFromBlock(block.getColumnsWithTypeAndName());
     set->finishInsert();
 
-    prepared_sets.setSet(set_key, set);
+    prepared_sets.set(set_key, set);
     return set;
 }
 
@@ -1288,7 +1288,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (no_subqueries)
             return {};
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
-        if (SetPtr set = data.prepared_sets->getSet(set_key))
+        if (SetPtr set = data.prepared_sets->get(set_key))
             return set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
@@ -1304,7 +1304,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
                 if (storage_set)
                 {
                     SetPtr set = storage_set->getSet();
-                    data.prepared_sets->setSet(set_key, set);
+                    data.prepared_sets->set(set_key, set);
                     return set;
                 }
             }
@@ -1313,8 +1313,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
         String set_id = right_in_operand->getColumnName();
         bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
-        SubqueryForSet & subquery_for_set = data.prepared_sets->createOrGetSubquery(
-            set_id, set_key, std::make_shared<Set>(data.set_size_limit, false, transform_null_in));
+        SubqueryForSet & subquery_for_set = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1327,7 +1326,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (data.create_source_for_in && !subquery_for_set.hasSource())
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-            subquery_for_set.setSource(*interpreter);
+            subquery_for_set.createSource(*interpreter);
         }
 
         return subquery_for_set.set;
