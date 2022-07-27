@@ -148,9 +148,22 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
         /// So, that's why we have to read one extra granule to the right,
         /// while reading dictionary of LowCardinality.
 
-        size_t right_mark_included = is_low_cardinality_dictionary
-            ? right_mark_non_included
-            : right_mark_non_included - 1;
+        /// If right_mark_non_included has non-zero offset in decompressed block, we have to
+        /// read its compressed block in a whole, because it may consist data from previous granule.
+        ///
+        /// For example:
+        /// Mark 10: (758287, 0)      <--- right_mark_included
+        /// Mark 11: (908457, 53477)  <--- right_mark_non_included
+        /// Mark 12: (1064746, 20742) <--- what we are looking for
+        /// Mark 13: (2009333, 40123)
+        ///
+        /// Since mark 11 starts from offset in decompressed block 53477,
+        /// it has some data from mark 10 and we have to read
+        /// compressed block  [908457; 1064746 in a whole.
+
+        size_t right_mark_included = right_mark_non_included - 1;
+        if (is_low_cardinality_dictionary || marks_loader.getMark(right_mark_non_included).offset_in_decompressed_block != 0)
+            ++right_mark_included;
 
         auto indices = collections::range(right_mark_included, marks_count);
         auto it = std::upper_bound(indices.begin(), indices.end(), right_mark_included,
