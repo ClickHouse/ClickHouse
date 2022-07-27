@@ -30,9 +30,9 @@ Customers | summarize MyMax = maxif(Age, Age<40) by Occupation;
 Customers | summarize MyMin = minif(Age, Age<40) by Occupation;
 Customers | summarize MyAvg = avgif(Age, Age<40) by Occupation;
 Customers | summarize MySum = sumif(Age, Age<40) by Occupation;
-Customers | summarize dcount(Education, Occupation=='Professional');
+Customers | summarize dcount(Education);
 Customers | summarize dcountif(Education, Occupation=='Professional');
-Customers | summarize count() by bin(Age, 10)
+Customers | summarize count() by bin(Age, 10) | order by count() ASC;
 
 -- The following does not work
 -- arg_max()

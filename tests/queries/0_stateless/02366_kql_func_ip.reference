@@ -1,0 +1,28 @@
+-- ipv4_is_private(\'127.0.0.1\')
+false
+-- ipv4_is_private(\'10.1.2.3\')
+true
+-- ipv4_is_private(\'192.168.1.1/24\')
+true
+ipv4_is_private(strcat(\'192.\',\'168.\',\'1.\',\'1\',\'/24\'))
+true
+-- ipv4_is_private(\'abc\')
+\N
+-- ipv4_netmask_suffix(\'192.168.1.1/24\')
+24
+-- ipv4_netmask_suffix(\'192.168.1.1\')
+32
+-- ipv4_netmask_suffix(\'127.0.0.1/16\')
+16
+-- ipv4_netmask_suffix(\'abc\')
+\N
+ipv4_netmask_suffix(strcat(\'127.\', \'0.\', \'0.1/16\'))
+16
+-- ipv4_is_in_range(\'127.0.0.1\', \'127.0.0.1\')
+1
+-- ipv4_is_in_range(\'192.168.1.6\', \'192.168.1.1/24\')
+1
+-- ipv4_is_in_range(\'192.168.1.1\', \'192.168.2.1/24\')
+0
+ipv4_is_in_range(strcat(\'192.\',\'168.\', \'1.1\'), \'192.168.2.1/24\')
+0
