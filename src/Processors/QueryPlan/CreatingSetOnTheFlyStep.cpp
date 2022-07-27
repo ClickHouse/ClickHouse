@@ -22,9 +22,9 @@ static ITransformingStep::Traits getTraits(bool is_filter)
     {
         {
             .preserves_distinct_columns = true,
-            .returns_single_stream = true,
+            .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
+            .preserves_sorting = false, /// resize doesn't perserve sorting (TODO fixit)
         },
         {
             .preserves_number_of_rows = !is_filter,
@@ -39,7 +39,7 @@ CreatingSetOnTheFlyStep::CreatingSetOnTheFlyStep(const DataStream & input_stream
     if (input_streams.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_streams.size());
 
-    set = std::make_shared<Set>(size_limits, false, true);
+    set = std::make_shared<SetWithState>(size_limits, false, true);
 
     {
         ColumnsWithTypeAndName header;
@@ -60,9 +60,12 @@ void CreatingSetOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline,
     pipeline.resize(1);
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
+
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
-        return std::make_shared<CreatingSetsOnTheFlyTransform>(header, column_names, set);
+        auto res = std::make_shared<CreatingSetsOnTheFlyTransform>(header, column_names, set);
+        res->setDescription(this->getStepDescription());
+        return res;
     });
     pipeline.resize(num_streams);
 }
@@ -89,7 +92,7 @@ void CreatingSetOnTheFlyStep::updateOutputStream()
 }
 
 
-FilterBySetOnTheFlyStep::FilterBySetOnTheFlyStep(const DataStream & input_stream_, const Names & column_names_, SetPtr set_)
+FilterBySetOnTheFlyStep::FilterBySetOnTheFlyStep(const DataStream & input_stream_, const Names & column_names_, SetWithStatePtr set_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(true))
     , column_names(column_names_)
     , set(set_)
@@ -105,7 +108,9 @@ void FilterBySetOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline,
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
-        return std::make_shared<FilterBySetOnTheFlyTransform>(header, column_names, set);
+        auto res = std::make_shared<FilterBySetOnTheFlyTransform>(header, column_names, set);
+        res->setDescription(this->getStepDescription());
+        return res;
     });
 }
 

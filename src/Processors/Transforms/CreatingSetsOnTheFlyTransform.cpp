@@ -52,8 +52,9 @@ std::string formatBytesHumanReadable(size_t bytes)
 }
 
 
-CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(const Block & header_, const Names & column_names, SetPtr set_)
+CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
+    , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
     , set(set_)
     , log(&Poco::Logger::get(getName()))
@@ -77,8 +78,10 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
         bool limit_exceeded = !set->insertFromBlock(key_cols);
         if (limit_exceeded)
         {
-            LOG_DEBUG(log, "Set limit exceeded, give up building set, after using {}", formatBytesHumanReadable(set->getTotalByteCount()));
+            LOG_DEBUG(log, "{}: set limit exceeded, give up building set, after using {}",
+                getDescription(), formatBytesHumanReadable(set->getTotalByteCount()));
             // set->clear();
+            set->state = SetWithState::State::Suspended;
             set.reset();
         }
     }
@@ -86,16 +89,18 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     if (input.isFinished())
     {
         set->finishInsert();
-        LOG_DEBUG(log, "Finish building set with {} rows, set size is {}",
-            set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
+        set->state = SetWithState::State::Finished;
+        LOG_DEBUG(log, "{}: finish building set for [{}] with {} rows, set size is {}",
+            getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
 
         /// Release pointer to make it possible destroy it by consumer
         set.reset();
     }
 }
 
-FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names, SetPtr set_)
+FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
+    , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
     , set(set_)
     , log(&Poco::Logger::get(getName()))
@@ -108,38 +113,54 @@ FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_
 IProcessor::Status FilterBySetOnTheFlyTransform::prepare()
 {
     auto status = ISimpleTransform::prepare();
+    if (status == Status::Finished)
+    {
+        bool has_filter = set && set->state == SetWithState::State::Finished;
+        if (has_filter)
+        {
+            LOG_DEBUG(log, "Finished {} by [{}]: consumed {} rows in total, {} rows bypassed, result {} rows, {}% filtered",
+                Poco::toLower(getDescription()), fmt::join(column_names, ", "),
+                stat.consumed_rows, stat.consumed_rows_before_set, stat.result_rows,
+                static_cast<int>(100 - 100.0 * stat.result_rows / stat.consumed_rows));
+        }
+        else
+        {
+            LOG_DEBUG(log, "Finished {}: bypass {} rows", Poco::toLower(getDescription()), stat.consumed_rows);
+        }
+
+        /// Release set to free memory
+        set = nullptr;
+    }
     return status;
 }
 
 void FilterBySetOnTheFlyTransform::transform(Chunk & chunk)
 {
+    stat.consumed_rows += chunk.getNumRows();
+    stat.result_rows += chunk.getNumRows();
+    bool can_filter = set && set->state == SetWithState::State::Finished;
 
-    if (!set)
-        return;
+    if (!can_filter)
+        stat.consumed_rows_before_set += chunk.getNumRows();
 
-    if (!set->isCreated())
-        return;
-
-    if (chunk.getNumRows())
+    if (can_filter && chunk.getNumRows())
     {
         auto key_columns = getColumnsByIndices(key_sample_block, chunk, key_column_indices);
         ColumnPtr mask_col = set->execute(key_columns, false);
         const auto & mask = assert_cast<const ColumnUInt8 *>(mask_col.get())->getData();
 
+        stat.result_rows -= chunk.getNumRows();
+
         Columns columns = chunk.detachColumns();
-        size_t num_rows = 0;
+        size_t result_num_rows = 0;
         for (auto & col : columns)
         {
             col = col->filter(mask, 0);
-            num_rows = col->size();
+            result_num_rows = col->size();
         }
-        chunk.setColumns(std::move(columns), num_rows);
-    }
+        stat.result_rows += result_num_rows;
 
-    if (input.isFinished())
-    {
-        /// Release set to free memory
-        set.reset();
+        chunk.setColumns(std::move(columns), result_num_rows);
     }
 }
 
