@@ -935,25 +935,48 @@ def test_system_backups():
 
     id = instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[0]
 
-    escaped_backup_name = backup_name.replace("'", "\\'")
-    assert instance.query(
-        f"SELECT name, status, num_files, total_size, error FROM system.backups WHERE id='{id}'"
-    ) == TSV([[escaped_backup_name, "BACKUP_CREATED", 56, 19656, ""]])
+    [name, status, num_files, uncompressed_size, compressed_size, error] = (
+        instance.query(
+            f"SELECT name, status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'"
+        )
+        .strip("\n")
+        .split("\t")
+    )
 
-    backup_name2 = new_backup_name()
+    escaped_backup_name = backup_name.replace("'", "\\'")
+    num_files = int(num_files)
+    compressed_size = int(compressed_size)
+    uncompressed_size = int(uncompressed_size)
+    assert name == escaped_backup_name
+    assert status == "BACKUP_CREATED"
+    assert num_files > 1
+    assert uncompressed_size > 1
+    assert compressed_size == uncompressed_size
+    assert error == ""
+
+    backup_name = new_backup_name()
     expected_error = "Table test.non_existent_table was not found"
     assert expected_error in instance.query_and_get_error(
-        f"BACKUP TABLE test.non_existent_table TO {backup_name2}"
+        f"BACKUP TABLE test.non_existent_table TO {backup_name}"
     )
 
-    escaped_backup_name2 = backup_name2.replace("'", "\\'")
-    assert instance.query(
-        f"SELECT status, num_files, total_size FROM system.backups WHERE name='{escaped_backup_name2}'"
-    ) == TSV([["BACKUP_FAILED", 0, 0]])
-
-    assert expected_error in instance.query(
-        f"SELECT error FROM system.backups WHERE name='{escaped_backup_name2}'"
+    escaped_backup_name = backup_name.replace("'", "\\'")
+    [status, num_files, uncompressed_size, compressed_size, error] = (
+        instance.query(
+            f"SELECT status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'"
+        )
+        .strip("\n")
+        .split("\t")
     )
+
+    num_files = int(num_files)
+    compressed_size = int(compressed_size)
+    uncompressed_size = int(uncompressed_size)
+    assert status == "BACKUP_FAILED"
+    assert num_files == 0
+    assert uncompressed_size == 0
+    assert compressed_size == 0
+    assert expected_error in error
 
 
 def test_mutation():

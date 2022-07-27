@@ -318,14 +318,16 @@ void BackupsWorker::doBackup(
         }
 
         size_t num_files = 0;
-        UInt64 total_size = 0;
+        UInt64 uncompressed_size = 0;
+        UInt64 compressed_size = 0;
 
         /// Finalize backup (write its metadata).
         if (!backup_settings.internal)
         {
             backup->finalizeWriting();
-            num_files = backup->getTotalNumFiles();
-            total_size = backup->getTotalSize();
+            num_files = backup->getNumFiles();
+            uncompressed_size = backup->getUncompressedSize();
+            compressed_size = backup->getCompressedSize();
         }
 
         /// Close the backup.
@@ -335,7 +337,7 @@ void BackupsWorker::doBackup(
         if (!backup_settings.internal)
         {
             setStatus(backup_id, BackupStatus::BACKUP_CREATED);
-            setNumFilesAndTotalSize(backup_id, num_files, total_size);
+            setNumFilesAndSize(backup_id, num_files, uncompressed_size, compressed_size);
         }
     }
     catch (...)
@@ -464,7 +466,7 @@ void BackupsWorker::doRestore(
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
         if (!restore_settings.internal)
-            setNumFilesAndTotalSize(restore_id, backup->getTotalNumFiles(), backup->getTotalSize());
+            setNumFilesAndSize(restore_id, backup->getNumFiles(), backup->getUncompressedSize(), backup->getCompressedSize());
 
         String current_database = context->getCurrentDatabase();
 
@@ -622,7 +624,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status)
 }
 
 
-void BackupsWorker::setNumFilesAndTotalSize(const String & id, size_t num_files, UInt64 total_size)
+void BackupsWorker::setNumFilesAndSize(const String & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size)
 {
     std::lock_guard lock{infos_mutex};
     auto it = infos.find(id);
@@ -631,7 +633,8 @@ void BackupsWorker::setNumFilesAndTotalSize(const String & id, size_t num_files,
 
     auto & info = it->second;
     info.num_files = num_files;
-    info.total_size = total_size;
+    info.uncompressed_size = uncompressed_size;
+    info.compressed_size = compressed_size;
 }
 
 

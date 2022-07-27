@@ -57,8 +57,9 @@ public:
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
-    UInt64 getTotalSize() const override;
-    size_t getTotalNumFiles() const override;
+    size_t getNumFiles() const override;
+    UInt64 getUncompressedSize() const override;
+    UInt64 getCompressedSize() const override;
     Strings listFiles(const String & directory, bool recursive) const override;
     bool hasFiles(const String & directory) const override;
     bool fileExists(const String & file_name) const override;
@@ -78,6 +79,7 @@ private:
 
     void open(const ContextPtr & context);
     void close();
+    void closeArchives();
 
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata();
@@ -98,9 +100,12 @@ private:
     std::shared_ptr<IArchiveReader> getArchiveReader(const String & suffix) const;
     std::shared_ptr<IArchiveWriter> getArchiveWriter(const String & suffix);
 
-    /// Updates `total_num_files` and `total_size`.
-    void updateTotals(UInt64 file_size);
-    void updateTotals(const FileInfo & info);
+    /// Increases `uncompressed_size` by a specific value and `num_files` by 1.
+    void increaseUncompressedSize(UInt64 file_size);
+    void increaseUncompressedSize(const FileInfo & info);
+
+    /// Calculates and sets `compressed_size`.
+    void setCompressedSize();
 
     const String backup_name;
     const ArchiveParams archive_params;
@@ -114,8 +119,9 @@ private:
     mutable std::mutex mutex;
     std::optional<UUID> uuid;
     time_t timestamp = 0;
-    size_t total_num_files = 0;
-    UInt64 total_size = 0;
+    size_t num_files = 0;
+    UInt64 uncompressed_size = 0;
+    UInt64 compressed_size = 0;
     UInt64 version;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
