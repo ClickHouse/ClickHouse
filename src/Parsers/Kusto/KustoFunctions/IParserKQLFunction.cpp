@@ -76,7 +76,7 @@ bool IParserKQLFunction::directMapping(String & out,IParser::Pos & pos,const Str
     return false;
 }
 
-String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
+String getConvertedArgument(const String & fn_name, IParser::Pos & pos)
 {
     String converted_arg;
     std::vector<String> tokens;
