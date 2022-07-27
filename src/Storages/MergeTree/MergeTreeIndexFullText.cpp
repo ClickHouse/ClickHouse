@@ -609,7 +609,7 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     else
         set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
 
-    auto prepared_set = prepared_sets->getSet(set_key);
+    auto prepared_set = prepared_sets->get(set_key);
     if (!prepared_set)
         return false;
 

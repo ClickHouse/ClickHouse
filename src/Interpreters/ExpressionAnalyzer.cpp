@@ -516,12 +516,12 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
 
-    if (prepared_sets->getSet(set_key))
+    if (prepared_sets->get(set_key))
         return; /// Already prepared.
 
     if (auto set_ptr_from_storage_set = isPlainStorageSetInSubquery(subquery_or_table_name))
     {
-        prepared_sets->setSet(set_key, set_ptr_from_storage_set);
+        prepared_sets->set(set_key, set_ptr_from_storage_set);
         return;
     }
 
@@ -545,7 +545,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 
     set->finishInsert();
 
-    prepared_sets->setSet(set_key, std::move(set));
+    prepared_sets->set(set_key, std::move(set));
 }
 
 SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name)

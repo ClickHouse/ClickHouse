@@ -2829,13 +2829,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan)
 {
-    if (!prepared_sets || prepared_sets->empty())
-        return;
-
-    const Settings & settings = context->getSettingsRef();
-
-    SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-    addCreatingSetsStep(query_plan, *prepared_sets, limits, context);
+    addCreatingSetsStep(query_plan, prepared_sets, context);
 }
 
 

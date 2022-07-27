@@ -179,7 +179,7 @@ public:
             else
             {
                 auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
-                subquery_for_set.setSource(*interpreter, external_storage);
+                subquery_for_set.createSource(*interpreter, external_storage);
             }
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,

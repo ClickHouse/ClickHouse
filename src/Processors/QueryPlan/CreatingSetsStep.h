@@ -49,10 +49,6 @@ private:
     Processors processors;
 };
 
-void addCreatingSetsStep(
-    QueryPlan & query_plan,
-    PreparedSets & prepared_sets,
-    const SizeLimits & limits,
-    ContextPtr context);
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 
 }

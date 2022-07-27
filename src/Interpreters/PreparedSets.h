@@ -7,6 +7,8 @@
 #include <vector>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/IStorage_fwd.h>
+#include <QueryPipeline/SizeLimits.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
@@ -21,19 +23,14 @@ class InterpreterSelectWithUnionQuery;
 class SubqueryForSet
 {
 public:
-    SubqueryForSet();
-    ~SubqueryForSet();
 
-    SubqueryForSet(SubqueryForSet &&) noexcept;
-    SubqueryForSet & operator=(SubqueryForSet &&) noexcept;
-
-    void setSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_ = nullptr);
+    void createSource(InterpreterSelectWithUnionQuery & interpreter, StoragePtr table_ = nullptr);
 
     bool hasSource() const;
 
-    /// Returns query plan for the source of the set
-    /// It would be removed from SubqueryForSet
-    std::unique_ptr<QueryPlan> moveSource();
+    /// Returns query plan for the set's source
+    /// and removes it from SubqueryForSet because we need to build it only once.
+    std::unique_ptr<QueryPlan> detachSource();
 
     /// Build this set from the result of the subquery.
     SetPtr set;
@@ -74,14 +71,17 @@ class PreparedSets
 public:
     using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
-    SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key, SetPtr set);
+    SubqueryForSet & createOrGetSubquery(const String & subquery_id, const PreparedSetKey & key,
+                                         SizeLimits set_size_limit, bool transform_null_in);
     SubqueryForSet & getSubquery(const String & subquery_id);
 
-    void setSet(const PreparedSetKey & key, SetPtr set_);
-    SetPtr & getSet(const PreparedSetKey & key);
+    void set(const PreparedSetKey & key, SetPtr set_);
+    SetPtr & get(const PreparedSetKey & key);
 
-    /// Get subqueries and clear them
-    SubqueriesForSets moveSubqueries();
+    /// Get subqueries and clear them.
+    /// We need to build a plan for subqueries just once. That's why we can clear them after accessing them.
+    /// SetPtr would still be available for consumers of PreparedSets.
+    SubqueriesForSets detachSubqueries();
 
     /// Returns all sets that match the given ast hash not checking types
     /// Used in KeyCondition and MergeTreeIndexConditionBloomFilter to make non exact match for types in PreparedSetKey

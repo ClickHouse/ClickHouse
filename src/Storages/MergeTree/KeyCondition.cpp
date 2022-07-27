@@ -890,7 +890,7 @@ bool KeyCondition::tryPrepareSetIndex(
     SetPtr prepared_set;
     if (right_arg->as<ASTSubquery>() || right_arg->as<ASTTableIdentifier>())
     {
-        prepared_set = prepared_sets->getSet(PreparedSetKey::forSubquery(*right_arg));
+        prepared_set = prepared_sets->get(PreparedSetKey::forSubquery(*right_arg));
         if (!prepared_sets)
             return false;
     }
