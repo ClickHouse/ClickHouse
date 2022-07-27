@@ -19,7 +19,10 @@ from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from commit_status_helper import get_commit
+from commit_status_helper import (
+    get_commit,
+    fail_simple_check,
+)
 from ci_config import CI_CONFIG
 from rerun_helper import RerunHelper
 
@@ -151,6 +154,12 @@ def main():
             needs_data = json.load(file_handler)
             required_builds = len(needs_data)
 
+    # A report might be empty in case of `do not test` label, for example.
+    # We should still be able to merge such PRs.
+    all_skipped = needs_data is not None and all(
+        i["result"] == "skipped" for i in needs_data.values()
+    )
+
     logging.info("The next builds are required: %s", ", ".join(needs_data))
 
     gh = Github(get_best_robot_token())
@@ -228,6 +237,8 @@ def main():
     total_groups = len(build_results)
     logging.info("Totally got %s artifact groups", total_groups)
     if total_groups == 0:
+        if not all_skipped:
+            fail_simple_check(gh, pr_info, f"{build_check_name} failed")
         logging.error("No success builds, failing check")
         sys.exit(1)
 
@@ -297,6 +308,8 @@ def main():
     )
 
     if summary_status == "error":
+        if not all_skipped:
+            fail_simple_check(gh, pr_info, f"{build_check_name} failed")
         sys.exit(1)
 
 
