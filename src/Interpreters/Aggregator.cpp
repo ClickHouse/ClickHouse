@@ -2663,7 +2663,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
         if (!no_more_keys)
         {
-            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys);
+            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); // NOLINT
             if (emplace_result.isInserted())
             {
                 emplace_result.setMapped(nullptr);
