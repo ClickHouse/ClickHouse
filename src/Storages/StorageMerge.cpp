@@ -258,6 +258,44 @@ void StorageMerge::read(
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
 
+    bool has_database_virtual_column = false;
+    bool has_table_virtual_column = false;
+    Names real_column_names;
+    real_column_names.reserve(column_names.size());
+
+    for (const auto & column_name : column_names)
+    {
+        if (column_name == "_database" && isVirtualColumn(column_name, storage_snapshot->metadata))
+            has_database_virtual_column = true;
+        else if (column_name == "_table" && isVirtualColumn(column_name, storage_snapshot->metadata))
+            has_table_virtual_column = true;
+        else
+            real_column_names.push_back(column_name);
+    }
+
+    StorageListWithLocks selected_tables
+        = getSelectedTables(modified_context, query_info.query, has_database_virtual_column, has_table_virtual_column);
+
+    InputOrderInfoPtr input_sorting_info;
+    if (query_info.order_optimizer)
+    {
+        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
+        {
+            auto storage_ptr = std::get<1>(*it);
+            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
+            auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, modified_context);
+            if (it == selected_tables.begin())
+                input_sorting_info = current_info;
+            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
+                input_sorting_info.reset();
+
+            if (!input_sorting_info)
+                break;
+        }
+
+        query_info.input_order_info = input_sorting_info;
+    }
+
     query_plan.addInterpreterContext(modified_context);
 
     /// What will be result structure depending on query processed stage in source tables?
@@ -265,7 +303,10 @@ void StorageMerge::read(
 
     auto step = std::make_unique<ReadFromMerge>(
         common_header,
-        column_names,
+        std::move(selected_tables),
+        real_column_names,
+        has_database_virtual_column,
+        has_table_virtual_column,
         max_block_size,
         num_streams,
         shared_from_this(),
@@ -279,7 +320,10 @@ void StorageMerge::read(
 
 ReadFromMerge::ReadFromMerge(
     Block common_header_,
+    StorageListWithLocks selected_tables_,
     Names column_names_,
+    bool has_database_virtual_column_,
+    bool has_table_virtual_column_,
     size_t max_block_size,
     size_t num_streams,
     StoragePtr storage,
@@ -287,11 +331,14 @@ ReadFromMerge::ReadFromMerge(
     const SelectQueryInfo & query_info_,
     ContextMutablePtr context_,
     QueryProcessingStage::Enum processed_stage)
-    : ISourceStep(DataStream{.header = common_header_ /*addVirtualColumns(common_header_, column_names_, *storage, *storage_snapshot)*/})
+    : ISourceStep(DataStream{.header = common_header_})
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
     , common_header(std::move(common_header_))
+    , selected_tables(std::move(selected_tables_))
     , column_names(std::move(column_names_))
+    , has_database_virtual_column(has_database_virtual_column_)
+    , has_table_virtual_column(has_table_virtual_column_)
     , storage_merge(std::move(storage))
     , merge_storage_snapshot(std::move(storage_snapshot))
     , query_info(query_info_)
@@ -302,36 +349,11 @@ ReadFromMerge::ReadFromMerge(
 
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
-
-    bool has_database_virtual_column = false;
-    bool has_table_virtual_column = false;
-    Names real_column_names;
-    real_column_names.reserve(column_names.size());
-
-    for (const auto & column_name : column_names)
-    {
-        if (column_name == "_database" && storage_merge->isVirtualColumn(column_name, merge_storage_snapshot->metadata))
-            has_database_virtual_column = true;
-        else if (column_name == "_table" && storage_merge->isVirtualColumn(column_name, merge_storage_snapshot->metadata))
-            has_table_virtual_column = true;
-        else
-            real_column_names.push_back(column_name);
-    }
-
-    /** First we make list of selected tables to find out its size.
-      * This is necessary to correctly pass the recommended number of threads to each table.
-      */
-    StorageListWithLocks selected_tables
-        = storage_merge->as<const StorageMerge &>().getSelectedTables(context, query_info.query, has_database_virtual_column, has_table_virtual_column);
-
     if (selected_tables.empty())
     {
         pipeline.init(Pipe(std::make_shared<NullSource>(output_stream->header)));
         return;
     }
-
-    QueryPlanResourceHolder resources;
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
@@ -360,6 +382,9 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
+
+    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    QueryPlanResourceHolder resources;
 
     for (const auto & table : selected_tables)
     {
@@ -390,7 +415,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
             ASTPtr column_expr;
 
-            for (const auto & column : real_column_names)
+            for (const auto & column : column_names)
             {
                 const auto column_default = storage_columns.getDefault(column);
                 bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
@@ -433,11 +458,9 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             common_header,
             aliases,
             table,
-            column_names_as_aliases.empty() ? real_column_names : column_names_as_aliases,
+            column_names_as_aliases.empty() ? column_names : column_names_as_aliases,
             context,
-            current_streams,
-            has_database_virtual_column,
-            has_table_virtual_column);
+            current_streams);
 
         if (source_pipeline && source_pipeline->initialized())
         {
@@ -476,8 +499,6 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     Names & real_column_names,
     ContextMutablePtr modified_context,
     size_t streams_num,
-    bool has_database_virtual_column,
-    bool has_table_virtual_column,
     bool concat_streams)
 {
     const auto & [database_name, storage, _, table_name] = storage_with_lock;
