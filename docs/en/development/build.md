@@ -75,7 +75,7 @@ This will create the `programs/clickhouse` executable, which can be used with `c
 The build requires the following components:
 
 -   Git (is used only to checkout the sources, it’s not needed for the build)
--   CMake 3.14 or newer
+-   CMake 3.15 or newer
 -   Ninja
 -   C++ compiler: clang-14 or newer
 -   Linker: lld
