@@ -714,21 +714,34 @@ struct KeeperStorageSyncRequestProcessor final : public KeeperStorageRequestProc
 namespace
 {
 
-    Coordination::ACLs getNodeACLs(KeeperStorage & storage, StringRef path, bool is_local)
+Coordination::ACLs getNodeACLs(KeeperStorage & storage, StringRef path, bool is_local)
+{
+    if (is_local)
     {
-        if (is_local)
-        {
-            auto node_it = storage.container.find(path);
-            if (node_it == storage.container.end())
-                return {};
+        auto node_it = storage.container.find(path);
+        if (node_it == storage.container.end())
+            return {};
 
-            return storage.acl_map.convertNumber(node_it->value.acl_id);
-        }
-
-        return storage.uncommitted_state.getACLs(path);
+        return storage.acl_map.convertNumber(node_it->value.acl_id);
     }
 
+    return storage.uncommitted_state.getACLs(path);
 }
+
+void handleSystemNodeModification(const KeeperContext & keeper_context, std::string_view error_msg)
+{
+    if (keeper_context.server_state == KeeperContext::Phase::INIT && !keeper_context.ignore_system_path_on_startup)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "{}. Ignoring it can lead to data loss. "
+            "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
+            error_msg);
+
+    LOG_ERROR(&Poco::Logger::get("KeeperStorage"), fmt::runtime(error_msg));
+}
+
+}
+
 bool KeeperStorage::checkACL(StringRef path, int32_t permission, int64_t session_id, bool is_local)
 {
     const auto node_acls = getNodeACLs(*this, path, is_local);
@@ -812,14 +825,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         {
             auto error_msg = fmt::format("Trying to create a node inside the internal Keeper path ({}) which is not allowed. Path: {}", keeper_system_path, path_created);
 
-            if (keeper_context.server_state == KeeperContext::Phase::INIT && !keeper_context.ignore_system_path_on_startup)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
-                    error_msg);
-
-            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), fmt::runtime(error_msg));
+            handleSystemNodeModification(keeper_context, error_msg);
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
@@ -989,14 +995,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
         {
             auto error_msg = fmt::format("Trying to delete an internal Keeper path ({}) which is not allowed", request.path);
 
-            if (keeper_context.server_state == KeeperContext::Phase::INIT && !keeper_context.ignore_system_path_on_startup)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
-                    error_msg);
-
-            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), fmt::runtime(error_msg));
+            handleSystemNodeModification(keeper_context, error_msg);
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
@@ -1150,14 +1149,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         {
             auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", request.path);
 
-            if (keeper_context.server_state == KeeperContext::Phase::INIT && !keeper_context.ignore_system_path_on_startup)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
-                    error_msg);
-
-            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), fmt::runtime(error_msg));
+            handleSystemNodeModification(keeper_context, error_msg);
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
@@ -1426,14 +1418,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
         {
             auto error_msg = fmt::format("Trying to update an internal Keeper path ({}) which is not allowed", request.path);
 
-            if (keeper_context.server_state == KeeperContext::Phase::INIT && !keeper_context.ignore_system_path_on_startup)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true.",
-                    error_msg);
-
-            LOG_ERROR(&Poco::Logger::get("KeeperStorage"), fmt::runtime(error_msg));
+            handleSystemNodeModification(keeper_context, error_msg);
             return {KeeperStorage::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
         }
 
