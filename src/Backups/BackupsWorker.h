@@ -47,6 +47,9 @@ public:
         /// Backup's name, a string like "Disk('backups', 'my_backup')"
         String name;
 
+        /// This operation is internal and should not be shown in system.backups
+        bool internal = false;
+
         /// Status of backup or restore operation.
         BackupStatus status;
 
@@ -79,12 +82,12 @@ private:
 
     OperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 
-    void doRestore(const std::shared_ptr<ASTBackupQuery> & restore_query, const OperationID & restore_id, const UUID & restore_uuid,
-                   RestoreSettings restore_settings, const BackupInfo & backup_info,
+    void doRestore(const std::shared_ptr<ASTBackupQuery> & restore_query, const OperationID & restore_id, RestoreSettings restore_settings, const BackupInfo & backup_info,
                    std::shared_ptr<IRestoreCoordination> restore_coordination, ContextMutablePtr context, bool called_async);
 
-    void addInfo(const OperationID & id, const String & name, BackupStatus status);
-    void setStatus(const OperationID & id, BackupStatus status);
+    void addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status);
+    void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);
+    void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
     void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size);
 
     ThreadPool backups_thread_pool;
