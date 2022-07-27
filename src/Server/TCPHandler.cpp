@@ -760,6 +760,13 @@ void TCPHandler::processTablesStatusRequest()
     request.read(*in, client_tcp_protocol_version);
 
     ContextPtr context_to_resolve_table_names = (session && session->sessionContext()) ? session->sessionContext() : server.context();
+    if (is_interserver_mode && !default_database.empty())
+    {
+        // in interserver mode, the session doesn't exist.
+        ContextMutablePtr interserver_context = Context::createCopy(context_to_resolve_table_names);
+        interserver_context->setCurrentDatabase(default_database);
+        context_to_resolve_table_names = interserver_context;
+    }
 
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
