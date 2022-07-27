@@ -208,7 +208,8 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     try
     {
