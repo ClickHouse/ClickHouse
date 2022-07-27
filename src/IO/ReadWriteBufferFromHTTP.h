@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 template <typename SessionPtr>
@@ -119,6 +120,7 @@ namespace detail
 
         size_t offset_from_begin_pos = 0;
         Range read_range;
+        std::optional<size_t> file_size;
 
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
@@ -201,11 +203,11 @@ namespace detail
 
         size_t getFileSize() override
         {
-            if (read_range.end)
-                return *read_range.end - getRangeBegin();
+            if (file_size)
+                return *file_size;
 
             Poco::Net::HTTPResponse response;
-            for (size_t i = 0; i < 10; ++i)
+            for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
                 try
                 {
@@ -214,20 +216,30 @@ namespace detail
                 }
                 catch (const Poco::Exception & e)
                 {
+                    if (i == settings.http_max_tries - 1)
+                        throw;
+
                     LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
                 }
             }
 
             if (response.hasContentLength())
-                read_range.end = getRangeBegin() + response.getContentLength();
+            {
+                if (!read_range.end)
+                    read_range.end = getRangeBegin() + response.getContentLength();
 
-            return *read_range.end;
+                file_size = response.getContentLength();
+                return *file_size;
+            }
+
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
         }
 
         String getFileName() const override { return uri.toString(); }
 
         enum class InitializeError
         {
+            RETRIABLE_ERROR,
             /// If error is not retriable, `exception` variable must be set.
             NON_RETRIABLE_ERROR,
             /// Allows to skip not found urls for globs
@@ -401,19 +413,30 @@ namespace detail
                 saved_uri_redirect = uri_redirect;
             }
 
+            if (response.hasContentLength())
+                LOG_DEBUG(log, "Received response with content length: {}", response.getContentLength());
+
             if (withPartialContent() && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
             {
                 /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
                 if (read_range.begin && *read_range.begin != 0)
                 {
                     if (!exception)
+                    {
                         exception = std::make_exception_ptr(Exception(
                             ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                            "Cannot read with range: [{}, {}]",
+                            "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
                             *read_range.begin,
-                            read_range.end ? *read_range.end : '-'));
+                            read_range.end ? toString(*read_range.end) : "-",
+                            toString(response.getStatus()), response.getReason()));
+                    }
 
-                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+                    /// Retry 200OK
+                    if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
+                        initialization_error = InitializeError::RETRIABLE_ERROR;
+                    else
+                        initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+
                     return;
                 }
                 else if (read_range.end)
@@ -481,13 +504,25 @@ namespace detail
             bool result = false;
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
 
+            auto on_retriable_error = [&]()
+            {
+                    retry_with_range_header = true;
+                    impl.reset();
+                    auto http_session = session->getSession();
+                    http_session->reset();
+                    sleepForMilliseconds(milliseconds_to_wait);
+            };
+
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
+                exception = nullptr;
+
                 try
                 {
                     if (!impl)
                     {
                         initialize();
+
                         if (initialization_error == InitializeError::NON_RETRIABLE_ERROR)
                         {
                             assert(exception);
@@ -497,6 +532,22 @@ namespace detail
                         {
                             return false;
                         }
+                        else if (initialization_error == InitializeError::RETRIABLE_ERROR)
+                        {
+                            LOG_ERROR(
+                                log,
+                                "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
+                                "(Current backoff wait is {}/{} ms)",
+                                uri.toString(), i + 1, settings.http_max_tries, getOffset(),
+                                read_range.end ? toString(*read_range.end) : "unknown",
+                                milliseconds_to_wait, settings.http_retry_max_backoff_ms);
+
+                            assert(exception);
+                            on_retriable_error();
+                            continue;
+                        }
+
+                        assert(!exception);
 
                         if (use_external_buffer)
                         {
@@ -531,12 +582,8 @@ namespace detail
                         milliseconds_to_wait,
                         settings.http_retry_max_backoff_ms);
 
-                    retry_with_range_header = true;
+                    on_retriable_error();
                     exception = std::current_exception();
-                    impl.reset();
-                    auto http_session = session->getSession();
-                    http_session->reset();
-                    sleepForMilliseconds(milliseconds_to_wait);
                 }
 
                 milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
