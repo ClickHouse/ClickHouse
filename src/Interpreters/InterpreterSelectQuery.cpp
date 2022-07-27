@@ -1446,18 +1446,20 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         plan.addStep(std::move(sorting_step));
                     };
 
-                    auto add_create_set = [&settings](QueryPlan & plan, const Names & key_names) -> SetPtr
+                    auto add_create_set = [&settings](QueryPlan & plan, const Names & key_names, bool is_right)
                     {
                         SizeLimits size_limits(0, settings.max_bytes_in_set_to_optimize_join, OverflowMode::BREAK);
                         auto creating_set_step = std::make_unique<CreatingSetOnTheFlyStep>(plan.getCurrentDataStream(), key_names, size_limits);
-                        SetPtr set = creating_set_step->getSet();
+                        creating_set_step->setStepDescription(fmt::format("Create set for {} stream", is_right ? "right" : "left"));
+                        auto set = creating_set_step->getSet();
                         plan.addStep(std::move(creating_set_step));
                         return set;
                     };
 
-                    auto add_filter_by_set = [](QueryPlan & plan, const Names & key_names, SetPtr set)
+                    auto add_filter_by_set = [](QueryPlan & plan, const Names & key_names, auto set, bool is_right)
                     {
                         auto filter_by_set_step = std::make_unique<FilterBySetOnTheFlyStep>(plan.getCurrentDataStream(), key_names, set);
+                        filter_by_set_step->setStepDescription(fmt::format("Filter {} stream by set", is_right ? "right" : "left"));
                         plan.addStep(std::move(filter_by_set_step));
                     };
 
@@ -1467,11 +1469,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         if (settings.max_bytes_in_set_to_optimize_join > 0)
                         {
-                            SetPtr left_set = add_create_set(query_plan, join_clause.key_names_left);
-                            SetPtr right_set = add_create_set(*joined_plan, join_clause.key_names_right);
+                            auto left_set = add_create_set(query_plan, join_clause.key_names_left, false);
+                            auto right_set = add_create_set(*joined_plan, join_clause.key_names_right, true);
 
-                            add_filter_by_set(query_plan, join_clause.key_names_left, right_set);
-                            add_filter_by_set(*joined_plan, join_clause.key_names_right, left_set);
+                            add_filter_by_set(query_plan, join_clause.key_names_left, right_set, false);
+                            add_filter_by_set(*joined_plan, join_clause.key_names_right, left_set, true);
                         }
 
                         add_sorting(query_plan, join_clause.key_names_left, false);
