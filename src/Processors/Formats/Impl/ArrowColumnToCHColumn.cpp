@@ -343,10 +343,38 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         auto nested_column = readColumnFromArrowColumn(arrow_column, column_name, format_name, true, dictionary_values, read_ints_as_dates, allow_null_type, skip_columns_with_unsupported_types, skipped);
         if (skipped)
             return {};
+
         auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
-        auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
-        auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
-        return {std::move(nullable_column), std::move(nullable_type), column_name};
+
+        if (nested_column.type->lowCardinality())
+        {
+            const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(nested_column.type.get());
+            const auto & dict_type = low_cardinality_type->getDictionaryType();
+            // LowCardinality(X) -> LowCardinality(Nullable(X))
+            auto nullable_type = std::make_shared<DataTypeLowCardinality>(makeNullable(dict_type));
+
+            const auto * orig_lc_column = assert_cast<const ColumnLowCardinality *>(nested_column.column.get());
+
+            auto new_col = orig_lc_column->cloneEmpty();
+            ColumnLowCardinality * new_col_lc = assert_cast<ColumnLowCardinality *>(new_col.get());
+            new_col_lc->nestedToNullable();
+
+            for (size_t i = 0; i != orig_lc_column->size(); ++i)
+            {
+                if (nullmap_column->getBool(i))
+                    new_col_lc->insertDefault();
+                else
+                    new_col_lc->insertFrom(*orig_lc_column, i);
+            }
+
+            return {std::move(new_col), std::move(nullable_type), column_name};
+        }
+        else
+        {
+            auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
+            auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
+            return {std::move(nullable_column), std::move(nullable_type), column_name};
+        }
     }
 
     switch (arrow_column->type()->id())

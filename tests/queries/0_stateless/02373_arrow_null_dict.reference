@@ -1,0 +1,5 @@
+seq	nullable_data
+Nullable(Int64)	LowCardinality(Nullable(String))
+0	\N
+1	\N
+2	\N
