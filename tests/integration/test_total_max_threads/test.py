@@ -59,7 +59,7 @@ def test_total_max_threads_defined_50(started_cluster):
         node2.query(
             "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_total_max_threads_2'"
         )
-        == "51\n"
+        == "52\n"
     )
 
 
@@ -72,7 +72,7 @@ def test_total_max_threads_defined_1(started_cluster):
         node3.query(
             "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_total_max_threads_3'"
         )
-        == "2\n"
+        == "3\n"
     )
 
 
