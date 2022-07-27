@@ -8,9 +8,11 @@ namespace DB
 RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_)
     : IAccumulatingTransform(std::move(header), appendGroupingSetColumn(params_->getHeader()))
     , params(std::move(params_))
-    , keys(params->params.keys)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
+    keys.reserve(params->params.keys_size);
+    for (const auto & key : params->params.keys)
+        keys.emplace_back(input.getHeader().getPositionByName(key));
 }
 
 void RollupTransform::consume(Chunk chunk)
@@ -27,6 +29,14 @@ Chunk RollupTransform::merge(Chunks && chunks, bool final)
     auto rollup_block = params->aggregator.mergeBlocks(rollup_blocks, final);
     auto num_rows = rollup_block.rows();
     return Chunk(rollup_block.getColumns(), num_rows);
+}
+
+MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n)
+{
+    auto const & col = header.getByPosition(key);
+    auto result_column = col.column->cloneEmpty();
+    col.type->insertManyDefaultsInto(*result_column, n);
+    return result_column;
 }
 
 Chunk RollupTransform::generate()
@@ -51,7 +61,7 @@ Chunk RollupTransform::generate()
 
         auto num_rows = gen_chunk.getNumRows();
         auto columns = gen_chunk.getColumns();
-        columns[key] = columns[key]->cloneEmpty()->cloneResized(num_rows);
+        columns[key] = getColumnWithDefaults(getInputPort().getHeader(), key, num_rows);
 
         Chunks chunks;
         chunks.emplace_back(std::move(columns), num_rows);

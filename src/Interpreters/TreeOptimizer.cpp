@@ -674,6 +674,12 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
+void optimizeMultiIfToIf(ASTPtr & query)
+{
+    OptimizeMultiIfToIfVisitor::Data data;
+    OptimizeMultiIfToIfVisitor(data).visit(query);
+}
+
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
     RemoveInjectiveFunctionsVisitor::Data data(context);
@@ -819,6 +825,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);
+
+    if (settings.optimize_multiif_to_if)
+        optimizeMultiIfToIf(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)

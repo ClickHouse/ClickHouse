@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/Defines.h>
 #include <base/types.h>
 
 
@@ -36,7 +37,7 @@ struct FormatSettings
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
-    String column_names_for_schema_inference = "";
+    String column_names_for_schema_inference;
 
     enum class DateTimeInputFormat
     {
@@ -92,6 +93,7 @@ struct FormatSettings
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
+        bool null_as_default = false;
     } avro;
 
     String bool_true_representation = "true";
@@ -109,6 +111,7 @@ struct FormatSettings
         String null_representation = "\\N";
         char tuple_delimiter = ',';
         bool input_format_use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } csv;
 
     struct HiveText
@@ -219,6 +222,7 @@ struct FormatSettings
         String null_representation = "\\N";
         bool input_format_enum_as_number = false;
         bool input_format_use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } tsv;
 
     struct
@@ -271,6 +275,15 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump;
+
+    struct
+    {
+        UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
+        String table_name = "table";
+        bool include_column_names = true;
+        bool use_replace = false;
+        bool quote_names = true;
+    } sql_insert;
 };
 
 }

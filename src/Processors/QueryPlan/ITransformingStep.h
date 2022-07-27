@@ -55,6 +55,19 @@ public:
     const TransformTraits & getTransformTraits() const { return transform_traits; }
     const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
 
+    /// Updates the input stream of the given step. Used during query plan optimizations.
+    /// It won't do any validation of a new stream, so it is your responsibility to ensure that this update doesn't break anything
+    /// (e.g. you update data stream traits or correctly remove / add columns).
+    void updateInputStream(DataStream input_stream)
+    {
+        input_streams.clear();
+        input_streams.emplace_back(std::move(input_stream));
+
+        updateOutputStream();
+
+        updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
+    }
+
     void describePipeline(FormatSettings & settings) const override;
 
     /// Append extra processors for this step.
@@ -73,6 +86,8 @@ protected:
     TransformTraits transform_traits;
 
 private:
+    virtual void updateOutputStream() = 0;
+
     /// We collect processors got after pipeline transformation.
     Processors processors;
     bool collect_processors;

@@ -643,7 +643,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  BuilderBinTidy:
+  BuilderBinClangTidy:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
     steps:
@@ -1011,7 +1011,7 @@ jobs:
       - BuilderBinFreeBSD
       # - BuilderBinGCC
       - BuilderBinPPC64
-      - BuilderBinTidy
+      - BuilderBinClangTidy
       - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
     steps:
@@ -2902,7 +2902,7 @@ jobs:
 #############################################################################################
 #################################### PERFORMANCE TESTS ######################################
 #############################################################################################
-  PerformanceComparison0:
+  PerformanceComparisonX86-0:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -2911,7 +2911,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=4
@@ -2940,7 +2940,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison1:
+  PerformanceComparisonX86-1:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -2949,7 +2949,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=4
@@ -2978,7 +2978,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison2:
+  PerformanceComparisonX86-2:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -2987,7 +2987,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=2
           RUN_BY_HASH_TOTAL=4
@@ -3016,7 +3016,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison3:
+  PerformanceComparisonX86-3:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3025,7 +3025,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=3
           RUN_BY_HASH_TOTAL=4
@@ -3096,10 +3096,10 @@ jobs:
       - IntegrationTestsTsan1
       - IntegrationTestsTsan2
       - IntegrationTestsTsan3
-      - PerformanceComparison0
-      - PerformanceComparison1
-      - PerformanceComparison2
-      - PerformanceComparison3
+      - PerformanceComparisonX86-0
+      - PerformanceComparisonX86-1
+      - PerformanceComparisonX86-2
+      - PerformanceComparisonX86-3
       - CompatibilityCheck
       - ASTFuzzerTestDebug
       - ASTFuzzerTestAsan

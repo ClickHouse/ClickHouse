@@ -51,9 +51,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 1)
+        if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least one argument", getName());
 
         const auto & id_col = arguments[0];
@@ -114,18 +116,16 @@ public:
         const auto & numcolumn = arguments[0].column;
 
         if (checkAndGetColumn<ColumnUInt8>(numcolumn.get()) || checkAndGetColumn<ColumnUInt16>(numcolumn.get())
-            || checkAndGetColumn<ColumnUInt32>(numcolumn.get()) || checkAndGetColumn<ColumnUInt64>(numcolumn.get())
-            || checkAndGetColumnConst<ColumnUInt8>(numcolumn.get()) || checkAndGetColumnConst<ColumnUInt16>(numcolumn.get())
-            || checkAndGetColumnConst<ColumnUInt32>(numcolumn.get()) || checkAndGetColumnConst<ColumnUInt64>(numcolumn.get()))
+            || checkAndGetColumn<ColumnUInt32>(numcolumn.get()) || checkAndGetColumn<ColumnUInt64>(numcolumn.get()))
         {
             std::string salt;
-            UInt8 minLength = 0;
+            UInt8 min_length = 0;
             std::string alphabet;
 
             if (arguments.size() >= 4)
             {
                 const auto & alphabetcolumn = arguments[3].column;
-                if (auto alpha_col = checkAndGetColumnConst<ColumnString>(alphabetcolumn.get()))
+                if (const auto * alpha_col = checkAndGetColumnConst<ColumnString>(alphabetcolumn.get()))
                 {
                     alphabet = alpha_col->getValue<String>();
                     if (alphabet.find('\0') != std::string::npos)
@@ -138,18 +138,18 @@ public:
             if (arguments.size() >= 3)
             {
                 const auto & minlengthcolumn = arguments[2].column;
-                if (auto min_length_col = checkAndGetColumnConst<ColumnUInt8>(minlengthcolumn.get()))
-                    minLength = min_length_col->getValue<UInt8>();
+                if (const auto * min_length_col = checkAndGetColumnConst<ColumnUInt8>(minlengthcolumn.get()))
+                    min_length = min_length_col->getValue<UInt8>();
             }
 
             if (arguments.size() >= 2)
             {
                 const auto & saltcolumn = arguments[1].column;
-                if (auto salt_col = checkAndGetColumnConst<ColumnString>(saltcolumn.get()))
+                if (const auto * salt_col = checkAndGetColumnConst<ColumnString>(saltcolumn.get()))
                     salt = salt_col->getValue<String>();
             }
 
-            hashidsxx::Hashids hash(salt, minLength, alphabet);
+            hashidsxx::Hashids hash(salt, min_length, alphabet);
 
             auto col_res = ColumnString::create();
 
