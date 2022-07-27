@@ -395,6 +395,16 @@ class FailureReason(enum.Enum):
     INTERNAL_ERROR = "Test internal error: "
 
 
+def default_generator_for_bytes_setting():
+    return (
+        lambda: 0
+        if random.random() < 0.5
+        else 1
+        if random.random() < 0.2
+        else random.randint(1, 10 * 1024 * 1024 * 1024)
+    )
+
+
 class SettingsRandomizer:
     settings = {
         "max_insert_threads": lambda: 0
@@ -427,16 +437,8 @@ class SettingsRandomizer:
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
         "aggregation_in_order_max_block_bytes": lambda: random.randint(0, 50000000),
         "use_uncompressed_cache": lambda: random.randint(0, 1),
-        "min_bytes_to_use_direct_io": lambda: 0
-        if random.random() < 0.5
-        else 1
-        if random.random() < 0.2
-        else random.randint(1, 1024 * 1024 * 1024),
-        "min_bytes_to_use_mmap_io": lambda: 0
-        if random.random() < 0.5
-        else 1
-        if random.random() < 0.2
-        else random.randint(1, 1024 * 1024 * 1024),
+        "min_bytes_to_use_direct_io": default_generator_for_bytes_setting(),
+        "min_bytes_to_use_mmap_io": default_generator_for_bytes_setting(),
         "local_filesystem_read_method": lambda: random.choice(
             ["read", "pread", "mmap", "pread_threadpool"]
         ),
@@ -448,6 +450,9 @@ class SettingsRandomizer:
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
+        "max_bytes_before_external_sort": default_generator_for_bytes_setting(),
+        "max_bytes_before_external_group_by": default_generator_for_bytes_setting(),
+        "max_bytes_before_remerge_sort": lambda: random.randint(1, 3000000000),
     }
 
     @staticmethod
