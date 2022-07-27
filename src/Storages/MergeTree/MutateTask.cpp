@@ -57,7 +57,7 @@ static void splitMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames)
 {
-    ColumnsDescription part_columns(part->getColumns());
+    auto part_columns = part->getColumnsDescription();
 
     if (!isWidePart(part))
     {
@@ -139,18 +139,11 @@ static void splitMutationCommands(
             else if (part_columns.has(command.column_name))
             {
                 if (command.type == MutationCommand::Type::READ_COLUMN)
-                {
                     for_interpreter.push_back(command);
-                }
                 else if (command.type == MutationCommand::Type::RENAME_COLUMN)
-                {
                     part_columns.rename(command.column_name, command.rename_to);
-                    for_file_renames.push_back(command);
-                }
-                else
-                {
-                    for_file_renames.push_back(command);
-                }
+
+                for_file_renames.push_back(command);
             }
         }
     }
@@ -436,7 +429,7 @@ NameSet collectFilesToSkip(
     {
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = ISerialization::getFileNameForStream({entry.name, entry.type}, substream_path);
+            String stream_name = ISerialization::getFileNameForStream(entry.name, substream_path);
             files_to_skip.insert(stream_name + ".bin");
             files_to_skip.insert(stream_name + mrk_extension);
         };
@@ -461,23 +454,14 @@ NameSet collectFilesToSkip(
 /// from filesystem and in-memory checksums. Ordered result is important,
 /// because we can apply renames that affects each other: x -> z, y -> x.
 static NameToNameVector collectFilesForRenames(
-    MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension)
+    MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::DataPartPtr new_part,
+    const MutationCommands & commands_for_removes,
+    const String & mrk_extension)
 {
-    /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
-    std::map<String, size_t> stream_counts;
-    for (const auto & column : source_part->getColumns())
-    {
-        if (auto serialization = source_part->tryGetSerialization(column.name))
-        {
-            serialization->enumerateStreams(
-                [&](const ISerialization::SubstreamPath & substream_path)
-                {
-                    ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-                });
-        }
-    }
-
     NameToNameVector rename_vector;
+    NameSet renamed_streams;
+
     /// Remove old data
     for (const auto & command : commands_for_removes)
     {
@@ -499,23 +483,6 @@ static NameToNameVector collectFilesForRenames(
             if (source_part->checksums.has(command.column_name + ".proj"))
                 rename_vector.emplace_back(command.column_name + ".proj", "");
         }
-        else if (command.type == MutationCommand::Type::DROP_COLUMN)
-        {
-            ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
-            {
-                String stream_name = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
-                /// Delete files if they are no longer shared with another column.
-                if (--stream_counts[stream_name] == 0)
-                {
-                    rename_vector.emplace_back(stream_name + ".bin", "");
-                    rename_vector.emplace_back(stream_name + mrk_extension, "");
-                }
-            };
-
-
-            if (auto serialization = source_part->tryGetSerialization(command.column_name))
-                serialization->enumerateStreams(callback);
-        }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
             String escaped_name_from = escapeForFileName(command.column_name);
@@ -523,12 +490,12 @@ static NameToNameVector collectFilesForRenames(
 
             ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                String stream_from = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
-
+                String stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path);
                 String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
 
                 if (stream_from != stream_to)
                 {
+                    renamed_streams.insert(stream_from);
                     rename_vector.emplace_back(stream_from + ".bin", stream_to + ".bin");
                     rename_vector.emplace_back(stream_from + mrk_extension, stream_to + mrk_extension);
                 }
@@ -536,6 +503,41 @@ static NameToNameVector collectFilesForRenames(
 
             if (auto serialization = source_part->tryGetSerialization(command.column_name))
                 serialization->enumerateStreams(callback);
+        }
+    }
+
+    auto collect_all_stream_names = [&](const auto & data_part)
+    {
+        NameSet res;
+        for (const auto & column : data_part->getColumns())
+        {
+            if (auto serialization = data_part->tryGetSerialization(column.name))
+            {
+                serialization->enumerateStreams(
+                    [&](const ISerialization::SubstreamPath & substream_path)
+                    {
+                        res.insert(ISerialization::getFileNameForStream(column.name, substream_path));
+                    });
+            }
+        }
+
+        return res;
+    };
+
+    /// Remove files for streams that exists in source part,
+    /// but were removed in new_part by DROP COLUMN
+    /// or MODIFY COLUMN from type with higher number of streams
+    /// (e.g. LowCardinality -> String).
+
+    auto old_streams = collect_all_stream_names(source_part);
+    auto new_streams = collect_all_stream_names(new_part);
+
+    for (const auto & old_stream : old_streams)
+    {
+        if (!new_streams.contains(old_stream) && !renamed_streams.contains(old_stream))
+        {
+            rename_vector.emplace_back(old_stream + ".bin", "");
+            rename_vector.emplace_back(old_stream + mrk_extension, "");
         }
     }
 
@@ -552,9 +554,6 @@ void finalizeMutatedPart(
     const CompressionCodecPtr & codec,
     ContextPtr context)
 {
-    //auto disk = new_data_part->volume->getDisk();
-    //auto part_path = fs::path(new_data_part->getRelativePath());
-
     if (new_data_part->uuid != UUIDHelpers::Nil)
     {
         auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
@@ -1535,7 +1534,12 @@ bool MutateTask::prepare()
             ctx->indices_to_recalc,
             ctx->mrk_extension,
             ctx->projections_to_recalc);
-        ctx->files_to_rename = MutationHelpers::collectFilesForRenames(ctx->source_part, ctx->for_file_renames, ctx->mrk_extension);
+
+        ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
+            ctx->source_part,
+            ctx->new_data_part,
+            ctx->for_file_renames,
+            ctx->mrk_extension);
 
         if (ctx->indices_to_recalc.empty() &&
             ctx->projections_to_recalc.empty() &&

@@ -239,13 +239,8 @@ void SerializationInfoByName::readJSON(ReadBuffer & in)
                     "Missed field '{}' in SerializationInfo of columns", KEY_NAME);
 
             auto name = elem_object->getValue<String>(KEY_NAME);
-            auto it = find(name);
-
-            if (it == end())
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "There is no column {} in serialization infos", name);
-
-            it->second->fromJSON(*elem_object);
+            if (auto it = find(name); it != end())
+                it->second->fromJSON(*elem_object);
         }
     }
 }
