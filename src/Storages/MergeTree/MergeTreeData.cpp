@@ -70,6 +70,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Storages/MergeTree/MergeTreeDataPartDistinctPartitionExpressionCloner.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -5910,165 +5911,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     HardlinkedFiles * hardlinked_files,
     bool copy_instead_of_hardlink)
 {
-    /// Check that the storage policy contains the disk where the src_part is located.
-    bool does_storage_policy_allow_same_disk = false;
-    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
-    {
-        if (disk->getName() == src_part->data_part_storage->getDiskName())
-        {
-            does_storage_policy_allow_same_disk = true;
-            break;
-        }
-    }
-    if (!does_storage_policy_allow_same_disk)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not clone and load part {} because disk does not belong to storage policy",
-            quoteString(src_part->data_part_storage->getFullPath()));
+    MergeTreeDataPartCloner part_cloner {
+        *this,
+        src_part,
+        metadata_snapshot,
+        dst_part_info,
+        tmp_part_prefix,
+        txn,
+        require_part_metadata,
+        hardlinked_files,
+        copy_instead_of_hardlink
+    };
 
-    String dst_part_name = src_part->getNewName(dst_part_info);
-    assert(!tmp_part_prefix.empty());
-    String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
-
-    /// Why it is needed if we only hardlink files?
-    auto reservation = src_part->data_part_storage->reserve(src_part->getBytesOnDisk());
-
-    auto src_part_storage = src_part->data_part_storage;
-
-    /// If source part is in memory, flush it to disk and clone it already in on-disk format
-    if (auto src_part_in_memory = asInMemoryPart(src_part))
-    {
-        auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        src_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
-    }
-
-    String with_copy;
-    if (copy_instead_of_hardlink)
-        with_copy = " (copying data)";
-
-    LOG_DEBUG(log, "Cloning part {} to {}{}",
-              src_part_storage->getFullPath(),
-              std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name),
-              with_copy);
-
-    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
-
-    auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
-
-    if (!copy_instead_of_hardlink && hardlinked_files)
-    {
-        hardlinked_files->source_part_name = src_part->name;
-        hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
-
-        for (auto it = src_part->data_part_storage->iterate(); it->isValid(); it->next())
-        {
-            if (it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
-                hardlinked_files->hardlinks_from_source_part.insert(it->name());
-        }
-    }
-
-    /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-    dst_data_part->version.setCreationTID(tid, nullptr);
-    dst_data_part->storeVersionMetadata();
-
-    dst_data_part->is_temp = true;
-
-    dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
-    dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
-    return dst_data_part;
+    return part_cloner.clone();
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
-        const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr &,
         const MergeTreePartition & new_partition, const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
-        const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files)
+        const MergeTreeTransactionPtr & txn, HardlinkedFiles *)
 {
-    /// Check that the storage policy contains the disk where the src_part is located.
-    bool does_storage_policy_allow_same_disk = false;
-    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
-    {
-        if (disk->getName() == src_part->data_part_storage->getDiskName())
-        {
-            does_storage_policy_allow_same_disk = true;
-            break;
-        }
-    }
+    MergeTreeDataPartDistinctPartitionExpressionCloner part_cloner {
+        *this,
+        src_part,
+        dst_part_info,
+        tmp_part_prefix,
+        txn,
+        new_partition,
+        new_min_max_index
+    };
 
-    if (!does_storage_policy_allow_same_disk)
-        throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Could not clone and load part {} because disk does not belong to storage policy",
-                quoteString(src_part->data_part_storage->getFullPath()));
-
-    String dst_part_name = src_part->getNewName(dst_part_info);
-    assert(!tmp_part_prefix.empty());
-    String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
-
-    /// Why it is needed if we only hardlink files?
-    auto reservation = src_part->data_part_storage->reserve(src_part->getBytesOnDisk());
-
-    auto src_part_storage = src_part->data_part_storage;
-
-    /// If source part is in memory, flush it to disk and clone it already in on-disk format
-    if (auto src_part_in_memory = asInMemoryPart(src_part))
-    {
-        auto flushed_part_path = src_part_in_memory->getRelativePathForPrefix(tmp_part_prefix);
-        src_part_storage = src_part_in_memory->flushToDisk(flushed_part_path, metadata_snapshot);
-    }
-
-    LOG_DEBUG(log, "Cloning part {} to {}",
-              src_part_storage->getFullPath(),
-              std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name));
-
-    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ false);
-
-    auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
-
-    dst_data_part->minmax_idx->replace(new_min_max_index);
-
-    auto data_part_storage_builder = dst_data_part->data_part_storage->getBuilder();
-
-    data_part_storage_builder->removeFile("partition.dat");
-
-    auto partition_store_write_buffer = new_partition.store(*this, data_part_storage_builder, dst_data_part->checksums);
-
-    partition_store_write_buffer->finalize();
-
-    for (const auto & column : src_part->getColumns())
-    {
-        auto file = "minmax_" + escapeForFileName(column.name) + ".idx";
-        data_part_storage_builder->removeFile(file);
-    }
-
-    [[maybe_unused]] auto written_files = dst_data_part->minmax_idx->store(*this, data_part_storage_builder, dst_data_part->checksums);
-
-    if (hardlinked_files)
-    {
-        hardlinked_files->source_part_name = src_part->name;
-        hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
-
-        for (auto it = src_part->data_part_storage->iterate(); it->isValid(); it->next())
-        {
-            if (it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME && it->name() != IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME)
-                hardlinked_files->hardlinks_from_source_part.insert(it->name());
-        }
-    }
-
-    /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-    dst_data_part->version.setCreationTID(tid, nullptr);
-    dst_data_part->storeVersionMetadata();
-
-    dst_data_part->is_temp = true;
-
-    data_part_storage_builder->removeFile("checksums.txt");
-
-    dst_data_part->loadColumnsChecksumsIndexes(false, true);
-
-    dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
-    return dst_data_part;
+    return part_cloner.clone();
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
