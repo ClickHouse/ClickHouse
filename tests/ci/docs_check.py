@@ -19,7 +19,7 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
 
-NAME = "Docs Check (actions)"
+NAME = "Docs Check"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
