@@ -732,6 +732,14 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                 return arg;
             }
 
+            if (name == "materialize")
+            {
+                /// Ignore materialize
+                const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
+                to_inverted[&node] = &arg;
+                return arg;
+            }
+
             if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
