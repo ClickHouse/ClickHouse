@@ -53,8 +53,11 @@ public:
         /// Number of files in the backup (including backup's metadata; only unique files are counted).
         size_t num_files = 0;
 
-        /// Total size of files in the backup (including backup's metadata; only unique files are counted).
-        UInt64 total_size = 0;
+        /// Size of all files in the backup (including backup's metadata; only unique files are counted).
+        UInt64 uncompressed_size = 0;
+
+        /// Size of the backup if it's stored as an archive; or the same as `uncompressed_size` if the backup is stored as a folder.
+        UInt64 compressed_size = 0;
 
         /// Set only if there was an error.
         std::exception_ptr exception;
@@ -82,7 +85,7 @@ private:
 
     void addInfo(const OperationID & id, const String & name, BackupStatus status);
     void setStatus(const OperationID & id, BackupStatus status);
-    void setNumFilesAndTotalSize(const OperationID & id, size_t num_files, UInt64 total_size);
+    void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size);
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
