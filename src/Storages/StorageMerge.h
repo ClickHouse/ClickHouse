@@ -118,9 +118,16 @@ public:
     static constexpr auto name = "ReadFromMerge";
     String getName() const override { return name; }
 
+    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
+    using StorageListWithLocks = std::list<StorageWithLockAndName>;
+    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
+
     ReadFromMerge(
         Block common_header_,
+        StorageListWithLocks selected_tables_,
         Names column_names_,
+        bool has_database_virtual_column_,
+        bool has_table_virtual_column_,
         size_t max_block_size,
         size_t num_streams,
         StoragePtr storage,
@@ -137,16 +144,15 @@ public:
         added_filter_column_name = std::move(column_name);
     }
 
-    using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
-    using StorageListWithLocks = std::list<StorageWithLockAndName>;
-    using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
-
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
     const Block common_header;
 
+    StorageListWithLocks selected_tables;
     Names column_names;
+    bool has_database_virtual_column;
+    bool has_table_virtual_column;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
@@ -177,8 +183,6 @@ private:
         Names & real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
-        bool has_database_virtual_column,
-        bool has_table_virtual_column,
         bool concat_streams = false);
 
     void convertingSourceStream(
