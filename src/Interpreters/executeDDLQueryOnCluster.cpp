@@ -368,6 +368,10 @@ Chunk DDLQueryStatusSource::generate()
     if (all_hosts_finished || timeout_exceeded)
         return {};
 
+    String node_to_wait = "finished";
+    if (is_replicated_database && context->getSettingsRef().database_replicated_enforce_synchronous_settings)
+        node_to_wait = "synced";
+
     auto zookeeper = context->getZooKeeper();
     size_t try_number = 0;
 
@@ -423,7 +427,7 @@ Chunk DDLQueryStatusSource::generate()
             return {};
         }
 
-        Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, fs::path(node_path) / "finished"));
+        Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait));
         ++try_number;
         if (new_hosts.empty())
             continue;
@@ -434,10 +438,16 @@ Chunk DDLQueryStatusSource::generate()
         for (const String & host_id : new_hosts)
         {
             ExecutionStatus status(-1, "Cannot obtain error message");
+
+            if (node_to_wait == "finished")
             {
                 String status_data;
                 if (zookeeper->tryGet(fs::path(node_path) / "finished" / host_id, status_data))
                     status.tryDeserializeText(status_data);
+            }
+            else
+            {
+                status = ExecutionStatus{0};
             }
 
 

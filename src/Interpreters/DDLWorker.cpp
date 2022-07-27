@@ -265,7 +265,13 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 /// but we lost connection while waiting for the response.
                 /// Yeah, distributed systems is a zoo.
                 if (status_written)
+                {
+                    /// TODO We cannot guarantee that query was actually executed synchronously if connection was lost.
+                    /// Let's simple create synced/ node for now, but it would be better ot pass UNFINISHED status to initiator
+                    /// or wait for query to actually finish (requires https://github.com/ClickHouse/ClickHouse/issues/23513)
+                    task->createSyncedNodeIfNeed(zookeeper);
                     task->completely_processed = true;
+                }
                 else
                     processTask(*task, zookeeper);
                 ++task_it;
@@ -641,6 +647,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     /// Active node was removed in multi ops
     active_node->setAlreadyRemoved();
 
+    task.createSyncedNodeIfNeed(zookeeper);
     task.completely_processed = true;
     updateMaxDDLEntryID(task.entry_name);
 }

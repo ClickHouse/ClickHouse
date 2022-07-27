@@ -402,6 +402,24 @@ Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
     return zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
 }
 
+void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
+{
+    assert(!completely_processed);
+    if (!entry.settings)
+        return;
+
+    Field value;
+    if (!entry.settings->tryGet("database_replicated_enforce_synchronous_settings", value))
+        return;
+
+    /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
+    assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
+    if (!value.get<UInt64>())
+        return;
+
+    zookeeper->createIfNotExists(getSyncedNodePath(), "");
+}
+
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 {
     return zkutil::getSequentialNodeName("query-", log_entry_number);
