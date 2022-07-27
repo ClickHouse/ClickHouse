@@ -239,7 +239,9 @@ def main():
     logging.info("Totally got %s artifact groups", total_groups)
     if total_groups == 0:
         if not all_skipped:
-            fail_simple_check(gh, pr_info, build_check_name, f"{build_check_name} failed")
+            fail_simple_check(
+                gh, pr_info, build_check_name, f"{build_check_name} failed"
+            )
         logging.error("No success builds, failing check")
         sys.exit(1)
 
@@ -312,7 +314,9 @@ def main():
         if summary_status == "success":
             reset_simple_check(gh, pr_info, build_check_name)
         else:
-            fail_simple_check(gh, pr_info, build_check_name, f"{build_check_name} {summary_status}")
+            fail_simple_check(
+                gh, pr_info, build_check_name, f"{build_check_name} {summary_status}"
+            )
 
     if summary_status == "error":
         sys.exit(1)

@@ -99,6 +99,7 @@ def fail_simple_check(gh, pr_info, name, description):
         target_url=GITHUB_RUN_URL,
     )
 
+
 def reset_simple_check(gh, pr_info, name, description=""):
     if SKIP_SIMPLE_CHECK_LABEL in pr_info.labels:
         return
@@ -114,6 +115,7 @@ def reset_simple_check(gh, pr_info, name, description=""):
         state="success",
         target_url=GITHUB_RUN_URL,
     )
+
 
 def create_simple_check(gh, pr_info):
     if SKIP_SIMPLE_CHECK_LABEL not in pr_info.labels:
