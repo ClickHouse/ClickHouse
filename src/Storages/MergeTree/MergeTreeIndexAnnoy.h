@@ -4,6 +4,7 @@
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
 
+#define ANNOYLIB_MULTITHREADED_BUILD
 #include <annoylib.h>
 #include <kissrandom.h>
 
@@ -16,7 +17,7 @@ namespace ANN = ApproximateNearestNeighbour;
 // mainly for serialization and deserialization of the index
 namespace ApproximateNearestNeighbour
 {
-    using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexSingleThreadedBuildPolicy;
+    using AnnoyIndexThreadedBuildPolicy = ::Annoy::AnnoyIndexMultiThreadedBuildPolicy;
     // TODO: Support different metrics. List of available metrics can be taken from here:
     // https://github.com/spotify/annoy/blob/master/src/annoymodule.cc#L151-L171
     template <typename Distance = ::Annoy::Euclidean>
