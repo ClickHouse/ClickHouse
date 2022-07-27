@@ -151,6 +151,8 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         --number_of_forks;
     }
 
+    ZSTD_freeDCtx(dctx);
+
     /// If error happen end of processed part will not reach end
     if (in_pointer < end || error_happened)
         return 1;
