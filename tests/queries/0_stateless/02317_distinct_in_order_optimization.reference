@@ -77,4 +77,14 @@
 2	2
 1	1
 0	0
+-- distinct with constants columns
+-- { echoOn }
+select distinct 1 as a, 2 as b from distinct_in_order;
+1	2
+select distinct 1 as a, 2 as b from distinct_in_order order by a;
+1	2
+select distinct 1 as a, 2 as b from distinct_in_order order by a, b;
+1	2
+select distinct x, y from (select 1 as x, 2 as y from distinct_in_order order by x) order by x;
+1	2
 -- check that distinct in order has the same result as ordinary distinct
