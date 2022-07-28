@@ -99,7 +99,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.has("logger.json"))
+        if (config.getString("logger.formatting", "") == "json")
             pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter(true);
@@ -140,7 +140,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.has("logger.json"))
+        if (config.getString("logger.formatting", "") == "json")
             pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter(true);
@@ -184,7 +184,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
 
-        if (config.has("logger.json"))
+        if (config.getString("logger.formatting", "") == "json")
             pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter(true);
@@ -211,7 +211,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         }
 
         Poco::AutoPtr<OwnPatternFormatter> pf;
-        if (config.has("logger.json"))
+        if (config.getString("logger.formatting", "") == "json")
             pf = new OwnJSONPatternFormatter;
         else
             pf = new OwnPatternFormatter(color_enabled);

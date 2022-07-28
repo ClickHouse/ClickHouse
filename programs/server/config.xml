@@ -68,7 +68,7 @@
         To enable JSON logging support, just uncomment <json> tag. 
         Having the <json> tag will make it work. For better understanding/visibility, you can add "true" or "1".
         -->
-        <!-- <json>true</json> -->
+        <!-- <formatting>json</formatting> -->
     </logger>
 
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->

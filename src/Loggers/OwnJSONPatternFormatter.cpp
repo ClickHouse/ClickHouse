@@ -13,19 +13,16 @@ OwnJSONPatternFormatter::OwnJSONPatternFormatter() : OwnPatternFormatter("")
 }
 
 
-void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text)
+void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const
 {
     DB::WriteBufferFromString wb(text);
 
     DB::FormatSettings settings;
-    char key_name[] = "a placeholder for key names in structured logging";
-    char empty_string[] = "";
-
+    
     const Poco::Message & msg = msg_ext.base;
     DB::writeChar('{', wb);
 
-    strcpy(key_name, "date_time");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("date_time", wb, settings);
     DB::writeChar(':', wb);
 
     DB::writeChar('\"', wb);
@@ -42,20 +39,14 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
     DB::writeChar(',', wb);
 
-    strcpy(key_name, "thread_name");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("thread_name", wb, settings);
     DB::writeChar(':', wb);
 
-    const char * thread_name = msg.getThread().c_str();
-    if (thread_name != nullptr)
-        writeJSONString(thread_name, thread_name + strlen(thread_name), wb, settings);
-    else
-        writeJSONString(empty_string, empty_string + strlen(empty_string), wb, settings);
+    writeJSONString(msg.getThread(), wb, settings);
 
     DB::writeChar(',', wb);
 
-    strcpy(key_name, "thread_id");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("thread_id", wb, settings);
     DB::writeChar(':', wb);
     DB::writeChar('\"', wb);
     DB::writeIntText(msg_ext.thread_id, wb);
@@ -63,65 +54,38 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
     DB::writeChar(',', wb);
 
-    strcpy(key_name, "level");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("level", wb, settings);
     DB::writeChar(':', wb);
-    int priority_int = static_cast<int>(msg.getPriority());
-    String priority_str = std::to_string(priority_int);
-    const char * priority = priority_str.c_str();
-    if (priority != nullptr)
-        writeJSONString(priority, priority + strlen(priority), wb, settings);
-    else
-        writeJSONString(empty_string, empty_string + strlen(empty_string), wb, settings);
-
+    int priority = static_cast<int>(msg.getPriority());
+    writeJSONString(std::to_string(priority), wb, settings);
     DB::writeChar(',', wb);
 
     /// We write query_id even in case when it is empty (no query context)
     /// just to be convenient for various log parsers.
 
-    strcpy(key_name, "query_id");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("query_id", wb, settings);
     DB::writeChar(':', wb);
     writeJSONString(msg_ext.query_id, wb, settings);
 
     DB::writeChar(',', wb);
 
-    strcpy(key_name, "logger_name");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("logger_name", wb, settings);
     DB::writeChar(':', wb);
 
-    const char * logger_name = msg.getSource().c_str();
-    if (logger_name != nullptr)
-        writeJSONString(logger_name, logger_name + strlen(logger_name), wb, settings);
-    else
-        writeJSONString(empty_string, empty_string + strlen(empty_string), wb, settings);
-
+    writeJSONString(msg.getSource(), wb, settings);
     DB::writeChar(',', wb);
 
-    strcpy(key_name, "message");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("message", wb, settings);
     DB::writeChar(':', wb);
-    const char * msg_text = msg.getText().c_str();
-    if (msg_text != nullptr)
-        writeJSONString(msg_text, msg_text + strlen(msg_text), wb, settings);
-    else
-        writeJSONString(empty_string, empty_string + strlen(empty_string), wb, settings);
-
+    writeJSONString(msg.getText(), wb, settings);
     DB::writeChar(',', wb);
 
-    strcpy(key_name, "source_file");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("source_file", wb, settings);
     DB::writeChar(':', wb);
-    const char * source_file = msg.getSourceFile();
-    if (source_file != nullptr)
-        writeJSONString(source_file, source_file + strlen(source_file), wb, settings);
-    else
-        writeJSONString(empty_string, empty_string + strlen(empty_string), wb, settings);
-
+    writeJSONString(msg.getSourceFile(), wb, settings);
     DB::writeChar(',', wb);
 
-    strcpy(key_name, "source_line");
-    writeJSONString(key_name, key_name + strlen(key_name), wb, settings);
+    writeJSONString("source_line", wb, settings);
     DB::writeChar(':', wb);
     DB::writeChar('\"', wb);
     DB::writeIntText(msg.getSourceLine(), wb);

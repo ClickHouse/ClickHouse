@@ -28,5 +28,5 @@ public:
     OwnJSONPatternFormatter();
 
     void format(const Poco::Message & msg, std::string & text) override;
-    static void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text);
+    void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const override;
 };

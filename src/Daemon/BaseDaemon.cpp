@@ -1014,7 +1014,7 @@ void BaseDaemon::setupWatchdog()
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
             Poco::AutoPtr<OwnPatternFormatter> pf;
-            if (config().has("logger.json"))
+            if (config().getString("logger.formatting", "") == "json")
                 pf = new OwnJSONPatternFormatter;
             else
                 pf = new OwnPatternFormatter(true);

@@ -13,10 +13,6 @@ OwnPatternFormatter::OwnPatternFormatter(bool color_) : Poco::PatternFormatter("
 {
 }
 
-OwnPatternFormatter::OwnPatternFormatter() : Poco::PatternFormatter("")
-{
-}
-
 void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const
 {
     DB::WriteBufferFromString wb(text);
