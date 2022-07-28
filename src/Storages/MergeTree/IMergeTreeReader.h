@@ -75,7 +75,10 @@ protected:
     /// Stores states for IDataType::deserializeBinaryBulk
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
 
+    /// Actual column names and types of columns in part,
+    /// which may differ from table metadata.
     NamesAndTypes columns_to_read;
+    /// Actual serialization of columns in part.
     Serializations serializations;
 
     UncompressedCache * uncompressed_cache;

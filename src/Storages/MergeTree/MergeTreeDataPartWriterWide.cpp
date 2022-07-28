@@ -583,7 +583,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
     {
         if (column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
-            && data_part->getSerialization(columnn.name)->getKind() == ISerialization::Kind::DEFAULT)
+            && data_part->getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
         {
             validateColumnOfFixedSize(column);
         }
