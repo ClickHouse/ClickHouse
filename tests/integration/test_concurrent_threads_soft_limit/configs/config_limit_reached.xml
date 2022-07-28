@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <clickhouse>
-    <total_max_threads>1</total_max_threads>
+    <concurrent_threads_soft_limit>10</concurrent_threads_soft_limit>
     <query_log>
       <database>system</database>
       <table>query_log</table>
