@@ -912,10 +912,10 @@ const Block & Context::getScalar(const String & name) const
     return it->second;
 }
 
-const Block * Context::tryGetLocalScalar(const String & name) const
+const Block * Context::tryGetSpecialScalar(const String & name) const
 {
-    auto it = local_scalars.find(name);
-    if (local_scalars.end() == it)
+    auto it = special_scalars.find(name);
+    if (special_scalars.end() == it)
         return nullptr;
     return &it->second;
 }
@@ -986,12 +986,12 @@ void Context::addScalar(const String & name, const Block & block)
 }
 
 
-void Context::addLocalScalar(const String & name, const Block & block)
+void Context::addSpecialScalar(const String & name, const Block & block)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have local scalars");
 
-    local_scalars[name] = block;
+    special_scalars[name] = block;
 }
 
 
