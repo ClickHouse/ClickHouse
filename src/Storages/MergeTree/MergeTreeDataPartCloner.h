@@ -4,7 +4,12 @@
 
 namespace DB
 {
-    struct MergeTreeDataPartCloner
+    /*
+     * Clones a source partition into a destination partition. This class was extracted from MergeTreeData::cloneAndLoadDataPartOnSameDisk
+     * as an attempt to make it a bit more readable and allow part of the code to be re-used. Reference method can be found in:
+     * https://github.com/ClickHouse/ClickHouse/blob/ee515b8862a9be0c940ffdef0a56e590b5facdb2/src/Storages/MergeTree/MergeTreeData.cpp#L5948.
+     * */
+    class MergeTreeDataPartCloner
     {
     public:
         using DataPart = IMergeTreeDataPart;

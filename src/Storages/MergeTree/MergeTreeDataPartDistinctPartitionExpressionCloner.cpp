@@ -38,7 +38,6 @@ namespace DB
         delete_min_max_files(storage_builder);
 
         [[maybe_unused]] auto written_files = dst_part->minmax_idx->store(merge_tree_data, storage_builder, dst_part->checksums);
-
     }
 
     void MergeTreeDataPartDistinctPartitionExpressionCloner::update_partition_file(
@@ -49,6 +48,8 @@ namespace DB
     {
         storage_builder->removeFile("partition.dat");
 
+        // Leverage already implemented MergeTreePartition::store to create & store partition.dat.
+        // Checksum is re-calculated later.
         auto partition_store_write_buffer = partition.store(merge_tree_data, storage_builder, dst_part->checksums);
 
         partition_store_write_buffer->finalize();
@@ -64,7 +65,9 @@ namespace DB
 
         update_min_max_files(dst_part, data_part_storage_builder);
 
-        // add comment here
+        // MergeTreeDataPartCloner::finalize_part calls IMergeTreeDataPart::loadColumnsChecksumsIndexes, which will re-create
+        // the checksum file if it doesn't exist. Relying on that is cumbersome, but this refactoring is simply a code extraction
+        // with small improvements. It can be further improved in the future.
         data_part_storage_builder->removeFile("checksums.txt");
     }
 

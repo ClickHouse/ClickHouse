@@ -7,6 +7,11 @@ namespace DB
     class MergeTreeTransaction;
     using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
+    /*
+     * Clones a source partition into a destination partition by hard linking all files except partition.dat,
+     * minmax_<partition_expression_column>.idx and checksums.txt. These files are re-calculated and store separately
+     * in the destination partition directory.
+     * */
     class MergeTreeDataPartDistinctPartitionExpressionCloner : public MergeTreeDataPartCloner
     {
 
@@ -38,11 +43,10 @@ namespace DB
             const DataPartStorageBuilderPtr & storage_builder
         ) const;
 
+        /// Re-writes partition.dat and minmax_<fields>.idx. Also deletes checksums.txt
         void update_new_part_files(const MutableDataPartPtr & dst_part) const;
 
         MutableDataPartPtr finalize_part(const MutableDataPartPtr & dst_part) const override;
-
-        void handle_hard_linked_parameter_files(MergeTreeData::HardlinkedFiles * hardlinked_files) const;
 
     };
 }
