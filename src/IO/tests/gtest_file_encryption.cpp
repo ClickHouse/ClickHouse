@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <filesystem>
 
@@ -241,6 +242,23 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     rb.ignore(5);
     rb.ignore(5);
     ASSERT_EQ(rb.getPosition(), 15);
+    
+    String res;
+    readStringUntilEOF(res, rb);
+    ASSERT_EQ(res, data.substr(15));
+    res.clear();
+
+    rb.seek(0, SEEK_SET);
+    ASSERT_EQ(rb.getPosition(), 0);
+    res.resize(5);
+    rb.read(res.data(), res.size());
+    ASSERT_EQ(res, data.substr(0, 5));
+    res.clear();
+
+    rb.seek(1, SEEK_CUR);
+    ASSERT_EQ(rb.getPosition(), 6);
+    readStringUntilEOF(res, rb);
+    ASSERT_EQ(res, data.substr(6));
 }
 
 #endif
