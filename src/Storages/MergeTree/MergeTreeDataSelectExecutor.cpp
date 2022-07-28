@@ -1273,8 +1273,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
-    const ActionsDAGPtr & added_filter,
-    const std::string & added_filter_column_name,
+    const ActionDAGNodes & added_filter_nodes,
     ContextPtr context,
     unsigned num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
@@ -1295,8 +1294,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         query_info.prewhere_info,
-        added_filter,
-        added_filter_column_name,
+        added_filter_nodes,
         metadata_snapshot_base,
         metadata_snapshot,
         query_info,
