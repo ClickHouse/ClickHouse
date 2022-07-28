@@ -17,15 +17,15 @@
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
 
+#include <format>
+
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
 
 bool IParserKQLFunction::convert(String & out,IParser::Pos & pos)
 {
@@ -76,7 +76,12 @@ bool IParserKQLFunction::directMapping(String & out,IParser::Pos & pos,const Str
     return false;
 }
 
-String getConvertedArgument(const String & fn_name, IParser::Pos & pos)
+String IParserKQLFunction::getArgument(const String & function_name, DB::IParser::Pos & pos)
+{
+    return getOptionalArgument(function_name, pos).value();
+}
+
+String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
 {
     String converted_arg;
     std::vector<String> tokens;
@@ -115,6 +120,16 @@ String getConvertedArgument(const String & fn_name, IParser::Pos & pos)
     return converted_arg;
 }
 
+std::optional<String> IParserKQLFunction::getOptionalArgument(const String & function_name, DB::IParser::Pos & pos)
+{
+    std::optional<String> argument;
+    if (const auto & type = pos->type; type != DB::TokenType::Comma && type != DB::TokenType::OpeningRoundBracket)
+        return {};
+
+    ++pos;
+    return getConvertedArgument(function_name, pos);
+}
+
 String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
 {
     String fn_name = String(pos->begin, pos->end);
@@ -125,6 +140,21 @@ String IParserKQLFunction::getKQLFunctionName(IParser::Pos & pos)
         return "";
     }
     return  fn_name;
+}
+
+String IParserKQLFunction::kqlCallToExpression(
+    const String & function_name, std::initializer_list<std::reference_wrapper<const String>> params, const uint32_t max_depth)
+{
+    const auto params_str = std::accumulate(
+        std::cbegin(params),
+        std::cend(params),
+        String(),
+        [](auto acc, const auto & param) { return (acc.empty() ? "" : ", ") + std::move(acc) + param.get(); });
+
+    const auto kql_call = std::format("{}({})", function_name, params_str);
+    DB::Tokens call_tokens(kql_call.c_str(), kql_call.c_str() + kql_call.length());
+    DB::IParser::Pos tokens_pos(call_tokens, max_depth);
+    return DB::IParserKQLFunction::getExpression(tokens_pos);
 }
 
 void IParserKQLFunction::validateEndOfFunction(const String & fn_name, IParser::Pos & pos)
@@ -148,5 +178,4 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
     }
     return arg;
 }
-
 }
