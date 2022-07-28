@@ -311,6 +311,11 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     if (!request_for_session.zxid)
         request_for_session.zxid = log_idx;
 
+    rollbackRequest(request_for_session);
+}
+
+void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession & request_for_session)
+{
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
