@@ -455,11 +455,9 @@ def main(event):
     )
 
     print("Got pull requests for workflow", len(pull_requests))
-    if len(pull_requests) > 1:
-        raise Exception("Received more than one PR for workflow run")
-
-    if len(pull_requests) < 1:
-        raise Exception("Cannot find any pull requests for workflow run")
+    if len(pull_requests) != 1:
+        print(f"Can't continue with non-uniq PRs: {pull_requests}")
+        return
 
     pull_request = pull_requests[0]
     print("Pull request for workflow number", pull_request["number"])
@@ -484,4 +482,8 @@ def main(event):
 
 
 def handler(event, _):
-    main(event)
+    try:
+        main(event)
+    except Exception:
+        print("Received event: ", event)
+        raise
