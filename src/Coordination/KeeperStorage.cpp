@@ -366,10 +366,10 @@ void KeeperStorage::UncommittedState::addDeltas(std::vector<Delta> new_deltas)
 {
     for (auto & delta : new_deltas)
     {
-        if (!delta.path.empty())
-            applyDelta(delta);
+        const auto & added_delta = deltas.emplace_back(std::move(delta));
 
-        deltas.push_back(std::move(delta));
+        if (!added_delta.path.empty())
+            applyDelta(added_delta);
     }
 }
 
@@ -2114,15 +2114,20 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     return results;
 }
 
-void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
+void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
 {
+    if (allow_missing && (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid < rollback_zxid))
+        return;
+
     if (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid != rollback_zxid)
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be the last preprocessed.", rollback_zxid);
+    }
 
-    // if an exception occurs during rollback, the best option is to terminate because we can end up in an incosistent state
+    // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
     // we block memory tracking so we can avoid terminating if we're rollbacking because of memory limit
-    MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits;
     try
     {
         uncommitted_transactions.pop_back();
