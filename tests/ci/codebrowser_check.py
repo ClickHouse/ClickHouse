@@ -16,7 +16,7 @@ from commit_status_helper import post_commit_status
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
-NAME = "Woboq Build (actions)"
+NAME = "Woboq Build"
 
 
 def get_run_command(repo_path, output_path, image):
