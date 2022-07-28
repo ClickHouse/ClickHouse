@@ -428,6 +428,24 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
     // TODO: fill required settings
+    if (sasl_user != "")
+    {
+        conf.set("sasl.username", sasl_user);
+        conf.set("sasl.password", sasl_password);
+        if (security_protocol != "")
+        {
+            conf.set("security.protocol", security_protocol);
+        } else {
+            conf.set("security.protocol", "sasl_plaintext");
+        }
+        if (sasl_mechanism != "")
+        {
+            conf.set("sasl.mechanism", sasl_mechanism);
+        } else {
+            conf.set("sasl.mechanism", "PLAIN");
+        }
+    }
+
     updateConfiguration(conf);
 
     auto producer = std::make_shared<cppkafka::Producer>(conf);
