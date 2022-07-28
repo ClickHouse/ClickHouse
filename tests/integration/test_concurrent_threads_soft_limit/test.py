@@ -39,7 +39,8 @@ def started_cluster():
 
 def test_concurrent_threads_soft_limit_default(started_cluster):
     node1.query(
-        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_concurrent_threads_soft_limit_1"
+        "SELECT count(*) FROM numbers_mt(10000000)",
+        query_id="test_concurrent_threads_soft_limit_1",
     )
     node1.query("SYSTEM FLUSH LOGS")
     assert (
@@ -52,7 +53,8 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
 
 def test_concurrent_threads_soft_limit_defined_50(started_cluster):
     node2.query(
-        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_concurrent_threads_soft_limit_2"
+        "SELECT count(*) FROM numbers_mt(10000000)",
+        query_id="test_concurrent_threads_soft_limit_2",
     )
     node2.query("SYSTEM FLUSH LOGS")
     assert (
@@ -65,7 +67,8 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
 
 def test_concurrent_threads_soft_limit_defined_1(started_cluster):
     node3.query(
-        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_concurrent_threads_soft_limit_3"
+        "SELECT count(*) FROM numbers_mt(10000000)",
+        query_id="test_concurrent_threads_soft_limit_3",
     )
     node3.query("SYSTEM FLUSH LOGS")
     assert (
