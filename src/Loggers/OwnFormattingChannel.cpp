@@ -1,20 +1,17 @@
 #include "OwnFormattingChannel.h"
-#include "OwnJSONPatternFormatter.h"
 #include "OwnPatternFormatter.h"
+
+
 namespace DB
 {
+
 void OwnFormattingChannel::logExtended(const ExtendedLogMessage & msg)
 {
     if (pChannel && priority >= msg.base.getPriority())
     {
-        std::string text;
-        if (auto * formatter = dynamic_cast<OwnJSONPatternFormatter *>(pFormatter.get()))
+        if (pFormatter)
         {
-            formatter->formatExtended(msg, text);
-            pChannel->log(Poco::Message(msg.base, text));
-        }
-        else if (pFormatter)
-        {
+            std::string text;
             pFormatter->formatExtended(msg, text);
             pChannel->log(Poco::Message(msg.base, text));
         }
