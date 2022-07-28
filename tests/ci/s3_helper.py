@@ -307,12 +307,12 @@ class S3Helper:
 
     def flag_set(self, name):
         logging.info("Setting flag %s", name)
-        self.client.put_object(Bucket=S3_FLAGS_BUCKET, Key=name)
+        self.client.put_object(Bucket=S3_FLAGS_BUCKET, Key="flags/"+name)
 
     def flag_clear(self, name):
         logging.info("Clearing flag %s", name)
-        self.client.delete_object(Bucket=S3_FLAGS_BUCKET, Key=name)
+        self.client.delete_object(Bucket=S3_FLAGS_BUCKET, Key="flags/"+name)
 
     def flag_check(self, name):
-        objects = self.client.list_objects_v2(Bucket=S3_FLAGS_BUCKET, Prefix=name)
+        objects = self.client.list_objects_v2(Bucket=S3_FLAGS_BUCKET, Prefix="flags/"+name)
         return "Contents" in objects
