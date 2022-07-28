@@ -1,6 +1,5 @@
 #include <Common/StackTrace.h>
 
-#include <Core/Defines.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
@@ -8,6 +7,7 @@
 #include <base/CachedFn.h>
 #include <base/demangle.h>
 
+#include <atomic>
 #include <cstring>
 #include <filesystem>
 #include <sstream>
@@ -18,6 +18,20 @@
 #if USE_UNWIND
 #    include <libunwind.h>
 #endif
+
+
+namespace
+{
+    /// Currently this variable is set up once on server startup.
+    /// But we use atomic just in case, so it is possible to be modified at runtime.
+    std::atomic<bool> show_addresses = true;
+}
+
+void StackTrace::setShowAddresses(bool show)
+{
+    show_addresses.store(show, std::memory_order_relaxed);
+}
+
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
@@ -30,7 +44,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
             /// Print info about address and reason.
             if (nullptr == info.si_addr)
                 error << "Address: NULL pointer.";
-            else
+            else if (show_addresses.load(std::memory_order_relaxed))
                 error << "Address: " << info.si_addr;
 
 #if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
@@ -372,7 +386,9 @@ static void toStringEveryLineImpl(
         else
             out << "?";
 
-        out << " @ " << physical_addr;
+        if (show_addresses.load(std::memory_order_relaxed))
+            out << " @ " << physical_addr;
+
         out << " in " << (object ? object->name : "?");
 
         for (size_t j = 0; j < inline_frames.size(); ++j)
@@ -387,17 +403,22 @@ static void toStringEveryLineImpl(
         out.str({});
     }
 #else
-    std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
-
-    for (size_t i = offset; i < size; ++i)
+    if (show_addresses.load(std::memory_order_relaxed))
     {
-        const void * addr = frame_pointers[i];
-        out << i << ". " << addr;
+        std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        out.exceptions(std::ios::failbit);
 
-        callback(out.str());
-        out.str({});
+        for (size_t i = offset; i < size; ++i)
+        {
+            const void * addr = frame_pointers[i];
+            out << i << ". " << addr;
+
+            callback(out.str());
+            out.str({});
+        }
     }
+    else
+        callback("Addresses are hidden for security reasons.");
 #endif
 }
 
