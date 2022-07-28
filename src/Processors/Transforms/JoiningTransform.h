@@ -143,10 +143,10 @@ private:
 
     struct SourceStatus
     {
-        size_t left_pos;
-        size_t current_pos;
-        bool left_rest;
-        bool right_rest;
+        size_t left_pos = 0;
+        size_t current_pos = 0;
+        bool left_rest = false;
+        bool right_rest = false;
         Block block;
         PaddedPODArray<Int16> right_filt;
         //  1  -  filter the row out
@@ -159,7 +159,7 @@ private:
 
 
     JoinPtr join;
-    Chunk chunk;
+    Chunk chunk;  // not needed as a class member
     Blocks input_headers;
 
 
