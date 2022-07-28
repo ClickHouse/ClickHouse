@@ -18,7 +18,7 @@ bool BackupReaderFile::fileExists(const String & file_name)
     return fs::exists(path / file_name);
 }
 
-size_t BackupReaderFile::getFileSize(const String & file_name)
+UInt64 BackupReaderFile::getFileSize(const String & file_name)
 {
     return fs::file_size(path / file_name);
 }
@@ -37,6 +37,11 @@ BackupWriterFile::~BackupWriterFile() = default;
 bool BackupWriterFile::fileExists(const String & file_name)
 {
     return fs::exists(path / file_name);
+}
+
+UInt64 BackupWriterFile::getFileSize(const String & file_name)
+{
+    return fs::file_size(path / file_name);
 }
 
 bool BackupWriterFile::fileContentsEqual(const String & file_name, const String & expected_file_contents)
