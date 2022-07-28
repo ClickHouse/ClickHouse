@@ -242,7 +242,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     rb.ignore(5);
     rb.ignore(5);
     ASSERT_EQ(rb.getPosition(), 15);
-    
+
     String res;
     readStringUntilEOF(res, rb);
     ASSERT_EQ(res, data.substr(15));
