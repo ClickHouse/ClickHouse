@@ -459,8 +459,21 @@ static NameToNameVector collectFilesForRenames(
     const MutationCommands & commands_for_removes,
     const String & mrk_extension)
 {
+    /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
+    std::unordered_map<String, size_t> stream_counts;
+    for (const auto & column : source_part->getColumns())
+    {
+        if (auto serialization = source_part->tryGetSerialization(column.name))
+        {
+            serialization->enumerateStreams(
+                [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
+                });
+        }
+    }
+
     NameToNameVector rename_vector;
-    NameSet renamed_streams;
 
     /// Remove old data
     for (const auto & command : commands_for_removes)
@@ -483,6 +496,22 @@ static NameToNameVector collectFilesForRenames(
             if (source_part->checksums.has(command.column_name + ".proj"))
                 rename_vector.emplace_back(command.column_name + ".proj", "");
         }
+        else if (command.type == MutationCommand::Type::DROP_COLUMN)
+        {
+            ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+            {
+                String stream_name = ISerialization::getFileNameForStream({command.column_name, command.data_type}, substream_path);
+                /// Delete files if they are no longer shared with another column.
+                if (--stream_counts[stream_name] == 0)
+                {
+                    rename_vector.emplace_back(stream_name + ".bin", "");
+                    rename_vector.emplace_back(stream_name + mrk_extension, "");
+                }
+            };
+
+            if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                serialization->enumerateStreams(callback);
+        }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
             String escaped_name_from = escapeForFileName(command.column_name);
@@ -495,7 +524,6 @@ static NameToNameVector collectFilesForRenames(
 
                 if (stream_from != stream_to)
                 {
-                    renamed_streams.insert(stream_from);
                     rename_vector.emplace_back(stream_from + ".bin", stream_to + ".bin");
                     rename_vector.emplace_back(stream_from + mrk_extension, stream_to + mrk_extension);
                 }
@@ -504,40 +532,37 @@ static NameToNameVector collectFilesForRenames(
             if (auto serialization = source_part->tryGetSerialization(command.column_name))
                 serialization->enumerateStreams(callback);
         }
-    }
-
-    auto collect_all_stream_names = [&](const auto & data_part)
-    {
-        NameSet res;
-        for (const auto & column : data_part->getColumns())
+        else if (command.type == MutationCommand::Type::READ_COLUMN)
         {
-            if (auto serialization = data_part->tryGetSerialization(column.name))
+            /// Remove files for streams that exist in source_part,
+            /// but were removed in new_part by MODIFY COLUMN from
+            /// type with higher number of streams (e.g. LowCardinality -> String).
+
+            auto collect_stream_names = [&](const auto & data_part)
             {
-                serialization->enumerateStreams(
-                    [&](const ISerialization::SubstreamPath & substream_path)
-                    {
-                        res.insert(ISerialization::getFileNameForStream(column.name, substream_path));
-                    });
+                NameSet res;
+                if (auto serialization = data_part->tryGetSerialization(command.column_name))
+                {
+                    serialization->enumerateStreams(
+                        [&](const ISerialization::SubstreamPath & substream_path)
+                        {
+                            res.insert(ISerialization::getFileNameForStream(command.column_name, substream_path));
+                        });
+                }
+                return res;
+            };
+
+            auto old_streams = collect_stream_names(source_part);
+            auto new_streams = collect_stream_names(new_part);
+
+            for (const auto & old_stream : old_streams)
+            {
+                if (!new_streams.contains(old_stream))
+                {
+                    rename_vector.emplace_back(old_stream + ".bin", "");
+                    rename_vector.emplace_back(old_stream + mrk_extension, "");
+                }
             }
-        }
-
-        return res;
-    };
-
-    /// Remove files for streams that exists in source part,
-    /// but were removed in new_part by DROP COLUMN
-    /// or MODIFY COLUMN from type with higher number of streams
-    /// (e.g. LowCardinality -> String).
-
-    auto old_streams = collect_all_stream_names(source_part);
-    auto new_streams = collect_all_stream_names(new_part);
-
-    for (const auto & old_stream : old_streams)
-    {
-        if (!new_streams.contains(old_stream) && !renamed_streams.contains(old_stream))
-        {
-            rename_vector.emplace_back(old_stream + ".bin", "");
-            rename_vector.emplace_back(old_stream + mrk_extension, "");
         }
     }
 

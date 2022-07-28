@@ -524,9 +524,10 @@ private:
     /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos;
 
+    /// Serializations for every columns and subcolumns by their names.
     SerializationByName serializations;
 
-        /// Columns description for more convenient access
+    /// Columns description for more convenient access
     /// to columns by name and getting subcolumns.
     ColumnsDescription columns_description;
 
