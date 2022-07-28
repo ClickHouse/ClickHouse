@@ -1125,17 +1125,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("total_max_threads"))
+            if (config->has("concurrent_threads_soft_limit"))
             {
-                auto total_max_threads = config->getInt("total_max_threads", 0);
-                if (total_max_threads == -1)
+                auto concurrent_threads_soft_limit = config->getInt("concurrent_threads_soft_limit", 0);
+                if (concurrent_threads_soft_limit == -1)
                 {
-                    // Based on tests total_max_threads has an optimal value when it's about 3 times of logical CPU cores
+                    // Based on tests concurrent_threads_soft_limit has an optimal value when it's about 3 times of logical CPU cores
                     constexpr size_t thread_factor = 3;
-                    total_max_threads = std::thread::hardware_concurrency() * thread_factor;
+                    concurrent_threads_soft_limit = std::thread::hardware_concurrency() * thread_factor;
                 }
-                if (total_max_threads)
-                    ConcurrencyControl::instance().setMaxConcurrency(total_max_threads);
+                if (concurrent_threads_soft_limit)
+                    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
                 else
                     ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
             }

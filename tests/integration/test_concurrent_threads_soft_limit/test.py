@@ -37,49 +37,49 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_total_max_threads_default(started_cluster):
+def test_concurrent_threads_soft_limit_default(started_cluster):
     node1.query(
-        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_total_max_threads_1"
+        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_concurrent_threads_soft_limit_1"
     )
     node1.query("SYSTEM FLUSH LOGS")
     assert (
         node1.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_total_max_threads_1'"
+            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1'"
         )
         == "102\n"
     )
 
 
-def test_total_max_threads_defined_50(started_cluster):
+def test_concurrent_threads_soft_limit_defined_50(started_cluster):
     node2.query(
-        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_total_max_threads_2"
+        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_concurrent_threads_soft_limit_2"
     )
     node2.query("SYSTEM FLUSH LOGS")
     assert (
         node2.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_total_max_threads_2'"
+            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_2'"
         )
         == "52\n"
     )
 
 
-def test_total_max_threads_defined_1(started_cluster):
+def test_concurrent_threads_soft_limit_defined_1(started_cluster):
     node3.query(
-        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_total_max_threads_3"
+        "SELECT count(*) FROM numbers_mt(10000000)", query_id="test_concurrent_threads_soft_limit_3"
     )
     node3.query("SYSTEM FLUSH LOGS")
     assert (
         node3.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_total_max_threads_3'"
+            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_3'"
         )
         == "3\n"
     )
 
 
-# In config_limit_reached.xml there is total_max_threads=10
+# In config_limit_reached.xml there is concurrent_threads_soft_limit=10
 # Background query starts in a separate thread to reach this limit.
 # When this limit is reached the foreground query gets less than 5 queries despite the fact that it has settings max_threads=5
-def test_total_max_threads_limit_reached(started_cluster):
+def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
     def background_query():
         try:
             node4.query(
@@ -107,12 +107,12 @@ def test_total_max_threads_limit_reached(started_cluster):
 
     node4.query(
         "SELECT count(*) FROM numbers_mt(10000000) settings max_threads=5",
-        query_id="test_total_max_threads_4",
+        query_id="test_concurrent_threads_soft_limit_4",
     )
 
     node4.query("SYSTEM FLUSH LOGS")
     s_count = node4.query(
-        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_total_max_threads_4'"
+        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_4'"
     ).strip()
     if s_count:
         count = int(s_count)
