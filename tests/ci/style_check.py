@@ -25,7 +25,7 @@ from ssh import SSHKey
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Style Check (actions)"
+NAME = "Style Check"
 
 
 def process_result(result_folder):
@@ -153,7 +153,11 @@ if __name__ == "__main__":
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
+        # Finish with the same code as previous
+        state = rerun_helper.get_finished_status().state  # type: ignore
+        # state == "success" -> code = 0
+        code = int(state != "success")
+        sys.exit(code)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
