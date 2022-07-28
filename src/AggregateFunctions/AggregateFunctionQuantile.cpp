@@ -88,7 +88,7 @@ constexpr bool supportBigInt()
         std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantileExactWeighted<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantilesInterpolatedWeighted<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantileInterpolatedWeighted<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantilesInterpolatedWeighted<Float32, false>>;
 }
 
