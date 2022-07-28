@@ -43,6 +43,14 @@ select distinct b,c from distinct_in_order order by c;
 select '-- distinct with non-key prefix and non-sorted column, order by non-sorted desc';
 select distinct b,c from distinct_in_order order by c desc;
 
+select '-- distinct with constants columns';
+-- { echoOn }
+select distinct 1 as a, 2 as b from distinct_in_order;
+select distinct 1 as a, 2 as b from distinct_in_order order by a;
+select distinct 1 as a, 2 as b from distinct_in_order order by a, b;
+select distinct x, y from (select 1 as x, 2 as y from distinct_in_order order by x) order by x;
+-- { echoOff }
+
 drop table if exists distinct_in_order sync;
 
 select '-- check that distinct in order has the same result as ordinary distinct';
