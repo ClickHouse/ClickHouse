@@ -18,7 +18,7 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
     DB::WriteBufferFromString wb(text);
 
     DB::FormatSettings settings;
-    
+
     const Poco::Message & msg = msg_ext.base;
     DB::writeChar('{', wb);
 
