@@ -63,7 +63,7 @@ static bool isQueryInitialized()
 {
     return CurrentThread::isInitialized()
         && CurrentThread::get().getQueryContext()
-        && CurrentThread::getQueryId().size != 0;
+        && CurrentThread::getQueryId().size() != 0;
 }
 
 bool FileCache::isReadOnly()
@@ -82,7 +82,7 @@ FileCache::QueryContextPtr FileCache::getCurrentQueryContext(std::lock_guard<std
     if (!isQueryInitialized())
         return nullptr;
 
-    return getQueryContext(CurrentThread::getQueryId().toString(), cache_lock);
+    return getQueryContext(std::string(CurrentThread::getQueryId()), cache_lock);
 }
 
 FileCache::QueryContextPtr FileCache::getQueryContext(const String & query_id, std::lock_guard<std::mutex> & /* cache_lock */)
