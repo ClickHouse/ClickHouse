@@ -267,7 +267,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 if (status_written)
                 {
                     /// TODO We cannot guarantee that query was actually executed synchronously if connection was lost.
-                    /// Let's simple create synced/ node for now, but it would be better ot pass UNFINISHED status to initiator
+                    /// Let's simple create synced/ node for now, but it would be better to pass UNFINISHED status to initiator
                     /// or wait for query to actually finish (requires https://github.com/ClickHouse/ClickHouse/issues/23513)
                     task->createSyncedNodeIfNeed(zookeeper);
                     task->completely_processed = true;
