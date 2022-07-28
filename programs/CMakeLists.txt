@@ -18,11 +18,7 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-if (NOT ENABLE_UTILS)
-    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
-else ()
-    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
-endif ()
+option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
 
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
@@ -378,6 +374,9 @@ if (ENABLE_CLICKHOUSE_DISKS)
 endif ()
 
 set (CLICKHOUSE_BUNDLE)
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+    list(APPEND CLICKHOUSE_BUNDLE self-extracting)
+endif ()
 if (ENABLE_CLICKHOUSE_SERVER)
     add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
     install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-server" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
@@ -487,3 +486,4 @@ endif()
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
 endif ()
+
