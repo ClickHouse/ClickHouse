@@ -1,124 +1,55 @@
 #!/usr/bin/env bash
+
 set -x -e
 
-exec &> >(ts)
+mkdir -p build/cmake/toolchain/darwin-x86_64
+tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 
-cache_status () {
-    ccache --show-config ||:
-    ccache --show-stats ||:
-}
+ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
 
-[ -O /build ] || git config --global --add safe.directory /build
+mkdir -p build/cmake/toolchain/linux-aarch64
+tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolchain/linux-aarch64 --strip-components=1
 
-mkdir -p /build/cmake/toolchain/darwin-x86_64
-tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
-ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
+mkdir -p build/cmake/toolchain/freebsd-x86_64
+tar xJf freebsd-11.3-toolchain.tar.xz -C build/cmake/toolchain/freebsd-x86_64 --strip-components=1
 
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
 # export CCACHE_LOGFILE=/build/ccache.log
 # export CCACHE_DEBUG=1
 
-
-mkdir -p /build/build_docker
-cd /build/build_docker
+mkdir -p build/build_docker
+cd build/build_docker
 rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
-env
+cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
-if [ -n "$MAKE_DEB" ]; then
-  rm -rf /build/packages/root
-fi
-
-cache_status
-# clear cache stats
+ccache --show-config ||:
+ccache --show-stats ||:
 ccache --zero-stats ||:
 
-if [ "$BUILD_MUSL_KEEPER" == "1" ]
-then
-    # build keeper with musl separately
-    cmake --debug-trycompile --verbose=1 -DBUILD_STANDALONE_KEEPER=1 -DENABLE_CLICKHOUSE_KEEPER=1 -DCMAKE_VERBOSE_MAKEFILE=1 -DUSE_MUSL=1 -LA -DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-x86_64-musl.cmake "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-    # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-    ninja $NINJA_FLAGS clickhouse-keeper
-
-    ls -la ./programs/
-    ldd ./programs/clickhouse-keeper
-
-    if [ -n "$MAKE_DEB" ]; then
-      # No quotes because I want it to expand to nothing if empty.
-      # shellcheck disable=SC2086
-      DESTDIR=/build/packages/root ninja $NINJA_FLAGS programs/keeper/install
-    fi
-    rm -f CMakeCache.txt
-
-    # Build the rest of binaries
-    cmake --debug-trycompile --verbose=1 -DBUILD_STANDALONE_KEEPER=0 -DCREATE_KEEPER_SYMLINK=0 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-else
-    # Build everything
-    cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
-fi
-
-if [ "coverity" == "$COMBINED_OUTPUT" ]
-then
-    mkdir -p /workdir/cov-analysis
-
-    wget --post-data "token=$COVERITY_TOKEN&project=ClickHouse%2FClickHouse" -qO- https://scan.coverity.com/download/linux64 | tar xz -C /workdir/cov-analysis --strip-components 1
-    export PATH=$PATH:/workdir/cov-analysis/bin
-    cov-configure --config ./coverity.config --template --comptype clangcc --compiler "$CC"
-    SCAN_WRAPPER="cov-build --config ./coverity.config --dir cov-int"
-fi
-
-# No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-$SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
+ninja $NINJA_FLAGS clickhouse-bundle
 
-ls -la ./programs
-
-cache_status
-
-if [ -n "$MAKE_DEB" ]; then
-  # No quotes because I want it to expand to nothing if empty.
-  # shellcheck disable=SC2086
-  DESTDIR=/build/packages/root ninja $NINJA_FLAGS install
-  bash -x /build/packages/build
-fi
+ccache --show-config ||:
+ccache --show-stats ||:
 
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
 
-prepare_combined_output () {
-    local OUTPUT
-    OUTPUT="$1"
-
-    mkdir -p "$OUTPUT"/config
-    cp /build/programs/server/config.xml "$OUTPUT"/config
-    cp /build/programs/server/users.xml "$OUTPUT"/config
-    cp -r --dereference /build/programs/server/config.d "$OUTPUT"/config
-}
-
 # Different files for performance test.
-if [ "$WITH_PERFORMANCE" == 1 ]
+if [ "performance" == "$COMBINED_OUTPUT" ]
 then
-    PERF_OUTPUT=/workdir/performance/output
-    mkdir -p "$PERF_OUTPUT"
-    cp -r ../tests/performance "$PERF_OUTPUT"
-    cp -r ../tests/config/top_level_domains  "$PERF_OUTPUT"
-    cp -r ../docker/test/performance-comparison/config "$PERF_OUTPUT" ||:
-    for SRC in /output/clickhouse*; do
-        # Copy all clickhouse* files except packages and bridges
-        [[ "$SRC" != *.* ]] && [[ "$SRC" != *-bridge ]] && \
-          cp -d "$SRC" "$PERF_OUTPUT"
-    done
-    if [ -x "$PERF_OUTPUT"/clickhouse-keeper ]; then
-        # Replace standalone keeper by symlink
-        ln -sf clickhouse "$PERF_OUTPUT"/clickhouse-keeper
-    fi
+    cp -r ../tests/performance /output
+    cp -r ../tests/config/top_level_domains  /output
+    cp -r ../docker/test/performance-comparison/config /output ||:
+    rm /output/unit_tests_dbms ||:
+    rm /output/clickhouse-odbc-bridge ||:
 
-    cp -r ../docker/test/performance-comparison "$PERF_OUTPUT"/scripts ||:
-    prepare_combined_output "$PERF_OUTPUT"
+    cp -r ../docker/test/performance-comparison /output/scripts ||:
 
     # We have to know the revision that corresponds to this binary build.
     # It is not the nominal SHA from pull/*/head, but the pull/*/merge, which is
@@ -131,35 +62,26 @@ then
     #   for a given nominal SHA, but it is not accessible outside Yandex.
     # This is why we add this repository snapshot from CI to the performance test
     # package.
-    mkdir "$PERF_OUTPUT"/ch
-    git -C "$PERF_OUTPUT"/ch init --bare
-    git -C "$PERF_OUTPUT"/ch remote add origin /build
-    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin HEAD:pr
-    git -C "$PERF_OUTPUT"/ch fetch --no-tags --depth 50 origin master:master
-    git -C "$PERF_OUTPUT"/ch reset --soft pr
-    git -C "$PERF_OUTPUT"/ch log -5
-    (
-        cd "$PERF_OUTPUT"/..
-        tar -cv -I pigz -f /output/performance.tgz output
-    )
+    mkdir /output/ch
+    git -C /output/ch init --bare
+    git -C /output/ch remote add origin /build
+    git -C /output/ch fetch --no-tags --depth 50 origin HEAD:pr
+    git -C /output/ch fetch --no-tags --depth 50 origin master:master
+    git -C /output/ch reset --soft pr
+    git -C /output/ch log -5
 fi
 
 # May be set for split build or for performance test.
 if [ "" != "$COMBINED_OUTPUT" ]
 then
-    prepare_combined_output /output
+    mkdir -p /output/config
+    cp ../programs/server/config.xml /output/config
+    cp ../programs/server/users.xml /output/config
+    cp -r --dereference ../programs/server/config.d /output/config
     tar -cv -I pigz -f "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
-
-if [ "coverity" == "$COMBINED_OUTPUT" ]
-then
-    tar -cv -I pigz -f "coverity-scan.tgz" cov-int
-    mv "coverity-scan.tgz" /output
-fi
-
-cache_status
 
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then
@@ -174,4 +96,3 @@ then
     tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
 fi
 
-ls -l /output

@@ -1,6 +1,8 @@
--- Tags: no-parallel
-
 drop database if exists db_01501;
+drop table if exists db_01501.table_cache_dict;
+drop dictionary if exists db_01501.cache_dict;
+
+
 create database db_01501;
 
 CREATE TABLE db_01501.table_cache_dict(
@@ -113,6 +115,6 @@ SELECT groupArray(dictHas('db_01501.cache_dict', toUInt64(number))) from numbers
 SELECT groupArray(dictHas('db_01501.cache_dict', toUInt64(number))) from numbers(10);
 SELECT groupArray(dictHas('db_01501.cache_dict', toUInt64(number))) from numbers(10);
 
-drop dictionary db_01501.cache_dict;
-drop table db_01501.table_cache_dict;
+drop table if exists table_cache_dict;
+drop dictionary if exists cache_dict;
 drop database if exists db_01501;

@@ -31,6 +31,4 @@
 
     <query>SELECT {func}(key, val) FROM sum_map_{scale} FORMAT Null</query>
     <query>SELECT {func}((key, val)) FROM sum_map_{scale} FORMAT Null</query>
-
-    <drop_query>DROP TABLE sum_map_{scale}</drop_query>
 </test>

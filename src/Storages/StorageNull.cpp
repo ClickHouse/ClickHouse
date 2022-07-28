@@ -29,7 +29,7 @@ void registerStorageNull(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<StorageNull>(args.table_id, args.columns, args.constraints, args.comment);
+        return StorageNull::create(args.table_id, args.columns, args.constraints, args.comment);
     },
     {
         .supports_parallel_insert = true,
@@ -41,14 +41,11 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
     auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_TABLE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
-
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
@@ -64,7 +61,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 }
 
 
-void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
+void StorageNull::alter(const AlterCommands & params, ContextPtr context, TableLockHolder &)
 {
     auto table_id = getStorageID();
 

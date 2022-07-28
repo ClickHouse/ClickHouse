@@ -5,7 +5,6 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnFunction.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,10 +15,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
-#include <base/sort.h>
 #include <Common/JSONBuilder.h>
-#include <Core/SettingsEnums.h>
-
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -49,22 +45,17 @@ namespace ErrorCodes
 
 ExpressionActions::~ExpressionActions() = default;
 
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
-
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
     : settings(settings_)
 {
     actions_dag = actions_dag_->clone();
 
-    /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.short_circuit_function_evaluation);
-
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-        actions_dag->compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+        actions_dag->compileExpressions(settings.min_count_to_compile_expression);
 #endif
 
-    linearizeActions(lazy_executed_nodes);
+    linearizeActions();
 
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
@@ -77,251 +68,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
     return std::make_shared<ExpressionActions>(*this);
 }
 
-namespace
-{
-    struct ActionsDAGReverseInfo
-    {
-        struct NodeInfo
-        {
-            std::vector<const ActionsDAG::Node *> parents;
-            bool used_in_result = false;
-        };
-
-        using ReverseIndex = std::unordered_map<const ActionsDAG::Node *, size_t>;
-        std::vector<NodeInfo> nodes_info;
-        ReverseIndex reverse_index;
-    };
-}
-
-static ActionsDAGReverseInfo getActionsDAGReverseInfo(const std::list<ActionsDAG::Node> & nodes, const ActionsDAG::NodeRawConstPtrs & index)
-{
-    ActionsDAGReverseInfo result_info;
-    result_info.nodes_info.resize(nodes.size());
-
-    for (const auto & node : nodes)
-    {
-        size_t id = result_info.reverse_index.size();
-        result_info.reverse_index[&node] = id;
-    }
-
-    for (const auto * node : index)
-        result_info.nodes_info[result_info.reverse_index[node]].used_in_result = true;
-
-    for (const auto & node : nodes)
-    {
-        for (const auto & child : node.children)
-            result_info.nodes_info[result_info.reverse_index[child]].parents.emplace_back(&node);
-    }
-
-    return result_info;
-}
-
-static DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::NodeRawConstPtrs & nodes)
-{
-    DataTypesWithConstInfo types;
-    types.reserve(nodes.size());
-    for (const auto & child : nodes)
-    {
-        bool is_const = child->column && isColumnConst(*child->column);
-        types.push_back({child->result_type, is_const});
-    }
-    return types;
-}
-
-namespace
-{
-    /// Information about the node that helps to determine if it can be executed lazily.
-    struct LazyExecutionInfo
-    {
-        bool can_be_lazy_executed;
-        /// For each node we need to know all it's ancestors that are short-circuit functions.
-        /// Also we need to know which arguments of this short-circuit functions are ancestors for the node
-        /// (we will store the set of indexes of arguments), because for some short-circuit function we shouldn't
-        /// enable lazy execution for nodes that are common descendants of different function arguments.
-        /// Example: if(cond, expr1(..., expr, ...), expr2(..., expr, ...))).
-        std::unordered_map<const ActionsDAG::Node *, std::unordered_set<size_t>> short_circuit_ancestors_info;
-    };
-}
-
-/// Create lazy execution info for node.
-static void setLazyExecutionInfo(
-    const ActionsDAG::Node * node,
-    const ActionsDAGReverseInfo & reverse_info,
-    const std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> & short_circuit_nodes,
-    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> & lazy_execution_infos)
-{
-    /// If we already created info about this node, just do nothing.
-    if (lazy_execution_infos.contains(node))
-        return;
-
-    LazyExecutionInfo & lazy_execution_info = lazy_execution_infos[node];
-    lazy_execution_info.can_be_lazy_executed = true;
-
-    const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
-
-    /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
-    if (node_info.used_in_result || node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
-    {
-        lazy_execution_info.can_be_lazy_executed = false;
-        return;
-    }
-
-    /// To fill lazy execution info for current node we need to create it for all it's parents.
-    for (const auto & parent : node_info.parents)
-    {
-        setLazyExecutionInfo(parent, reverse_info, short_circuit_nodes, lazy_execution_infos);
-        /// Update current node info according to parent info.
-        if (short_circuit_nodes.contains(parent))
-        {
-            /// Use set, because one node can be more than one argument.
-            /// Example: expr1 AND expr2 AND expr1.
-            std::unordered_set<size_t> indexes;
-            for (size_t i = 0; i != parent->children.size(); ++i)
-            {
-                if (node == parent->children[i])
-                    indexes.insert(i);
-            }
-
-            if (!short_circuit_nodes.at(parent).enable_lazy_execution_for_first_argument && node == parent->children[0])
-            {
-                /// We shouldn't add 0 index in node info in this case.
-                indexes.erase(0);
-                /// Disable lazy execution for current node only if it's disabled for short-circuit node,
-                /// because we can have nested short-circuit nodes.
-                if (!lazy_execution_infos[parent].can_be_lazy_executed)
-                    lazy_execution_info.can_be_lazy_executed = false;
-            }
-
-            lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
-        }
-        else
-            /// If lazy execution is disabled for one of parents, we should disable it for current node.
-            lazy_execution_info.can_be_lazy_executed &= lazy_execution_infos[parent].can_be_lazy_executed;
-
-        /// Update info about short-circuit ancestors according to parent info.
-        for (const auto & [short_circuit_node, indexes] : lazy_execution_infos[parent].short_circuit_ancestors_info)
-            lazy_execution_info.short_circuit_ancestors_info[short_circuit_node].insert(indexes.begin(), indexes.end());
-    }
-
-    if (!lazy_execution_info.can_be_lazy_executed)
-        return;
-
-    /// Check if current node is common descendant of different function arguments of
-    /// short-circuit function that disables lazy execution on this case.
-    for (const auto & [short_circuit_node, indexes] : lazy_execution_info.short_circuit_ancestors_info)
-    {
-        /// If lazy execution is enabled for this short-circuit node,
-        /// we shouldn't disable it for current node.
-        if (lazy_execution_infos[short_circuit_node].can_be_lazy_executed)
-            continue;
-
-        if (!short_circuit_nodes.at(short_circuit_node).enable_lazy_execution_for_common_descendants_of_arguments && indexes.size() > 1)
-        {
-            lazy_execution_info.can_be_lazy_executed = false;
-            return;
-        }
-    }
-}
-
-
-/// Enable lazy execution for short-circuit function arguments.
-static bool findLazyExecutedNodes(
-    const ActionsDAG::NodeRawConstPtrs & children,
-    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> & lazy_execution_infos,
-    bool force_enable_lazy_execution,
-    std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes_out)
-{
-    bool has_lazy_node = false;
-    for (const auto * child : children)
-    {
-        /// Skip node that have already been found as lazy executed.
-        if (lazy_executed_nodes_out.contains(child))
-        {
-            has_lazy_node = true;
-            continue;
-        }
-
-        /// Skip nodes that cannot be lazy executed.
-        if (!lazy_execution_infos[child].can_be_lazy_executed)
-            continue;
-
-        /// We cannot propagate lazy execution through arrayJoin, because when we execute
-        /// arrayJoin we need to know the exact offset of it's argument to replicate the other arguments.
-        /// We cannot determine the exact offset without it's argument execution, because the offset
-        /// can depend on on it.
-        /// Example: arrayJoin(range(number)), we use lazy execution for masked function execution,
-        /// but if we filter column number by mask and then execute function range() and arrayJoin, we will get
-        /// the offset that is differ from what we would get without filtering.
-        switch (child->type)
-        {
-            case ActionsDAG::ActionType::FUNCTION:
-            {
-                /// Propagate lazy execution through function arguments.
-                bool has_lazy_child = findLazyExecutedNodes(child->children, lazy_execution_infos, force_enable_lazy_execution, lazy_executed_nodes_out);
-
-                /// Use lazy execution when:
-                ///  - It's force enabled.
-                ///  - Function is suitable for lazy execution.
-                ///  - Function has lazy executed arguments.
-                if (force_enable_lazy_execution || has_lazy_child || child->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(child->children)))
-                {
-                    has_lazy_node = true;
-                    lazy_executed_nodes_out.insert(child);
-                }
-                break;
-            }
-            case ActionsDAG::ActionType::ALIAS:
-                /// Propagate lazy execution through alias.
-                has_lazy_node |= findLazyExecutedNodes(child->children, lazy_execution_infos, force_enable_lazy_execution, lazy_executed_nodes_out);
-                break;
-            default:
-                break;
-        }
-    }
-    return has_lazy_node;
-}
-
-static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation)
-{
-    if (short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
-        return {};
-
-    const auto & nodes = actions_dag.getNodes();
-
-    /// Firstly, find all short-circuit functions and get their settings.
-    std::unordered_map<const ActionsDAG::Node *, IFunctionBase::ShortCircuitSettings> short_circuit_nodes;
-    IFunctionBase::ShortCircuitSettings short_circuit_settings;
-    for (const auto & node : nodes)
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit(short_circuit_settings, node.children.size()) && !node.children.empty())
-            short_circuit_nodes[&node] = short_circuit_settings;
-    }
-
-    /// If there are no short-circuit functions, no need to do anything.
-    if (short_circuit_nodes.empty())
-        return {};
-
-    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
-
-    /// For each node we fill LazyExecutionInfo.
-    std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
-    for (const auto & node : nodes)
-        setLazyExecutionInfo(&node, reverse_info, short_circuit_nodes, lazy_execution_infos);
-
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes;
-    for (const auto & [node, settings] : short_circuit_nodes)
-    {
-        /// Recursively find nodes that should be lazy executed.
-        findLazyExecutedNodes(
-            node->children,
-            lazy_execution_infos,
-            settings.force_enable_lazy_execution || short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::FORCE_ENABLE,
-            lazy_executed_nodes);
-    }
-    return lazy_executed_nodes;
-}
-
-void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+void ExpressionActions::linearizeActions()
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
     /// Algorithm traverses DAG starting from nodes without children.
@@ -330,23 +77,40 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     {
         const Node * node = nullptr;
         size_t num_created_children = 0;
+        std::vector<const Node *> parents;
+
         ssize_t position = -1;
         size_t num_created_parents = 0;
+        bool used_in_result = false;
     };
 
     const auto & nodes = getNodes();
     const auto & index = actions_dag->getIndex();
     const auto & inputs = actions_dag->getInputs();
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, index);
-    std::vector<Data> data;
+    std::vector<Data> data(nodes.size());
+    std::unordered_map<const Node *, size_t> reverse_index;
+
     for (const auto & node : nodes)
-        data.push_back({.node = &node});
+    {
+        size_t id = reverse_index.size();
+        data[id].node = &node;
+        reverse_index[&node] = id;
+    }
 
     /// There are independent queues for arrayJoin and other actions.
     /// We delay creation of arrayJoin as long as we can, so that they will be executed closer to end.
     std::queue<const Node *> ready_nodes;
     std::queue<const Node *> ready_array_joins;
+
+    for (const auto * node : index)
+        data[reverse_index[node]].used_in_result = true;
+
+    for (const auto & node : nodes)
+    {
+        for (const auto & child : node.children)
+            data[reverse_index[child]].parents.emplace_back(&node);
+    }
 
     for (const auto & node : nodes)
     {
@@ -364,9 +128,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         const Node * node = stack.front();
         stack.pop();
 
-        auto cur_index = reverse_info.reverse_index[node];
-        auto & cur = data[cur_index];
-        auto & cur_info = reverse_info.nodes_info[cur_index];
+        auto & cur = data[reverse_index[node]];
 
         /// Select position for action result.
         size_t free_position = num_columns;
@@ -384,9 +146,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         arguments.reserve(cur.node->children.size());
         for (const auto * child : cur.node->children)
         {
-            auto arg_index = reverse_info.reverse_index[child];
-            auto & arg = data[arg_index];
-            auto arg_info = reverse_info.nodes_info[arg_index];
+            auto & arg = data[reverse_index[child]];
 
             if (arg.position < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument was not calculated for {}", child->result_name);
@@ -395,7 +155,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
 
             ExpressionActions::Argument argument;
             argument.pos = arg.position;
-            argument.needed_later = arg_info.used_in_result || arg.num_created_parents != arg_info.parents.size();
+            argument.needed_later = arg.used_in_result || arg.num_created_parents != arg.parents.size();
 
             if (!argument.needed_later)
                 free_positions.push(argument.pos);
@@ -407,17 +167,17 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         {
             /// Argument for input is special. It contains the position from required columns.
             ExpressionActions::Argument argument;
-            argument.needed_later = !cur_info.parents.empty();
+            argument.needed_later = !cur.parents.empty();
             arguments.emplace_back(argument);
 
             //required_columns.push_back({node->result_name, node->result_type});
         }
 
-        actions.push_back({node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        actions.push_back({node, arguments, free_position});
 
-        for (const auto & parent : cur_info.parents)
+        for (const auto & parent : cur.parents)
         {
-            auto & parent_data = data[reverse_info.reverse_index[parent]];
+            auto & parent_data = data[reverse_index[parent]];
             ++parent_data.num_created_children;
 
             if (parent_data.num_created_children == parent->children.size())
@@ -432,7 +192,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
 
     for (const auto & node : index)
     {
-        auto pos = data[reverse_info.reverse_index[node]].position;
+        auto pos = data[reverse_index[node]].position;
 
         if (pos < 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Action for {} was not calculated", node->result_name);
@@ -445,7 +205,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
 
     for (const auto * input : inputs)
     {
-        const auto & cur = data[reverse_info.reverse_index[input]];
+        const auto & cur = data[reverse_index[input]];
         auto pos = required_columns.size();
         actions[cur.position].arguments.front().pos = pos;
         required_columns.push_back({input->result_name, input->result_type});
@@ -598,16 +358,11 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     arguments[i] = columns[action.arguments[i].pos];
             }
 
-            if (action.is_lazy_executed)
-                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::FunctionExecute);
-                if (action.node->is_function_compiled)
-                    ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+            ProfileEvents::increment(ProfileEvents::FunctionExecute);
+            if (action.node->is_function_compiled)
+                ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-                res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-            }
+            res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
             break;
         }
 
@@ -743,7 +498,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     }
     else
     {
-        ::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
+        std::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
         for (auto input : execution_context.inputs_pos)
             if (input >= 0)
                 block.erase(input);
@@ -755,7 +510,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (auto && item : block)
+    for (const auto & item : block)
         res.insert(std::move(item));
 
     block.swap(res);
@@ -783,12 +538,11 @@ Names ExpressionActions::getRequiredColumns() const
 
 bool ExpressionActions::hasArrayJoin() const
 {
-    return getActionsDAG().hasArrayJoin();
-}
+    for (const auto & action : actions)
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return true;
 
-void ExpressionActions::assertDeterministic() const
-{
-    getActionsDAG().assertDeterministic();
+    return false;
 }
 
 
@@ -800,7 +554,7 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
     for (const auto & column : columns)
     {
         /// Skip .sizeX and similar meta information
-        if (column.isSubcolumn())
+        if (!column.getSubcolumnName().empty())
             continue;
 
         /// @todo resolve evil constant
@@ -936,7 +690,7 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 
     ColumnsWithTypeAndName columns = steps.back()->getResultColumns();
     for (auto & column : columns)
-        if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
+        if (column.column && isColumnConst(*column.column) && non_constant_inputs.count(column.name))
             column.column = nullptr;
 
     steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsDAG>(columns)));
@@ -957,7 +711,7 @@ void ExpressionActionsChain::finalize()
             const NameSet & additional_input = steps[i + 1]->additional_input;
             for (const auto & it : steps[i + 1]->getRequiredColumns())
             {
-                if (!additional_input.contains(it.name))
+                if (additional_input.count(it.name) == 0)
                 {
                     auto iter = required_output.find(it.name);
                     if (iter == required_output.end())
@@ -1008,7 +762,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join->columns.contains(column.name))
+        if (array_join->columns.count(column.name) > 0)
         {
             const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
             column.type = array->getNestedType();
@@ -1025,12 +779,12 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join->columns.count(column.name) != 0 || required_output_.count(column.name) != 0)
             new_required_columns.emplace_back(column);
     }
 
@@ -1041,16 +795,16 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
 ExpressionActionsChain::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
-    const ColumnsWithTypeAndName & required_columns_)
+    ColumnsWithTypeAndName required_columns_)
     : Step({})
     , analyzed_join(std::move(analyzed_join_))
     , join(std::move(join_))
+    , result_columns(std::move(required_columns_))
 {
-    for (const auto & column : required_columns_)
+    for (const auto & column : result_columns)
         required_columns.emplace_back(column.name, column.type);
 
-    result_columns = required_columns_;
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns);
 }
 
 void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
@@ -1061,16 +815,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     /// That's an input columns we need.
     NameSet required_names = required_output_;
-    for (const auto & name : analyzed_join->getAllNames(JoinTableSide::Left))
+    for (const auto & name : analyzed_join->keyNamesLeft())
         required_names.emplace(name);
-
-    for (const auto & onexpr : analyzed_join->getClauses())
-        if (const auto & cond_name = onexpr.condColumnNames().first; !cond_name.empty())
-            required_names.emplace(cond_name);
 
     for (const auto & column : required_columns)
     {
-        if (required_names.contains(column.name))
+        if (required_names.count(column.name) != 0)
             new_required_columns.emplace_back(column);
     }
 
@@ -1080,7 +830,7 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     for (const auto & column : result_columns)
     {
-        if (required_names.contains(column.name))
+        if (required_names.count(column.name) != 0)
             new_result_columns.emplace_back(column);
     }
 

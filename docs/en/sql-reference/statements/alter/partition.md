@@ -1,30 +1,30 @@
 ---
-sidebar_position: 38
-sidebar_label: PARTITION
+toc_priority: 38
+toc_title: PARTITION
 ---
 
-# Manipulating Partitions and Parts
+# Manipulating Partitions and Parts {#alter_manipulations-with-partitions}
 
 The following operations with [partitions](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
 
--   [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
--   [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
--   [ATTACH PARTITION\|PART](#attach-partitionpart) — Adds a partition or part from the `detached` directory to the table.
--   [ATTACH PARTITION FROM](#attach-partition-from) — Copies the data partition from one table to another and adds.
--   [REPLACE PARTITION](#replace-partition) — Copies the data partition from one table to another and replaces.
--   [MOVE PARTITION TO TABLE](#move-partition-to-table) — Moves the data partition from one table to another.
--   [CLEAR COLUMN IN PARTITION](#clear-column-in-partition) — Resets the value of a specified column in a partition.
--   [CLEAR INDEX IN PARTITION](#clear-index-in-partition) — Resets the specified secondary index in a partition.
--   [FREEZE PARTITION](#freeze-partition) — Creates a backup of a partition.
--   [UNFREEZE PARTITION](#unfreeze-partition) — Removes a backup of a partition.
--   [FETCH PARTITION\|PART](#fetch-partitionpart) — Downloads a part or partition from another server.
--   [MOVE PARTITION\|PART](#move-partitionpart) — Move partition/data part to another disk or volume.
+-   [DETACH PARTITION](#alter_detach-partition) — Moves a partition to the `detached` directory and forget it.
+-   [DROP PARTITION](#alter_drop-partition) — Deletes a partition.
+-   [ATTACH PART\|PARTITION](#alter_attach-partition) — Adds a part or partition from the `detached` directory to the table.
+-   [ATTACH PARTITION FROM](#alter_attach-partition-from) — Copies the data partition from one table to another and adds.
+-   [REPLACE PARTITION](#alter_replace-partition) — Copies the data partition from one table to another and replaces.
+-   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) — Moves the data partition from one table to another.
+-   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
+-   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
+-   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
+-   [UNFREEZE PARTITION](#alter_unfreeze-partition) — Removes a backup of a partition.
+-   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
+-   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 -   [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
 -   [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
 
 <!-- -->
 
-## DETACH PARTITION\|PART
+## DETACH PARTITION\|PART {#alter_detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION|PART partition_expr
@@ -45,7 +45,7 @@ After the query is executed, you can do whatever you want with the data in the `
 
 This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
 
-## DROP PARTITION\|PART
+## DROP PARTITION\|PART {#alter_drop-partition}
 
 ``` sql
 ALTER TABLE table_name DROP PARTITION|PART partition_expr
@@ -64,7 +64,7 @@ ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
-## DROP DETACHED PARTITION\|PART
+## DROP DETACHED PARTITION\|PART {#alter_drop-detached}
 
 ``` sql
 ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
@@ -73,7 +73,7 @@ ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
 Removes the specified part or all parts of the specified partition from `detached`.
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-## ATTACH PARTITION\|PART
+## ATTACH PARTITION\|PART {#alter_attach-partition}
 
 ``` sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
@@ -88,7 +88,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. The replica-initiator checks whether there is data in the `detached` directory.
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
 If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
 If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own `detached` folder, it attaches the data without fetching it from other replicas.
@@ -96,7 +96,7 @@ If there is no part with the correct checksums, the data is downloaded from any 
 
 You can put data to the `detached` directory on one replica and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
 
-## ATTACH PARTITION FROM
+## ATTACH PARTITION FROM {#alter_attach-partition-from}
 
 ``` sql
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
@@ -110,7 +110,7 @@ For the query to run successfully, the following conditions must be met:
 -   Both tables must have the same structure.
 -   Both tables must have the same partition key.
 
-## REPLACE PARTITION
+## REPLACE PARTITION {#alter_replace-partition}
 
 ``` sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
@@ -123,7 +123,7 @@ For the query to run successfully, the following conditions must be met:
 -   Both tables must have the same structure.
 -   Both tables must have the same partition key.
 
-## MOVE PARTITION TO TABLE
+## MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
 
 ``` sql
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
@@ -138,7 +138,7 @@ For the query to run successfully, the following conditions must be met:
 -   Both tables must be the same engine family (replicated or non-replicated).
 -   Both tables must have the same storage policy.
 
-## CLEAR COLUMN IN PARTITION
+## CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
 ``` sql
 ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -152,17 +152,16 @@ Example:
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-## FREEZE PARTITION
+## FREEZE PARTITION {#alter_freeze-partition}
 
 ``` sql
-ALTER TABLE table_name FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
+ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
 This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
 
-:::note    
-The entire backup process is performed without stopping the server.
-:::
+!!! note "Note"
+    The entire backup process is performed without stopping the server.
 
 Note that for old-styled tables you can specify the prefix of the partition name (for example, `2019`) - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
@@ -170,11 +169,9 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 
 -   `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
 -   `N` is the incremental number of the backup.
--   if the `WITH NAME` parameter is specified, then the value of the `'backup_name'` parameter is used instead of the incremental number. 
 
-:::note    
-If you use [a set of disks for data storage in a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
-:::
+!!! note "Note"
+    If you use [a set of disks for data storage in a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
 
 The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs `chmod` for all files, forbidding writing into them.
 
@@ -194,7 +191,7 @@ Restoring from a backup does not require stopping the server.
 
 For more information about backups and restoring data, see the [Data Backup](../../../operations/backup.md) section.
 
-## UNFREEZE PARTITION
+## UNFREEZE PARTITION {#alter_unfreeze-partition}
 
 ``` sql
 ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
@@ -202,7 +199,7 @@ ALTER TABLE 'table_name' UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name
 
 Removes `freezed` partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
 
-## CLEAR INDEX IN PARTITION
+## CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
 
 ``` sql
 ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
@@ -210,7 +207,7 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 
 The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
 
-## FETCH PARTITION|PART
+## FETCH PARTITION|PART {#alter_fetch-partition}
 
 ``` sql
 ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
@@ -245,7 +242,7 @@ Before downloading, the system checks if the partition exists and the table stru
 
 Although the query is called `ALTER TABLE`, it does not change the table structure and does not immediately change the data available in the table.
 
-## MOVE PARTITION\|PART
+## MOVE PARTITION\|PART {#alter_move-partition}
 
 Moves partitions or data parts to another volume or disk for `MergeTree`-engine tables. See [Using Multiple Block Devices for Data Storage](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes).
 
@@ -266,7 +263,7 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-## UPDATE IN PARTITION
+## UPDATE IN PARTITION {#update-in-partition}
 
 Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
 
@@ -286,7 +283,7 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 
 -   [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements)
 
-## DELETE IN PARTITION
+## DELETE IN PARTITION {#delete-in-partition}
 
 Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](../../../sql-reference/statements/alter/index.md#mutations).
 
@@ -306,7 +303,7 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 
 -   [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations)
 
-## How to Set Partition Expression
+## How to Set Partition Expression {#alter-how-to-specify-part-expr}
 
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
 

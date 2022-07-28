@@ -1,4 +1,4 @@
-SELECT '-1E9-1E9-1E9-1E9' AS x, toDecimal32(x, 0); -- { serverError 69 }
+SELECT '-1E9-1E9-1E9-1E9' AS x, toDecimal32(x, 0); -- { serverError 72 }
 SELECT '-1E9' AS x, toDecimal32(x, 0); -- { serverError 69 }
 SELECT '1E-9' AS x, toDecimal32(x, 0);
 SELECT '1E-8' AS x, toDecimal32(x, 0);

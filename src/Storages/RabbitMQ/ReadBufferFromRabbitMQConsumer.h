@@ -1,25 +1,19 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
+#include <amqpcpp.h>
+#include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
 namespace Poco
 {
-class Logger;
-}
-
-namespace AMQP
-{
-class TcpChannel;
+    class Logger;
 }
 
 namespace DB
 {
-
-class RabbitMQHandler;
-using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 
 class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 {
@@ -58,7 +52,11 @@ public:
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();
     bool needChannelUpdate();
-    void closeChannel();
+    void closeChannel()
+    {
+        if (consumer_channel)
+            consumer_channel->close();
+    }
 
     void updateQueues(std::vector<String> & queues_) { queues = queues_; }
     size_t queuesCount() { return queues.size(); }

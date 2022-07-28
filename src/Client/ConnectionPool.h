@@ -4,7 +4,6 @@
 #include <Client/Connection.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
-#include <base/defines.h>
 
 namespace DB
 {
@@ -26,11 +25,12 @@ class IConnectionPool : private boost::noncopyable
 public:
     using Entry = PoolBase<Connection>::Entry;
 
+public:
     virtual ~IConnectionPool() = default;
 
     /// Selects the connection to work.
     /// If force_connected is false, the client must manually ensure that returned connection is good.
-    virtual Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
+    virtual Entry get(const ConnectionTimeouts & timeouts,
                       const Settings * settings = nullptr,
                       bool force_connected = true) = 0;
 
@@ -76,7 +76,7 @@ public:
     {
     }
 
-    Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
+    Entry get(const ConnectionTimeouts & timeouts,
               const Settings * settings = nullptr,
               bool force_connected = true) override
     {
@@ -134,61 +134,5 @@ private:
     Int64 priority;                    /// priority from <remote_servers>
 
 };
-
-/**
- * Connection pool factory. Responsible for creating new connection pools and reuse existing ones.
- */
-class ConnectionPoolFactory final : private boost::noncopyable
-{
-public:
-    struct Key
-    {
-        unsigned max_connections;
-        String host;
-        UInt16 port;
-        String default_database;
-        String user;
-        String password;
-        String cluster;
-        String cluster_secret;
-        String client_name;
-        Protocol::Compression compression;
-        Protocol::Secure secure;
-        Int64 priority;
-    };
-
-    struct KeyHash
-    {
-        size_t operator()(const ConnectionPoolFactory::Key & k) const;
-    };
-
-    static ConnectionPoolFactory & instance();
-
-    ConnectionPoolPtr
-    get(unsigned max_connections,
-        String host,
-        UInt16 port,
-        String default_database,
-        String user,
-        String password,
-        String cluster,
-        String cluster_secret,
-        String client_name,
-        Protocol::Compression compression,
-        Protocol::Secure secure,
-        Int64 priority);
-private:
-    mutable std::mutex mutex;
-    using ConnectionPoolWeakPtr = std::weak_ptr<IConnectionPool>;
-    std::unordered_map<Key, ConnectionPoolWeakPtr, KeyHash> pools TSA_GUARDED_BY(mutex);
-};
-
-inline bool operator==(const ConnectionPoolFactory::Key & lhs, const ConnectionPoolFactory::Key & rhs)
-{
-    return lhs.max_connections == rhs.max_connections && lhs.host == rhs.host && lhs.port == rhs.port
-        && lhs.default_database == rhs.default_database && lhs.user == rhs.user && lhs.password == rhs.password
-        && lhs.cluster == rhs.cluster && lhs.cluster_secret == rhs.cluster_secret && lhs.client_name == rhs.client_name
-        && lhs.compression == rhs.compression && lhs.secure == rhs.secure && lhs.priority == rhs.priority;
-}
 
 }

@@ -57,9 +57,9 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   表格预览。
 -   自动完成。
 
-### clickhouse-cli {#clickhouse-cli}
+### ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-cli}
 
-[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) 是ClickHouse的替代命令行客户端，用Python 3编写。
+[ﾂ环板-ｮﾂ嘉ｯﾂ偲](https://github.com/hatarist/clickhouse-cli) 是ClickHouse的替代命令行客户端，用Python 3编写。
 
 特征：
 
@@ -68,43 +68,15 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   寻呼机支持数据输出。
 -   自定义PostgreSQL类命令。
 
-### clickhouse-flamegraph {#clickhouse-flamegraph}
+### ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人 {#clickhouse-flamegraph}
 
     [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 是一个可视化的专业工具`system.trace_log`如[flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
-### DBM {#dbm}
-
-[DBM](https://dbm.incubator.edurt.io/) DBM是一款ClickHouse可视化管理工具!
-
-特征：
-
--   支持查询历史（分页、全部清除等）
--   支持选中的sql子句查询(多窗口等)
--   支持终止查询
--   支持表管理
--   支持数据库管理
--   支持自定义查询
--   支持多数据源管理（连接测试、监控）
--   支持监控（处理进程、连接、查询）
--   支持迁移数据
-
-### ClickVisual {#clickvisual}
-
-[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual是一款轻量级的开源日志查询、分析、报警的可视化平台！
-
-特征：
-
-- 支持分析日志库一键创建
-- 支持日志采集配置管理
-- 支持自定义索引配置
-- 支持报警配置
-- 支持权限粒度到库和表的权限配置
-
 ## 商业 {#shang-ye}
 
-### Holistics {#holistics-software}
+### ﾂ环板Softwareｮﾂ嘉ｯ {#holistics-software}
 
-[Holistics](https://www.holistics.io/) 在2019年被Gartner FrontRunners列为可用性最高排名第二的商业智能工具之一。 Holistics是一个基于SQL的全栈数据平台和商业智能工具，用于设置您的分析流程。
+[整体学](https://www.holistics.io/) 在2019年被Gartner FrontRunners列为可用性最高排名第二的商业智能工具之一。 Holistics是一个基于SQL的全栈数据平台和商业智能工具，用于设置您的分析流程。
 
 特征：
 
@@ -127,4 +99,4 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   重构。
 -   搜索和导航。
 
-[来源文章](https://clickhouse.com/docs/zh/interfaces/third-party/gui/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/gui/) <!--hide-->

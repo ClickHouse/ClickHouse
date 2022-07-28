@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -76,4 +75,4 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE replicated_mutation_table MODIFY COLUMN 
 
 $CLICKHOUSE_CLIENT --query "SELECT distinct(value) FROM replicated_mutation_table ORDER BY value"
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE replicated_mutation_table"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS replicated_mutation_table"

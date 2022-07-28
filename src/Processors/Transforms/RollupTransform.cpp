@@ -1,18 +1,14 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 
 namespace DB
 {
 
 RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_)
-    : IAccumulatingTransform(std::move(header), appendGroupingSetColumn(params_->getHeader()))
+    : IAccumulatingTransform(std::move(header), params_->getHeader())
     , params(std::move(params_))
-    , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
+    , keys(params->params.keys)
 {
-    keys.reserve(params->params.keys_size);
-    for (const auto & key : params->params.keys)
-        keys.emplace_back(input.getHeader().getPositionByName(key));
 }
 
 void RollupTransform::consume(Chunk chunk)
@@ -29,14 +25,6 @@ Chunk RollupTransform::merge(Chunks && chunks, bool final)
     auto rollup_block = params->aggregator.mergeBlocks(rollup_blocks, final);
     auto num_rows = rollup_block.rows();
     return Chunk(rollup_block.getColumns(), num_rows);
-}
-
-MutableColumnPtr getColumnWithDefaults(Block const & header, size_t key, size_t n)
-{
-    auto const & col = header.getByPosition(key);
-    auto result_column = col.column->cloneEmpty();
-    col.type->insertManyDefaultsInto(*result_column, n);
-    return result_column;
 }
 
 Chunk RollupTransform::generate()
@@ -61,16 +49,14 @@ Chunk RollupTransform::generate()
 
         auto num_rows = gen_chunk.getNumRows();
         auto columns = gen_chunk.getColumns();
-        columns[key] = getColumnWithDefaults(getInputPort().getHeader(), key, num_rows);
+        columns[key] = columns[key]->cloneEmpty()->cloneResized(num_rows);
 
         Chunks chunks;
         chunks.emplace_back(std::move(columns), num_rows);
         rollup_chunk = merge(std::move(chunks), false);
     }
 
-    finalizeChunk(gen_chunk, aggregates_mask);
-    if (!gen_chunk.empty())
-        gen_chunk.addColumn(0, ColumnUInt64::create(gen_chunk.getNumRows(), set_counter++));
+    finalizeChunk(gen_chunk);
     return gen_chunk;
 }
 

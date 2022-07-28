@@ -1,6 +1,6 @@
 ---
-sidebar_position: 4
-sidebar_label: "Отличительные возможности ClickHouse"
+toc_priority: 4
+toc_title: "Отличительные возможности ClickHouse"
 ---
 
 # Отличительные возможности ClickHouse {#otlichitelnye-vozmozhnosti-clickhouse}
@@ -30,13 +30,11 @@ sidebar_label: "Отличительные возможности ClickHouse"
 Почти все перечисленные ранее столбцовые СУБД не поддерживают распределённую обработку запроса.
 В ClickHouse данные могут быть расположены на разных шардах. Каждый шард может представлять собой группу реплик, которые используются для отказоустойчивости. Запрос будет выполнен на всех шардах параллельно. Это делается прозрачно для пользователя.
 
-## Поддержка SQL {#sql-support}
+## Поддержка SQL {#podderzhka-sql}
 
-ClickHouse поддерживает [декларативный язык запросов на основе SQL](../sql-reference/index.md) и во [многих случаях](../sql-reference/ansi.md) совпадающий с SQL стандартом.
-
-Поддерживаются [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), подзапросы в секциях [FROM](../sql-reference/statements/select/from.md), [IN](../sql-reference/operators/in.md), [JOIN](../sql-reference/statements/select/join.md), [функции window](../sql-reference/window-functions/index.md), а также скалярные подзапросы.
-
-Зависимые подзапросы не поддерживаются, но могут стать доступными в будущем.
+ClickHouse поддерживает декларативный язык запросов на основе SQL и во многих случаях совпадающий с SQL стандартом.
+Поддерживаются GROUP BY, ORDER BY, подзапросы в секциях FROM, IN, JOIN, а также скалярные подзапросы.
+Зависимые подзапросы и оконные функции не поддерживаются.
 
 ## Векторный движок {#vektornyi-dvizhok}
 

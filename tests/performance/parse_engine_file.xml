@@ -1,5 +1,9 @@
 <test>
 
+<preconditions>
+    <table_exists>test.hits</table_exists>
+</preconditions>
+
 <substitutions>
     <substitution>
         <name>format</name>

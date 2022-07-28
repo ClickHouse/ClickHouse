@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <legacy_column_name_of_tuple_literal>1</legacy_column_name_of_tuple_literal>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

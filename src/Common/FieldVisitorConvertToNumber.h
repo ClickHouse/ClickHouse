@@ -2,7 +2,7 @@
 
 #include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 #include <type_traits>
 
 
@@ -46,11 +46,6 @@ public:
         throw Exception("Cannot convert Map to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const Object &) const
-    {
-        throw Exception("Cannot convert Object to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
-    }
-
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
     T operator() (const Int128 & x) const { return T(x); }
@@ -69,7 +64,7 @@ public:
                 /// Conversion of infinite values to integer is undefined.
                 throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
-            else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+            else if (x > std::numeric_limits<T>::max() || x < std::numeric_limits<T>::lowest())
             {
                 throw Exception("Cannot convert out of range floating point value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
@@ -118,19 +113,16 @@ public:
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    template <typename U>
-    requires is_big_int_v<U>
+    template <typename U, typename = std::enable_if_t<is_big_int_v<U>> >
     T operator() (const U & x) const
     {
-        if constexpr (is_decimal<T>)
+        if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
         else
             return static_cast<T>(x);
     }
-
-    T operator() (const bool & x) const { return T(x); }
 };
 
 }

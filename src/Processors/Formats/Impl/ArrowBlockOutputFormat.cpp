@@ -34,7 +34,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
     {
         const Block & header = getPort(PortKind::Main).getHeader();
         ch_column_to_arrow_column
-            = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary, format_settings.arrow.output_string_as_string);
+            = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
@@ -50,7 +50,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
             "Error while writing a table: {}", status.ToString());
 }
 
-void ArrowBlockOutputFormat::finalizeImpl()
+void ArrowBlockOutputFormat::finalize()
 {
     if (!writer)
     {
@@ -82,9 +82,9 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
-void registerOutputFormatArrow(FormatFactory & factory)
+void registerOutputFormatProcessorArrow(FormatFactory & factory)
 {
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -93,9 +93,8 @@ void registerOutputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
-    factory.markFormatHasNoAppendSupport("Arrow");
 
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -104,7 +103,6 @@ void registerOutputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
         });
-    factory.markFormatHasNoAppendSupport("ArrowStream");
 }
 
 }
@@ -114,7 +112,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatArrow(FormatFactory &)
+void registerOutputFormatProcessorArrow(FormatFactory &)
 {
 }
 }

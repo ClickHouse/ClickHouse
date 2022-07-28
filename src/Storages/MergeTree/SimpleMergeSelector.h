@@ -63,7 +63,7 @@ merge selecting algorithm is applied and the relevant metrics are calculated to 
 their sizes, at what time intervals they are inserted;
 
 There is a research thesis dedicated to optimization of merge algorithm:
-https://presentations.clickhouse.com/hse_2019/merge_algorithm.pptx
+https://presentations.clickhouse.tech/hse_2019/merge_algorithm.pptx
 
 This work made attempt to variate the coefficients in SimpleMergeSelector and to solve the optimization task:
 maybe some change in coefficients will give a clear win on all metrics. Surprisingly enough, it has found
@@ -152,7 +152,7 @@ public:
 
     PartsRange select(
         const PartsRanges & parts_ranges,
-        size_t max_total_size_to_merge) override;
+        const size_t max_total_size_to_merge) override;
 
 private:
     const Settings settings;

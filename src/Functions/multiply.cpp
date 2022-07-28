@@ -1,7 +1,7 @@
 #include <type_traits>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <base/arithmeticOverflow.h>
+#include <common/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -11,7 +11,6 @@ struct MultiplyImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)

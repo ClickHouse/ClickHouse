@@ -1,4 +1,4 @@
-# events
+# system.events {#system_tables-events}
 
 Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries were processed since the ClickHouse server started.
 
@@ -31,4 +31,4 @@ SELECT * FROM system.events LIMIT 5
 -   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 -   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/events) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/events) <!--hide-->

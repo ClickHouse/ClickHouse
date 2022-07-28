@@ -1,8 +1,8 @@
 ---
-sidebar_position: 220
+toc_priority: 220
 ---
 
-# simpleLinearRegression
+# simpleLinearRegression {#simplelinearregression}
 
 Performs simple (unidimensional) linear regression.
 

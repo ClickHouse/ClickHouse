@@ -21,9 +21,9 @@ function download_package() # (version, path)
     version="$1"
     path="$2"
     cd "$path"
-    wget -nv -nd -nc "https://repo.clickhouse.com/deb/stable/main/clickhouse-common-static-dbg_${version}_amd64.deb" ||:
-    wget -nv -nd -nc "https://repo.clickhouse.com/deb/stable/main/clickhouse-common-static_${version}_amd64.deb" ||:
-    wget -nv -nd -nc "https://repo.clickhouse.com/deb/stable/main/clickhouse-test_${version}_all.deb" ||:
+    wget -nv -nd -nc "https://repo.clickhouse.tech/deb/stable/main/clickhouse-common-static-dbg_${version}_amd64.deb" ||:
+    wget -nv -nd -nc "https://repo.clickhouse.tech/deb/stable/main/clickhouse-common-static_${version}_amd64.deb" ||:
+    wget -nv -nd -nc "https://repo.clickhouse.tech/deb/stable/main/clickhouse-test_${version}_all.deb" ||:
     mkdir tmp ||:
     for x in *.deb; do dpkg-deb -x "$x" tmp ; done
     mv tmp/usr/bin/clickhouse ./clickhouse

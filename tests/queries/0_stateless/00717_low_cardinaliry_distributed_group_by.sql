@@ -1,5 +1,3 @@
--- Tags: distributed
-
 set insert_distributed_sync = 1;
 set allow_suspicious_low_cardinality_types = 1;
 

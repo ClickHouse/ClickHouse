@@ -1,17 +1,21 @@
 #pragma once
 
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #if USE_PROTOBUF
+#    include <Core/Block.h>
+#    include <Formats/FormatSchemaInfo.h>
+#    include <Formats/FormatSettings.h>
 #    include <Processors/Formats/IRowOutputFormat.h>
+
 
 namespace DB
 {
-class DB;
-class FormatSchemaInfo;
-class ProtobufSerializer;
 class ProtobufWriter;
-class WriteBuffer;
+class ProtobufSerializer;
+class FormatSchemaInfo;
 struct FormatSettings;
 
 /** Stream designed to serialize data in the google protobuf format.
@@ -24,7 +28,7 @@ struct FormatSettings;
   * SELECT * from table FORMAT Protobuf SETTINGS format_schema = 'schema:Message'
   * where schema is the name of "schema.proto" file specifying protobuf schema.
   */
-class ProtobufRowOutputFormat final : public IRowOutputFormat
+class ProtobufRowOutputFormat : public IRowOutputFormat
 {
 public:
     ProtobufRowOutputFormat(
@@ -37,12 +41,11 @@ public:
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
 
+    void write(const Columns & columns, size_t row_num) override;
+    void writeField(const IColumn &, const ISerialization &, size_t) override {}
     std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
-    void write(const Columns & columns, size_t row_num) override;
-    void writeField(const IColumn &, const ISerialization &, size_t) override {}
-
     std::unique_ptr<ProtobufWriter> writer;
     std::unique_ptr<ProtobufSerializer> serializer;
     const bool allow_multiple_rows;

@@ -19,7 +19,6 @@ public:
     static constexpr auto name = "extractURLParameters";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
     static void checkArguments(const DataTypes & arguments)

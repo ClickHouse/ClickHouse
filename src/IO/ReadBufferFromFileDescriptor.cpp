@@ -1,20 +1,18 @@
-#include <cerrno>
-#include <ctime>
+#include <errno.h>
+#include <time.h>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Progress.h>
-#include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
+#include <Common/UnicodeBar.h>
+#include <Common/TerminalSize.h>
+#include <IO/Operators.h>
 
-
-#ifdef HAS_RESERVED_IDENTIFIER
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 namespace ProfileEvents
 {
@@ -39,7 +37,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
-    extern const int CANNOT_ADVISE;
+    extern const int CANNOT_FSTAT;
 }
 
 
@@ -51,13 +49,6 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 
 bool ReadBufferFromFileDescriptor::nextImpl()
 {
-    /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
-    assert(!internal_buffer.empty());
-
-    /// This is a workaround of a read pass EOF bug in linux kernel with pread()
-    if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
-        return false;
-
     size_t bytes_read = 0;
     while (!bytes_read)
     {
@@ -68,11 +59,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         ssize_t res = 0;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-
-            if (use_pread)
-                res = ::pread(fd, internal_buffer.begin(), internal_buffer.size(), file_offset_of_buffer_end);
-            else
-                res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
+            res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
         }
         if (!res)
             break;
@@ -119,20 +106,6 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 }
 
 
-void ReadBufferFromFileDescriptor::prefetch()
-{
-#if defined(POSIX_FADV_WILLNEED)
-    /// For direct IO, loading data into page cache is pointless.
-    if (required_alignment)
-        return;
-
-    /// Ask OS to prefetch data into page cache.
-    if (0 != posix_fadvise(fd, file_offset_of_buffer_end, internal_buffer.size(), POSIX_FADV_WILLNEED))
-        throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
-#endif
-}
-
-
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
@@ -155,80 +128,49 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
+    // file_offset_of_buffer_end corresponds to working_buffer.end(); it's a past-the-end pos,
+    // so the second inequality is strict.
     if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
-        && new_pos <= file_offset_of_buffer_end)
+        && new_pos < file_offset_of_buffer_end)
     {
-        /// Position is still inside the buffer.
-        /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
-
+        /// Position is still inside buffer.
         pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
         assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
+        assert(pos < working_buffer.end());
 
         return new_pos;
     }
     else
     {
-        /// Position is out of the buffer, we need to do real seek.
-        off_t seek_pos = required_alignment > 1
-            ? new_pos / required_alignment * required_alignment
-            : new_pos;
-
-        off_t offset_after_seek_pos = new_pos - seek_pos;
-
-        /// First reset the buffer so the next read will fetch new data to the buffer.
-        resetWorkingBuffer();
-
-        /// In case of using 'pread' we just update the info about the next position in file.
-        /// In case of using 'read' we call 'lseek'.
-
-        /// We account both cases as seek event as it leads to non-contiguous reads from file.
         ProfileEvents::increment(ProfileEvents::Seek);
+        Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
-        if (!use_pread)
-        {
-            Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
+        pos = working_buffer.end();
+        off_t res = ::lseek(fd, new_pos, SEEK_SET);
+        if (-1 == res)
+            throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        file_offset_of_buffer_end = new_pos;
 
-            off_t res = ::lseek(fd, seek_pos, SEEK_SET);
-            if (-1 == res)
-                throwFromErrnoWithPath(fmt::format("Cannot seek through file {} at offset {}", getFileName(), seek_pos), getFileName(),
-                    ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        watch.stop();
+        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-            /// Also note that seeking past the file size is not allowed.
-            if (res != seek_pos)
-                throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-                    "The 'lseek' syscall returned value ({}) that is not expected ({})", res, seek_pos);
-
-            watch.stop();
-            ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
-        }
-
-        file_offset_of_buffer_end = seek_pos;
-
-        if (offset_after_seek_pos > 0)
-            ignore(offset_after_seek_pos);
-
-        return seek_pos;
+        return res;
     }
 }
 
 
 void ReadBufferFromFileDescriptor::rewind()
 {
-    if (!use_pread)
-    {
-        ProfileEvents::increment(ProfileEvents::Seek);
-        off_t res = ::lseek(fd, 0, SEEK_SET);
-        if (-1 == res)
-            throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
-                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
-    }
-    /// In case of pread, the ProfileEvents::Seek is not accounted, but it's Ok.
+    ProfileEvents::increment(ProfileEvents::Seek);
+    off_t res = ::lseek(fd, 0, SEEK_SET);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
+            ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     /// Clearing the buffer with existing data. New data will be read on subsequent call to 'next'.
     working_buffer.resize(0);
     pos = working_buffer.begin();
-    file_offset_of_buffer_end = 0;
 }
 
 
@@ -249,9 +191,13 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 }
 
 
-size_t ReadBufferFromFileDescriptor::getFileSize()
+off_t ReadBufferFromFileDescriptor::size()
 {
-    return getSizeFromFileDescriptor(fd, getFileName());
+    struct stat buf;
+    int res = fstat(fd, &buf);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
+    return buf.st_size;
 }
 
 

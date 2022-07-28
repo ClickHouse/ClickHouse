@@ -48,30 +48,14 @@ public:
 
     ITransformingStep(DataStream input_stream, Block output_header, Traits traits, bool collect_processors_ = true);
 
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
+    QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings) override;
 
-    virtual void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
+    virtual void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) = 0;
 
     const TransformTraits & getTransformTraits() const { return transform_traits; }
     const DataStreamTraits & getDataStreamTraits() const { return data_stream_traits; }
 
-    /// Updates the input stream of the given step. Used during query plan optimizations.
-    /// It won't do any validation of a new stream, so it is your responsibility to ensure that this update doesn't break anything
-    /// (e.g. you update data stream traits or correctly remove / add columns).
-    void updateInputStream(DataStream input_stream)
-    {
-        input_streams.clear();
-        input_streams.emplace_back(std::move(input_stream));
-
-        updateOutputStream();
-
-        updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
-    }
-
     void describePipeline(FormatSettings & settings) const override;
-
-    /// Append extra processors for this step.
-    void appendExtraProcessors(const Processors & extra_processors);
 
 protected:
     /// Clear distinct_columns if res_header doesn't contain all of them.
@@ -86,8 +70,6 @@ protected:
     TransformTraits transform_traits;
 
 private:
-    virtual void updateOutputStream() = 0;
-
     /// We collect processors got after pipeline transformation.
     Processors processors;
     bool collect_processors;

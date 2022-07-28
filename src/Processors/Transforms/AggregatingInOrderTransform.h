@@ -4,34 +4,21 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/finalizeChunk.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
 
 namespace DB
 {
 
-struct InputOrderInfo;
-using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
-
-struct ChunkInfoWithAllocatedBytes : public ChunkInfo
-{
-    explicit ChunkInfoWithAllocatedBytes(Int64 allocated_bytes_)
-        : allocated_bytes(allocated_bytes_) {}
-    Int64 allocated_bytes;
-};
-
 class AggregatingInOrderTransform : public IProcessor
 {
+
 public:
     AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                InputOrderInfoPtr group_by_info_,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_,
+                                const SortDescription & group_by_description, size_t res_block_size,
                                 ManyAggregatedDataPtr many_data, size_t current_variant);
 
     AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                InputOrderInfoPtr group_by_info_,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_);
+                                const SortDescription & group_by_description, size_t res_block_size);
 
     ~AggregatingInOrderTransform() override;
 
@@ -45,26 +32,15 @@ public:
 
 private:
     void generate();
-    void finalizeCurrentChunk(Chunk chunk, size_t key_end);
 
-    size_t max_block_size;
-    size_t max_block_bytes;
+    size_t res_block_size;
     size_t cur_block_size = 0;
-    size_t cur_block_bytes = 0;
 
     MutableColumns res_key_columns;
     MutableColumns res_aggregate_columns;
 
     AggregatingTransformParamsPtr params;
-    ColumnsMask aggregates_mask;
-
-    InputOrderInfoPtr group_by_info;
-    /// For sortBlock()
-    SortDescription sort_description;
-    SortDescriptionWithPositions group_by_description;
-    bool group_by_key = false;
-    Block group_by_block;
-    ColumnRawPtrs key_columns_raw;
+    SortDescription group_by_description;
 
     Aggregator::AggregateColumns aggregate_columns;
 
@@ -88,17 +64,28 @@ private:
 };
 
 
-class FinalizeAggregatedTransform : public ISimpleTransform
+class FinalizingSimpleTransform : public ISimpleTransform
 {
 public:
-    FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_);
+    FinalizingSimpleTransform(Block header, AggregatingTransformParamsPtr params_)
+        : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
+        , params(params_) {}
 
-    void transform(Chunk & chunk) override;
-    String getName() const override { return "FinalizeAggregatedTransform"; }
+    void transform(Chunk & chunk) override
+    {
+        if (params->final)
+            finalizeChunk(chunk);
+        else if (!chunk.getChunkInfo())
+        {
+            auto info = std::make_shared<AggregatedChunkInfo>();
+            chunk.setChunkInfo(std::move(info));
+        }
+    }
+
+    String getName() const override { return "FinalizingSimpleTransform"; }
 
 private:
     AggregatingTransformParamsPtr params;
-    ColumnsMask aggregates_mask;
 };
 
 

@@ -33,7 +33,7 @@ public:
 
 private:
     AvailableCollationLocales();
-
+private:
     AvailableLocalesMap locales_map;
 };
 

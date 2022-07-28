@@ -5,21 +5,23 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <base/CachedFn.h>
-#include <base/demangle.h>
+#include <common/SimpleCache.h>
+#include <common/demangle.h>
 
 #include <cstring>
 #include <filesystem>
 #include <sstream>
 #include <unordered_map>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_UNWIND
 #    include <libunwind.h>
 #endif
 
-std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
+std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
     std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     error.exceptions(std::ios::failbit);
@@ -33,12 +35,14 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
             else
                 error << "Address: " << info.si_addr;
 
-#if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
+#if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__) && !defined(__powerpc__)
             auto err_mask = context.uc_mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
             else
                 error << " Access: read.";
+#else
+            UNUSED(context);
 #endif
 
             switch (info.si_code)
@@ -173,35 +177,29 @@ static void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
-#    if defined(OS_FREEBSD)
+#    if defined(__FreeBSD__)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_rip);
-#    elif defined(OS_DARWIN)
+#    elif defined(__APPLE__)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__rip);
 #    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 #    endif
 
-#elif defined(OS_DARWIN) && defined(__aarch64__)
+#elif defined(__APPLE__) && defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
 
-#elif defined(OS_FREEBSD) && defined(__aarch64__)
-    return reinterpret_cast<void *>(context.uc_mcontext.mc_gpregs.gp_elr);
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
 #elif defined(__powerpc64__)
     return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
-#elif defined(__riscv)
-    return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
 #else
     return nullptr;
 #endif
 }
 
-void StackTrace::symbolize(
-    const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset,
-    size_t size, StackTrace::Frames & frames)
+void StackTrace::symbolize(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames)
 {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
 
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
@@ -258,6 +256,7 @@ void StackTrace::symbolize(
     {
         frames[i].virtual_addr = frame_pointers[i];
     }
+    UNUSED(offset);
 #endif
 }
 
@@ -323,7 +322,7 @@ const StackTrace::FramePointers & StackTrace::getFramePointers() const
 }
 
 static void toStringEveryLineImpl(
-    [[maybe_unused]] bool fatal,
+    bool fatal,
     const StackTrace::FramePointers & frame_pointers,
     size_t offset,
     size_t size,
@@ -332,7 +331,7 @@ static void toStringEveryLineImpl(
     if (size == 0)
         return callback("<Empty trace>");
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
@@ -387,6 +386,7 @@ static void toStringEveryLineImpl(
         out.str({});
     }
 #else
+    UNUSED(fatal);
     std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out.exceptions(std::ios::failbit);
 
@@ -417,7 +417,11 @@ void StackTrace::toStringEveryLine(std::function<void(const std::string &)> call
 
 std::string StackTrace::toString() const
 {
-    return toStringStatic(frame_pointers, offset, size);
+    /// Calculation of stack trace text is extremely slow.
+    /// We use simple cache because otherwise the server could be overloaded by trash queries.
+
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frame_pointers, offset, size);
 }
 
 std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t size)
@@ -428,23 +432,6 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     for (size_t i = 0; i < size; ++i)
         frame_pointers_copy[i] = frame_pointers_[i];
 
-    return toStringStatic(frame_pointers_copy, offset, size);
-}
-
-static CachedFn<&toStringImpl> & cacheInstance()
-{
-    static CachedFn<&toStringImpl> cache;
-    return cache;
-}
-
-std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
-{
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    return cacheInstance()(frame_pointers, offset, size);
-}
-
-void StackTrace::dropCache()
-{
-    cacheInstance().drop();
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frame_pointers_copy, offset, size);
 }

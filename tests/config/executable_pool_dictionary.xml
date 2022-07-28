@@ -61,11 +61,10 @@
     </structure>
 
     <source>
-        <executable_pool>
+        <executable>
             <format>TabSeparated</format>
             <command>while read read_data; do printf "$read_data\tvalue a\tvalue b\n"; done</command>
-            <size>5</size>
-        </executable_pool>
+        </executable>
     </source>
 
     <layout>

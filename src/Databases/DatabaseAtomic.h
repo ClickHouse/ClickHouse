@@ -25,7 +25,7 @@ public:
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }
 
-    void renameDatabase(ContextPtr query_context, const String & new_name) override;
+    void renameDatabase(const String & new_name) override;
 
     void renameTable(
             ContextPtr context,
@@ -35,23 +35,19 @@ public:
             bool exchange,
             bool dictionary) override;
 
-    void dropTable(ContextPtr context, const String & table_name, bool sync) override;
+    void dropTable(ContextPtr context, const String & table_name, bool no_delay) override;
 
-    void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
-    StoragePtr detachTable(ContextPtr context, const String & name) override;
+    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
+    StoragePtr detachTable(const String & name) override;
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
 
     void drop(ContextPtr /*context*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
-
-    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
-
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleanup) override;
@@ -63,26 +59,24 @@ public:
 
     void waitDetachedTableNotInUse(const UUID & uuid) override;
     void checkDetachedTableNotInUse(const UUID & uuid) override;
-    void setDetachedTableNotInUseForce(const UUID & uuid) override;
+    void setDetachedTableNotInUseForce(const UUID & uuid);
 
 protected:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, ContextPtr query_context) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context) override;
 
-    void assertDetachedTableNotInUse(const UUID & uuid) TSA_REQUIRES(mutex);
+    void assertDetachedTableNotInUse(const UUID & uuid);
     using DetachedTables = std::unordered_map<UUID, StoragePtr>;
-    [[nodiscard]] DetachedTables cleanupDetachedTables() TSA_REQUIRES(mutex);
+    [[nodiscard]] DetachedTables cleanupDetachedTables();
 
     void tryCreateMetadataSymlink();
 
-    virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
-
     //TODO store path in DatabaseWithOwnTables::tables
     using NameToPathMap = std::unordered_map<String, String>;
-    NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
+    NameToPathMap table_name_to_path;
 
-    DetachedTables detached_tables TSA_GUARDED_BY(mutex);
+    DetachedTables detached_tables;
     String path_to_table_symlinks;
     String path_to_metadata_symlink;
     const UUID db_uuid;

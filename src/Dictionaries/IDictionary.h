@@ -1,31 +1,31 @@
 #pragma once
 
-#include <memory>
-#include <mutex>
 
 #include <Core/Names.h>
-#include <Columns/ColumnsNumber.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/castColumn.h>
-#include <Dictionaries/IDictionarySource.h>
+#include <Poco/Util/XMLConfiguration.h>
+#include <Common/PODArray.h>
+#include <common/StringRef.h>
+#include "IDictionarySource.h"
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
+#include <Columns/ColumnsNumber.h>
 
+#include <chrono>
+#include <memory>
+#include <mutex>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int TYPE_MISMATCH;
 }
 
-class IDictionary;
+struct IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
-
-class DictionaryHierarchicalParentToChildIndex;
-using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHierarchicalParentToChildIndex>;
 
 /** DictionaryKeyType provides IDictionary client information about
   * which key type is supported by dictionary.
@@ -33,57 +33,43 @@ using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHi
   * Simple is for dictionaries that support UInt64 key column.
   *
   * Complex is for dictionaries that support any combination of key columns.
+  *
+  * Range is for dictionary that support combination of UInt64 key column,
+  * and numeric representable range key column.
   */
 enum class DictionaryKeyType
 {
-    Simple,
-    Complex
-};
-
-/** DictionarySpecialKeyType provides IDictionary client information about
-  * which special key type is supported by dictionary.
-  */
-enum class DictionarySpecialKeyType
-{
-    None,
-    Range
+    simple,
+    complex,
+    range
 };
 
 /**
  * Base class for Dictionaries implementation.
  */
-class IDictionary : public IExternalLoadable
+struct IDictionary : public IExternalLoadable
 {
-public:
     explicit IDictionary(const StorageID & dictionary_id_)
     : dictionary_id(dictionary_id_)
+    , full_name(dictionary_id.getInternalDictionaryName())
     {
     }
 
-    std::string getFullName() const
-    {
-        std::lock_guard lock{mutex};
-        return dictionary_id.getNameForLogs();
-    }
-
+    const std::string & getFullName() const{ return full_name; }
     StorageID getDictionaryID() const
     {
-        std::lock_guard lock{mutex};
+        std::lock_guard lock{name_mutex};
         return dictionary_id;
     }
 
     void updateDictionaryName(const StorageID & new_name) const
     {
-        std::lock_guard lock{mutex};
+        std::lock_guard lock{name_mutex};
         assert(new_name.uuid == dictionary_id.uuid && dictionary_id.uuid != UUIDHelpers::Nil);
         dictionary_id = new_name;
     }
 
-    std::string getLoadableName() const final
-    {
-        std::lock_guard lock{mutex};
-        return dictionary_id.getInternalDictionaryName();
-    }
+    const std::string & getLoadableName() const override final { return getFullName(); }
 
     /// Specifies that no database is used.
     /// Sometimes we cannot simply use an empty string for that because an empty string is
@@ -92,8 +78,6 @@ public:
 
     std::string getDatabaseOrNoDatabaseTag() const
     {
-        std::lock_guard lock{mutex};
-
         if (!dictionary_id.database_name.empty())
             return dictionary_id.database_name;
 
@@ -114,52 +98,16 @@ public:
 
     virtual double getLoadFactor() const = 0;
 
-    virtual DictionarySourcePtr getSource() const = 0;
+    virtual const IDictionarySource * getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
     /** Subclass must provide key type that is supported by dictionary.
-      * Client will use that key type to provide valid key columns for `getColumn` and `hasKeys` functions.
+      * Client will use that key type to provide valid key columns for `getColumn` and `has` functions.
       */
     virtual DictionaryKeyType getKeyType() const = 0;
-
-    virtual DictionarySpecialKeyType getSpecialKeyType() const { return DictionarySpecialKeyType::None; }
-
-    /** Convert key columns for getColumn, hasKeys functions to match dictionary key column types.
-      * Default implementation convert key columns into DictionaryStructure key types.
-      * Subclass can override this method if keys for getColumn, hasKeys functions
-      * are different from DictionaryStructure keys. Or to prevent implicit conversion of key columns.
-      */
-    virtual void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const
-    {
-        const auto & dictionary_structure = getStructure();
-        auto key_attributes_types = dictionary_structure.getKeyTypes();
-        size_t key_attributes_types_size = key_attributes_types.size();
-        size_t key_types_size = key_types.size();
-
-        if (key_types_size != key_attributes_types_size)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Dictionary {} key lookup structure does not match, expected {}",
-                getFullName(),
-                dictionary_structure.getKeyDescription());
-
-        for (size_t key_attribute_type_index = 0; key_attribute_type_index < key_attributes_types_size; ++key_attribute_type_index)
-        {
-            const auto & key_attribute_type = key_attributes_types[key_attribute_type_index];
-            auto & key_type = key_types[key_attribute_type_index];
-
-            if (key_attribute_type->equals(*key_type))
-                continue;
-
-            auto & key_column_to_cast = key_columns[key_attribute_type_index];
-            ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-            auto casted_column = castColumnAccurate(column_to_cast, key_attribute_type);
-            key_column_to_cast = std::move(casted_column);
-            key_type = key_attribute_type;
-        }
-    }
 
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
@@ -233,36 +181,23 @@ public:
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual DictionaryHierarchicalParentToChildIndexPtr getHierarchicalIndex() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getHierarchicalIndex is not supported for {} dictionary.",
-                        getDictionaryID().getNameForLogs());
-    }
-
-    virtual size_t getHierarchicalIndexBytesAllocated() const
-    {
-        return 0;
-    }
-
     virtual ColumnPtr getDescendants(
         ColumnPtr key_column [[maybe_unused]],
         const DataTypePtr & key_type [[maybe_unused]],
-        size_t level [[maybe_unused]],
-        DictionaryHierarchicalParentToChildIndexPtr parent_to_child_index [[maybe_unused]]) const
+        size_t level [[maybe_unused]]) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Method getDescendants is not supported for {} dictionary.",
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
+    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
     bool supportUpdates() const override { return true; }
 
     bool isModified() const override
     {
-        const auto source = getSource();
+        const auto * source = getSource();
         return source && source->isModified();
     }
 
@@ -278,22 +213,12 @@ public:
         return std::static_pointer_cast<const IDictionary>(IExternalLoadable::shared_from_this());
     }
 
-    void setDictionaryComment(String new_comment)
-    {
-        std::lock_guard lock{mutex};
-        dictionary_comment = std::move(new_comment);
-    }
-
-    String getDictionaryComment() const
-    {
-        std::lock_guard lock{mutex};
-        return dictionary_comment;
-    }
-
 private:
-    mutable std::mutex mutex;
-    mutable StorageID dictionary_id TSA_GUARDED_BY(mutex);
-    String dictionary_comment TSA_GUARDED_BY(mutex);
+    mutable std::mutex name_mutex;
+    mutable StorageID dictionary_id;
+
+protected:
+    const String full_name;
 };
 
 }

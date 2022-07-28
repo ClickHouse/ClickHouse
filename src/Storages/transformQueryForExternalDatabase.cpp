@@ -9,7 +9,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -21,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -132,8 +130,6 @@ bool isCompatible(IAST & node)
             || name == "notLike"
             || name == "in"
             || name == "notIn"
-            || name == "isNull"
-            || name == "isNotNull"
             || name == "tuple"))
             return false;
 
@@ -252,7 +248,6 @@ String transformQueryForExternalDatabase(
 {
     auto clone_query = query_info.query->clone();
     const Names used_columns = query_info.syntax_analyzer_result->requiredSourceColumns();
-    bool strict = context->getSettingsRef().external_table_strict_query;
 
     auto select = std::make_shared<ASTSelectQuery>();
 
@@ -280,10 +275,6 @@ String transformQueryForExternalDatabase(
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
-        else if (strict)
-        {
-            throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
-        }
         else if (const auto * function = original_where->as<ASTFunction>())
         {
             if (function->name == "and")
@@ -300,22 +291,6 @@ String transformQueryForExternalDatabase(
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
             }
         }
-    }
-    else if (strict && original_where)
-    {
-        throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
-    }
-
-    auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());
-    UInt64 value;
-    if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
-    {
-        /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.
-        if (value)
-            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(1));
-        else
-            original_where = makeASTFunction("equals", std::make_shared<ASTLiteral>(1), std::make_shared<ASTLiteral>(0));
-        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
     }
 
     ASTPtr select_ptr = select;

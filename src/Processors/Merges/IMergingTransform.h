@@ -16,8 +16,7 @@ public:
         size_t num_inputs,
         const Block & input_header,
         const Block & output_header,
-        bool have_all_inputs_,
-        UInt64 limit_hint_);
+        bool have_all_inputs_);
 
     OutputPort & getOutputPort() { return outputs.front(); }
 
@@ -28,9 +27,16 @@ public:
 
     Status prepare() override;
 
+    /// Set position which will be used in selector if input chunk has attached SelectorInfo (see SelectorInfo.h).
+    /// Columns will be filtered, keep only rows labeled with this position.
+    /// It is used in parallel final.
+    void setSelectorPosition(size_t position) { state.selector_position = position; }
+
 protected:
     virtual void onNewInput(); /// Is called when new input is added. Only if have_all_inputs = false.
     virtual void onFinish() {} /// Is called when all data is processed.
+
+    void filterChunks(); /// Filter chunks if selector position was set. For parallel final.
 
     /// Processor state.
     struct State
@@ -43,6 +49,7 @@ protected:
         size_t next_input_to_read = 0;
 
         IMergingAlgorithm::Inputs init_chunks;
+        ssize_t selector_position = -1;
     };
 
     State state;
@@ -59,7 +66,6 @@ private:
     std::vector<InputState> input_states;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
-    UInt64 limit_hint = 0;
 
     IProcessor::Status prepareInitializeInputs();
 };
@@ -75,15 +81,16 @@ public:
         const Block & input_header,
         const Block & output_header,
         bool have_all_inputs_,
-        UInt64 limit_hint_,
         Args && ... args)
-        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, limit_hint_)
+        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_)
         , algorithm(std::forward<Args>(args) ...)
     {
     }
 
     void work() override
     {
+        filterChunks();
+
         if (!state.init_chunks.empty())
             algorithm.initialize(std::move(state.init_chunks));
 
@@ -97,7 +104,7 @@ public:
 
         IMergingAlgorithm::Status status = algorithm.merge();
 
-        if ((status.chunk && status.chunk.hasRows()) || status.chunk.hasChunkInfo())
+        if (status.chunk && status.chunk.hasRows())
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);

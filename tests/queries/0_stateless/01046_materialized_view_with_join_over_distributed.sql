@@ -1,5 +1,3 @@
--- Tags: distributed
-
 -- from https://github.com/ClickHouse/ClickHouse/issues/5142
 
 set insert_distributed_sync = 1;

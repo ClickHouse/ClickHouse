@@ -1,11 +1,8 @@
 // OSX does not have this for system alloc functions, so you will get
 // "exception specification in declaration" error.
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(USE_MUSL)
+#if defined(__APPLE__) || defined(__FreeBSD__)
 # undef JEMALLOC_NOTHROW
 # define JEMALLOC_NOTHROW
-
-# undef JEMALLOC_SYS_NOTHROW
-# define JEMALLOC_SYS_NOTHROW
 
 # undef JEMALLOC_CXX_THROW
 # define JEMALLOC_CXX_THROW
@@ -21,22 +18,21 @@ extern JEMALLOC_EXPORT void		(*je_malloc_message)(void *cbopaque,
     const char *s);
 
 JEMALLOC_EXPORT JEMALLOC_ALLOCATOR JEMALLOC_RESTRICT_RETURN
-    void JEMALLOC_SYS_NOTHROW	*je_malloc(size_t size)
+    void JEMALLOC_NOTHROW	*je_malloc(size_t size)
     JEMALLOC_CXX_THROW JEMALLOC_ATTR(malloc) JEMALLOC_ALLOC_SIZE(1);
 JEMALLOC_EXPORT JEMALLOC_ALLOCATOR JEMALLOC_RESTRICT_RETURN
-    void JEMALLOC_SYS_NOTHROW	*je_calloc(size_t num, size_t size)
+    void JEMALLOC_NOTHROW	*je_calloc(size_t num, size_t size)
     JEMALLOC_CXX_THROW JEMALLOC_ATTR(malloc) JEMALLOC_ALLOC_SIZE2(1, 2);
-JEMALLOC_EXPORT int JEMALLOC_SYS_NOTHROW je_posix_memalign(
-    void **memptr, size_t alignment, size_t size) JEMALLOC_CXX_THROW
-    JEMALLOC_ATTR(nonnull(1));
+JEMALLOC_EXPORT int JEMALLOC_NOTHROW	je_posix_memalign(void **memptr,
+    size_t alignment, size_t size) JEMALLOC_CXX_THROW JEMALLOC_ATTR(nonnull(1));
 JEMALLOC_EXPORT JEMALLOC_ALLOCATOR JEMALLOC_RESTRICT_RETURN
-    void JEMALLOC_SYS_NOTHROW	*je_aligned_alloc(size_t alignment,
+    void JEMALLOC_NOTHROW	*je_aligned_alloc(size_t alignment,
     size_t size) JEMALLOC_CXX_THROW JEMALLOC_ATTR(malloc)
     JEMALLOC_ALLOC_SIZE(2);
 JEMALLOC_EXPORT JEMALLOC_ALLOCATOR JEMALLOC_RESTRICT_RETURN
-    void JEMALLOC_SYS_NOTHROW	*je_realloc(void *ptr, size_t size)
+    void JEMALLOC_NOTHROW	*je_realloc(void *ptr, size_t size)
     JEMALLOC_CXX_THROW JEMALLOC_ALLOC_SIZE(2);
-JEMALLOC_EXPORT void JEMALLOC_SYS_NOTHROW	je_free(void *ptr)
+JEMALLOC_EXPORT void JEMALLOC_NOTHROW	je_free(void *ptr)
     JEMALLOC_CXX_THROW;
 
 JEMALLOC_EXPORT JEMALLOC_ALLOCATOR JEMALLOC_RESTRICT_RETURN
@@ -66,19 +62,15 @@ JEMALLOC_EXPORT void JEMALLOC_NOTHROW	je_malloc_stats_print(
     const char *opts);
 JEMALLOC_EXPORT size_t JEMALLOC_NOTHROW	je_malloc_usable_size(
     JEMALLOC_USABLE_SIZE_CONST void *ptr) JEMALLOC_CXX_THROW;
-#ifdef JEMALLOC_HAVE_MALLOC_SIZE
-JEMALLOC_EXPORT size_t JEMALLOC_NOTHROW	je_malloc_size(
-    const void *ptr);
-#endif
 
 #ifdef JEMALLOC_OVERRIDE_MEMALIGN
 JEMALLOC_EXPORT JEMALLOC_ALLOCATOR JEMALLOC_RESTRICT_RETURN
-    void JEMALLOC_SYS_NOTHROW	*je_memalign(size_t alignment, size_t size)
+    void JEMALLOC_NOTHROW	*je_memalign(size_t alignment, size_t size)
     JEMALLOC_CXX_THROW JEMALLOC_ATTR(malloc);
 #endif
 
 #ifdef JEMALLOC_OVERRIDE_VALLOC
 JEMALLOC_EXPORT JEMALLOC_ALLOCATOR JEMALLOC_RESTRICT_RETURN
-    void JEMALLOC_SYS_NOTHROW	*je_valloc(size_t size) JEMALLOC_CXX_THROW
+    void JEMALLOC_NOTHROW	*je_valloc(size_t size) JEMALLOC_CXX_THROW
     JEMALLOC_ATTR(malloc);
 #endif

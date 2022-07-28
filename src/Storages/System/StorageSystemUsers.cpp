@@ -1,9 +1,4 @@
 #include <Storages/System/StorageSystemUsers.h>
-#include <Access/AccessControl.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/User.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -13,7 +8,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Access/AccessControlManager.h>
+#include <Access/User.h>
+#include <Access/AccessFlags.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -27,8 +25,8 @@ namespace
     DataTypeEnum8::Values getAuthenticationTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto type : collections::range(AuthenticationType::MAX))
-            enum_values.emplace_back(AuthenticationTypeInfo::get(type).name, static_cast<Int8>(type));
+        for (auto type : collections::range(Authentication::MAX_TYPE))
+            enum_values.emplace_back(Authentication::TypeInfo::get(type).name, static_cast<Int8>(type));
         return enum_values;
     }
 }
@@ -52,7 +50,6 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
         {"grantees_any", std::make_shared<DataTypeUInt8>()},
         {"grantees_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"grantees_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"default_database", std::make_shared<DataTypeString>()},
     };
     return names_and_types;
 }
@@ -61,7 +58,7 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
 void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     context->checkAccess(AccessType::SHOW_USERS);
-    const auto & access_control = context->getAccessControl();
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<User>();
 
     size_t column_index = 0;
@@ -88,43 +85,31 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto & column_grantees_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_grantees_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_grantees_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
-    auto & column_default_database = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
     auto add_row = [&](const String & name,
                        const UUID & id,
                        const String & storage_name,
-                       const AuthenticationData & auth_data,
+                       const Authentication & authentication,
                        const AllowedClientHosts & allowed_hosts,
                        const RolesOrUsersSet & default_roles,
-                       const RolesOrUsersSet & grantees,
-                       const String default_database)
+                       const RolesOrUsersSet & grantees)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
-        column_auth_type.push_back(static_cast<Int8>(auth_data.getType()));
+        column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
 
-        if (auth_data.getType() == AuthenticationType::LDAP ||
-            auth_data.getType() == AuthenticationType::KERBEROS ||
-            auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
+        if (
+            authentication.getType() == Authentication::Type::LDAP ||
+            authentication.getType() == Authentication::Type::KERBEROS
+        )
         {
             Poco::JSON::Object auth_params_json;
 
-            if (auth_data.getType() == AuthenticationType::LDAP)
-            {
-                auth_params_json.set("server", auth_data.getLDAPServerName());
-            }
-            else if (auth_data.getType() == AuthenticationType::KERBEROS)
-            {
-                auth_params_json.set("realm", auth_data.getKerberosRealm());
-            }
-            else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
-            {
-                Poco::JSON::Array::Ptr arr = new Poco::JSON::Array();
-                for (const auto & common_name : auth_data.getSSLCertificateCommonNames())
-                    arr->add(common_name);
-                auth_params_json.set("common_names", arr);
-            }
+            if (authentication.getType() == Authentication::Type::LDAP)
+                auth_params_json.set("server", authentication.getLDAPServerName());
+            else if (authentication.getType() == Authentication::Type::KERBEROS)
+                auth_params_json.set("realm", authentication.getKerberosRealm());
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);
@@ -195,8 +180,6 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         for (const auto & except_name : grantees_ast->except_names)
             column_grantees_except.insertData(except_name.data(), except_name.length());
         column_grantees_except_offsets.push_back(column_grantees_except.size());
-
-        column_default_database.insertData(default_database.data(),default_database.length());
     };
 
     for (const auto & id : ids)
@@ -209,23 +192,8 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         if (!storage)
             continue;
 
-        add_row(user->getName(), id, storage->getStorageName(), user->auth_data, user->allowed_client_hosts,
-                user->default_roles, user->grantees, user->default_database);
+        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts, user->default_roles, user->grantees);
     }
-}
-
-void StorageSystemUsers::backupData(
-    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
-{
-    const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
-    access_control.backup(backup_entries_collector, data_path_in_backup, AccessEntityType::USER);
-}
-
-void StorageSystemUsers::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
-{
-    auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
 }
 
 }

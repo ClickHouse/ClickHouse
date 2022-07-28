@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
         </default>
@@ -37,28 +37,10 @@
                 <database>db1</database>
             </allow_databases>
         </has_access>
-
-        <env_user_with_password>
-            <password>clickhouse</password>
-            <networks incl="networks" replace="replace">
-                <ip>::/0</ip>
-            </networks>
-            <profile>default</profile>
-            <quota>default</quota>
-        </env_user_with_password>
-
-        <env_user_not_with_password>
-            <password></password>
-            <networks incl="networks" replace="replace">
-                <ip>::/0</ip>
-            </networks>
-            <profile>default</profile>
-            <quota>default</quota>
-        </env_user_not_with_password>        
     </users>
 
     <quotas>
         <default>
         </default>
     </quotas>
-</clickhouse>
+</yandex>

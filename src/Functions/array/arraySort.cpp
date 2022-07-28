@@ -1,7 +1,6 @@
 #include "FunctionArrayMapped.h"
-
-#include <base/sort.h>
 #include <Functions/FunctionFactory.h>
+
 
 namespace DB
 {
@@ -11,9 +10,6 @@ namespace DB
 template <bool positive>
 struct ArraySortImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -53,7 +49,7 @@ struct ArraySortImpl
         for (size_t i = 0; i < size; ++i)
         {
             auto next_offset = offsets[i];
-            ::sort(&permutation[current_offset], &permutation[next_offset], Less(*mapped));
+            std::sort(&permutation[current_offset], &permutation[next_offset], Less(*mapped));
             current_offset = next_offset;
         }
 

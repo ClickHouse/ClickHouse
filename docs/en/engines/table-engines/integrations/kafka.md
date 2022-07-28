@@ -1,9 +1,9 @@
 ---
-sidebar_position: 8
-sidebar_label: Kafka
+toc_priority: 8
+toc_title: Kafka
 ---
 
-# Kafka
+# Kafka {#kafka}
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 
@@ -47,7 +47,7 @@ Optional parameters:
 
 -   `kafka_row_delimiter` — Delimiter character, which ends the message.
 -   `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
--   `kafka_num_consumers` — The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed.
+-   `kafka_num_consumers` — The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
 -   `kafka_max_block_size` — The maximum batch size (in messages) for poll (default: `max_block_size`).
 -   `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
 -   `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block (default: `0`).
@@ -87,9 +87,8 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
-Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+!!! attention "Attention"
+    Do not use this method in new projects. If possible, switch old projects to the method described above.
 
 ``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
@@ -134,7 +133,8 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -168,7 +168,7 @@ For a list of possible configuration options, see the [librdkafka configuration 
 ### Kerberos support {#kafka-kerberos-support}
 
 To deal with Kerberos-aware Kafka, add `security_protocol` child element with `sasl_plaintext` value. It is enough if Kerberos ticket-granting ticket is obtained and cached by OS facilities.
-ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab` and `sasl_kerberos_principal` child elements.
+ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` and `sasl.kerberos.kinit.cmd` child elements.
 
 Example:
 
@@ -187,14 +187,11 @@ Example:
 -   `_key` — Key of the message.
 -   `_offset` — Offset of the message.
 -   `_timestamp` — Timestamp of the message.
--   `_timestamp_ms` — Timestamp in milliseconds of the message.
 -   `_partition` — Partition of Kafka topic.
--   `_headers.name` — Array of message's headers keys.
--   `_headers.value` — Array of message's headers values.
 
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/kafka/) <!--hide-->

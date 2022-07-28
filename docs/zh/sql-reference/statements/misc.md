@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 41
-sidebar_label: "\u5176\u4ED6"
+toc_priority: 41
+toc_title: "\u5176\u4ED6"
 ---
 
 # 杂项查询 {#miscellaneous-queries}
@@ -21,7 +21,7 @@ sidebar_label: "\u5176\u4ED6"
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-启动服务器时会自动触发此查询。
+启动服务器时会自动触发此查询。 
 
 服务器将表的元数据作为文件存储 `ATTACH` 查询，它只是在启动时运行。有些表例外，如系统表，它们是在服务器上显式指定的。
 
@@ -376,4 +376,4 @@ USE db
 当前数据库用于搜索表，如果数据库没有在查询中明确定义与表名之前的点。
 使用HTTP协议时无法进行此查询，因为没有会话的概念。
 
-[原始文章](https://clickhouse.com/docs/en/query_language/misc/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/misc/) <!--hide-->

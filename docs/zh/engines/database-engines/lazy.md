@@ -1,18 +1,16 @@
 ---
-sidebar_position: 31
-sidebar_label: Lazy
+toc_priority: 31
+toc_title: "延时引擎"
 ---
 
-# Lazy {#lazy}
+# 延时引擎Lazy {#lazy}
 
-在最后一次访问之后，只在RAM中保存`expiration_time_in_seconds`秒。只能用于\*Log表。
+在距最近一次访问间隔`expiration_time_in_seconds`时间段内，将表保存在内存中，仅适用于 \*Log引擎表
 
-它是为存储许多小的\*Log表而优化的，对于这些表，访问之间有很长的时间间隔。
+由于针对这类表的访问间隔较长，对保存大量小的 \*Log引擎表进行了优化，
 
 ## 创建数据库 {#creating-a-database}
 
-``` sql
-CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
-```
+    CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 
-[来源文章](https://clickhouse.com/docs/en/database_engines/lazy/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/database_engines/lazy/) <!--hide-->

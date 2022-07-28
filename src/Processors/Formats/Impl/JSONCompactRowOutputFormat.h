@@ -13,7 +13,7 @@ struct FormatSettings;
 
 /** The stream for outputting data in the JSONCompact- formats.
   */
-class JSONCompactRowOutputFormat final : public JSONRowOutputFormat
+class JSONCompactRowOutputFormat : public JSONRowOutputFormat
 {
 public:
     JSONCompactRowOutputFormat(
@@ -25,7 +25,6 @@ public:
 
     String getName() const override { return "JSONCompactRowOutputFormat"; }
 
-private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
@@ -34,9 +33,15 @@ private:
     void writeBeforeTotals() override;
     void writeAfterTotals() override;
 
+protected:
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num) override;
 
-    void writeTotals(const Columns & columns, size_t row_num) override;
+    void writeTotalsField(const IColumn & column, const ISerialization & serialization, size_t row_num) override
+    {
+        return writeField(column, serialization, row_num);
+    }
+
+    void writeTotalsFieldDelimiter() override;
 };
 
 }

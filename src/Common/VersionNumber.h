@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
-#include <base/types.h>
+#include <common/types.h>
 
 namespace DB
 {
@@ -19,15 +19,15 @@ struct VersionNumber
     VersionNumber(const std::initializer_list<Int64> & init)
         : components(init)
     {}
-    VersionNumber(Int64 major, Int64 minor = 0, Int64 patch = 0) /// NOLINT
+    VersionNumber(Int64 major, Int64 minor = 0, Int64 patch = 0)
         : components{major, minor, patch}
     {}
-    VersionNumber(const std::vector<Int64> & components_) /// NOLINT
+    VersionNumber(const std::vector<Int64> & components_)
         : components(components_)
     {}
 
     /// Parse version number from string.
-    explicit VersionNumber(std::string version);
+    VersionNumber(std::string version);
 
     /// NOTE: operator<=> can be used once libc++ will be upgraded.
     bool operator<(const VersionNumber & rhs)  const { return compare(rhs.components) <  0; }

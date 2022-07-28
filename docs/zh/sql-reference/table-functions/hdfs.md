@@ -1,6 +1,6 @@
 ---
-sidebar_position: 45
-sidebar_label: hdfs
+toc_priority: 45
+toc_title: hdfs
 ---
 
 # hdfs {#hdfs}
@@ -97,6 +97,6 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 **另请参阅**
 
--   [虚拟列](https://clickhouse.com/docs/en/operations/table_engines/#table_engines-virtual_columns)
+-   [虚拟列](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
 
-[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/hdfs/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/hdfs/) <!--hide-->

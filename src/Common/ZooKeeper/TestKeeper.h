@@ -79,15 +79,11 @@ public:
             int32_t version,
             CheckCallback callback) override;
 
-    void sync(
-            const String & path,
-            SyncCallback callback) override;
-
     void multi(
             const Requests & requests,
             MultiCallback callback) override;
 
-    void finalize(const String & reason) override;
+    void finalize() override;
 
     struct Node
     {

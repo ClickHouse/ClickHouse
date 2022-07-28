@@ -5,9 +5,9 @@
 
 namespace DB
 {
-String quoteString(std::string_view x)
+String quoteString(const StringRef & x)
 {
-    String res(x.size(), '\0');
+    String res(x.size, '\0');
     WriteBufferFromString wb(res);
     writeQuotedString(x, wb);
     return res;
@@ -43,5 +43,4 @@ String backQuoteIfNeed(const StringRef & x)
     }
     return res;
 }
-
 }

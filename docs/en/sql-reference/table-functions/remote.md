@@ -1,9 +1,9 @@
 ---
-sidebar_position: 40
-sidebar_label: remote
+toc_priority: 40
+toc_title: remote
 ---
 
-# remote, remoteSecure
+# remote, remoteSecure {#remote-remotesecure}
 
 Allows to access remote servers without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. `remoteSecure` - same as `remote` but with a secured connection.
 
@@ -20,10 +20,10 @@ remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
 
 **Parameters**
 
-- `addresses_expr` — An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`, or just `host`.
-
-    The host can be specified as the server name, or as the IPv4 or IPv6 address. An IPv6 address is specified in square brackets.
-
+- `addresses_expr` — An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`, or just `host`. 
+   
+    The host can be specified as the server name, or as the IPv4 or IPv6 address. An IPv6 address is specified in square brackets. 
+   
     The port is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) from the server’s config file in `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) in `remoteSecure` (by default, 9440).
 
     The port is required for an IPv6 address.
@@ -68,6 +68,28 @@ Multiple addresses can be comma-separated. In this case, ClickHouse will use dis
 example01-01-1,example01-02-1
 ```
 
+Part of the expression can be specified in curly brackets. The previous example can be written as follows:
+
+``` text
+example01-0{1,2}-1
+```
+
+Curly brackets can contain a range of numbers separated by two dots (non-negative integers). In this case, the range is expanded to a set of values that generate shard addresses. If the first number starts with zero, the values are formed with the same zero alignment. The previous example can be written as follows:
+
+``` text
+example01-{01..02}-1
+```
+
+If you have multiple pairs of curly brackets, it generates the direct product of the corresponding sets.
+
+Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (\|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. However, the replicas are iterated in the order currently set in the [load_balancing](../../operations/settings/settings.md#settings-load_balancing) setting. This example specifies two shards that each have two replicas:
+
+``` text
+example01-{01..02}-{1|2}
+```
+
+The number of addresses generated is limited by a constant. Right now this is 1000 addresses.
+
 **Examples**
 
 Selecting data from a remote server:
@@ -84,15 +106,4 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-## Globs in Addresses {globs-in-addresses}
-
-Patterns in curly brackets `{ }` are used to generate a set of shards and to specify replicas. If there are multiple pairs of curly brackets, then the direct product of the corresponding sets is generated.
-The following pattern types are supported.
-
-- {*a*,*b*} - Any number of variants separated by a comma. The pattern is replaced with *a* in the first shard address and it is replaced with *b* in the second shard address and so on. For instance, `example0{1,2}-1` generates addresses `example01-1` and `example02-1`.
-- {*n*..*m*} - A range of numbers. This pattern generates shard addresses with incrementing indices from *n* to *m*. `example0{1..2}-1` generates `example01-1` and `example02-1`.
-- {*0n*..*0m*} - A range of numbers with leading zeroes. This modification preserves leading zeroes in indices. The pattern `example{01..03}-1` generates `example01-1`, `example02-1` and `example03-1`.
-- {*a*|*b*} - Any number of variants separated by a `|`. The pattern specifies replicas. For instance, `example01-{1|2}` generates replicas `example01-1` and `example01-2`.
-
-The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](../../operations/settings/settings.md#settings-load_balancing) setting.
-The number of generated addresses is limited by [table_function_remote_max_addresses](../../operations/settings/settings.md#table_function_remote_max_addresses) setting.
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/remote/) <!--hide-->

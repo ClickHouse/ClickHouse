@@ -1,22 +1,21 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/ISink.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <Core/ExternalResultDescription.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Interpreters/Context_fwd.h>
-#include "ODBCPooledConnectionFactory.h"
+#include "ODBCConnectionFactory.h"
 
 
 namespace DB
 {
 
-class ODBCSink final : public ISink
+class ODBCBlockOutputStream : public IBlockOutputStream
 {
-using ValueType = ExternalResultDescription::ValueType;
 
 public:
-    ODBCSink(
+    ODBCBlockOutputStream(
             nanodbc::ConnectionHolderPtr connection_,
             const std::string & remote_database_name_,
             const std::string & remote_table_name_,
@@ -24,10 +23,8 @@ public:
             ContextPtr local_context_,
             IdentifierQuotingStyle quoting);
 
-    String getName() const override { return "ODBCSink"; }
-
-protected:
-    void consume(Chunk chunk) override;
+    Block getHeader() const override;
+    void write(const Block & block) override;
 
 private:
     Poco::Logger * log;

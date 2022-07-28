@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/JSONCompactRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/JSONUtils.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -21,55 +20,77 @@ JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
 
 void JSONCompactRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr);
+    if (yield_strings)
+    {
+        WriteBufferFromOwnString buf;
+
+        serialization.serializeText(column, row_num, buf, settings);
+        writeJSONString(buf.str(), *ostr, settings);
+    }
+    else
+        serialization.serializeTextJSON(column, row_num, *ostr, settings);
+
     ++field_number;
 }
 
 
 void JSONCompactRowOutputFormat::writeFieldDelimiter()
 {
-    JSONUtils::writeFieldCompactDelimiter(*ostr);
+    writeCString(", ", *ostr);
 }
+
+void JSONCompactRowOutputFormat::writeTotalsFieldDelimiter()
+{
+    writeCString(",", *ostr);
+}
+
 
 void JSONCompactRowOutputFormat::writeRowStartDelimiter()
 {
-    JSONUtils::writeCompactArrayStart(*ostr, 2);
+    writeCString("\t\t[", *ostr);
 }
 
 
 void JSONCompactRowOutputFormat::writeRowEndDelimiter()
 {
-    JSONUtils::writeCompactArrayEnd(*ostr);
+    writeChar(']', *ostr);
     field_number = 0;
     ++row_count;
 }
 
 void JSONCompactRowOutputFormat::writeBeforeTotals()
 {
-    JSONUtils::writeFieldDelimiter(*ostr, 2);
-    JSONUtils::writeCompactArrayStart(*ostr, 1, "totals");
-}
-
-void JSONCompactRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
-{
-    JSONUtils::writeCompactColumns(columns, serializations, row_num, yield_strings, settings, *ostr);
+    writeCString(",\n", *ostr);
+    writeChar('\n', *ostr);
+    writeCString("\t\"totals\": [", *ostr);
 }
 
 void JSONCompactRowOutputFormat::writeAfterTotals()
 {
-    JSONUtils::writeCompactArrayEnd(*ostr);
+    writeChar(']', *ostr);
 }
 
 void JSONCompactRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
-    JSONUtils::writeCompactArrayStart(*ostr, 2, title);
-    JSONUtils::writeCompactColumns(columns, serializations, row_num, yield_strings, settings, *ostr);
-    JSONUtils::writeCompactArrayEnd(*ostr);
+    writeCString("\t\t\"", *ostr);
+    writeCString(title, *ostr);
+    writeCString("\": [", *ostr);
+
+    size_t extremes_columns = columns.size();
+    for (size_t i = 0; i < extremes_columns; ++i)
+    {
+        if (i != 0)
+            writeTotalsFieldDelimiter();
+
+        writeField(*columns[i], *serializations[i], row_num);
+    }
+
+    writeChar(']', *ostr);
 }
 
-void registerOutputFormatJSONCompact(FormatFactory & factory)
+void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
 {
-    factory.registerOutputFormat("JSONCompact", [](
+    factory.registerOutputFormatProcessor("JSONCompact", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -78,9 +99,7 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
         return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("JSONCompact");
-
-    factory.registerOutputFormat("JSONCompactStrings", [](
+    factory.registerOutputFormatProcessor("JSONCompactStrings", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -88,8 +107,6 @@ void registerOutputFormatJSONCompact(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, true);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
 }
 
 }

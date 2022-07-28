@@ -9,8 +9,11 @@ WriteBuffer LazyOutputFormat::out(nullptr, 0);
 
 Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
 {
-    if (isFinished())
-        return {};
+    if (finished_processing)
+    {
+        if (queue.empty())
+            return {};
+    }
 
     Chunk chunk;
     if (milliseconds)
@@ -19,10 +22,7 @@ Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
             return {};
     }
     else
-    {
-        if (!queue.pop(chunk))
-            return {};
-    }
+        queue.pop(chunk);
 
     if (chunk)
         info.update(chunk.getNumRows(), chunk.allocatedBytes());

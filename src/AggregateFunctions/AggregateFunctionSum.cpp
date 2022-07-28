@@ -20,9 +20,10 @@ template <typename T>
 struct SumSimple
 {
     /// @note It uses slow Decimal128 (cause we need such a variant). sumWithOverflow is faster for Decimal32/64
-    using ResultType = std::conditional_t<is_decimal<T>,
+    using ResultType = std::conditional_t<IsDecimalNumber<T>,
                                         std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
                                         NearestFieldType<T>>;
+    // using ResultType = std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>;
     using AggregateDataType = AggregateFunctionSumData<ResultType>;
     using Function = AggregateFunctionSum<T, ResultType, AggregateDataType, AggregateFunctionTypeSum>;
 };
@@ -46,7 +47,7 @@ struct SumKahan
 template <typename T> using AggregateFunctionSumSimple = typename SumSimple<T>::Function;
 template <typename T> using AggregateFunctionSumWithOverflow = typename SumSameType<T>::Function;
 template <typename T> using AggregateFunctionSumKahan =
-    std::conditional_t<is_decimal<T>, typename SumSimple<T>::Function, typename SumKahan<T>::Function>;
+    std::conditional_t<IsDecimalNumber<T>, typename SumSimple<T>::Function, typename SumKahan<T>::Function>;
 
 
 template <template <typename> class Function>
@@ -56,7 +57,7 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     assertUnary(name, argument_types);
 
     AggregateFunctionPtr res;
-    const DataTypePtr & data_type = argument_types[0];
+    DataTypePtr data_type = argument_types[0];
     if (isDecimal(data_type))
         res.reset(createWithDecimalType<Function>(*data_type, *data_type, argument_types));
     else

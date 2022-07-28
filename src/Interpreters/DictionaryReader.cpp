@@ -128,7 +128,7 @@ void DictionaryReader::readKeys(const IColumn & keys, Block & out_block, ColumnV
     found.swap(typeid_cast<ColumnVector<UInt8> &>(*mutable_has).getData());
     has_column.column = nullptr;
 
-    /// set mapping from source keys to resulting rows in output block
+    /// set mapping form source keys to resulting rows in output block
     positions.clear();
     positions.resize(size, 0);
     size_t pos = 0;

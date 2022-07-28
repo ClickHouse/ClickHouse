@@ -1,5 +1,5 @@
 ---
-sidebar_position: 151
+toc_priority: 151
 ---
 
 # skewSamp {#skewsamp}

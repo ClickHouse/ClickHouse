@@ -2,7 +2,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 
 #include <unordered_set>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -18,7 +18,7 @@ namespace
             result += '.';
         result += subkey;
         return result;
-    }
+    };
 }
 
 
@@ -77,7 +77,7 @@ bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const S
         if ((left_subkeys.size() != right_subkeys.size()) || (left_subkeys.size() != subkeys.size()))
             return false;
         for (const auto & right_subkey : right_subkeys)
-            if (!left_subkeys.contains(right_subkey))
+            if (!left_subkeys.count(right_subkey))
                 return false;
     }
 

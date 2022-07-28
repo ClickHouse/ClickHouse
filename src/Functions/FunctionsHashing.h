@@ -5,18 +5,21 @@
 #include <metrohash.h>
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
-#include <wyhash.h>
 
-#include "config_functions.h"
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#    include "config_core.h"
+#endif
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
-#include <xxhash.h>
+
+#if USE_XXHASH
+#    include <xxhash.h>
+#endif
 
 #if USE_SSL
-#    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <openssl/sha.h>
 #endif
@@ -39,10 +42,10 @@
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <Common/TargetSpecific.h>
-#include <base/range.h>
-#include <base/bit_cast.h>
+#include <common/range.h>
+#include <common/bit_cast.h>
 
 
 namespace DB
@@ -101,14 +104,6 @@ struct IntHash64Impl
     }
 };
 
-template<typename T, typename HashFunction>
-T combineHashesFunc(T t1, T t2)
-{
-    T hashes[] = {t1, t2};
-    return HashFunction::apply(reinterpret_cast<const char *>(hashes), 2 * sizeof(T));
-}
-
-
 #if USE_SSL
 struct HalfMD5Impl
 {
@@ -143,24 +138,10 @@ struct HalfMD5Impl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-struct MD4Impl
-{
-    static constexpr auto name = "MD4";
-    enum { length = MD4_DIGEST_LENGTH };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        MD4_CTX ctx;
-        MD4_Init(&ctx);
-        MD4_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        MD4_Final(out_char_data, &ctx);
-    }
-};
-
 struct MD5Impl
 {
     static constexpr auto name = "MD5";
-    enum { length = MD5_DIGEST_LENGTH };
+    enum { length = 16 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -174,7 +155,7 @@ struct MD5Impl
 struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
-    enum { length = SHA_DIGEST_LENGTH };
+    enum { length = 20 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -188,7 +169,7 @@ struct SHA1Impl
 struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
-    enum { length = SHA224_DIGEST_LENGTH };
+    enum { length = 28 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -202,7 +183,7 @@ struct SHA224Impl
 struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
-    enum { length = SHA256_DIGEST_LENGTH };
+    enum { length = 32 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -210,34 +191,6 @@ struct SHA256Impl
         SHA256_Init(&ctx);
         SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         SHA256_Final(out_char_data, &ctx);
-    }
-};
-
-struct SHA384Impl
-{
-    static constexpr auto name = "SHA384";
-    enum { length = SHA384_DIGEST_LENGTH };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        SHA512_CTX ctx;
-        SHA384_Init(&ctx);
-        SHA384_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA384_Final(out_char_data, &ctx);
-    }
-};
-
-struct SHA512Impl
-{
-    static constexpr auto name = "SHA512";
-    enum { length = 64 };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        SHA512_CTX ctx;
-        SHA512_Init(&ctx);
-        SHA512_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA512_Final(out_char_data, &ctx);
     }
 };
 #endif
@@ -254,7 +207,8 @@ struct SipHash64Impl
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
-        return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2);
+        UInt64 hashes[] = {h1, h2};
+        return apply(reinterpret_cast<const char *>(hashes), 16);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -263,22 +217,15 @@ struct SipHash64Impl
 struct SipHash128Impl
 {
     static constexpr auto name = "sipHash128";
+    enum { length = 16 };
 
-    using ReturnType = UInt128;
-
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2);
+        sipHash128(begin, size, reinterpret_cast<char*>(out_char_data));
     }
-
-    static UInt128 apply(const char * data, const size_t size)
-    {
-        return sipHash128(data, size);
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
 };
 
+#if !defined(ARCADIA_BUILD)
 /** Why we need MurmurHash2?
   * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
   * Usually there is no reason to use MurmurHash.
@@ -393,23 +340,14 @@ struct MurmurHash3Impl64
 struct MurmurHash3Impl128
 {
     static constexpr auto name = "murmurHash3_128";
+    enum { length = 16 };
 
-    using ReturnType = UInt128;
-
-    static UInt128 apply(const char * data, const size_t size)
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        char bytes[16];
-        MurmurHash3_x64_128(data, size, 0, bytes);
-        return *reinterpret_cast<UInt128 *>(bytes);
+        MurmurHash3_x64_128(begin, size, 0, out_char_data);
     }
-
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
-    {
-        return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2);
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
 };
+#endif
 
 /// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
@@ -549,6 +487,9 @@ struct ImplMetroHash64
     static constexpr bool use_int_hash_for_pods = true;
 };
 
+
+#if USE_XXHASH
+
 struct ImplXxHash32
 {
     static constexpr auto name = "xxHash32";
@@ -569,6 +510,7 @@ struct ImplXxHash32
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+
 struct ImplXxHash64
 {
     static constexpr auto name = "xxHash64";
@@ -585,6 +527,9 @@ struct ImplXxHash64
 
     static constexpr bool use_int_hash_for_pods = false;
 };
+
+#endif
+
 
 template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
@@ -610,8 +555,6 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
@@ -676,7 +619,7 @@ private:
     template <typename FromType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get()))
         {
@@ -717,8 +660,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
@@ -742,8 +683,6 @@ public:
             return executeType<Int64>(arguments);
         else if (which.isDate())
             return executeType<UInt16>(arguments);
-        else if (which.isDate32())
-            return executeType<Int32>(arguments);
         else if (which.isDateTime())
             return executeType<UInt32>(arguments);
         else if (which.isDecimal32())
@@ -803,7 +742,7 @@ private:
     template <typename FromType, bool first>
     void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -860,7 +799,7 @@ private:
     template <typename FromType, bool first>
     void executeBigIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -988,8 +927,7 @@ private:
             const size_t nested_size = nested_column->size();
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
-            bool nested_is_first = true;
-            executeForArgument(nested_type, nested_column, vec_temp, nested_is_first);
+            executeAny<true>(nested_type, nested_column, vec_temp);
 
             const size_t size = offsets.size();
 
@@ -1048,7 +986,6 @@ private:
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (which.isDate32()) executeIntType<Int32, first>(icolumn, vec_to);
         else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
         /// TODO: executeIntType() for Decimal32/64 leads to incompatible result
         else if (which.isDecimal32()) executeBigIntType<Decimal32, first>(icolumn, vec_to);
@@ -1060,7 +997,8 @@ private:
         else if (which.isString()) executeString<first>(icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
-        else executeGeneric<first>(icolumn, vec_to);
+        else
+            executeGeneric<first>(icolumn, vec_to);
     }
 
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
@@ -1105,16 +1043,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
-        {
-            return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
-        }
-        else
-            return std::make_shared<DataTypeNumber<ToType>>();
+        return std::make_shared<DataTypeNumber<ToType>>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -1135,13 +1067,6 @@ public:
         bool is_first_argument = true;
         for (const auto & col : arguments)
             executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
-
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
-        {
-            auto col_to_fixed_string = ColumnFixedString::create(sizeof(UInt128));
-            col_to_fixed_string->getChars() = std::move(*reinterpret_cast<ColumnFixedString::Chars *>(&col_to->getData()));
-            return col_to_fixed_string;
-        }
 
         return col_to;
     }
@@ -1264,7 +1189,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1370,66 +1294,44 @@ private:
     }
 };
 
-struct ImplWyHash64
-{
-    static constexpr auto name = "wyHash64";
-    using ReturnType = UInt64;
-
-    static UInt64 apply(const char * s, const size_t len)
-    {
-        return wyhash(s, len, 0, _wyp);
-    }
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        union
-        {
-            UInt64 u64[2];
-            char chars[16];
-        };
-        u64[0] = h1;
-        u64[1] = h2;
-        return apply(chars, 16);
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
-};
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
+#if USE_SSL
+using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
+#endif
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
 #if USE_SSL
-using FunctionMD4 = FunctionStringHashFixedString<MD4Impl>;
-using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
 using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
 using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
 using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
-using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
-using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
-using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
+using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
 
+#if !defined(ARCADIA_BUILD)
 using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
-using FunctionMurmurHash3_128 = FunctionAnyHash<MurmurHash3Impl128>;
+using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
+#endif
 
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
-using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
-using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
-
-using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
+#if USE_XXHASH
+    using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
+    using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+#endif
 
 }

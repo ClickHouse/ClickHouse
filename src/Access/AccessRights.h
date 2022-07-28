@@ -1,8 +1,7 @@
 #pragma once
 
-#include <base/types.h>
-#include <Access/Common/AccessRightsElement.h>
-#include <functional>
+#include <common/types.h>
+#include <Access/AccessRightsElement.h>
 #include <memory>
 #include <vector>
 
@@ -15,15 +14,12 @@ class AccessRights
 {
 public:
     AccessRights();
-    explicit AccessRights(const AccessFlags & access);
-    explicit AccessRights(const AccessRightsElement & element);
-    explicit AccessRights(const AccessRightsElements & elements);
-
+    AccessRights(const AccessFlags & access);
     ~AccessRights();
     AccessRights(const AccessRights & src);
     AccessRights & operator =(const AccessRights & src);
-    AccessRights(AccessRights && src) noexcept;
-    AccessRights & operator =(AccessRights && src) noexcept;
+    AccessRights(AccessRights && src);
+    AccessRights & operator =(AccessRights && src);
 
     bool isEmpty() const;
 

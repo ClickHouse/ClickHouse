@@ -1,7 +1,4 @@
-option (ENABLE_CURL "Enable curl" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_CURL)
-    message(STATUS "Not using curl")
+if (NOT USE_INTERNAL_CURL)
     return()
 endif()
 
@@ -32,6 +29,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/transfer.c"
     "${LIBRARY_DIR}/lib/strcase.c"
     "${LIBRARY_DIR}/lib/easy.c"
+    "${LIBRARY_DIR}/lib/security.c"
     "${LIBRARY_DIR}/lib/curl_fnmatch.c"
     "${LIBRARY_DIR}/lib/fileinfo.c"
     "${LIBRARY_DIR}/lib/wildcard.c"
@@ -84,6 +82,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/gopher.c"
     "${LIBRARY_DIR}/lib/idn_win32.c"
     "${LIBRARY_DIR}/lib/http_proxy.c"
+    "${LIBRARY_DIR}/lib/non-ascii.c"
     "${LIBRARY_DIR}/lib/asyn-thread.c"
     "${LIBRARY_DIR}/lib/curl_gssapi.c"
     "${LIBRARY_DIR}/lib/http_ntlm.c"
@@ -92,8 +91,10 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_sasl.c"
     "${LIBRARY_DIR}/lib/rand.c"
     "${LIBRARY_DIR}/lib/curl_multibyte.c"
+    "${LIBRARY_DIR}/lib/hostcheck.c"
     "${LIBRARY_DIR}/lib/conncache.c"
     "${LIBRARY_DIR}/lib/dotdot.c"
+    "${LIBRARY_DIR}/lib/x509asn1.c"
     "${LIBRARY_DIR}/lib/http2.c"
     "${LIBRARY_DIR}/lib/smb.c"
     "${LIBRARY_DIR}/lib/curl_endian.c"
@@ -111,15 +112,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_get_line.c"
     "${LIBRARY_DIR}/lib/altsvc.c"
     "${LIBRARY_DIR}/lib/socketpair.c"
-    "${LIBRARY_DIR}/lib/bufref.c"
-    "${LIBRARY_DIR}/lib/dynbuf.c"
-    "${LIBRARY_DIR}/lib/hsts.c"
-    "${LIBRARY_DIR}/lib/http_aws_sigv4.c"
-    "${LIBRARY_DIR}/lib/mqtt.c"
-    "${LIBRARY_DIR}/lib/rename.c"
-    "${LIBRARY_DIR}/lib/h2h3.c"
-    "${LIBRARY_DIR}/lib/headers.c"
-    "${LIBRARY_DIR}/lib/timediff.c"
     "${LIBRARY_DIR}/lib/vauth/vauth.c"
     "${LIBRARY_DIR}/lib/vauth/cleartext.c"
     "${LIBRARY_DIR}/lib/vauth/cram.c"
@@ -136,41 +128,52 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vtls/gtls.c"
     "${LIBRARY_DIR}/lib/vtls/vtls.c"
     "${LIBRARY_DIR}/lib/vtls/nss.c"
+    "${LIBRARY_DIR}/lib/vtls/polarssl.c"
+    "${LIBRARY_DIR}/lib/vtls/polarssl_threadlock.c"
     "${LIBRARY_DIR}/lib/vtls/wolfssl.c"
     "${LIBRARY_DIR}/lib/vtls/schannel.c"
     "${LIBRARY_DIR}/lib/vtls/schannel_verify.c"
     "${LIBRARY_DIR}/lib/vtls/sectransp.c"
     "${LIBRARY_DIR}/lib/vtls/gskit.c"
     "${LIBRARY_DIR}/lib/vtls/mbedtls.c"
+    "${LIBRARY_DIR}/lib/vtls/mesalink.c"
     "${LIBRARY_DIR}/lib/vtls/bearssl.c"
-    "${LIBRARY_DIR}/lib/vtls/keylog.c"
-    "${LIBRARY_DIR}/lib/vtls/x509asn1.c"
-    "${LIBRARY_DIR}/lib/vtls/hostcheck.c"
     "${LIBRARY_DIR}/lib/vquic/ngtcp2.c"
     "${LIBRARY_DIR}/lib/vquic/quiche.c"
-    "${LIBRARY_DIR}/lib/vquic/msh3.c"
     "${LIBRARY_DIR}/lib/vssh/libssh2.c"
     "${LIBRARY_DIR}/lib/vssh/libssh.c"
 )
 
-add_library (_curl ${SRCS})
+add_library (curl ${SRCS})
 
-target_compile_definitions (_curl PRIVATE
+target_compile_definitions (curl PRIVATE
     HAVE_CONFIG_H
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
     OS="${CMAKE_SYSTEM_NAME}"
 )
-target_include_directories (_curl SYSTEM PUBLIC
+target_include_directories (curl PUBLIC
     "${LIBRARY_DIR}/include"
     "${LIBRARY_DIR}/lib"
     . # curl_config.h
 )
 
-target_link_libraries (_curl PRIVATE OpenSSL::SSL)
+target_link_libraries (curl PRIVATE ssl)
 
 # The library is large - avoid bloat (XXX: is it?)
-target_compile_options (_curl PRIVATE -g0)
+target_compile_options (curl PRIVATE -g0)
 
-add_library (ch_contrib::curl ALIAS _curl)
+# find_package(CURL) compatibility for the following packages that uses
+# find_package(CURL)/include(FindCURL):
+# - mariadb-connector-c
+# - aws-s3-cmake
+# - sentry-native
+set (CURL_FOUND ON CACHE BOOL "")
+set (CURL_ROOT_DIR ${LIBRARY_DIR} CACHE PATH "")
+set (CURL_INCLUDE_DIR "${LIBRARY_DIR}/include" CACHE PATH "")
+set (CURL_INCLUDE_DIRS "${LIBRARY_DIR}/include" CACHE PATH "")
+set (CURL_LIBRARY curl CACHE STRING "")
+set (CURL_LIBRARIES ${CURL_LIBRARY} CACHE STRING "")
+set (CURL_VERSION_STRING 7.67.0 CACHE STRING "")
+add_library (CURL::libcurl ALIAS ${CURL_LIBRARY})

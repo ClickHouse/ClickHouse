@@ -1,13 +1,13 @@
 #pragma once
 
-#include <filesystem>
-#include <Common/logger_useful.h>
-#include <base/sort.h>
+#include <functional>
+#include <memory>
+#include <common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 
-namespace fs = std::filesystem;
 
 namespace zkutil
 {
@@ -17,75 +17,135 @@ namespace zkutil
   *
   * But then we decided to get rid of leader election, so every replica can become leader.
   * For now, every replica can become leader if there is no leader among replicas with old version.
+  *
+  * It's tempting to remove this class at all, but we have to maintain it,
+  *  to maintain compatibility when replicas with different versions work on the same cluster
+  *  (this is allowed for short time period during cluster update).
+  *
+  * Replicas with new versions creates ephemeral sequential nodes with values like "replica_name (multiple leaders Ok)".
+  * If the first node belongs to a replica with new version, then all replicas with new versions become leaders.
   */
-
-void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String path)
+class LeaderElection
 {
-    /// Previous versions (before 21.12) used to create ephemeral sequential node path/leader_election-
-    /// Replica with the lexicographically smallest node name becomes leader (before 20.6) or enables multi-leader mode (since 20.6)
-    constexpr auto persistent_multiple_leaders = "leader_election-0";   /// Less than any sequential node
-    constexpr auto suffix = " (multiple leaders Ok)";
-    constexpr auto persistent_identifier = "all (multiple leaders Ok)";
+public:
+    using LeadershipHandler = std::function<void()>;
 
-    size_t num_tries = 1000;
-    while (num_tries--)
+    /** handler is called when this instance become leader.
+      *
+      * identifier - if not empty, must uniquely (within same path) identify participant of leader election.
+      * It means that different participants of leader election have different identifiers
+      *  and existence of more than one ephemeral node with same identifier indicates an error.
+      */
+    LeaderElection(
+        DB::BackgroundSchedulePool & pool_,
+        const std::string & path_,
+        ZooKeeper & zookeeper_,
+        LeadershipHandler handler_,
+        const std::string & identifier_)
+        : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_ + suffix)
+        , log_name("LeaderElection (" + path + ")")
+        , log(&Poco::Logger::get(log_name))
     {
-        Strings potential_leaders;
-        Coordination::Error code = zookeeper.tryGetChildren(path, potential_leaders);
-        /// NOTE zookeeper_path/leader_election node must exist now, but maybe we will remove it in future versions.
-        if (code == Coordination::Error::ZNONODE)
-            return;
-        else if (code != Coordination::Error::ZOK)
-            throw KeeperException(code, path);
-
-        Coordination::Requests ops;
-
-        if (potential_leaders.empty())
-        {
-            /// Ensure that no leaders appeared and enable persistent multi-leader mode
-            /// May fail with ZNOTEMPTY
-            ops.emplace_back(makeRemoveRequest(path, 0));
-            ops.emplace_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
-            /// May fail with ZNODEEXISTS
-            ops.emplace_back(makeCreateRequest(fs::path(path) / persistent_multiple_leaders, persistent_identifier, zkutil::CreateMode::Persistent));
-        }
-        else
-        {
-            ::sort(potential_leaders.begin(), potential_leaders.end());
-            if (potential_leaders.front() == persistent_multiple_leaders)
-                return;
-
-            /// Ensure that current leader supports multi-leader mode and make it persistent
-            auto current_leader = fs::path(path) / potential_leaders.front();
-            Coordination::Stat leader_stat;
-            String identifier;
-            if (!zookeeper.tryGet(current_leader, identifier, &leader_stat))
-            {
-                LOG_INFO(log, "LeaderElection: leader suddenly changed, will retry");
-                continue;
-            }
-
-            if (!identifier.ends_with(suffix))
-                throw Poco::Exception(fmt::format("Found leader replica ({}) with too old version (< 20.6). Stop it before upgrading", identifier));
-
-            /// Version does not matter, just check that it still exists.
-            /// May fail with ZNONODE
-            ops.emplace_back(makeCheckRequest(current_leader, leader_stat.version));
-            /// May fail with ZNODEEXISTS
-            ops.emplace_back(makeCreateRequest(fs::path(path) / persistent_multiple_leaders, persistent_identifier, zkutil::CreateMode::Persistent));
-        }
-
-        Coordination::Responses res;
-        code = zookeeper.tryMulti(ops, res);
-        if (code == Coordination::Error::ZOK)
-            return;
-        else if (code == Coordination::Error::ZNOTEMPTY || code == Coordination::Error::ZNODEEXISTS || code == Coordination::Error::ZNONODE)
-            LOG_INFO(log, "LeaderElection: leader suddenly changed or new node appeared, will retry");
-        else
-            KeeperMultiException::check(code, ops, res);
+        task = pool.createTask(log_name, [this] { threadFunction(); });
+        createNode();
     }
 
-    throw Poco::Exception("Cannot check that no old leaders exist");
-}
+    void shutdown()
+    {
+        if (shutdown_called)
+            return;
+
+        shutdown_called = true;
+        task->deactivate();
+    }
+
+    ~LeaderElection()
+    {
+        releaseNode();
+    }
+
+private:
+    static inline constexpr auto suffix = " (multiple leaders Ok)";
+    DB::BackgroundSchedulePool & pool;
+    DB::BackgroundSchedulePool::TaskHolder task;
+    std::string path;
+    ZooKeeper & zookeeper;
+    LeadershipHandler handler;
+    std::string identifier;
+    std::string log_name;
+    Poco::Logger * log;
+
+    EphemeralNodeHolderPtr node;
+    std::string node_name;
+
+    std::atomic<bool> shutdown_called {false};
+
+    void createNode()
+    {
+        shutdown_called = false;
+        node = EphemeralNodeHolder::createSequential(fs::path(path) / "leader_election-", zookeeper, identifier);
+
+        std::string node_path = node->getPath();
+        node_name = node_path.substr(node_path.find_last_of('/') + 1);
+
+        task->activateAndSchedule();
+    }
+
+    void releaseNode()
+    {
+        shutdown();
+        node = nullptr;
+    }
+
+    void threadFunction()
+    {
+        bool success = false;
+
+        try
+        {
+            Strings children = zookeeper.getChildren(path);
+            std::sort(children.begin(), children.end());
+
+            auto my_node_it = std::lower_bound(children.begin(), children.end(), node_name);
+            if (my_node_it == children.end() || *my_node_it != node_name)
+                throw Poco::Exception("Assertion failed in LeaderElection");
+
+            String value = zookeeper.get(path + "/" + children.front());
+
+            if (value.ends_with(suffix))
+            {
+                handler();
+                return;
+            }
+
+            if (my_node_it == children.begin())
+                throw Poco::Exception("Assertion failed in LeaderElection");
+
+            /// Watch for the node in front of us.
+            --my_node_it;
+            std::string get_path_value;
+            if (!zookeeper.tryGetWatch(path + "/" + *my_node_it, get_path_value, nullptr, task->getWatchCallback()))
+                task->schedule();
+
+            success = true;
+        }
+        catch (const KeeperException & e)
+        {
+            DB::tryLogCurrentException(log);
+
+            if (e.code == Coordination::Error::ZSESSIONEXPIRED)
+                return;
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(log);
+        }
+
+        if (!success)
+            task->scheduleAfter(10 * 1000);
+    }
+};
+
+using LeaderElectionPtr = std::shared_ptr<LeaderElection>;
 
 }

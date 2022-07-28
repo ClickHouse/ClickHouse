@@ -8,14 +8,10 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Backups/IBackup.h>
 
 
 namespace DB
@@ -25,7 +21,6 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
-    extern const int CANNOT_RESTORE_TABLE;
 }
 
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
@@ -64,27 +59,9 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     return result;
 }
 
-IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+TableLockHolder IStorage::lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
-    AlterLockHolder lock{alter_lock, std::defer_lock};
-
-    if (!lock.try_lock_for(acquire_timeout))
-        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
-                        "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), std::to_string(acquire_timeout.count()));
-
-    if (is_dropped)
-        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
-
-    return lock;
-}
-
-
-TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
-{
-    TableExclusiveLockHolder result;
-    result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    TableLockHolder result = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
@@ -92,20 +69,23 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
-Pipe IStorage::watch(
-    const Names & /*column_names*/,
-    const SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
-    QueryProcessingStage::Enum & /*processed_stage*/,
-    size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+
+TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
-    throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    TableExclusiveLockHolder result;
+    result.alter_lock = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
+
+    if (is_dropped)
+        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+
+    result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
+
+    return result;
 }
 
 Pipe IStorage::read(
     const Names & /*column_names*/,
-    const StorageSnapshotPtr & /*storage_snapshot*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & /*query_info*/,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -118,43 +98,25 @@ Pipe IStorage::read(
 void IStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
-}
-
-void IStorage::readFromPipe(
-    QueryPlan & query_plan,
-    Pipe pipe,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    std::string storage_name)
-{
+    auto pipe = read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     if (pipe.empty())
     {
-        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        auto header = (query_info.projection ? query_info.projection->desc->metadata : metadata_snapshot)
+                          ->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
         InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info.storage_limits);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName());
         query_plan.addStep(std::move(read_step));
     }
-}
-
-std::optional<QueryPipeline> IStorage::distributedWrite(
-    const ASTInsertQuery & /*query*/,
-    ContextPtr /*context*/)
-{
-    return {};
 }
 
 Pipe IStorage::alterPartition(
@@ -163,7 +125,7 @@ Pipe IStorage::alterPartition(
     throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
+void IStorage::alter(const AlterCommands & params, ContextPtr context, TableLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -172,13 +134,15 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     setInMemoryMetadata(new_metadata);
 }
 
+
 void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
 {
     for (const auto & command : commands)
     {
         if (!command.isCommentAlter())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
     }
 }
 
@@ -237,44 +201,14 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-bool IStorage::isStaticStorage() const
-{
-    auto storage_policy = getStoragePolicy();
-    if (storage_policy)
-    {
-        for (const auto & disk : storage_policy->getDisks())
-            if (!disk->isReadOnly())
-                return false;
-        return true;
-    }
-    return false;
-}
-
-void IStorage::adjustCreateQueryForBackup(ASTPtr &) const
-{
-}
-
-void IStorage::backupData(BackupEntriesCollector &, const String &, const std::optional<ASTs> &)
-{
-}
-
-void IStorage::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> &)
-{
-    /// If an inherited class doesn't override restoreDataFromBackup() that means it doesn't backup any data.
-    auto filenames = restorer.getBackup()->listFiles(data_path_in_backup);
-    if (!filenames.empty())
-        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "Cannot restore table {}: Folder {} in backup must be empty",
-                        getStorageID().getFullTableName(), data_path_in_backup);
-}
-
 std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
 
-    if (row_level_filter)
+    if (alias_actions)
     {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
+        ss << "alias_actions " << alias_actions->dumpDAG() << "\n";
     }
 
     if (prewhere_actions)

@@ -14,7 +14,7 @@ class MergingSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
     MergingSortedAlgorithm(
-        Block header_,
+        const Block & header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size,
@@ -31,8 +31,6 @@ public:
     const MergedData & getMergedData() const { return merged_data; }
 
 private:
-    Block header;
-
     MergedData merged_data;
 
     /// Settings
@@ -49,11 +47,13 @@ private:
 
     SortCursorImpls cursors;
 
-    SortQueueVariants queue_variants;
+    SortingHeap<SortCursor> queue_without_collation;
+    SortingHeap<SortCursorWithCollation> queue_with_collation;
 
-    template <typename TSortingQueue>
-    Status mergeBatchImpl(TSortingQueue & queue);
+    Status insertFromChunk(size_t source_num);
 
+    template <typename TSortingHeap>
+    Status mergeImpl(TSortingHeap & queue);
 };
 
 }

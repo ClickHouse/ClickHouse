@@ -1,9 +1,9 @@
 ---
-sidebar_position: 10
-sidebar_label: RabbitMQ
+toc_priority: 10
+toc_title: RabbitMQ
 ---
 
-# RabbitMQ Engine
+# RabbitMQ Engine {#rabbitmq-engine}
 
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 
@@ -21,12 +21,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = RabbitMQ SETTINGS
-    rabbitmq_host_port = 'host:port' [or rabbitmq_address = 'amqp(s)://guest:guest@localhost/vhost'],
+    rabbitmq_host_port = 'host:port',
     rabbitmq_exchange_name = 'exchange_name',
     rabbitmq_format = 'data_format'[,]
     [rabbitmq_exchange_type = 'exchange_type',]
     [rabbitmq_routing_key_list = 'key1,key2,...',]
-    [rabbitmq_secure = 0,]
     [rabbitmq_row_delimiter = 'delimiter_symbol',]
     [rabbitmq_schema = '',]
     [rabbitmq_num_consumers = N,]
@@ -37,7 +36,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_skip_broken_messages = N,]
     [rabbitmq_max_block_size = N,]
     [rabbitmq_flush_interval_ms = N]
-    [rabbitmq_queue_settings_list = 'x-dead-letter-exchange=my-dlx,x-max-length=10,x-overflow=reject-publish']
 ```
 
 Required parameters:
@@ -60,12 +58,6 @@ Optional parameters:
 -   `rabbitmq_skip_broken_messages` – RabbitMQ message parser tolerance to schema-incompatible messages per block. Default: `0`. If `rabbitmq_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data).
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
--   `rabbitmq_queue_settings_list` - allows to set RabbitMQ settings when creating a queue. Available settings: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. The `durable` setting is enabled automatically for the queue.
-
-SSL connection:
-
-Use either `rabbitmq_secure = 1` or `amqps` in connection address: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
-The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
 
 Also format settings can be added along with rabbitmq-related settings.
 
@@ -172,4 +164,4 @@ Example:
 -   `_message_id` - messageID of the received message; non-empty if was set, when message was published.
 -   `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->

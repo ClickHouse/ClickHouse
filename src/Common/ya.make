@@ -1,0 +1,132 @@
+# This file is generated automatically, do not edit. See 'ya.make.in' and use 'utils/generate-ya-make' to regenerate it.
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+ADDINCL (
+    GLOBAL clickhouse/src
+    contrib/libs/libcpuid
+    contrib/libs/libunwind/include
+    GLOBAL contrib/restricted/dragonbox
+)
+
+PEERDIR(
+    clickhouse/base/common
+    clickhouse/base/pcg-random
+    clickhouse/base/widechar_width
+    contrib/libs/libcpuid
+    contrib/libs/openssl
+    contrib/libs/poco/NetSSL_OpenSSL
+    contrib/libs/re2
+    contrib/restricted/dragonbox
+)
+
+INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
+
+
+SRCS(
+    ActionLock.cpp
+    AlignedBuffer.cpp
+    Allocator.cpp
+    ClickHouseRevision.cpp
+    Config/AbstractConfigurationComparison.cpp
+    Config/ConfigProcessor.cpp
+    Config/ConfigReloader.cpp
+    Config/YAMLParser.cpp
+    Config/configReadClient.cpp
+    CurrentMemoryTracker.cpp
+    CurrentMetrics.cpp
+    CurrentThread.cpp
+    DNSResolver.cpp
+    Dwarf.cpp
+    Elf.cpp
+    Epoll.cpp
+    ErrorCodes.cpp
+    Exception.cpp
+    ExternalLoaderStatus.cpp
+    FieldVisitorDump.cpp
+    FieldVisitorHash.cpp
+    FieldVisitorSum.cpp
+    FieldVisitorToString.cpp
+    FieldVisitorWriteBinary.cpp
+    FileChecker.cpp
+    IO.cpp
+    IPv6ToBinary.cpp
+    IntervalKind.cpp
+    JSONBuilder.cpp
+    Macros.cpp
+    MemoryStatisticsOS.cpp
+    MemoryTracker.cpp
+    OpenSSLHelpers.cpp
+    OptimizedRegularExpression.cpp
+    PODArray.cpp
+    PipeFDs.cpp
+    ProcfsMetricsProvider.cpp
+    ProfileEvents.cpp
+    ProgressIndication.cpp
+    QueryProfiler.cpp
+    RWLock.cpp
+    RemoteHostFilter.cpp
+    SensitiveDataMasker.cpp
+    SettingsChanges.cpp
+    SharedLibrary.cpp
+    ShellCommand.cpp
+    StackTrace.cpp
+    StatusFile.cpp
+    StatusInfo.cpp
+    Stopwatch.cpp
+    StringUtils/StringUtils.cpp
+    StudentTTest.cpp
+    SymbolIndex.cpp
+    TLDListsHolder.cpp
+    TaskStatsInfoGetter.cpp
+    TerminalSize.cpp
+    ThreadFuzzer.cpp
+    ThreadPool.cpp
+    ThreadProfileEvents.cpp
+    ThreadStatus.cpp
+    Throttler.cpp
+    TimerDescriptor.cpp
+    TraceCollector.cpp
+    UTF8Helpers.cpp
+    UnicodeBar.cpp
+    VersionNumber.cpp
+    WeakHash.cpp
+    ZooKeeper/IKeeper.cpp
+    ZooKeeper/TestKeeper.cpp
+    ZooKeeper/ZooKeeper.cpp
+    ZooKeeper/ZooKeeperCommon.cpp
+    ZooKeeper/ZooKeeperConstants.cpp
+    ZooKeeper/ZooKeeperIO.cpp
+    ZooKeeper/ZooKeeperImpl.cpp
+    ZooKeeper/ZooKeeperNodeCache.cpp
+    checkStackSize.cpp
+    clearPasswordFromCommandLine.cpp
+    createHardLink.cpp
+    escapeForFileName.cpp
+    filesystemHelpers.cpp
+    formatIPv6.cpp
+    formatReadable.cpp
+    getExecutablePath.cpp
+    getHashOfLoadedBinary.cpp
+    getMappedArea.cpp
+    getMultipleKeysFromConfig.cpp
+    getNumberOfPhysicalCPUCores.cpp
+    hasLinuxCapability.cpp
+    hex.cpp
+    isLocalAddress.cpp
+    malloc.cpp
+    new_delete.cpp
+    parseAddress.cpp
+    parseGlobs.cpp
+    parseRemoteDescription.cpp
+    quoteString.cpp
+    randomSeed.cpp
+    remapExecutable.cpp
+    renameat2.cpp
+    setThreadName.cpp
+    thread_local_rng.cpp
+
+)
+
+END()

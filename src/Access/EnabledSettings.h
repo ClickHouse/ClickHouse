@@ -1,16 +1,15 @@
 #pragma once
 
-#include <Access/SettingsProfileElement.h>
-#include <base/defines.h>
+#include <common/types.h>
 #include <Core/UUID.h>
+#include <Access/SettingsConstraints.h>
+#include <Access/SettingsProfileElement.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
 
 
 namespace DB
 {
-struct SettingsProfilesInfo;
-
 /// Watches settings profiles for a specific user and roles.
 class EnabledSettings
 {
@@ -31,19 +30,27 @@ public:
         friend bool operator >=(const Params & lhs, const Params & rhs) { return !(lhs < rhs); }
     };
 
+    ~EnabledSettings();
+
     /// Returns the default settings come from settings profiles defined for the user
     /// and the roles passed in the constructor.
-    std::shared_ptr<const SettingsProfilesInfo> getInfo() const;
+    std::shared_ptr<const Settings> getSettings() const;
 
-    ~EnabledSettings();
+    /// Returns the constraints come from settings profiles defined for the user
+    /// and the roles passed in the constructor.
+    std::shared_ptr<const SettingsConstraints> getConstraints() const;
 
 private:
     friend class SettingsProfilesCache;
-    explicit EnabledSettings(const Params & params_);
-    void setInfo(const std::shared_ptr<const SettingsProfilesInfo> & info_);
+    EnabledSettings(const Params & params_);
+
+    void setSettingsAndConstraints(
+        const std::shared_ptr<const Settings> & settings_, const std::shared_ptr<const SettingsConstraints> & constraints_);
 
     const Params params;
-    std::shared_ptr<const SettingsProfilesInfo> info TSA_GUARDED_BY(mutex);
+    SettingsProfileElements settings_from_enabled;
+    std::shared_ptr<const Settings> settings;
+    std::shared_ptr<const SettingsConstraints> constraints;
     mutable std::mutex mutex;
 };
 }

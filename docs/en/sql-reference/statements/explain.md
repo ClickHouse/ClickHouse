@@ -1,21 +1,16 @@
 ---
-sidebar_position: 39
-sidebar_label: EXPLAIN
+toc_priority: 39
+toc_title: EXPLAIN
 ---
 
-# EXPLAIN Statement
+# EXPLAIN Statement {#explain}
 
 Shows the execution plan of a statement.
 
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
-    [
-      SELECT ... |
-      tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
-    ]
-    [FORMAT ...]
+EXPLAIN [AST | SYNTAX | PLAN | PIPELINE] [setting = value, ...] SELECT ... [FORMAT ...]
 ```
 
 Example:
@@ -43,14 +38,14 @@ Union
                   ReadFromStorage (SystemNumbers)
 ```
 
-## EXPLAIN Types
+## EXPLAIN Types {#explain-types}
 
 -  `AST` — Abstract syntax tree.
 -  `SYNTAX` — Query text after AST-level optimizations.
 -  `PLAN` — Query execution plan.
 -  `PIPELINE` — Query execution pipeline.
 
-### EXPLAIN AST
+### EXPLAIN AST {#explain-ast}
 
 Dump query AST. Supports all types of queries, not only `SELECT`.
 
@@ -84,7 +79,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX
+### EXPLAIN SYNTAX {#explain-syntax}
 
 Returns query after syntax optimizations.
 
@@ -110,7 +105,7 @@ FROM
 CROSS JOIN system.numbers AS c
 ```
 
-### EXPLAIN PLAN
+### EXPLAIN PLAN {#explain-plan}
 
 Dump query plan steps.
 
@@ -138,9 +133,8 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-:::note    
-Step and query cost estimation is not supported.
-:::
+!!! note "Note"
+    Step and query cost estimation is not supported.
 
 When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type` and `Plans`. `Node Type` is a string with a step name. `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
 
@@ -246,7 +240,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
   }
 ]
 ```
-
+  
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
 
 -   `Name` — An index name (for now, is used only for `Skip` index).
@@ -361,7 +355,7 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-### EXPLAIN PIPELINE
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
 
@@ -390,65 +384,5 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersMt × 2 0 → 1
 ```
-### EXPLAIN ESTIMATE
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
-
-**Example**
-
-Creating a table:
-
-```sql
-CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
-INSERT INTO ttt SELECT number FROM numbers(128);
-OPTIMIZE TABLE ttt;
-```
-
-Query:
-
-```sql
-EXPLAIN ESTIMATE SELECT * FROM ttt;
-```
-
-Result:
-
-```text
-┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
-│ default  │ ttt   │     1 │  128 │     8 │
-└──────────┴───────┴───────┴──────┴───────┘
-```
-
-### EXPLAIN TABLE OVERRIDE
-
-Shows the result of a table override on a table schema accessed through a table function.
-Also does some validation, throwing an exception if the override would have caused some kind of failure.
-
-**Example**
-
-Assume you have a remote MySQL table like this:
-
-```sql
-CREATE TABLE db.tbl (
-    id INT PRIMARY KEY,
-    created DATETIME DEFAULT now()
-)
-```
-
-```sql
-EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
-PARTITION BY toYYYYMM(assumeNotNull(created))
-```
-
-Result:
-
-```text
-┌─explain─────────────────────────────────────────────────┐
-│ PARTITION BY uses columns: `created` Nullable(DateTime) │
-└─────────────────────────────────────────────────────────┘
-```
-
-:::note    
-The validation is not complete, so a successfull query does not guarantee that the override would not cause issues.
-:::
-
-[Оriginal article](https://clickhouse.com/docs/en/sql-reference/statements/explain/) <!--hide-->
+[Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/explain/) <!--hide-->

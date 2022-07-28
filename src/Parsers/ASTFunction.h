@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 
 namespace DB
 {
 
-class ASTSelectWithUnionQuery;
+class ASTIdentifier;
 
 /** AST for function application or operator.
   */
@@ -21,8 +21,6 @@ public:
     ASTPtr parameters;
 
     bool is_window_function = false;
-
-    bool compute_after_window_functions = false;
 
     // We have to make these fields ASTPtr because this is what the visitors
     // expect. Some of them take const ASTPtr & (makes no sense), and some
@@ -56,8 +54,6 @@ public:
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
-private:
-    void finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 
 
@@ -74,15 +70,5 @@ std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... arg
 
     return function;
 }
-
-/// ASTFunction Helpers: hide casts and semantic.
-
-String getFunctionName(const IAST * ast);
-std::optional<String> tryGetFunctionName(const IAST * ast);
-bool tryGetFunctionNameInto(const IAST * ast, String & name);
-
-inline String getFunctionName(const ASTPtr & ast) { return getFunctionName(ast.get()); }
-inline std::optional<String> tryGetFunctionName(const ASTPtr & ast) { return tryGetFunctionName(ast.get()); }
-inline bool tryGetFunctionNameInto(const ASTPtr & ast, String & name) { return tryGetFunctionNameInto(ast.get(), name); }
 
 }

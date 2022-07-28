@@ -1,7 +1,19 @@
-#"${folder}/CMakeLists.txt" Third-party libraries may have substandard code.
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+# Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
+# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
+# appear not in "contrib/" as originally planned here.
+get_filename_component (_current_dir_name "${CMAKE_CURRENT_LIST_DIR}" NAME)
+if (CMAKE_FOLDER)
+    set (CMAKE_FOLDER "${CMAKE_FOLDER}/${_current_dir_name}")
+else ()
+    set (CMAKE_FOLDER "${_current_dir_name}")
+endif ()
+unset (_current_dir_name)
+
+# Third-party libraries may have substandard code.
+# Also remove a possible source of nondeterminism.
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
 
 if (WITH_COVERAGE)
   set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
@@ -21,212 +33,299 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-# add_contrib cmake_folder[ base_folder1[, ...base_folderN]]
-function(add_contrib cmake_folder)
-    if (ARGN)
-        set(base_folders ${ARGN})
-    else()
-        set(base_folders ${cmake_folder})
+add_subdirectory (abseil-cpp-cmake)
+add_subdirectory (boost-cmake)
+add_subdirectory (cctz-cmake)
+add_subdirectory (consistent-hashing)
+add_subdirectory (dragonbox-cmake)
+add_subdirectory (hyperscan-cmake)
+add_subdirectory (jemalloc-cmake)
+add_subdirectory (libcpuid-cmake)
+add_subdirectory (libdivide)
+add_subdirectory (libmetrohash)
+add_subdirectory (lz4-cmake)
+add_subdirectory (murmurhash)
+add_subdirectory (replxx-cmake)
+add_subdirectory (unixodbc-cmake)
+add_subdirectory (nanodbc-cmake)
+
+if (USE_YAML_CPP)
+    add_subdirectory (yaml-cpp-cmake)
+endif()
+
+if (USE_INTERNAL_XZ_LIBRARY)
+    add_subdirectory (xz)
+endif()
+
+add_subdirectory (poco-cmake)
+add_subdirectory (croaring-cmake)
+
+# TODO: refactor the contrib libraries below this comment.
+
+if (USE_INTERNAL_ZSTD_LIBRARY)
+    add_subdirectory (zstd-cmake)
+endif ()
+
+if (USE_INTERNAL_RE2_LIBRARY)
+    set(RE2_BUILD_TESTING 0 CACHE INTERNAL "")
+    add_subdirectory (re2)
+    add_subdirectory (re2_st)
+endif ()
+
+if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
+    add_subdirectory (double-conversion-cmake)
+endif ()
+
+if (USE_INTERNAL_CITYHASH_LIBRARY)
+    add_subdirectory (cityhash102)
+endif ()
+
+if (USE_INTERNAL_FARMHASH_LIBRARY)
+    add_subdirectory (libfarmhash)
+endif ()
+
+if (USE_INTERNAL_ZLIB_LIBRARY)
+    set (ZLIB_ENABLE_TESTS 0 CACHE INTERNAL "")
+    set (SKIP_INSTALL_ALL 1 CACHE INTERNAL "")
+    set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
+    set (WITH_NATIVE_INSTRUCTIONS ${ARCH_NATIVE} CACHE INTERNAL "")
+    if (OS_FREEBSD OR ARCH_I386)
+        set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
+    endif ()
+    if (ARCH_AARCH64)
+        set(WITH_NEON 1 CACHE INTERNAL "")
+        set(WITH_ACLE 1 CACHE INTERNAL "")
+    endif ()
+
+    add_subdirectory (${INTERNAL_ZLIB_NAME})
+    # We should use same defines when including zlib.h as used when zlib compiled
+    target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    if (ARCH_AMD64 OR ARCH_AARCH64)
+        target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
+    endif ()
+endif ()
+
+if (USE_INTERNAL_H3_LIBRARY)
+    add_subdirectory(h3-cmake)
+endif ()
+
+if (USE_INTERNAL_SSL_LIBRARY)
+    add_subdirectory (boringssl-cmake)
+
+    add_library(OpenSSL::Crypto ALIAS crypto)
+    add_library(OpenSSL::SSL ALIAS ssl)
+endif ()
+
+if (USE_INTERNAL_LDAP_LIBRARY)
+    add_subdirectory (openldap-cmake)
+endif ()
+
+function(mysql_support)
+    set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
+    set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
+    set(CLIENT_PLUGIN_REMOTE_IO OFF)
+    set(CLIENT_PLUGIN_DIALOG OFF)
+    set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF)
+    set(CLIENT_PLUGIN_CLIENT_ED25519 OFF)
+    set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD OFF)
+    set(SKIP_TESTS 1)
+    if (GLIBC_COMPATIBILITY)
+        set(LIBM glibc-compatibility)
     endif()
-
-    foreach (base_folder ${base_folders})
-        # some typos in the code
-        if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/${base_folder}")
-            message(FATAL_ERROR "No such base folder '${base_folder}' (for '${cmake_folder}' cmake folder). Typo in the base folder name?")
-        endif()
-
-        file(GLOB contrib_files "${base_folder}/*")
-        if (NOT contrib_files)
-            # Checking out *all* submodules takes > 5 min. Therefore, the smoke build ("FastTest") in CI initializes only the set of
-            # submodules minimally needed for a build and we cannot assume here that all submodules are populated.
-            message(STATUS "submodule ${base_folder} is missing or empty. to fix try run:")
-            message(STATUS "    git submodule update --init")
-            return()
-        endif()
-    endforeach()
-
-    message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
-    add_subdirectory (${cmake_folder})
+    if (USE_INTERNAL_ZLIB_LIBRARY)
+        set(ZLIB_FOUND ON)
+        set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
+        set(WITH_EXTERNAL_ZLIB ON)
+    endif()
+    set(WITH_CURL OFF)
+    add_subdirectory (mariadb-connector-c)
 endfunction()
+if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
+    mysql_support()
+endif ()
 
-add_contrib (miniselect-cmake miniselect)
-add_contrib (pdqsort-cmake pdqsort)
-add_contrib (sparsehash-c11-cmake sparsehash-c11)
-add_contrib (abseil-cpp-cmake abseil-cpp)
-add_contrib (magic-enum-cmake magic_enum)
-add_contrib (boost-cmake boost)
-add_contrib (cctz-cmake cctz)
-add_contrib (consistent-hashing)
-add_contrib (dragonbox-cmake dragonbox)
-add_contrib (vectorscan-cmake vectorscan)
-add_contrib (jemalloc-cmake jemalloc)
-add_contrib (libcpuid-cmake libcpuid)
-add_contrib (libdivide)
-add_contrib (libmetrohash)
-add_contrib (lz4-cmake lz4)
-add_contrib (murmurhash)
-add_contrib (replxx-cmake replxx)
-add_contrib (unixodbc-cmake unixodbc)
-add_contrib (nanodbc-cmake nanodbc)
-add_contrib (capnproto-cmake capnproto)
-add_contrib (yaml-cpp-cmake yaml-cpp)
-add_contrib (re2-cmake re2)
-add_contrib (xz-cmake xz)
-add_contrib (brotli-cmake brotli)
-add_contrib (double-conversion-cmake double-conversion)
-add_contrib (boringssl-cmake boringssl)
-add_contrib (poco-cmake poco)
-add_contrib (croaring-cmake croaring)
-add_contrib (zstd-cmake zstd)
-add_contrib (zlib-ng-cmake zlib-ng)
-add_contrib (bzip2-cmake bzip2)
-add_contrib (minizip-ng-cmake minizip-ng)
-add_contrib (snappy-cmake snappy)
-add_contrib (rocksdb-cmake rocksdb)
-add_contrib (thrift-cmake thrift)
-# parquet/arrow/orc
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
-add_contrib (avro-cmake avro) # requires: snappy
-add_contrib (protobuf-cmake protobuf)
-add_contrib (openldap-cmake openldap)
-add_contrib (grpc-cmake grpc)
-add_contrib (msgpack-c-cmake msgpack-c)
+if (USE_INTERNAL_RDKAFKA_LIBRARY)
+    add_subdirectory (librdkafka-cmake)
+    target_include_directories(rdkafka BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
+    if(OPENSSL_INCLUDE_DIR)
+        target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
+    endif()
+endif ()
 
-if (ENABLE_FUZZING)
-    add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
+if (USE_RDKAFKA)
+    add_subdirectory (cppkafka-cmake)
 endif()
 
-add_contrib (wyhash-cmake wyhash)
-add_contrib (cityhash102)
-add_contrib (libfarmhash)
-add_contrib (icu-cmake icu)
-add_contrib (h3-cmake h3)
-add_contrib (mariadb-connector-c-cmake mariadb-connector-c)
+if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
+    add_subdirectory (icu-cmake)
+endif ()
 
-if (ENABLE_TESTS)
-    add_contrib (googletest-cmake googletest)
+if(USE_INTERNAL_SNAPPY_LIBRARY)
+    set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
+
+    add_subdirectory(snappy)
+
+    set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
 endif()
 
-add_contrib (llvm-cmake llvm)
-add_contrib (libxml2-cmake libxml2)
-add_contrib (aws-s3-cmake
-    aws
-    aws-c-common
-    aws-c-event-stream
-    aws-checksums
-)
-add_contrib (base64-cmake base64)
-add_contrib (simdjson-cmake simdjson)
-add_contrib (rapidjson-cmake rapidjson)
-add_contrib (fastops-cmake fastops)
-add_contrib (libuv-cmake libuv)
-add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
-add_contrib (cassandra-cmake cassandra) # requires: libuv
+if (USE_INTERNAL_PARQUET_LIBRARY)
+    # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
+    # But you can update auto-generated parquet files manually:
+    # cd {BUILD_DIR}/contrib/arrow/cpp/src/parquet && mkdir -p build && cd build
+    # cmake .. -DARROW_COMPUTE=ON -DARROW_PARQUET=ON -DARROW_SIMD_LEVEL=NONE -DARROW_VERBOSE_THIRDPARTY_BUILD=ON
+    #          -DARROW_BUILD_SHARED=1 -DARROW_BUILD_UTILITIES=OFF -DARROW_BUILD_INTEGRATION=OFF
+    #          -DBoost_FOUND=1 -DARROW_TEST_LINKAGE="shared"
+    # make -j8
+    # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> {BUILD_DIR}/contrib/arrow-cmake/cpp/src/parquet/
 
-if (ENABLE_CURL_BUILD)
-    add_contrib (curl-cmake curl)
-    add_contrib (azure-cmake azure)
-    add_contrib (sentry-native-cmake sentry-native) # requires: curl
+    # Also useful parquet reader:
+    # cd {BUILD_DIR}/contrib/arrow/cpp && mkdir -p build && cd build
+    # cmake .. -DARROW_PARQUET=1 -DARROW_WITH_SNAPPY=1 -DPARQUET_BUILD_EXECUTABLES=1
+    # make -j8
+    # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
+
+    add_subdirectory(arrow-cmake)
+
+    # The library is large - avoid bloat.
+    target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
+    target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
+    target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 
-add_contrib (fmtlib-cmake fmtlib)
-add_contrib (krb5-cmake krb5)
-add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
-add_contrib (libgsasl-cmake libgsasl) # requires krb5
-add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
-add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5
-add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
-add_contrib (cppkafka-cmake cppkafka)
-add_contrib (libpqxx-cmake libpqxx)
-add_contrib (libpq-cmake libpq)
-add_contrib (nuraft-cmake NuRaft)
-add_contrib (fast_float-cmake fast_float)
-add_contrib (datasketches-cpp-cmake datasketches-cpp)
-add_contrib (hashidsxx-cmake hashidsxx)
-
-option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
-if (ENABLE_NLP)
-    add_contrib (libstemmer-c-cmake libstemmer_c)
-    add_contrib (wordnet-blast-cmake wordnet-blast)
-    add_contrib (lemmagen-c-cmake lemmagen-c)
-    add_contrib (nlp-data-cmake nlp-data)
-    add_contrib (cld2-cmake cld2)
+if (USE_INTERNAL_AVRO_LIBRARY)
+    add_subdirectory(avro-cmake)
 endif()
 
-add_contrib (sqlite-cmake sqlite-amalgamation)
-add_contrib (s2geometry-cmake s2geometry)
-add_contrib (base-x-cmake base-x)
+if(USE_INTERNAL_GTEST_LIBRARY)
+    set(GOOGLETEST_VERSION 1.10.0) # master
+    # Google Test from sources
+    add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+    # avoid problems with <regexp.h>
+    target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+elseif(GTEST_SRC_DIR)
+    add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+    target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+endif()
 
-# Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
-# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
-# in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
-# instead of controlling it via CMAKE_FOLDER.
-
-function (ensure_target_rooted_in _target _folder)
-    # Skip aliases and INTERFACE library targets, since FOLDER property is not available/writable for them.
-    get_target_property (_target_aliased "${_target}" ALIASED_TARGET)
-    get_target_property (_target_type "${_target}" TYPE)
-    if (_target_aliased OR _target_type STREQUAL "INTERFACE_LIBRARY")
-        return ()
+if (USE_EMBEDDED_COMPILER)
+    # ld: unknown option: --color-diagnostics
+    if (APPLE)
+        set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
 
-    # Read the original FOLDER property value, if any.
-    get_target_property (_folder_prop "${_target}" FOLDER)
+    set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
+    set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
+    set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
+    set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
 
-    # Normalize that value, so we avoid possible repetitions in folder names.
+    # Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
+    # LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
+    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
+    set (CMAKE_CXX_STANDARD 17)
 
-    if (NOT _folder_prop)
-        set (_folder_prop "")
-    endif ()
+    add_subdirectory (llvm/llvm)
 
-    if (CMAKE_FOLDER AND _folder_prop MATCHES "^${CMAKE_FOLDER}/(.*)\$")
-        set (_folder_prop "${CMAKE_MATCH_1}")
-    endif ()
+    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
+    unset (CMAKE_CXX_STANDARD_bak)
+endif ()
 
-    if (_folder AND _folder_prop MATCHES "^${_folder}/(.*)\$")
-        set (_folder_prop "${CMAKE_MATCH_1}")
-    endif ()
+if (USE_INTERNAL_LIBGSASL_LIBRARY)
+    add_subdirectory(libgsasl)
+endif()
 
-    if (_folder)
-        set (_folder_prop "${_folder}/${_folder_prop}")
-    endif ()
+if (USE_INTERNAL_LIBXML2_LIBRARY)
+    add_subdirectory(libxml2-cmake)
+endif ()
 
-    if (CMAKE_FOLDER)
-        set (_folder_prop "${CMAKE_FOLDER}/${_folder_prop}")
-    endif ()
+if (USE_INTERNAL_BROTLI_LIBRARY)
+    add_subdirectory(brotli-cmake)
+    target_compile_definitions(brotli PRIVATE BROTLI_BUILD_PORTABLE=1)
+endif ()
 
-    # Set the updated FOLDER property value back.
-    set_target_properties ("${_target}" PROPERTIES FOLDER "${_folder_prop}")
-endfunction ()
+if (USE_INTERNAL_PROTOBUF_LIBRARY)
+    add_subdirectory(protobuf-cmake)
+endif ()
 
-function (ensure_own_targets_are_rooted_in _dir _folder)
-    get_directory_property (_targets DIRECTORY "${_dir}" BUILDSYSTEM_TARGETS)
-    foreach (_target IN LISTS _targets)
-        ensure_target_rooted_in ("${_target}" "${_folder}")
-    endforeach ()
-endfunction ()
+if (USE_INTERNAL_HDFS3_LIBRARY)
+    add_subdirectory(libhdfs3-cmake)
+endif ()
 
-function (ensure_all_targets_are_rooted_in _dir _folder)
-    ensure_own_targets_are_rooted_in ("${_dir}" "${_folder}")
+if (USE_INTERNAL_GRPC_LIBRARY)
+    add_subdirectory(grpc-cmake)
+endif ()
 
-    get_property (_sub_dirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
-    foreach (_sub_dir IN LISTS _sub_dirs)
-        ensure_all_targets_are_rooted_in ("${_sub_dir}" "${_folder}")
-    endforeach ()
-endfunction ()
+if (USE_INTERNAL_AWS_S3_LIBRARY)
+    add_subdirectory(aws-s3-cmake)
 
-function (organize_ide_folders_2_level _dir)
-    get_filename_component (_dir_name "${_dir}" NAME)
-    ensure_own_targets_are_rooted_in ("${_dir}" "${_dir_name}")
+    # The library is large - avoid bloat.
+    target_compile_options (aws_s3 PRIVATE -g0)
+    target_compile_options (aws_s3_checksums PRIVATE -g0)
 
-    # Note, that we respect only first two levels of nesting, we don't want to
-    # reorganize target folders further within each third-party dir.
+endif ()
 
-    get_property (_sub_dirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
-    foreach (_sub_dir IN LISTS _sub_dirs)
-        get_filename_component (_sub_dir_name "${_sub_dir}" NAME)
-        ensure_all_targets_are_rooted_in ("${_sub_dir}" "${_dir_name}/${_sub_dir_name}")
-    endforeach ()
-endfunction ()
+if (USE_BASE64)
+    add_subdirectory (base64-cmake)
+endif()
 
-organize_ide_folders_2_level ("${CMAKE_CURRENT_LIST_DIR}")
+if (USE_SIMDJSON)
+    add_subdirectory (simdjson-cmake)
+endif()
+
+if (USE_FASTOPS)
+    add_subdirectory (fastops-cmake)
+endif()
+
+if (USE_AMQPCPP OR USE_CASSANDRA)
+    add_subdirectory (libuv)
+endif()
+if (USE_AMQPCPP)
+    add_subdirectory (amqpcpp-cmake)
+endif()
+if (USE_CASSANDRA)
+    # Need to use C++17 since the compilation is not possible with C++20 currently.
+    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
+    set (CMAKE_CXX_STANDARD 17)
+
+    add_subdirectory (cassandra)
+
+    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
+    unset (CMAKE_CXX_STANDARD_bak)
+endif()
+
+# Should go before:
+# - sentry-native
+add_subdirectory (curl-cmake)
+
+if (USE_SENTRY)
+    add_subdirectory (sentry-native)
+endif()
+
+add_subdirectory (fmtlib-cmake)
+
+if (USE_STATS)
+    add_subdirectory (stats-cmake)
+    add_subdirectory (gcem)
+endif()
+
+if (USE_KRB5)
+    add_subdirectory (krb5-cmake)
+    if (USE_CYRUS_SASL)
+        add_subdirectory (cyrus-sasl-cmake)
+    endif()
+endif()
+
+if (USE_INTERNAL_ROCKSDB_LIBRARY)
+    add_subdirectory(rocksdb-cmake)
+endif()
+
+if (USE_LIBPQXX)
+    add_subdirectory (libpq-cmake)
+    add_subdirectory (libpqxx-cmake)
+endif()
+
+if (USE_NURAFT)
+  add_subdirectory(nuraft-cmake)
+endif()
+
+add_subdirectory(fast_float)
+

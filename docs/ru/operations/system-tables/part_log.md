@@ -63,6 +63,6 @@ read_rows:                     0
 read_bytes:                    0
 peak_memory_usage:             0
 error:                         0
-exception:
+exception:                   
 ```
 

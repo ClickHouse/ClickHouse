@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeMap.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -51,9 +50,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "absolute_delay",                       std::make_shared<DataTypeUInt64>()   },
         { "total_replicas",                       std::make_shared<DataTypeUInt8>()    },
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
-        { "last_queue_update_exception",          std::make_shared<DataTypeString>()   },
         { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
-        { "replica_is_active",                    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt8>()) }
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -61,14 +58,14 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
 Pipe StorageSystemReplicas::read(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    storage_snapshot->check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
@@ -104,8 +101,7 @@ Pipe StorageSystemReplicas::read(
             || column_name == "log_pointer"
             || column_name == "total_replicas"
             || column_name == "active_replicas"
-            || column_name == "zookeeper_exception"
-            || column_name == "replica_is_active")
+            || column_name == "zookeeper_exception")
         {
             with_zk_fields = true;
             break;
@@ -149,7 +145,7 @@ Pipe StorageSystemReplicas::read(
         col_engine = filtered_block.getByName("engine").column;
     }
 
-    MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
+    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
 
     for (size_t i = 0, size = col_database->size(); i < size; ++i)
     {
@@ -187,21 +183,10 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.absolute_delay);
         res_columns[col_num++]->insert(status.total_replicas);
         res_columns[col_num++]->insert(status.active_replicas);
-        res_columns[col_num++]->insert(status.last_queue_update_exception);
         res_columns[col_num++]->insert(status.zookeeper_exception);
-
-        Map replica_is_active_values;
-        for (const auto & [name, is_active] : status.replica_is_active)
-        {
-            Tuple is_replica_active_value;
-            is_replica_active_value.emplace_back(name);
-            is_replica_active_value.emplace_back(is_active);
-
-            replica_is_active_values.emplace_back(std::move(is_replica_active_value));
-        }
-
-        res_columns[col_num++]->insert(std::move(replica_is_active_values));
     }
+
+    Block header = metadata_snapshot->getSampleBlock();
 
     Columns fin_columns;
     fin_columns.reserve(res_columns.size());
@@ -216,7 +201,7 @@ Pipe StorageSystemReplicas::read(
     UInt64 num_rows = fin_columns.at(0)->size();
     Chunk chunk(std::move(fin_columns), num_rows);
 
-    return Pipe(std::make_shared<SourceFromSingleChunk>(storage_snapshot->metadata->getSampleBlock(), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), std::move(chunk)));
 }
 
 

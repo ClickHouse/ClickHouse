@@ -1,11 +1,11 @@
 ---
-sidebar_position: 145
+toc_priority: 145
 ---
 
 # sumKahan {#agg_function-sumKahan}
 
 Вычисляет сумму с использованием [компенсационного суммирования по алгоритму Кэхэна](https://ru.wikipedia.org/wiki/Алгоритм_Кэхэна).
-Работает медленнее функции [sum](./sum.md).
+Работает медленнее функции [sum](./sum.md). 
 Компенсация работает только для [Float](../../../sql-reference/data-types/float.md) типов.
 
 **Синтаксис**

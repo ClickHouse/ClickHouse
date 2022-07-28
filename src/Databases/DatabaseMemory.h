@@ -32,7 +32,7 @@ public:
     void dropTable(
         ContextPtr context,
         const String & table_name,
-        bool sync) override;
+        bool no_delay) override;
 
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
     ASTPtr getCreateDatabaseQuery() const override;
@@ -42,20 +42,16 @@ public:
     /// TODO May be it's better to use DiskMemory for such tables.
     ///      To save data on disk it's possible to explicitly CREATE DATABASE db ENGINE=Ordinary in clickhouse-local.
     String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
-    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
+    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
     void drop(ContextPtr context) override;
 
-    void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
-
-    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
-
 private:
-    const String data_path;
+    String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;
-    NameToASTCreate create_queries TSA_GUARDED_BY(mutex);
+    NameToASTCreate create_queries;
 };
 
 }

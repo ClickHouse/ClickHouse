@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS table_for_ttl;
 
 CREATE TABLE table_for_ttl(

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 21
-sidebar_label: Вышки сотовой связи
+toc_priority: 21
+toc_title: Вышки сотовой связи
 ---
 
 # Вышки сотовой связи {#cell-towers}
@@ -11,7 +11,7 @@ OpenCelliD Project имеет лицензию Creative Commons Attribution-Shar
 
 ## Как получить набор данных {#get-the-dataset}
 
-1. Загрузите снэпшот набора данных за февраль 2021 [отсюда](https://datasets.clickhouse.com/cell_towers.csv.xz) (729 MB).
+1. Загрузите снэпшот набора данных за февраль 2021 [отсюда](https://datasets.clickhouse.tech/cell_towers.csv.xz) (729 MB).
 
 2. Если нужно, проверьте полноту и целостность при помощи команды:
 
@@ -125,4 +125,4 @@ SELECT count() FROM cell_towers WHERE pointInPolygon((lon, lat), (SELECT * FROM 
 1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
 ```
 
-Вы можете протестировать другие запросы с помощью интерактивного ресурса [Playground](https://play.clickhouse.com/play?user=play). Например, [вот так](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=). Однако, обратите внимание, что здесь нельзя создавать временные таблицы.
+Вы можете протестировать другие запросы с помощью интерактивного ресурса [Playground](https://gh-api.clickhouse.tech/play?user=play). Например, [вот так](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=). Однако, обратите внимание, что здесь нельзя создавать временные таблицы.

@@ -1,8 +1,10 @@
 #pragma once
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#   include "config_core.h"
+#endif
 
-#include <base/types.h>
+#include <common/types.h>
 
 #if USE_LDAP
 #   include <ldap.h>
@@ -133,11 +135,12 @@ public:
     LDAPClient & operator= (LDAPClient &&) = delete;
 
 protected:
-    MAYBE_NORETURN void diag(int rc, String text = "");
-    MAYBE_NORETURN bool openConnection();
+    MAYBE_NORETURN void diag(const int rc, String text = "");
+    MAYBE_NORETURN void openConnection();
     void closeConnection() noexcept;
     SearchResults search(const SearchParams & search_params);
 
+protected:
     const Params params;
 #if USE_LDAP
     LDAP * handle = nullptr;

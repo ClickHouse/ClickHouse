@@ -1,4 +1,0 @@
-(2,('qqq',[44,55]))	Tuple(k1 Int8, k2 Tuple(k3 String, k4 Array(Int8)))
-(2,('qqq',[44,55]))	Tuple(k1 Int8, k2 Tuple(k3 String, k4 Array(Int8)))
-2	qqq	[44,55]
-2	qqq	[44,55]

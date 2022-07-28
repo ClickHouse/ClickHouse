@@ -1,13 +1,13 @@
 <test>
 
-    <settings>
-        <max_partitions_per_insert_block>0</max_partitions_per_insert_block>
-        <max_insert_threads>1</max_insert_threads>
-        <max_memory_usage>20G</max_memory_usage>
-    </settings>
-
     <create_query>CREATE TABLE bad_partitions (a UInt64, b UInt64, c UInt64, d UInt64, e UInt64, f UInt64, g UInt64, h UInt64, i UInt64, j UInt64, k UInt64, l UInt64, m UInt64, n UInt64, o UInt64, p UInt64, q UInt64, r UInt64, s UInt64, t UInt64, u UInt64, v UInt64, w UInt64, x UInt64, y UInt64, z UInt64) ENGINE = MergeTree PARTITION BY x ORDER BY x</create_query>
     <fill_query>INSERT INTO bad_partitions (x) SELECT * FROM numbers_mt(3000)</fill_query>
+
+
+
+    <settings>
+        <max_partitions_per_insert_block>0</max_partitions_per_insert_block>
+    </settings>
 
     <query>SELECT sum(ignore(*)) FROM bad_partitions</query>
 

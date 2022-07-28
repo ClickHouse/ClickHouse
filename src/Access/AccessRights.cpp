@@ -1,8 +1,8 @@
 #include <Access/AccessRights.h>
-#include <Common/logger_useful.h>
-#include <base/sort.h>
+#include <common/logger_useful.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/sort.hpp>
 #include <unordered_map>
 
 namespace DB
@@ -101,7 +101,7 @@ namespace
         AccessRightsElements getResult() const
         {
             ProtoElements sorted = *this;
-            ::sort(sorted.begin(), sorted.end());
+            boost::range::sort(sorted);
             AccessRightsElements res;
             res.reserve(sorted.size());
 
@@ -645,7 +645,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.addGrantsRec(rhs.flags);
+                    lhs_child.flags |= rhs.flags & lhs_child.getAllGrantableFlags();
             }
         }
     }
@@ -663,7 +663,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.removeGrantsRec(~rhs.flags);
+                    lhs_child.flags &= rhs.flags;
             }
         }
     }
@@ -706,8 +706,8 @@ private:
 
 AccessRights::AccessRights() = default;
 AccessRights::~AccessRights() = default;
-AccessRights::AccessRights(AccessRights && src) noexcept = default;
-AccessRights & AccessRights::operator =(AccessRights && src) noexcept = default;
+AccessRights::AccessRights(AccessRights && src) = default;
+AccessRights & AccessRights::operator =(AccessRights && src) = default;
 
 
 AccessRights::AccessRights(const AccessRights & src)
@@ -733,18 +733,6 @@ AccessRights & AccessRights::operator =(const AccessRights & src)
 AccessRights::AccessRights(const AccessFlags & access)
 {
     grant(access);
-}
-
-
-AccessRights::AccessRights(const AccessRightsElement & element)
-{
-    grant(element);
-}
-
-
-AccessRights::AccessRights(const AccessRightsElements & elements)
-{
-    grant(elements);
 }
 
 
@@ -1043,15 +1031,17 @@ void AccessRights::makeIntersection(const AccessRights & other)
     auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
     {
         if (!root_node)
-            return;
-        if (!other_root_node)
         {
-            root_node = nullptr;
+            if (other_root_node)
+                root_node = std::make_unique<Node>(*other_root_node);
             return;
         }
-        root_node->makeIntersection(*other_root_node);
-        if (!root_node->flags && !root_node->children)
-            root_node = nullptr;
+        if (other_root_node)
+        {
+            root_node->makeIntersection(*other_root_node);
+            if (!root_node->flags && !root_node->children)
+                root_node = nullptr;
+        }
     };
     helper(root, other.root);
     helper(root_with_grant_option, other.root_with_grant_option);

@@ -2,9 +2,10 @@
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
@@ -112,7 +113,7 @@ MagicNumber serializeTypeId(TypeIndex type_id)
             break;
     }
 
-    throw Exception("Type is not supported by T64 codec: " + toString(static_cast<UInt32>(type_id)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Type is not supported by T64 codec: " + toString(UInt32(type_id)), ErrorCodes::LOGICAL_ERROR);
 }
 
 TypeIndex deserializeTypeId(uint8_t serialized_type_id)
@@ -137,7 +138,7 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Decimal64:    return TypeIndex::Decimal64;
     }
 
-    throw Exception("Bad magic number in T64 codec: " + toString(static_cast<UInt32>(serialized_type_id)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception("Bad magic number in T64 codec: " + toString(UInt32(serialized_type_id)), ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -284,22 +285,22 @@ void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
 
     if constexpr (sizeof(T) > 4)
     {
-        value |= static_cast<UInt64>(matrix8[64 * 7 + col]) << (8 * 7);
-        value |= static_cast<UInt64>(matrix8[64 * 6 + col]) << (8 * 6);
-        value |= static_cast<UInt64>(matrix8[64 * 5 + col]) << (8 * 5);
-        value |= static_cast<UInt64>(matrix8[64 * 4 + col]) << (8 * 4);
+        value |= UInt64(matrix8[64 * 7 + col]) << (8 * 7);
+        value |= UInt64(matrix8[64 * 6 + col]) << (8 * 6);
+        value |= UInt64(matrix8[64 * 5 + col]) << (8 * 5);
+        value |= UInt64(matrix8[64 * 4 + col]) << (8 * 4);
     }
 
     if constexpr (sizeof(T) > 2)
     {
-        value |= static_cast<UInt32>(matrix8[64 * 3 + col]) << (8 * 3);
-        value |= static_cast<UInt32>(matrix8[64 * 2 + col]) << (8 * 2);
+        value |= UInt32(matrix8[64 * 3 + col]) << (8 * 3);
+        value |= UInt32(matrix8[64 * 2 + col]) << (8 * 2);
     }
 
     if constexpr (sizeof(T) > 1)
-        value |= static_cast<UInt32>(matrix8[64 * 1 + col]) << (8 * 1);
+        value |= UInt32(matrix8[64 * 1 + col]) << (8 * 1);
 
-    value |= static_cast<UInt32>(matrix8[col]);
+    value |= UInt32(matrix8[col]);
 }
 
 
@@ -422,12 +423,12 @@ UInt32 getValuableBitsNumber(Int64 min, Int64 max)
     if (min < 0 && max >= 0)
     {
         if (min + max >= 0)
-            return getValuableBitsNumber(0ull, static_cast<UInt64>(max)) + 1;
+            return getValuableBitsNumber(0ull, UInt64(max)) + 1;
         else
-            return getValuableBitsNumber(0ull, static_cast<UInt64>(~min)) + 1;
+            return getValuableBitsNumber(0ull, UInt64(~min)) + 1;
     }
     else
-        return getValuableBitsNumber(static_cast<UInt64>(min), static_cast<UInt64>(max));
+        return getValuableBitsNumber(UInt64(min), UInt64(max));
 }
 
 
@@ -559,14 +560,14 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     T upper_max [[maybe_unused]] = 0;
     T sign_bit [[maybe_unused]] = 0;
     if (num_bits < 64)
-        upper_min = static_cast<UInt64>(min) >> num_bits << num_bits;
+        upper_min = UInt64(min) >> num_bits << num_bits;
 
     if constexpr (is_signed_v<T>)
     {
         if (min < 0 && max >= 0 && num_bits < 64)
         {
             sign_bit = 1ull << (num_bits - 1);
-            upper_max = static_cast<UInt64>(max) >> num_bits << num_bits;
+            upper_max = UInt64(max) >> num_bits << num_bits;
         }
     }
 

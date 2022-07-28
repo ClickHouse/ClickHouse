@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -14,65 +14,25 @@
 namespace DB
 {
 
-class DictionaryHierarchicalParentToChildIndex;
-using DictionaryHierarchyParentToChildIndexPtr = std::shared_ptr<DictionaryHierarchicalParentToChildIndex>;
-
-class DictionaryHierarchicalParentToChildIndex
-{
-public:
-    struct KeysRange
-    {
-        UInt32 start_index;
-        UInt32 end_index;
-    };
-
-    explicit DictionaryHierarchicalParentToChildIndex(const HashMap<UInt64, PaddedPODArray<UInt64>> & parent_to_children_map_)
-    {
-        size_t parent_to_children_map_size = parent_to_children_map_.size();
-
-        keys.reserve(parent_to_children_map_size);
-        parent_to_children_keys_range.reserve(parent_to_children_map_size);
-
-        for (const auto & [parent, children] : parent_to_children_map_)
-        {
-            size_t keys_size = keys.size();
-            UInt32 start_index = static_cast<UInt32>(keys_size);
-            UInt32 end_index = start_index + static_cast<UInt32>(children.size());
-
-            keys.insert(children.begin(), children.end());
-
-            parent_to_children_keys_range[parent] = KeysRange{start_index, end_index};
-        }
-    }
-
-    size_t getSizeInBytes() const
-    {
-        return parent_to_children_keys_range.getBufferSizeInBytes() + (keys.size() * sizeof(UInt64));
-    }
-
-    /// Map parent key to range of children from keys array
-    HashMap<UInt64, KeysRange> parent_to_children_keys_range;
-
-    /// Array of keys in hierarchy
-    PaddedPODArray<UInt64> keys;
-};
-
 namespace detail
 {
+    template <typename KeyType>
     struct ElementsAndOffsets
     {
-        PaddedPODArray<UInt64> elements;
+        PaddedPODArray<KeyType> elements;
         PaddedPODArray<IColumn::Offset> offsets;
     };
 
+    template <typename T>
     struct IsKeyValidFuncInterface
     {
-        bool operator()(UInt64 key [[maybe_unused]]) { return false; }
+        bool operator()(T key [[maybe_unused]]) { return false; }
     };
 
+    template <typename T>
     struct GetParentKeyFuncInterface
     {
-        std::optional<UInt64> operator()(UInt64 key [[maybe_unused]]) { return {}; }
+        std::optional<T> operator()(T key [[maybe_unused]]) { return {}; }
     };
 
     /** Calculate hierarchy for keys iterating the hierarchy from child to parent using get_parent_key_func provided by client.
@@ -94,15 +54,16 @@ namespace detail
       * Elements: [1, 2, 1, 3, 1, 4, 2, 1]
       * Offsets: [1, 3, 5, 8, 8]
       */
-    template <typename IsKeyValidFunc, typename GetParentKeyFunc>
-    ElementsAndOffsets getHierarchy(
-        const PaddedPODArray<UInt64> & keys,
+    template <typename KeyType, typename IsKeyValidFunc, typename GetParentKeyFunc>
+    ElementsAndOffsets<KeyType> getHierarchy(
+        const PaddedPODArray<KeyType> & keys,
+        const KeyType & hierarchy_null_value,
         IsKeyValidFunc && is_key_valid_func,
         GetParentKeyFunc && get_parent_key_func)
     {
         size_t hierarchy_keys_size = keys.size();
 
-        PaddedPODArray<UInt64> elements;
+        PaddedPODArray<KeyType> elements;
         elements.reserve(hierarchy_keys_size);
 
         PaddedPODArray<IColumn::Offset> offsets;
@@ -114,7 +75,7 @@ namespace detail
             size_t array_element_offset;
         };
 
-        HashMap<UInt64, OffsetInArray> already_processes_keys_to_offset;
+        HashMap<KeyType, OffsetInArray> already_processes_keys_to_offset;
         already_processes_keys_to_offset.reserve(hierarchy_keys_size);
 
         for (size_t i = 0; i < hierarchy_keys_size; ++i)
@@ -155,14 +116,14 @@ namespace detail
                     break;
                 }
 
-                if (current_hierarchy_depth >= DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH)
+                if (hierarchy_key == hierarchy_null_value || current_hierarchy_depth >= DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH)
                     break;
 
                 already_processes_keys_to_offset[hierarchy_key] = {offsets.size(), current_hierarchy_depth};
                 elements.emplace_back(hierarchy_key);
                 ++current_hierarchy_depth;
 
-                std::optional<UInt64> parent_key = std::forward<GetParentKeyFunc>(get_parent_key_func)(hierarchy_key);
+                std::optional<KeyType> parent_key = std::forward<GetParentKeyFunc>(get_parent_key_func)(hierarchy_key);
 
                 if (!parent_key.has_value())
                     break;
@@ -173,7 +134,7 @@ namespace detail
             offsets.emplace_back(elements.size());
         }
 
-        ElementsAndOffsets result = {std::move(elements), std::move(offsets)};
+        ElementsAndOffsets<KeyType> result = {std::move(elements), std::move(offsets)};
 
         return result;
     }
@@ -185,10 +146,11 @@ namespace detail
       *
       * Not: keys size must be equal to in_keys_size.
       */
-    template <typename IsKeyValidFunc, typename GetParentKeyFunc>
+    template <typename KeyType, typename IsKeyValidFunc, typename GetParentKeyFunc>
     PaddedPODArray<UInt8> getIsInHierarchy(
-        const PaddedPODArray<UInt64> & keys,
-        const PaddedPODArray<UInt64> & in_keys,
+        const PaddedPODArray<KeyType> & keys,
+        const PaddedPODArray<KeyType> & in_keys,
+        const KeyType & hierarchy_null_value,
         IsKeyValidFunc && is_key_valid_func,
         GetParentKeyFunc && get_parent_func)
     {
@@ -197,8 +159,9 @@ namespace detail
         PaddedPODArray<UInt8> result;
         result.resize_fill(keys.size());
 
-        detail::ElementsAndOffsets hierarchy = detail::getHierarchy(
+        detail::ElementsAndOffsets<KeyType> hierarchy = detail::getHierarchy(
             keys,
+            hierarchy_null_value,
             std::forward<IsKeyValidFunc>(is_key_valid_func),
             std::forward<GetParentKeyFunc>(get_parent_func));
 
@@ -210,7 +173,7 @@ namespace detail
             size_t i_elements_start = i > 0 ? offsets[i - 1] : 0;
             size_t i_elements_end = offsets[i];
 
-            const auto & key_to_find = in_keys[i];
+            auto & key_to_find = in_keys[i];
 
             const auto * begin = elements.begin() + i_elements_start;
             const auto * end = elements.begin() + i_elements_end;
@@ -253,22 +216,19 @@ namespace detail
       * Result: [1], [2, 3], [4], [], [];
       * Offsets: [1, 3, 4, 4, 4];
       */
-    template <typename Strategy>
-    ElementsAndOffsets getDescendants(
-        const PaddedPODArray<UInt64> & keys,
-        const DictionaryHierarchicalParentToChildIndex & parent_to_child_index,
+    template <typename KeyType, typename Strategy>
+    ElementsAndOffsets<KeyType> getDescendants(
+        const PaddedPODArray<KeyType> & keys,
+        const HashMap<KeyType, PaddedPODArray<KeyType>> & parent_to_child,
         Strategy strategy,
         size_t & valid_keys)
     {
-        const auto & parent_to_children_keys_range = parent_to_child_index.parent_to_children_keys_range;
-        const auto & children_keys = parent_to_child_index.keys;
-
         /// If strategy is GetAllDescendantsStrategy we try to cache and later reuse previously calculated descendants.
         /// If strategy is GetDescendantsAtSpecificLevelStrategy we does not use cache strategy.
         size_t keys_size = keys.size();
         valid_keys = 0;
 
-        PaddedPODArray<UInt64> descendants;
+        PaddedPODArray<KeyType> descendants;
         descendants.reserve(keys_size);
 
         PaddedPODArray<IColumn::Offset> descendants_offsets;
@@ -281,18 +241,18 @@ namespace detail
         };
 
         static constexpr Int64 key_range_requires_update = -1;
-        HashMap<UInt64, Range> already_processed_keys_to_range [[maybe_unused]];
+        HashMap<KeyType, Range> already_processed_keys_to_range [[maybe_unused]];
 
         if constexpr (std::is_same_v<Strategy, GetAllDescendantsStrategy>)
             already_processed_keys_to_range.reserve(keys_size);
 
         struct KeyAndDepth
         {
-            UInt64 key;
+            KeyType key;
             Int64 depth;
         };
 
-        HashSet<UInt64> already_processed_keys_during_loop;
+        HashSet<KeyType> already_processed_keys_during_loop;
         already_processed_keys_during_loop.reserve(keys_size);
 
         PaddedPODArray<KeyAndDepth> next_keys_to_process_stack;
@@ -302,9 +262,9 @@ namespace detail
 
         for (size_t i = 0; i < keys_size; ++i)
         {
-            const UInt64 & requested_key = keys[i];
+            const KeyType & requested_key = keys[i];
 
-            if (parent_to_children_keys_range.find(requested_key) == nullptr)
+            if (parent_to_child.find(requested_key) == nullptr)
             {
                 descendants_offsets.emplace_back(descendants.size());
                 continue;
@@ -322,7 +282,7 @@ namespace detail
             {
                 KeyAndDepth key_to_process = next_keys_to_process_stack.back();
 
-                UInt64 key = key_to_process.key;
+                KeyType key = key_to_process.key;
                 Int64 depth = key_to_process.depth;
                 next_keys_to_process_stack.pop_back();
 
@@ -369,7 +329,7 @@ namespace detail
                     }
                 }
 
-                const auto * it = parent_to_children_keys_range.find(key);
+                const auto * it = parent_to_child.find(key);
 
                 if (!it || depth >= DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH)
                     continue;
@@ -392,25 +352,14 @@ namespace detail
 
                 ++depth;
 
-                DictionaryHierarchicalParentToChildIndex::KeysRange children_range = it->getMapped();
+                const auto & children = it->getMapped();
 
-                for (; children_range.start_index < children_range.end_index; ++children_range.start_index)
+                for (auto child_key : children)
                 {
-                    auto child_key = children_keys[children_range.start_index];
-
                     /// In case of GetAllDescendantsStrategy we add any descendant to result array
                     /// If strategy is GetDescendantsAtSpecificLevelStrategy we require depth == level
-                    if constexpr (std::is_same_v<Strategy, GetAllDescendantsStrategy>)
+                    if (std::is_same_v<Strategy, GetAllDescendantsStrategy> || depth == level)
                         descendants.emplace_back(child_key);
-
-                    if constexpr (std::is_same_v<Strategy, GetDescendantsAtSpecificLevelStrategy>)
-                    {
-                        if (depth == level)
-                        {
-                            descendants.emplace_back(child_key);
-                            continue;
-                        }
-                    }
 
                     next_keys_to_process_stack.emplace_back(KeyAndDepth{child_key, depth});
                 }
@@ -421,23 +370,37 @@ namespace detail
             descendants_offsets.emplace_back(descendants.size());
         }
 
-        ElementsAndOffsets result = {std::move(descendants), std::move(descendants_offsets)};
+        ElementsAndOffsets<KeyType> result = {std::move(descendants), std::move(descendants_offsets)};
         return result;
     }
 
     /// Converts ElementAndOffsets structure into ArrayColumn
-    ColumnPtr convertElementsAndOffsetsIntoArray(ElementsAndOffsets && elements_and_offsets);
+    template<typename KeyType>
+    ColumnPtr convertElementsAndOffsetsIntoArray(ElementsAndOffsets<KeyType> && elements_and_offsets)
+    {
+        auto elements_column = ColumnVector<KeyType>::create();
+        elements_column->getData() = std::move(elements_and_offsets.elements);
+
+        auto offsets_column = ColumnVector<IColumn::Offset>::create();
+        offsets_column->getData() = std::move(elements_and_offsets.offsets);
+
+        auto column_array = ColumnArray::create(std::move(elements_column), std::move(offsets_column));
+
+        return column_array;
+    }
 }
 
 /// Returns hierarchy array column for keys
 template <typename KeyType, typename IsKeyValidFunc, typename GetParentKeyFunc>
 ColumnPtr getKeysHierarchyArray(
     const PaddedPODArray<KeyType> & keys,
+    const KeyType & hierarchy_null_value,
     IsKeyValidFunc && is_key_valid_func,
     GetParentKeyFunc && get_parent_func)
 {
     auto elements_and_offsets = detail::getHierarchy(
         keys,
+        hierarchy_null_value,
         std::forward<IsKeyValidFunc>(is_key_valid_func),
         std::forward<GetParentKeyFunc>(get_parent_func));
 
@@ -449,12 +412,14 @@ template <typename KeyType, typename IsKeyValidFunc, typename GetParentKeyFunc>
 ColumnUInt8::Ptr getKeysIsInHierarchyColumn(
     const PaddedPODArray<KeyType> & hierarchy_keys,
     const PaddedPODArray<KeyType> & hierarchy_in_keys,
+    const KeyType & hierarchy_null_value,
     IsKeyValidFunc && is_key_valid_func,
     GetParentKeyFunc && get_parent_func)
 {
     auto is_in_hierarchy_data = detail::getIsInHierarchy(
         hierarchy_keys,
         hierarchy_in_keys,
+        hierarchy_null_value,
         std::forward<IsKeyValidFunc>(is_key_valid_func),
         std::forward<GetParentKeyFunc>(get_parent_func));
 
@@ -467,11 +432,26 @@ ColumnUInt8::Ptr getKeysIsInHierarchyColumn(
 /// Returns descendants array column for keys
 ///
 /// @param valid_keys - number of keys that are valid in parent_to_child map
+template <typename KeyType>
 ColumnPtr getKeysDescendantsArray(
-    const PaddedPODArray<UInt64> & requested_keys,
-    const DictionaryHierarchicalParentToChildIndex & parent_to_child_index,
+    const PaddedPODArray<KeyType> & requested_keys,
+    const HashMap<KeyType, PaddedPODArray<KeyType>> & parent_to_child,
     size_t level,
-    size_t & valid_keys);
+    size_t & valid_keys)
+{
+    if (level == 0)
+    {
+        detail::GetAllDescendantsStrategy strategy { .level = level };
+        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child, strategy, valid_keys);
+        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
+    }
+    else
+    {
+        detail::GetDescendantsAtSpecificLevelStrategy strategy { .level = level };
+        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child, strategy, valid_keys);
+        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
+    }
+}
 
 /** Default getHierarchy implementation for dictionaries that does not have structure with child to parent representation.
   * Implementation will build such structure with getColumn calls, and then getHierarchy for such structure.

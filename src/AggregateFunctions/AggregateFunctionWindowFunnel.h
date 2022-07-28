@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static constexpr size_t max_events = 32;
+static constexpr auto max_events = 32;
 
 template <typename T>
 struct AggregateFunctionWindowFunnelData
@@ -283,12 +283,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

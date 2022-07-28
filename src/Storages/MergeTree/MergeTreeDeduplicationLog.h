@@ -1,8 +1,8 @@
 #pragma once
 #include <Core/Types.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Disks/IDisk.h>
 #include <map>
 #include <list>
 #include <mutex>
@@ -137,8 +137,7 @@ public:
     MergeTreeDeduplicationLog(
         const std::string & logs_dir_,
         size_t deduplication_window_,
-        const MergeTreeDataFormatVersion & format_version_,
-        DiskPtr disk_);
+        const MergeTreeDataFormatVersion & format_version_);
 
     /// Add part into in-memory hash table and to disk
     /// Return true and part info if insertion was successful.
@@ -152,10 +151,6 @@ public:
     void load();
 
     void setDeduplicationWindowSize(size_t deduplication_window_);
-
-    void shutdown();
-
-    ~MergeTreeDeduplicationLog();
 private:
     const std::string logs_dir;
     /// Size of deduplication window
@@ -176,15 +171,10 @@ private:
     LimitedOrderedHashMap<MergeTreePartInfo> deduplication_map;
 
     /// Writer to the current log file
-    std::unique_ptr<WriteBufferFromFileBase> current_writer;
+    std::unique_ptr<WriteBufferFromFile> current_writer;
 
     /// Overall mutex because we can have a lot of cocurrent inserts
     std::mutex state_mutex;
-
-    /// Disk where log is stored
-    DiskPtr disk;
-
-    bool stopped{false};
 
     /// Start new log
     void rotate();

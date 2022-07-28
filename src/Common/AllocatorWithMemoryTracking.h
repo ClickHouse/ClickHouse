@@ -15,12 +15,12 @@
 template <typename T>
 struct AllocatorWithMemoryTracking
 {
-    using value_type = T;
+    typedef T value_type;
 
     AllocatorWithMemoryTracking() = default;
 
     template <typename U>
-    constexpr explicit AllocatorWithMemoryTracking(const AllocatorWithMemoryTracking<U> &) noexcept
+    constexpr AllocatorWithMemoryTracking(const AllocatorWithMemoryTracking<U> &) noexcept
     {
     }
 

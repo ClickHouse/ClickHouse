@@ -2,7 +2,6 @@
 
 #include <mutex>
 #include <memory>
-#include <base/defines.h>
 
 
 /** Allow to store and read-only usage of an object in several threads,
@@ -31,7 +30,7 @@ public:
     /// Default initialization - by nullptr.
     MultiVersion() = default;
 
-    explicit MultiVersion(std::unique_ptr<const T> && value)
+    MultiVersion(std::unique_ptr<const T> && value)
     {
         set(std::move(value));
     }
@@ -52,6 +51,6 @@ public:
     }
 
 private:
-    Version current_version TSA_GUARDED_BY(mutex);
+    Version current_version;
     mutable std::mutex mutex;
 };

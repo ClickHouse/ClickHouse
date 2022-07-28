@@ -1,9 +1,10 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 #include <Interpreters/JoinSwitcher.h>
 
 #include <Common/JSONBuilder.h>
@@ -38,7 +39,20 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr a
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
-void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void ExpressionStep::updateInputStream(DataStream input_stream, bool keep_header)
+{
+    Block out_header = keep_header ? std::move(output_stream->header)
+                                   : ExpressionTransform::transformHeader(input_stream.header, *actions_dag);
+    output_stream = createOutputStream(
+            input_stream,
+            std::move(out_header),
+            getDataStreamTraits());
+
+    input_streams.clear();
+    input_streams.emplace_back(std::move(input_stream));
+}
+
+void ExpressionStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
 
@@ -86,12 +100,6 @@ void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag);
     map.add("Expression", expression->toTree());
-}
-
-void ExpressionStep::updateOutputStream()
-{
-    output_stream = createOutputStream(
-        input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
 }
 
 }

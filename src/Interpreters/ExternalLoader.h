@@ -3,11 +3,11 @@
 #include <chrono>
 #include <functional>
 #include <unordered_map>
-#include <base/types.h>
+#include <common/types.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
-#include <Common/logger_useful.h>
-#include <base/scope_guard.h>
+#include <common/logger_useful.h>
+#include <common/scope_guard.h>
 #include <Common/ExternalLoaderStatus.h>
 
 

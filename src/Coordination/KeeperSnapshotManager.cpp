@@ -1,18 +1,15 @@
+#include <Coordination/KeeperSnapshotManager.h>
+#include <IO/WriteHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Coordination/KeeperSnapshotManager.h>
+#include <IO/ReadHelpers.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/copyData.h>
-#include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Coordination/pathUtils.h>
 #include <filesystem>
-#include <memory>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -35,17 +32,28 @@ namespace
         return parse<uint64_t>(name_parts[1]);
     }
 
-    std::string getSnapshotFileName(uint64_t up_to_log_idx, bool compress_zstd)
+    std::string getSnapshotFileName(uint64_t up_to_log_idx)
     {
-        auto base = std::string{"snapshot_"} + std::to_string(up_to_log_idx) + ".bin";
-        if (compress_zstd)
-            base += ".zstd";
-        return base;
+        return std::string{"snapshot_"} + std::to_string(up_to_log_idx) + ".bin";
     }
 
-    void writeNode(const KeeperStorage::Node & node, SnapshotVersion version, WriteBuffer & out)
+    std::string getBaseName(const String & path)
     {
-        writeBinary(node.getData(), out);
+        size_t basename_start = path.rfind('/');
+        return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
+    }
+
+    String parentPath(const String & path)
+    {
+        auto rslash_pos = path.rfind('/');
+        if (rslash_pos > 0)
+            return path.substr(0, rslash_pos);
+        return "/";
+    }
+
+    void writeNode(const KeeperStorage::Node & node, WriteBuffer & out)
+    {
+        writeBinary(node.data, out);
 
         /// Serialize ACL
         writeBinary(node.acl_id, out);
@@ -64,18 +72,11 @@ namespace
         writeBinary(node.stat.pzxid, out);
 
         writeBinary(node.seq_num, out);
-
-        if (version >= SnapshotVersion::V4)
-        {
-            writeBinary(node.size_bytes, out);
-        }
     }
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
     {
-        String new_data;
-        readBinary(new_data, in);
-        node.setData(std::move(new_data));
+        readBinary(node.data, in);
 
         if (version >= SnapshotVersion::V1)
         {
@@ -119,11 +120,6 @@ namespace
         readBinary(node.stat.numChildren, in);
         readBinary(node.stat.pzxid, in);
         readBinary(node.seq_num, in);
-
-        if (version >= SnapshotVersion::V4)
-        {
-            readBinary(node.size_bytes, in);
-        }
     }
 
     void serializeSnapshotMetadata(const SnapshotMetadataPtr & snapshot_meta, WriteBuffer & out)
@@ -149,27 +145,11 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
 {
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
-
-    if (snapshot.version >= SnapshotVersion::V5)
-    {
-        writeBinary(snapshot.zxid, out);
-        if (snapshot.storage->digest_enabled)
-        {
-            writeBinary(static_cast<uint8_t>(KeeperStorage::CURRENT_DIGEST_VERSION), out);
-            writeBinary(snapshot.nodes_digest, out);
-        }
-        else
-            writeBinary(static_cast<uint8_t>(KeeperStorage::NO_DIGEST), out);
-    }
-
     writeBinary(snapshot.session_id, out);
 
-    /// Better to sort before serialization, otherwise snapshots can be different on different replicas
-    std::vector<std::pair<int64_t, Coordination::ACLs>> sorted_acl_map(snapshot.acl_map.begin(), snapshot.acl_map.end());
-    ::sort(sorted_acl_map.begin(), sorted_acl_map.end());
-    /// Serialize ACLs map
-    writeBinary(sorted_acl_map.size(), out);
-    for (const auto & [acl_id, acls] : sorted_acl_map)
+    /// Serialize ACLs MAP
+    writeBinary(snapshot.acl_map.size(), out);
+    for (const auto & [acl_id, acls] : snapshot.acl_map)
     {
         writeBinary(acl_id, out);
         writeBinary(acls.size(), out);
@@ -188,14 +168,11 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     {
         const auto & path = it->key;
         const auto & node = it->value;
-        /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
-        /// and only after some time we lock storage and enable snapshot mode. So snapshot_container_size can be
-        /// slightly bigger than required.
-        if (node.stat.mzxid > snapshot.zxid)
-            break;
+        if (static_cast<size_t>(node.stat.mzxid) > snapshot.snapshot_meta->get_last_log_idx())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node.stat.mzxid, snapshot.snapshot_meta->get_last_log_idx());
 
         writeBinary(path, out);
-        writeNode(node, snapshot.version, out);
+        writeNode(node, out);
 
         /// Last iteration: check and exit here without iterator increment. Otherwise
         /// false positive race condition on list end is possible.
@@ -205,23 +182,16 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         ++it;
     }
 
-    /// Session must be saved in a sorted order,
-    /// otherwise snapshots will be different
-    std::vector<std::pair<int64_t, int64_t>> sorted_session_and_timeout(
-        snapshot.session_and_timeout.begin(), snapshot.session_and_timeout.end());
-    ::sort(sorted_session_and_timeout.begin(), sorted_session_and_timeout.end());
-
     /// Serialize sessions
-    size_t size = sorted_session_and_timeout.size();
-
+    size_t size = snapshot.session_and_timeout.size();
     writeBinary(size, out);
-    for (const auto & [session_id, timeout] : sorted_session_and_timeout)
+    for (const auto & [session_id, timeout] : snapshot.session_and_timeout)
     {
         writeBinary(session_id, out);
         writeBinary(timeout, out);
 
         KeeperStorage::AuthIDs ids;
-        if (snapshot.session_and_auth.contains(session_id))
+        if (snapshot.session_and_auth.count(session_id))
             ids = snapshot.session_and_auth.at(session_id);
 
         writeBinary(ids.size(), out);
@@ -231,17 +201,9 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
             writeBinary(id, out);
         }
     }
-
-    /// Serialize cluster config
-    if (snapshot.cluster_config)
-    {
-        auto buffer = snapshot.cluster_config->serialize();
-        writeVarUInt(buffer->size(), out);
-        out.write(reinterpret_cast<const char *>(buffer->data_begin()), buffer->size());
-    }
 }
 
-void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in)
+SnapshotMetadataPtr KeeperStorageSnapshot::deserialize(KeeperStorage & storage, ReadBuffer & in)
 {
     uint8_t version;
     readBinary(version, in);
@@ -249,40 +211,13 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     if (current_version > CURRENT_SNAPSHOT_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
 
-    deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
-    KeeperStorage & storage = *deserialization_result.storage;
-
-    bool recalculate_digest = storage.digest_enabled;
-    if (version >= SnapshotVersion::V5)
-    {
-        readBinary(storage.zxid, in);
-        uint8_t digest_version;
-        readBinary(digest_version, in);
-        if (digest_version != KeeperStorage::DigestVersion::NO_DIGEST)
-        {
-            uint64_t nodes_digest;
-            readBinary(nodes_digest, in);
-            if (digest_version == KeeperStorage::CURRENT_DIGEST_VERSION)
-            {
-                storage.nodes_digest = nodes_digest;
-                recalculate_digest = false;
-            }
-        }
-
-        storage.old_snapshot_zxid = 0;
-    }
-    else
-    {
-        storage.zxid = deserialization_result.snapshot_meta->get_last_log_idx();
-        storage.old_snapshot_zxid = storage.zxid;
-    }
-
+    SnapshotMetadataPtr result = deserializeSnapshotMetadata(in);
     int64_t session_id;
     readBinary(session_id, in);
 
+    storage.zxid = result->get_last_log_idx();
     storage.session_id_counter = session_id;
 
-    /// Before V1 we serialized ACL without acl_map
     if (current_version >= SnapshotVersion::V1)
     {
         size_t acls_map_size;
@@ -313,9 +248,6 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
     size_t snapshot_container_size;
     readBinary(snapshot_container_size, in);
 
-    if (recalculate_digest)
-        storage.nodes_digest = 0;
-
     size_t current_size = 0;
     while (current_size < snapshot_container_size)
     {
@@ -328,9 +260,6 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
             storage.ephemerals[node.stat.ephemeralOwner].insert(path);
 
         current_size++;
-
-        if (recalculate_digest)
-            storage.nodes_digest += node.getDigest(path);
     }
 
     for (const auto & itr : storage.container)
@@ -338,29 +267,9 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(
-                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
+            storage.container.updateValue(parent_path, [&path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
         }
     }
-
-    for (const auto & itr : storage.container)
-    {
-        if (itr.key != "/")
-        {
-            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
-            {
-#ifdef NDEBUG
-                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-#else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-#endif
-            }
-        }
-    }
-
 
     size_t active_sessions_size;
     readBinary(active_sessions_size, in);
@@ -395,48 +304,29 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         current_session_size++;
     }
 
-    /// Optional cluster config
-    ClusterConfigPtr cluster_config = nullptr;
-    if (!in.eof())
-    {
-        size_t data_size;
-        readVarUInt(data_size, in);
-        auto buffer = nuraft::buffer::alloc(data_size);
-        in.readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);
-        buffer->pos(0);
-        deserialization_result.cluster_config = ClusterConfig::deserialize(*buffer);
-    }
+    return result;
 }
 
-KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_)
+KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_)
     : storage(storage_)
     , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
     , session_id(storage->session_id_counter)
-    , cluster_config(cluster_config_)
-    , zxid(storage->zxid)
-    , nodes_digest(storage->nodes_digest)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
+    storage->enableSnapshotMode();
+    snapshot_container_size = storage->container.snapshotSize();
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->session_and_auth;
 }
 
-KeeperStorageSnapshot::KeeperStorageSnapshot(
-    KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_)
+KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_)
     : storage(storage_)
     , snapshot_meta(snapshot_meta_)
     , session_id(storage->session_id_counter)
-    , cluster_config(cluster_config_)
-    , zxid(storage->zxid)
-    , nodes_digest(storage->nodes_digest)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
+    storage->enableSnapshotMode();
+    snapshot_container_size = storage->container.snapshotSize();
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
@@ -448,19 +338,11 @@ KeeperStorageSnapshot::~KeeperStorageSnapshot()
     storage->disableSnapshotMode();
 }
 
-KeeperSnapshotManager::KeeperSnapshotManager(
-    const std::string & snapshots_path_,
-    size_t snapshots_to_keep_,
-    bool compress_snapshots_zstd_,
-    const std::string & superdigest_,
-    size_t storage_tick_time_,
-    const bool digest_enabled_)
+KeeperSnapshotManager::KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, const std::string & superdigest_, size_t storage_tick_time_)
     : snapshots_path(snapshots_path_)
     , snapshots_to_keep(snapshots_to_keep_)
-    , compress_snapshots_zstd(compress_snapshots_zstd_)
     , superdigest(superdigest_)
     , storage_tick_time(storage_tick_time_)
-    , digest_enabled(digest_enabled_)
 {
     namespace fs = std::filesystem;
 
@@ -498,7 +380,7 @@ std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer 
 {
     ReadBufferFromNuraftBuffer reader(buffer);
 
-    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
+    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx);
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
     std::string tmp_snapshot_path = std::filesystem::path{snapshots_path} / tmp_snapshot_file_name;
     std::string new_snapshot_path = std::filesystem::path{snapshots_path} / snapshot_file_name;
@@ -544,51 +426,26 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFrom
     return writer.getBuffer();
 }
 
-nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot) const
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot)
 {
-    std::unique_ptr<WriteBufferFromNuraftBuffer> writer = std::make_unique<WriteBufferFromNuraftBuffer>();
-    auto * buffer_raw_ptr = writer.get();
-    std::unique_ptr<WriteBuffer> compressed_writer;
-    if (compress_snapshots_zstd)
-        compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
-    else
-        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+    WriteBufferFromNuraftBuffer writer;
+    CompressedWriteBuffer compressed_writer(writer);
 
-    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer);
-    compressed_writer->finalize();
-    return buffer_raw_ptr->getBuffer();
+    KeeperStorageSnapshot::serialize(snapshot, compressed_writer);
+    compressed_writer.finalize();
+    return writer.getBuffer();
 }
 
-
-bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
+SnapshotMetaAndStorage KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
-    static constexpr uint32_t ZSTD_COMPRESSED_MAGIC = 0xFD2FB528;
     ReadBufferFromNuraftBuffer reader(buffer);
-    uint32_t magic_from_buffer;
-    reader.readStrict(reinterpret_cast<char *>(&magic_from_buffer), sizeof(magic_from_buffer));
-    buffer->pos(0);
-    return magic_from_buffer == ZSTD_COMPRESSED_MAGIC;
+    CompressedReadBuffer compressed_reader(reader);
+    auto storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest);
+    auto snapshot_metadata = KeeperStorageSnapshot::deserialize(*storage, compressed_reader);
+    return std::make_pair(snapshot_metadata, std::move(storage));
 }
 
-SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
-{
-    bool is_zstd_compressed = isZstdCompressed(buffer);
-
-    std::unique_ptr<ReadBufferFromNuraftBuffer> reader = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
-    std::unique_ptr<ReadBuffer> compressed_reader;
-
-    if (is_zstd_compressed)
-        compressed_reader = wrapReadBufferWithCompressionMethod(std::move(reader), CompressionMethod::Zstd);
-    else
-        compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
-
-    SnapshotDeserializationResult result;
-    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, digest_enabled);
-    KeeperStorageSnapshot::deserialize(result, *compressed_reader);
-    return result;
-}
-
-SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot()
+SnapshotMetaAndStorage KeeperSnapshotManager::restoreFromLatestSnapshot()
 {
     if (existing_snapshots.empty())
         return {};
@@ -612,35 +469,8 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
     std::filesystem::remove(itr->second);
     existing_snapshots.erase(itr);
+
 }
 
-std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)
-{
-    auto up_to_log_idx = snapshot.snapshot_meta->get_last_log_idx();
-    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
-    auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
-    std::string tmp_snapshot_path = std::filesystem::path{snapshots_path} / tmp_snapshot_file_name;
-    std::string new_snapshot_path = std::filesystem::path{snapshots_path} / snapshot_file_name;
-
-    auto writer = std::make_unique<WriteBufferFromFile>(tmp_snapshot_path, O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC | O_APPEND);
-    std::unique_ptr<WriteBuffer> compressed_writer;
-    if (compress_snapshots_zstd)
-        compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
-    else
-        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
-
-    KeeperStorageSnapshot::serialize(snapshot, *compressed_writer);
-    compressed_writer->finalize();
-    compressed_writer->sync();
-
-    std::error_code ec;
-    std::filesystem::rename(tmp_snapshot_path, new_snapshot_path, ec);
-    if (!ec)
-    {
-        existing_snapshots.emplace(up_to_log_idx, new_snapshot_path);
-        removeOutdatedSnapshotsIfNeeded();
-    }
-    return {new_snapshot_path, ec};
-}
 
 }

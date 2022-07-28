@@ -1,5 +1,5 @@
 
-<clickhouse>
+<yandex>
     <remote_servers>
     <cluster_simple>
         <shard>
@@ -21,7 +21,4 @@
     </cluster_simple>
 
     </remote_servers>
-    <macros>
-        <default_cluster_macro>cluster_simple</default_cluster_macro>
-    </macros>
-</clickhouse>
+</yandex>

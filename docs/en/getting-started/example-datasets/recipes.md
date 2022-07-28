@@ -1,5 +1,6 @@
 ---
-sidebar_label: Recipes Dataset
+toc_priority: 16
+toc_title: Recipes Dataset
 ---
 
 # Recipes Dataset
@@ -56,7 +57,7 @@ Explanation:
 -   We use `FORMAT CSVWithNames` but the header in CSV will be ignored (by command line parameter `--input_format_with_names_use_header 0`), because the header does not contain the name for the first field;
 -   File is using only double quotes to enclose CSV strings; some strings are not enclosed in double quotes, and single quote must not be parsed as the string enclosing - that's why we also add the `--format_csv_allow_single_quote 0` parameter;
 -   Some strings from CSV cannot parse, because they contain `\M/` sequence at the beginning of the value; the only value starting with backslash in CSV can be `\N` that is parsed as SQL NULL. We add `--input_format_allow_errors_num 10` parameter and up to ten malformed records can be skipped;
--   There are arrays for ingredients, directions and NER fields; these arrays are represented in unusual form: they are serialized into string as JSON and then placed in CSV - we parse them as String and then use [JSONExtract](../../sql-reference/functions/json-functions.md) function to transform it to Array.
+-   There are arrays for ingredients, directions and NER fields; these arrays are represented in unusual form: they are serialized into string as JSON and then placed in CSV - we parse them as String and then use [JSONExtract](../../sql-reference/functions/json-functions/) function to transform it to Array.
 
 ## Validate the Inserted Data
 
@@ -334,6 +335,6 @@ Result:
 
 ### Online Playground
 
-The dataset is also available in the [Online Playground](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
+The dataset is also available in the [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).
 
-[Original article](https://clickhouse.com/docs/en/getting-started/example-datasets/recipes/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting-started/example-datasets/recipes/) <!--hide-->

@@ -1,3 +1,7 @@
+#ifdef __SSE2__
+    #include <emmintrin.h>
+#endif
+
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
@@ -27,7 +31,7 @@ static UInt64 toBits64(const Int8 * bytes64)
 }
 #endif
 
-size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
+size_t countBytesInFilter(const UInt8 * filt, size_t sz)
 {
     size_t count = 0;
 
@@ -37,20 +41,18 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
       */
 
     const Int8 * pos = reinterpret_cast<const Int8 *>(filt);
-    pos += start;
-
-    const Int8 * end_pos = pos + (end - start);
+    const Int8 * end = pos + sz;
 
 #if defined(__SSE2__) && defined(__POPCNT__)
-    const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
+    const Int8 * end64 = pos + sz / 64 * 64;
 
-    for (; pos < end_pos64; pos += 64)
+    for (; pos < end64; pos += 64)
         count += __builtin_popcountll(toBits64(pos));
 
     /// TODO Add duff device for tail?
 #endif
 
-    for (; pos < end_pos; ++pos)
+    for (; pos < end; ++pos)
         count += *pos != 0;
 
     return count;
@@ -58,10 +60,10 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 
 size_t countBytesInFilter(const IColumn::Filter & filt)
 {
-    return countBytesInFilter(filt.data(), 0, filt.size());
+    return countBytesInFilter(filt.data(), filt.size());
 }
 
-size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end)
+size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map)
 {
     size_t count = 0;
 
@@ -70,20 +72,20 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
       * It would be better to use != 0, then this does not allow SSE2.
       */
 
-    const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data()) + start;
-    const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map) + start;
-    const Int8 * end_pos = pos + (end - start);
+    const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data());
+    const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map);
+    const Int8 * end = pos + filt.size();
 
 #if defined(__SSE2__) && defined(__POPCNT__)
-    const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
+    const Int8 * end64 = pos + filt.size() / 64 * 64;
 
-    for (; pos < end_pos64; pos += 64, pos2 += 64)
+    for (; pos < end64; pos += 64, pos2 += 64)
         count += __builtin_popcountll(toBits64(pos) & ~toBits64(pos2));
 
         /// TODO Add duff device for tail?
 #endif
 
-    for (; pos < end_pos; ++pos, ++pos2)
+    for (; pos < end; ++pos)
         count += (*pos & ~*pos2) != 0;
 
     return count;
@@ -98,18 +100,17 @@ std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns,
     return counts;
 }
 
-bool memoryIsByte(const void * data, size_t start, size_t end, uint8_t byte)
+bool memoryIsByte(const void * data, size_t size, uint8_t byte)
 {
-    size_t size = end - start;
     if (size == 0)
         return true;
-    const auto * ptr = reinterpret_cast<const uint8_t *>(data) + start;
+    const auto * ptr = reinterpret_cast<const uint8_t *>(data);
     return *ptr == byte && memcmp(ptr, ptr + 1, size - 1) == 0;
 }
 
-bool memoryIsZero(const void * data, size_t start, size_t end)
+bool memoryIsZero(const void * data, size_t size)
 {
-    return memoryIsByte(data, start, end, 0x0);
+    return memoryIsByte(data, size, 0x0);
 }
 
 namespace ErrorCodes
@@ -195,7 +196,7 @@ namespace
     {
         const size_t size = src_offsets.size();
         if (size != filt.size())
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+            throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         ResultOffsetsBuilder result_offsets_builder(res_offsets);
 
@@ -228,19 +229,23 @@ namespace
             memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
 
-        /** A slightly more optimized version.
-        * Based on the assumption that often pieces of consecutive values
-        *  completely pass or do not pass the filter.
-        * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
-        */
-        static constexpr size_t SIMD_BYTES = 64;
+    #ifdef __SSE2__
+        const __m128i zero_vec = _mm_setzero_si128();
+        static constexpr size_t SIMD_BYTES = 16;
         const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
         while (filt_pos < filt_end_aligned)
         {
-            uint64_t mask = bytes64MaskToBits64Mask(filt_pos);
+            UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
+                _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
+                zero_vec));
+            mask = ~mask;
 
-            if (0xffffffffffffffff == mask)
+            if (mask == 0)
+            {
+                /// SIMD_BYTES consecutive rows do not pass the filter
+            }
+            else if (mask == 0xffff)
             {
                 /// SIMD_BYTES consecutive rows pass the filter
                 const auto first = offsets_pos == offsets_begin;
@@ -257,21 +262,15 @@ namespace
             }
             else
             {
-                while (mask)
-                {
-                    size_t index = __builtin_ctzll(mask);
-                    copy_array(offsets_pos + index);
-                #ifdef __BMI__
-                    mask = _blsr_u64(mask);
-                #else
-                    mask = mask & (mask-1);
-                #endif
-                }
+                for (size_t i = 0; i < SIMD_BYTES; ++i)
+                    if (filt_pos[i])
+                        copy_array(offsets_pos + i);
             }
 
             filt_pos += SIMD_BYTES;
             offsets_pos += SIMD_BYTES;
         }
+    #endif
 
         while (filt_pos < filt_end)
         {
@@ -345,20 +344,5 @@ namespace detail
     template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
     template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
 }
-
-size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit)
-{
-    if (limit == 0)
-        limit = column_size;
-    else
-        limit = std::min(column_size, limit);
-
-    if (perm_size < limit)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Size of permutation ({}) is less than required ({})", perm_size, limit);
-
-    return limit;
-}
-
 
 }

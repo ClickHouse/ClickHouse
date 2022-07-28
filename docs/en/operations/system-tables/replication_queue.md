@@ -1,6 +1,6 @@
-# replication_queue
+# system.replication_queue {#system_tables-replication_queue}
 
-Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
+Contains information about tasks from replication queues stored in ZooKeeper for tables in the `ReplicatedMergeTree` family.
 
 Columns:
 
@@ -8,11 +8,11 @@ Columns:
 
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table.
 
--   `replica_name` ([String](../../sql-reference/data-types/string.md)) — Replica name in ClickHouse Keeper. Different replicas of the same table have different names.
+-   `replica_name` ([String](../../sql-reference/data-types/string.md)) — Replica name in ZooKeeper. Different replicas of the same table have different names.
 
 -   `position` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Position of the task in the queue.
 
--   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ClickHouse Keeper.
+-   `node_name` ([String](../../sql-reference/data-types/string.md)) — Node name in ZooKeeper.
 
 -   `type` ([String](../../sql-reference/data-types/string.md)) — Type of the task in the queue, one of:
 
@@ -65,13 +65,13 @@ Row 1:
 ──────
 database:               merge
 table:                  visits_v2
-replica_name:           mtgiga001-1t
+replica_name:           mtgiga001-1t.metrika.yandex.net
 position:               15
 node_name:              queue-0009325559
 type:                   MERGE_PARTS
 create_time:            2020-12-07 14:04:21
 required_quorum:        0
-source_replica:         mtgiga001-1t
+source_replica:         mtgiga001-1t.metrika.yandex.net
 new_part_name:          20201130_121373_121384_2
 parts_to_merge:         ['20201130_121373_121378_1','20201130_121379_121379_0','20201130_121380_121380_0','20201130_121381_121381_0','20201130_121382_121382_0','20201130_121383_121383_0','20201130_121384_121384_0']
 is_detach:              0
@@ -88,3 +88,4 @@ last_postpone_time:     1970-01-01 03:00:00
 
 -   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md#query-language-system-replicated)
 
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/replication_queue) <!--hide-->

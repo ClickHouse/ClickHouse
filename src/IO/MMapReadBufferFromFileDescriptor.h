@@ -18,7 +18,7 @@ public:
     off_t seek(off_t off, int whence) override;
 
 protected:
-    MMapReadBufferFromFileDescriptor() = default;
+    MMapReadBufferFromFileDescriptor() {}
     void init();
 
     MMappedFileDescriptor mapped;
@@ -33,12 +33,9 @@ public:
     void finish();
 
     off_t getPosition() override;
-
     std::string getFileName() const override;
-
     int getFD() const;
-
-    size_t getFileSize() override;
 };
 
 }
+

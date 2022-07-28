@@ -1,24 +1,15 @@
 #pragma once
 #include "config_formats.h"
-
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
-#include <optional>
-
 #include <arrow/io/interfaces.h>
-
-#define ORC_MAGIC_BYTES "ORC"
-#define PARQUET_MAGIC_BYTES "PAR1"
-#define ARROW_MAGIC_BYTES "ARROW1"
 
 namespace DB
 {
 
 class ReadBuffer;
-class WriteBuffer;
-
 class SeekableReadBuffer;
-struct FormatSettings;
+class WriteBuffer;
 
 class ArrowBufferedOutputStream : public arrow::io::OutputStream
 {
@@ -46,9 +37,7 @@ private:
 class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFile
 {
 public:
-    RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, off_t file_size_);
-
-    explicit RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_);
+    RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_);
 
     arrow::Result<int64_t> GetSize() override;
 
@@ -65,9 +54,8 @@ public:
     arrow::Status Seek(int64_t position) override;
 
 private:
-    ReadBuffer & in;
-    SeekableReadBuffer & seekable_in;
-    std::optional<off_t> file_size;
+    SeekableReadBuffer & in;
+    off_t file_size;
     bool is_open = false;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
@@ -91,12 +79,7 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
 };
 
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
-    ReadBuffer & in,
-    const FormatSettings & settings,
-    std::atomic<int> & is_cancelled,
-    const std::string & format_name,
-    const std::string & magic_bytes);
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in);
 
 }
 

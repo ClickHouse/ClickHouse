@@ -57,9 +57,7 @@ LIMIT
 1	0
 LIMIT OFFSET
 1	1
-OFFSET distributed_push_down_limit=0
-1	1
-OFFSET distributed_push_down_limit=1
+OFFSET
 1	1
 1	0
 1	1
@@ -67,8 +65,6 @@ WHERE LIMIT OFFSET
 1	1
 LIMIT BY 1
 1	0
-1	0
-1	1
 1	1
 GROUP BY (Distributed-over-Distributed)
 4	0

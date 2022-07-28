@@ -14,7 +14,6 @@ public:
     /// Pass empty 'already_written_offset_columns' first time then and pass the same object to subsequent instances of MergedColumnOnlyOutputStream
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
-        DataPartStorageBuilderPtr data_part_storage_builder_,
         const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
         const Block & header_,
@@ -24,19 +23,15 @@ public:
         const MergeTreeIndexGranularity & index_granularity = {},
         const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
 
-    Block getHeader() const { return header; }
+    Block getHeader() const override { return header; }
     void write(const Block & block) override;
-
+    void writeSuffix() override;
     MergeTreeData::DataPart::Checksums
-    fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
-
-    void finish(bool sync);
+    writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums, bool sync = false);
 
 private:
     Block header;
 };
-
-using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;
 
 
 }
