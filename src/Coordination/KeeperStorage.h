@@ -380,7 +380,7 @@ public:
         int64_t new_last_zxid,
         bool check_acl = true,
         std::optional<Digest> digest = std::nullopt);
-    void rollbackRequest(int64_t rollback_zxid);
+    void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
 
     void finalize();
 

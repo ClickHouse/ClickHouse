@@ -311,16 +311,16 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     if (!request_for_session.zxid)
         request_for_session.zxid = log_idx;
 
-    rollbackRequest(request_for_session);
+    rollbackRequest(request_for_session, false);
 }
 
-void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession & request_for_session)
+void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
     std::lock_guard lock(storage_and_responses_lock);
-    storage->rollbackRequest(request_for_session.zxid);
+    storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()

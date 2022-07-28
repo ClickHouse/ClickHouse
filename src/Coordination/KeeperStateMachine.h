@@ -44,7 +44,9 @@ public:
 
     void rollback(uint64_t log_idx, nuraft::buffer & data) override;
 
-    void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session);
+    // allow_missing - whether the transaction we want to rollback can be missing from storage
+    // (can happen in case of exception during preprocessing)
+    void rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing);
 
     uint64_t last_commit_index() override { return last_committed_idx; }
 
