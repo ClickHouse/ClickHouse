@@ -61,6 +61,10 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(this->written_bytes, out);
     writeCString("\",\"total_rows_to_read\":\"", out);
     writeText(this->total_rows_to_read, out);
+    writeCString("\",\"result_rows\":\"", out);
+    writeText(this->result_rows, out);
+    writeCString("\",\"result_bytes\":\"", out);
+    writeText(this->result_bytes, out);
     writeCString("\"}", out);
 }
 
@@ -75,6 +79,9 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
     written_rows += rhs.written_rows;
     written_bytes += rhs.written_bytes;
 
+    result_rows += rhs.result_rows;
+    result_bytes += rhs.result_bytes;
+
     return rhs.read_rows || rhs.written_rows;
 }
 
@@ -88,6 +95,9 @@ void Progress::reset()
 
     written_rows = 0;
     written_bytes = 0;
+
+    result_rows = 0;
+    result_bytes = 0;
 }
 
 ProgressValues Progress::getValues() const
@@ -102,6 +112,9 @@ ProgressValues Progress::getValues() const
 
     res.written_rows = written_rows.load(std::memory_order_relaxed);
     res.written_bytes = written_bytes.load(std::memory_order_relaxed);
+
+    res.result_rows = result_rows.load(std::memory_order_relaxed);
+    res.result_bytes = result_bytes.load(std::memory_order_relaxed);
 
     return res;
 }
@@ -119,6 +132,9 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
     res.written_rows = written_rows.fetch_and(0);
     res.written_bytes = written_bytes.fetch_and(0);
 
+    res.result_rows = result_rows.fetch_and(0);
+    res.result_bytes = result_bytes.fetch_and(0);
+
     return res;
 }
 
@@ -135,6 +151,9 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
     res.written_rows = written_rows.fetch_and(0);
     res.written_bytes = written_bytes.fetch_and(0);
 
+    res.result_rows = result_rows.fetch_and(0);
+    res.result_bytes = result_bytes.fetch_and(0);
+
     return res;
 }
 
@@ -148,6 +167,9 @@ Progress & Progress::operator=(Progress && other) noexcept
 
     written_rows = other.written_rows.load(std::memory_order_relaxed);
     written_bytes = other.written_bytes.load(std::memory_order_relaxed);
+
+    result_rows = other.result_rows.load(std::memory_order_relaxed);
+    result_bytes = other.result_bytes.load(std::memory_order_relaxed);
 
     return *this;
 }

@@ -7,6 +7,8 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -659,7 +661,11 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
     if (auto * query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
         return false;
 
-    if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
+    if (!ast_ddl->as<ASTAlterQuery>() &&
+        !ast_ddl->as<ASTOptimizeQuery>() &&
+        !ast_ddl->as<ASTDropQuery>() &&
+        !ast_ddl->as<ASTCreateIndexQuery>() &&
+        !ast_ddl->as<ASTDropIndexQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())

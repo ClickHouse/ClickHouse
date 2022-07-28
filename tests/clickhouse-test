@@ -445,6 +445,7 @@ class SettingsRandomizer:
         "compile_aggregate_expressions": lambda: random.randint(0, 1),
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
+        "optimize_distinct_in_order": lambda: random.randint(0, 1),
     }
 
     @staticmethod
