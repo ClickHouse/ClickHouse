@@ -44,6 +44,9 @@ CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
 # CLICKHOUSE_STOP_TIMEOUT=60 # Disabled by default. Place to /etc/default/clickhouse if you need.
 
+# init is watchdog by itself
+CLICKHOUSE_WATCHDOG_ENABLE=0
+
 # Some systems lack "flock"
 command -v flock >/dev/null && FLOCK=flock
 

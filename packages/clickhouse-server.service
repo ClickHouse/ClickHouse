@@ -18,6 +18,8 @@ RuntimeDirectory=clickhouse-server
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=/run/clickhouse-server/clickhouse-server.pid
 # Minus means that this file is optional.
 EnvironmentFile=-/etc/default/clickhouse
+# systemd is watchdog by itself
+Environment=CLICKHOUSE_WATCHDOG_ENABLE=0
 LimitCORE=infinity
 LimitNOFILE=500000
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK CAP_SYS_NICE CAP_NET_BIND_SERVICE
