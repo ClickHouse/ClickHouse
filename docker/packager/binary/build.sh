@@ -88,7 +88,7 @@ fi
 
 # No quotes because I want it to expand to nothing if empty.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-$SCAN_WRAPPER ninja $NINJA_FLAGS clickhouse-bundle
+$SCAN_WRAPPER ninja $NINJA_FLAGS $BUILD_TARGET
 
 ls -la ./programs
 
