@@ -1792,7 +1792,7 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
 
 template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
 Aggregator::ConvertToBlockRes<return_single_block>
-    NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t) const
+NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t) const
 {
     auto insert_results_into_cols = [this, arena](PaddedPODArray<AggregateDataPtr> & places, auto & out_cols)
     {
@@ -1881,7 +1881,7 @@ Aggregator::ConvertToBlockRes<return_single_block>
         return finalizeBlock(std::move(out_cols), /* final */ true, places.size());
     };
 
-    const size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    const size_t max_block_size = params.max_block_size;
     ConvertToBlockRes<return_single_block> res;
 
     std::optional<OutputBlockColumns> out_cols;
@@ -1950,7 +1950,7 @@ template <bool return_single_block, typename Method, typename Table>
 Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
 Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t) const
 {
-    const size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    const size_t max_block_size = params.max_block_size;
     ConvertToBlockRes<return_single_block> res;
 
     std::optional<OutputBlockColumns> out_cols;

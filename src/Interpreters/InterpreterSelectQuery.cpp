@@ -1719,7 +1719,7 @@ static void executeMergeAggregatedImpl(
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads);
+    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads, settings.max_block_size);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
@@ -2315,6 +2315,7 @@ static Aggregator::Params getAggregatorParams(
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
+        settings.max_block_size,
         /* only_merge */ false,
         stats_collecting_params
     };
