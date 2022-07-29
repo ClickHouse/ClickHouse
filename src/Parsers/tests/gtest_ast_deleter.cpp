@@ -2,11 +2,6 @@
 #include <Parsers/IAST.h>
 #include <Common/StackTrace.h>
 
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 struct StackDecrementer
 {
     size_t & depth;
