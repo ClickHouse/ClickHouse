@@ -1,11 +1,9 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-import logging
 import json
-from xml.etree import ElementTree
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True)
+node = cluster.add_instance("node", main_configs=["configs/config_json.xml"])
 
 
 @pytest.fixture(scope="module")
@@ -37,12 +35,6 @@ def is_json(log_json):
 
 
 def test_structured_logging_json_format(start_cluster):
-    config = node.exec_in_container(["cat", "/etc/clickhouse-server/config.xml"])
-    root = ElementTree.fromstring(config)
-    for logger in root.findall("logger"):
-        if logger.find("json") is None:
-            pytest.skip("JSON is not activated in config.xml")
-
     node.query("SELECT 1")
 
     logs = node.grep_in_log(" ")
