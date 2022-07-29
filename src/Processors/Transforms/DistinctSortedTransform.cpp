@@ -9,6 +9,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static void handleAllColumnsConst(Chunk & chunk)
+{
+    const size_t rows = chunk.getNumRows();
+    IColumn::Filter filter(rows);
+
+    Chunk res_chunk;
+    std::fill(filter.begin(), filter.end(), 0);
+    filter[0] = 1;
+    for (const auto & column : chunk.getColumns())
+        res_chunk.addColumn(column->filter(filter, -1));
+
+    chunk = std::move(res_chunk);
+}
+
 static void calcColumnPositionsInHeader(const Block& header, const Names & column_names, ColumnNumbers& column_positions)
 {
     /// pre-calculate column positions to use during chunk transformation
@@ -18,8 +32,8 @@ static void calcColumnPositionsInHeader(const Block& header, const Names & colum
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto pos = column_names.empty() ? i : header.getPositionByName(column_names[i]);
-        const auto & col = header.getByPosition(pos).column;
-        if (col && !isColumnConst(*col))
+        const auto & column = header.getByPosition(pos).column;
+        if (column && !isColumnConst(*column))
             column_positions.emplace_back(pos);
     }
 }
@@ -58,6 +72,7 @@ DistinctSortedTransform::DistinctSortedTransform(
     /// pre-calculate column positions to use during chunk transformation
     calcColumnPositionsInHeader(header, column_names, column_positions);
     column_ptrs.reserve(column_positions.size());
+    all_columns_const = column_positions.empty();
 
     /// pre-calculate DISTINCT column positions which form sort prefix of sort description
     sort_prefix_positions.reserve(sort_description.size());
@@ -85,6 +100,14 @@ void DistinctSortedTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
         return;
+
+    /// special case - all column constant
+    if (unlikely(all_columns_const))
+    {
+        handleAllColumnsConst(chunk);
+        stopReading();
+        return;
+    }
 
     /// get DISTINCT columns from chunk
     column_ptrs.clear();
