@@ -101,13 +101,15 @@ NameSet injectRequiredColumns(
     if (!part->isProjectionPart())
         alter_conversions = storage.getAlterConversionsForPart(part);
 
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withExtendedObjects()
+        .withSystemColumns();
     if (with_subcolumns)
         options.withSubcolumns();
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// We are going to fetch only physical columns
+        /// We are going to fetch only physical columns and system columns
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no physical column or subcolumn {} in table", columns[i]);
 
@@ -272,18 +274,28 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
+    const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
     bool with_subcolumns)
 {
     Names column_names = required_columns;
     Names pre_column_names;
 
+    /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
+    for (const auto & name : system_columns)
+    {
+        if (data_part->getColumns().contains(name))
+            column_names.push_back(name);
+    }
+
     /// inject columns required for defaults evaluation
     injectRequiredColumns(
         storage, storage_snapshot, data_part, with_subcolumns, column_names);
 
     MergeTreeReadTaskColumns result;
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
+    auto options = GetColumnsOptions(GetColumnsOptions::All)
+        .withExtendedObjects()
+        .withSystemColumns();
     if (with_subcolumns)
         options.withSubcolumns();
 
