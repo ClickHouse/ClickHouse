@@ -1135,6 +1135,20 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
     }
 }
 
+bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
+{
+    auto kind = table_join->kind();
+    auto strictness = table_join->strictness();
+
+    bool is_any = (strictness == ASTTableJoin::Strictness::Any);
+    bool is_all = (strictness == ASTTableJoin::Strictness::All);
+    bool is_semi = (strictness == ASTTableJoin::Strictness::Semi);
+
+    bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
+    bool special_left = isInnerOrLeft(kind) && (is_any || is_semi);
+
+    return (all_join || special_left) && table_join->oneDisjunct();
+}
 
 MergeJoin::RightBlockInfo::RightBlockInfo(std::shared_ptr<Block> block_, size_t block_number_, size_t & skip_, RowBitmaps * bitmaps_)
     : block(block_)
