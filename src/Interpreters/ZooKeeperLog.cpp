@@ -122,6 +122,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
         {"address", DataTypeFactory::instance().get("IPv6")},
         {"port", std::make_shared<DataTypeUInt16>()},
         {"session_id", std::make_shared<DataTypeInt64>()},
+        {"duration_ms", std::make_shared<DataTypeUInt64>()},
 
         {"xid", std::make_shared<DataTypeInt32>()},
         {"has_watch", std::make_shared<DataTypeUInt8>()},
@@ -172,6 +173,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(IPv6ToBinary(address.host()).data(), 16);
     columns[i++]->insert(address.port());
     columns[i++]->insert(session_id);
+    columns[i++]->insert(duration_ms);
 
     columns[i++]->insert(xid);
     columns[i++]->insert(has_watch);
