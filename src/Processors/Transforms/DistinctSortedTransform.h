@@ -66,6 +66,7 @@ private:
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
+    bool all_columns_const = true;
 };
 
 }
