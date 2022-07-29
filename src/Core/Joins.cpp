@@ -52,4 +52,28 @@ const char * toString(ASOFJoinInequality asof_join_inequality)
     }
 }
 
+const char * toString(JoinAlgorithm join_algorithm)
+{
+    switch (join_algorithm)
+    {
+        case JoinAlgorithm::DEFAULT: return "DEFAULT";
+        case JoinAlgorithm::AUTO: return "AUTO";
+        case JoinAlgorithm::HASH: return "HASH";
+        case JoinAlgorithm::PARTIAL_MERGE: return "PARTIAL_MERGE";
+        case JoinAlgorithm::PREFER_PARTIAL_MERGE: return "PREFER_PARTIAL_MERGE";
+        case JoinAlgorithm::PARALLEL_HASH: return "PARALLEL_HASH";
+        case JoinAlgorithm::DIRECT: return "DIRECT";
+        case JoinAlgorithm::FULL_SORTING_MERGE: return "FULL_SORTING_MERGE";
+    }
+}
+
+const char * toString(JoinTableSide join_table_side)
+{
+    switch (join_table_side)
+    {
+        case JoinTableSide::Left: return "LEFT";
+        case JoinTableSide::Right: return "RIGHT";
+    }
+}
+
 }

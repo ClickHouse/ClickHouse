@@ -6,7 +6,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/join_common.h>
-#include <Interpreters/asof.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Storages/IKVStorage.h>
@@ -41,12 +40,6 @@ struct Settings;
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
-
-enum class JoinTableSide
-{
-    Left,
-    Right
-};
 
 class TableJoin
 {
