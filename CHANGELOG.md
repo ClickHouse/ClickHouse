@@ -1,17 +1,18 @@
 ### Table of Contents
-**[ClickHouse release v22.7, 2022-07-21](#226)**<br>
-**[ClickHouse release v22.6, 2022-06-16](#226)**<br>
-**[ClickHouse release v22.5, 2022-05-19](#225)**<br>
-**[ClickHouse release v22.4, 2022-04-20](#224)**<br>
-**[ClickHouse release v22.3-lts, 2022-03-17](#223)**<br>
-**[ClickHouse release v22.2, 2022-02-17](#222)**<br>
-**[ClickHouse release v22.1, 2022-01-18](#221)**<br>
-**[Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021/)**<br>
+**[ClickHouse release v22.7, 2022-07-21](#227)**<br/>
+**[ClickHouse release v22.6, 2022-06-16](#226)**<br/>
+**[ClickHouse release v22.5, 2022-05-19](#225)**<br/>
+**[ClickHouse release v22.4, 2022-04-20](#224)**<br/>
+**[ClickHouse release v22.3-lts, 2022-03-17](#223)**<br/>
+**[ClickHouse release v22.2, 2022-02-17](#222)**<br/>
+**[ClickHouse release v22.1, 2022-01-18](#221)**<br/>
+**[Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021/)**<br/>
 
 ### <a id="227"></a> ClickHouse release 22.7, 2022-07-21
 
 #### Upgrade Notes
 * Enable setting `enable_positional_arguments` by default. It allows queries like `SELECT ... ORDER BY 1, 2` where 1, 2 are the references to the select clause. If you need to return the old behavior, disable this setting. [#38204](https://github.com/ClickHouse/ClickHouse/pull/38204) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Disable `format_csv_allow_single_quotes` by default. See [#37096](https://github.com/ClickHouse/ClickHouse/issues/37096). ([Kruglov Pavel](https://github.com/Avogar)).
 * `Ordinary` database engine and old storage definition syntax for `*MergeTree` tables are deprecated. By default it's not possible to create new databases with `Ordinary` engine. If `system` database has `Ordinary` engine it will be automatically converted to `Atomic` on server startup. There are settings to keep old behavior (`allow_deprecated_database_ordinary` and `allow_deprecated_syntax_for_merge_tree`), but these settings may be removed in future releases. [#38335](https://github.com/ClickHouse/ClickHouse/pull/38335) ([Alexander Tokmakov](https://github.com/tavplubix)).
 * Force rewriting comma join to inner by default (set default value `cross_to_inner_join_rewrite = 2`). To have old behavior set `cross_to_inner_join_rewrite = 1`. [#39326](https://github.com/ClickHouse/ClickHouse/pull/39326) ([Vladimir C](https://github.com/vdimir)). If you will face any incompatibilities, you can turn this setting back.
 
@@ -21,7 +22,8 @@
 * Added full sorting merge join algorithm. [#35796](https://github.com/ClickHouse/ClickHouse/pull/35796) ([Vladimir C](https://github.com/vdimir)).
 * Implement NATS table engine, which allows to pub/sub to NATS. Closes [#32388](https://github.com/ClickHouse/ClickHouse/issues/32388). [#37171](https://github.com/ClickHouse/ClickHouse/pull/37171) ([tchepavel](https://github.com/tchepavel)). ([Kseniia Sumarokova](https://github.com/kssenii))
 * Implement table function `mongodb`. Allow writes into `MongoDB` storage / table function. [#37213](https://github.com/ClickHouse/ClickHouse/pull/37213) ([aaapetrenko](https://github.com/aaapetrenko)). ([Kseniia Sumarokova](https://github.com/kssenii))
-* Add SQLInsert output format. Closes [#38441](https://github.com/ClickHouse/ClickHouse/issues/38441). [#38477](https://github.com/ClickHouse/ClickHouse/pull/38477) ([Kruglov Pavel](https://github.com/Avogar)).
+* Add `SQLInsert` output format. Closes [#38441](https://github.com/ClickHouse/ClickHouse/issues/38441). [#38477](https://github.com/ClickHouse/ClickHouse/pull/38477) ([Kruglov Pavel](https://github.com/Avogar)).
+* Introduced settings `additional_table_filters`. Using this setting, you can specify additional filtering condition for a table which will be applied directly after reading. Example: `select number, x, y from (select number from system.numbers limit 5) f any left join (select x, y from table_1) s on f.number = s.x settings additional_table_filters={'system.numbers : 'number != 3', 'table_1' : 'x != 2'}`. Introduced setting `additional_result_filter` which specifies additional filtering condition for query result. Closes [#37918](https://github.com/ClickHouse/ClickHouse/issues/37918). [#38475](https://github.com/ClickHouse/ClickHouse/pull/38475) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Add `compatibility` setting and `system.settings_changes` system table that contains information about changes in settings through ClickHouse versions. Closes [#35972](https://github.com/ClickHouse/ClickHouse/issues/35972). [#38957](https://github.com/ClickHouse/ClickHouse/pull/38957) ([Kruglov Pavel](https://github.com/Avogar)).
 * Add functions `translate(string, from_string, to_string)` and `translateUTF8(string, from_string, to_string)`. It translates some characters to another. [#38935](https://github.com/ClickHouse/ClickHouse/pull/38935) ([Nikolay Degterinsky](https://github.com/evillique)).
 * Support `parseTimeDelta` function. It can be used like ` ;-+,:` can be used as separators, eg. `1yr-2mo`, `2m:6s`: `SELECT parseTimeDelta('1yr-2mo-4w + 12 days, 3 hours : 1 minute ; 33 seconds')`. [#39071](https://github.com/ClickHouse/ClickHouse/pull/39071) ([jiahui-97](https://github.com/jiahui-97)).
@@ -35,7 +37,7 @@
 * Add `send_logs_source_regexp` setting. Send server text logs with specified regexp to match log source name. Empty means all sources. [#39161](https://github.com/ClickHouse/ClickHouse/pull/39161) ([Amos Bird](https://github.com/amosbird)).
 * Support `ALTER` for `Hive` tables. [#38214](https://github.com/ClickHouse/ClickHouse/pull/38214) ([lgbo](https://github.com/lgbo-ustc)).
 * Support `isNullable` function. This function checks whether it's argument is nullable and return 1 or 0. Closes [#38611](https://github.com/ClickHouse/ClickHouse/issues/38611). [#38841](https://github.com/ClickHouse/ClickHouse/pull/38841) ([lokax](https://github.com/lokax)).
-* Added Base58 encoding/decoding. [#38159](https://github.com/ClickHouse/ClickHouse/pull/38159) ([Andrey Zvonov](https://github.com/zvonand)).
+* Added functions for base58 encoding/decoding. [#38159](https://github.com/ClickHouse/ClickHouse/pull/38159) ([Andrey Zvonov](https://github.com/zvonand)).
 * Add chart visualization to Play UI. [#38197](https://github.com/ClickHouse/ClickHouse/pull/38197) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Added L2 Squared distance and norm functions for both arrays and tuples. [#38545](https://github.com/ClickHouse/ClickHouse/pull/38545) ([Julian Gilyadov](https://github.com/israelg99)).
 * Add ability to pass HTTP headers to the `url` table function / storage via SQL. Closes [#37897](https://github.com/ClickHouse/ClickHouse/issues/37897). [#38176](https://github.com/ClickHouse/ClickHouse/pull/38176) ([Kseniia Sumarokova](https://github.com/kssenii)).
@@ -47,7 +49,8 @@
 #### Performance Improvement
 * Distinct optimization for sorted columns. Use specialized distinct transformation in case input stream is sorted by column(s) in distinct. Optimization can be applied to pre-distinct, final distinct, or both. Initial implementation by @dimarub2000. [#37803](https://github.com/ClickHouse/ClickHouse/pull/37803) ([Igor Nikonov](https://github.com/devcrafter)).
 * Improve performance of `ORDER BY`, `MergeTree` merges, window functions using batch version of `BinaryHeap`. [#38022](https://github.com/ClickHouse/ClickHouse/pull/38022) ([Maksim Kita](https://github.com/kitaisreal)).
-* Fix significant join performance regression which was introduced in https://github.com/ClickHouse/ClickHouse/pull/35616 . It's interesting that common join queries such as ssb queries have been 10 times slower for almost 3 months while no one complains. [#38052](https://github.com/ClickHouse/ClickHouse/pull/38052) ([Amos Bird](https://github.com/amosbird)).
+* More parallel execution for queries with `FINAL` [#36396](https://github.com/ClickHouse/ClickHouse/pull/36396) ([Nikita Taranov](https://github.com/nickitat)).
+* Fix significant join performance regression which was introduced in [#35616](https://github.com/ClickHouse/ClickHouse/pull/35616). It's interesting that common join queries such as ssb queries have been 10 times slower for almost 3 months while no one complains. [#38052](https://github.com/ClickHouse/ClickHouse/pull/38052) ([Amos Bird](https://github.com/amosbird)).
 * Migrate from the Intel hyperscan library to vectorscan, this speeds up many string matching on non-x86 platforms. [#38171](https://github.com/ClickHouse/ClickHouse/pull/38171) ([Robert Schulze](https://github.com/rschu1ze)).
 * Increased parallelism of query plan steps executed after aggregation. [#38295](https://github.com/ClickHouse/ClickHouse/pull/38295) ([Nikita Taranov](https://github.com/nickitat)).
 * Improve performance of insertion to columns of type `JSON`. [#38320](https://github.com/ClickHouse/ClickHouse/pull/38320) ([Anton Popov](https://github.com/CurtizJ)).
@@ -59,7 +62,6 @@
 * `ORDER BY (a, b)` will use all the same benefits as `ORDER BY a, b`. [#38873](https://github.com/ClickHouse/ClickHouse/pull/38873) ([Igor Nikonov](https://github.com/devcrafter)).
 * Align branches within a 32B boundary to make benchmark more stable. [#38988](https://github.com/ClickHouse/ClickHouse/pull/38988) ([Guo Wangyang](https://github.com/guowangy)). It improves performance 1..2% on average for Intel.
 * Executable UDF, executable dictionaries, and Executable tables will avoid wasting one second during wait for subprocess termination. [#38929](https://github.com/ClickHouse/ClickHouse/pull/38929) ([Constantine Peresypkin](https://github.com/pkit)).
-* TODO remove? Pushdown filter to the right side of sorting join. [#39123](https://github.com/ClickHouse/ClickHouse/pull/39123) ([Vladimir C](https://github.com/vdimir)).
 * Optimize accesses to `system.stack_trace` table if not all columns are selected. [#39177](https://github.com/ClickHouse/ClickHouse/pull/39177) ([Azat Khuzhin](https://github.com/azat)).
 * Improve isNullable/isConstant/isNull/isNotNull performance for LowCardinality argument. [#39192](https://github.com/ClickHouse/ClickHouse/pull/39192) ([Kruglov Pavel](https://github.com/Avogar)).
 * Optimized processing of ORDER BY in window functions. [#34632](https://github.com/ClickHouse/ClickHouse/pull/34632) ([Vladimir Chebotarev](https://github.com/excitoon)).
