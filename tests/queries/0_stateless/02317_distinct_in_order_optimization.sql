@@ -45,10 +45,14 @@ select distinct b,c from distinct_in_order order by c desc;
 
 select '-- distinct with constants columns';
 -- { echoOn }
-select distinct 1 as a, 2 as b from distinct_in_order;
-select distinct 1 as a, 2 as b from distinct_in_order order by a;
-select distinct 1 as a, 2 as b from distinct_in_order order by a, b;
-select distinct x, y from (select 1 as x, 2 as y from distinct_in_order order by x) order by x;
+select distinct 1 as x, 2 as y from distinct_in_order;
+select distinct 1 as x, 2 as y from distinct_in_order order by x;
+select distinct 1 as x, 2 as y from distinct_in_order order by x, y;
+select distinct a, 1 as x from distinct_in_order order by x;
+select distinct a, 1 as x, 2 as y from distinct_in_order order by a;
+select distinct a, b, 1 as x, 2 as y from distinct_in_order order by a;
+select distinct x, y from (select 1 as x, 2 as y from distinct_in_order order by x) order by y;
+select distinct a, b, x, y from (select a, b, 1 as x, 2 as y from distinct_in_order order by a) order by b;
 -- { echoOff }
 
 drop table if exists distinct_in_order sync;
