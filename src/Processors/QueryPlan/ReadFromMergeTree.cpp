@@ -142,7 +142,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         output_stream->sort_mode = DataStream::SortMode::Chunk;
 
         auto const& settings = context->getSettingsRef();
-        if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && getInputOrderInfo(query_info))
+        if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
             output_stream->sort_mode = DataStream::SortMode::Port;
     }
 }
@@ -967,7 +967,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     result.total_marks_pk = total_marks_pk;
     result.selected_rows = sum_rows;
 
-    const auto & input_order_info = getInputOrderInfo(query_info);
+    const auto & input_order_info = query_info.getInputOrderInfo();
     if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
         result.read_type = (input_order_info->direction > 0) ? ReadType::InOrder
                                                              : ReadType::InReverseOrder;
@@ -1058,7 +1058,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     Pipe pipe;
 
     const auto & settings = context->getSettingsRef();
-    const auto & input_order_info = getInputOrderInfo(query_info);
+    const auto & input_order_info = query_info.getInputOrderInfo();
 
     if (select.final())
     {
