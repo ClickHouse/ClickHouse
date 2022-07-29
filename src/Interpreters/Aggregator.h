@@ -1301,18 +1301,6 @@ private:
     ConvertToBlockRes<return_single_block>
     convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows) const;
 
-    struct OutputBlockColumns
-    {
-        MutableColumns key_columns;
-        std::vector<IColumn *> raw_key_columns;
-        MutableColumns aggregate_columns;
-        MutableColumns final_aggregate_columns;
-        AggregateColumnsData aggregate_columns_data;
-    };
-
-    OutputBlockColumns prepareOutputBlockColumns(Arenas & aggregates_pools, bool final, size_t rows) const;
-    Block finalizeBlock(OutputBlockColumns && out_cols, bool final, size_t rows) const;
-
     template <typename Method>
     Block convertOneBucketToBlock(
         AggregatedDataVariants & data_variants,
