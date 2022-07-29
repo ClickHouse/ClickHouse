@@ -70,6 +70,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -5945,7 +5946,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
+MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
@@ -5955,29 +5956,27 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     bool copy_instead_of_hardlink)
 {
     /// Check that the storage policy contains the disk where the src_part is located.
-    bool does_storage_policy_allow_same_disk = false;
+    bool is_on_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
     {
         if (disk->getName() == src_part->data_part_storage->getDiskName())
         {
-            does_storage_policy_allow_same_disk = true;
+            is_on_same_disk = true;
             break;
         }
     }
-    if (!does_storage_policy_allow_same_disk)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not clone and load part {} because disk does not belong to storage policy",
-            quoteString(src_part->data_part_storage->getFullPath()));
 
     String dst_part_name = src_part->getNewName(dst_part_info);
     assert(!tmp_part_prefix.empty());
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    /// Why it is needed if we only hardlink files?
-    auto reservation = src_part->data_part_storage->reserve(src_part->getBytesOnDisk());
-
     auto src_part_storage = src_part->data_part_storage;
+
+    if (!is_on_same_disk)
+    {
+        auto disk = getStoragePolicy()->getVolume(0)->getDisk();
+        auto reservation = disk->reserve(src_part->getBytesOnDisk());
+    }
 
     /// If source part is in memory, flush it to disk and clone it already in on-disk format
     if (auto src_part_in_memory = asInMemoryPart(src_part))
@@ -5990,16 +5989,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     if (copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    LOG_DEBUG(log, "Cloning part {} to {}{}",
+    LOG_DEBUG(log, "Cloning part {} to ({}) {}{}",
               src_part_storage->getFullPath(),
-              std::string(fs::path(src_part_storage->getFullRootPath()) / tmp_dst_part_name),
+              getStoragePolicy()->getVolume(0)->getDisk()->getPath(),
+              std::string(fs::path(relative_data_path) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_part_storage = src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink);
+    auto dst_part_storage = is_on_same_disk? src_part_storage->freeze(relative_data_path, tmp_dst_part_name, /* make_source_readonly */ false, {}, /* copy_instead_of_hardlinks */ copy_instead_of_hardlink) : src_part_storage->clone(relative_data_path, tmp_dst_part_name, getStoragePolicy()->getVolume(0)->getDisk(), true, log);
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, dst_part_storage);
 
-    if (!copy_instead_of_hardlink && hardlinked_files)
+    if (is_on_same_disk && !copy_instead_of_hardlink && hardlinked_files)
     {
         hardlinked_files->source_part_name = src_part->name;
         hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();

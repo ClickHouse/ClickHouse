@@ -104,6 +104,7 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
+        const bool copy_content,
         Poco::Logger * log) const override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;

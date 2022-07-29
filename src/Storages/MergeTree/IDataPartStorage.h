@@ -194,6 +194,7 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
+        const bool copy_content,
         Poco::Logger * log) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.

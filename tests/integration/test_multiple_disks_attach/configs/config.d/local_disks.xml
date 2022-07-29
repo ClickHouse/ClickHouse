@@ -1,0 +1,30 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <local1>
+                <type>local</type>
+                <path>/tmp/data1/</path>
+            </local1>
+            <local2>
+                <type>local</type>
+                <path>/tmp/data2/</path>
+            </local2>
+        </disks>
+        <policies>
+            <local1>
+                <volumes>
+                    <main>
+                        <disk>local1</disk>
+                    </main>
+                </volumes>
+            </local1>
+            <local2>
+                <volumes>
+                    <main>
+                        <disk>local2</disk>
+                    </main>
+                </volumes>
+            </local2>
+        </policies>
+    </storage_configuration>
+</clickhouse>

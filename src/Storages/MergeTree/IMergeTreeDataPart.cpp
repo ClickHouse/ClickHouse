@@ -1490,7 +1490,7 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, con
         throw Exception("Can not clone data part " + name + " to empty directory.", ErrorCodes::LOGICAL_ERROR);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return data_part_storage->clone(path_to_clone, data_part_storage->getPartDirectory(), disk, storage.log);
+    return data_part_storage->clone(path_to_clone, data_part_storage->getPartDirectory(), disk, false, storage.log);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

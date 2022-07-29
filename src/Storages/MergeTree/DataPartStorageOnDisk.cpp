@@ -726,6 +726,7 @@ DataPartStoragePtr DataPartStorageOnDisk::clone(
     const std::string & to,
     const std::string & dir_path,
     const DiskPtr & disk,
+    const bool copy_content,
     Poco::Logger * log) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
@@ -736,7 +737,13 @@ DataPartStoragePtr DataPartStorageOnDisk::clone(
         disk->removeRecursive(path_to_clone);
     }
     disk->createDirectories(to);
-    volume->getDisk()->copy(getRelativePath(), disk, to);
+    if (copy_content)
+    {
+        disk->createDirectories(path_to_clone);
+        volume->getDisk()->copyDirectoryContent(getRelativePath(), disk, path_to_clone);
+    } else {
+        volume->getDisk()->copy(getRelativePath(), disk, to);
+    }
     volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / "delete-on-destroy.txt");
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
