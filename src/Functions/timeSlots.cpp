@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -258,7 +259,7 @@ public:
         else
         {
             auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
-            auto duration_scale = assert_cast<const DataTypeDecimalBase<Decimal64> &>(*arguments[1].type).getScale();
+            auto duration_scale = assert_cast<const DataTypeDecimal64 &>(*arguments[1].type).getScale();
             return std::make_shared<DataTypeArray>(
                 std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
         }
@@ -318,7 +319,7 @@ public:
 
                 if (time_slot_size = time_slot_column->getValue<Decimal64>(); time_slot_size <= 0)
                     throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
-                time_slot_scale = assert_cast<const DataTypeDecimalBase<Decimal64> *>(arguments[2].type.get())->getScale();
+                time_slot_scale = assert_cast<const DataTypeDecimal64 *>(arguments[2].type.get())->getScale();
             }
 
             const auto * starts = checkAndGetColumn<DataTypeDateTime64::ColumnType>(arguments[0].column.get());
@@ -328,7 +329,7 @@ public:
             const auto * const_durations = checkAndGetColumnConst<ColumnDecimal<Decimal64>>(arguments[1].column.get());
 
             const auto start_time_scale = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get())->getScale();
-            const auto duration_scale = assert_cast<const DataTypeDecimalBase<Decimal64> *>(arguments[1].type.get())->getScale();
+            const auto duration_scale = assert_cast<const DataTypeDecimal64 *>(arguments[1].type.get())->getScale();
 
             auto res = ColumnArray::create(DataTypeDateTime64(start_time_scale).createColumn());
             DataTypeDateTime64::ColumnType::Container & res_values = typeid_cast<DataTypeDateTime64::ColumnType &>(res->getData()).getData();
