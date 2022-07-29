@@ -46,4 +46,4 @@ def test_structured_logging_json_format(start_cluster):
         # we will test maximum 5 logs
         if i >= min(4, len(log_array) - 1):
             break
-    assert result == True
+    assert result
