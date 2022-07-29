@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Common/checkStackSize.h>
+#include <Core/SettingsEnums.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
@@ -684,7 +685,7 @@ bool tryJoinOnConst(TableJoin & analyzed_join, ASTPtr & on_expression, ContextPt
     else
         return false;
 
-    if (!analyzed_join.forceHashJoin())
+    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "JOIN ON constant ({}) supported only with join algorithm 'hash'",
                         queryToString(on_expression));
@@ -771,7 +772,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                 data.asofToJoinKeys();
             }
 
-            if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
+            if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
                 throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
         }
     }

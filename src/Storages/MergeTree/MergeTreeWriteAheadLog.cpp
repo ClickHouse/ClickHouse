@@ -6,6 +6,7 @@
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -126,7 +127,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
-    auto in = disk->readFile(path, {});
+    auto in = disk->readFile(path);
     NativeReader block_in(*in, 0);
     NameSet dropped_parts;
 

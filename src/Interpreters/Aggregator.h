@@ -238,7 +238,7 @@ struct AggregationMethodString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -270,7 +270,7 @@ struct AggregationMethodStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -302,7 +302,7 @@ struct AggregationMethodFixedString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -333,7 +333,7 @@ struct AggregationMethodFixedStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
     }
@@ -501,7 +501,7 @@ struct AggregationMethodSerialized
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const StringRef & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         const auto * pos = key.data;
         for (auto & column : key_columns)
