@@ -226,4 +226,4 @@ if __name__ == "__main__":
             fail_simple_check(gh, pr_info, NAME, f"{NAME} failed")
             sys.exit(1)
 
-    reset_simple_check(gh, pr_info, NAME, f"{NAME} failed")
+    reset_simple_check(gh, pr_info, NAME)
