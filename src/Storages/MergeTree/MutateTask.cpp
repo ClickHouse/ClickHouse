@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
+#include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -162,10 +163,31 @@ getColumnsForNewDataPart(
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
     ColumnsDescription part_columns(source_part->getColumns());
+    NamesAndTypesList system_columns;
+    if (source_part->supportLightweightDeleteMutate())
+        system_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
+
+    /// Preserve system columns that have persisted values in the source_part
+    for (const auto & column : system_columns)
+    {
+        if (part_columns.has(column.name) && !storage_columns.contains(column.name))
+            storage_columns.emplace_back(column);
+    }
 
     /// All commands are validated in AlterCommand so we don't care about order
     for (const auto & command : commands_for_removes)
     {
+        if (command.type == MutationCommand::UPDATE)
+        {
+            for (const auto & [column_name, _] : command.column_to_update_expression)
+            {
+                /// Allow to update and persist values of system column
+                auto column = system_columns.tryGetByName(column_name);
+                if (column && !storage_columns.contains(column_name))
+                    storage_columns.emplace_back(column_name, column->type);
+            }
+        }
+
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
             continue;
@@ -664,7 +686,7 @@ struct MutationContext
 
     QueryPipelineBuilder mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor{nullptr};
     ProgressCallback progress_callback;
     Block updated_header;
 
@@ -1488,6 +1510,9 @@ bool MutateTask::prepare()
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
+        /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
+        /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of rows.
+        ctx->interpreter->setApplyDeletedMask(false);
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
