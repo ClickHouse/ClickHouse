@@ -872,6 +872,7 @@ using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants
 
 class CompiledAggregateFunctionsHolder;
 class NativeWriter;
+struct OutputBlockColumns;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -1292,6 +1293,9 @@ private:
         Mapped & mapped,
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
+
+    template <bool use_compiled_functions>
+    Block insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & places, OutputBlockColumns && out_cols, Arena * arena) const;
 
     template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
     ConvertToBlockRes<return_single_block>

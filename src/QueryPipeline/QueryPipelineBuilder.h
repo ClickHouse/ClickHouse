@@ -161,8 +161,6 @@ public:
         return std::max<size_t>(1, num_threads);
     }
 
-    size_t getMaxThreads() const { return max_threads; }
-
     /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
 

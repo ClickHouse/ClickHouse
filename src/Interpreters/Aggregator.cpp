@@ -1792,77 +1792,40 @@ inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColu
 }
 
 
-template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
-Aggregator::ConvertToBlockRes<return_single_block>
-NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t) const
+template <bool use_compiled_functions>
+Block Aggregator::insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & places, OutputBlockColumns && out_cols, Arena * arena) const
 {
-    auto insert_results_into_cols = [this, arena](PaddedPODArray<AggregateDataPtr> & places, auto & out_cols)
-    {
-        std::exception_ptr exception;
-        size_t aggregate_functions_destroy_index = 0;
+    std::exception_ptr exception;
+    size_t aggregate_functions_destroy_index = 0;
 
-        try
-        {
+    try
+    {
 #if USE_EMBEDDED_COMPILER
-            if constexpr (use_compiled_functions)
-            {
-                /** For JIT compiled functions we need to resize columns before pass them into compiled code.
+        if constexpr (use_compiled_functions)
+        {
+            /** For JIT compiled functions we need to resize columns before pass them into compiled code.
               * insert_aggregates_into_columns_function function does not throw exception.
               */
-                std::vector<ColumnData> columns_data;
+            std::vector<ColumnData> columns_data;
 
-                auto compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
+            auto compiled_functions = compiled_aggregate_functions_holder->compiled_aggregate_functions;
 
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                {
-                    if (!is_aggregate_function_compiled[i])
-                        continue;
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+            {
+                if (!is_aggregate_function_compiled[i])
+                    continue;
 
-                    auto & final_aggregate_column = out_cols.final_aggregate_columns[i];
-                    final_aggregate_column = final_aggregate_column->cloneResized(places.size());
-                    columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
-                }
-
-                auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;
-                insert_aggregates_into_columns_function(0, places.size(), columns_data.data(), places.data());
+                auto & final_aggregate_column = out_cols.final_aggregate_columns[i];
+                final_aggregate_column = final_aggregate_column->cloneResized(places.size());
+                columns_data.emplace_back(getColumnData(final_aggregate_column.get()));
             }
+
+            auto insert_aggregates_into_columns_function = compiled_functions.insert_aggregates_into_columns_function;
+            insert_aggregates_into_columns_function(0, places.size(), columns_data.data(), places.data());
+        }
 #endif
 
-            for (; aggregate_functions_destroy_index < params.aggregates_size;)
-            {
-                if constexpr (use_compiled_functions)
-                {
-                    if (is_aggregate_function_compiled[aggregate_functions_destroy_index])
-                    {
-                        ++aggregate_functions_destroy_index;
-                        continue;
-                    }
-                }
-
-                auto & final_aggregate_column = out_cols.final_aggregate_columns[aggregate_functions_destroy_index];
-                size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
-
-                /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoBatch
-              * throws exception, it also must destroy all necessary states.
-              * Then code need to continue to destroy other aggregate function states with next function index.
-              */
-                size_t destroy_index = aggregate_functions_destroy_index;
-                ++aggregate_functions_destroy_index;
-
-                /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
-                bool is_state = aggregate_functions[destroy_index]->isState();
-                bool destroy_place_after_insert = !is_state;
-
-                aggregate_functions[destroy_index]->insertResultIntoBatch(
-                    0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
-            }
-        }
-        catch (...)
-        {
-            exception = std::current_exception();
-        }
-
-        for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
+        for (; aggregate_functions_destroy_index < params.aggregates_size;)
         {
             if constexpr (use_compiled_functions)
             {
@@ -1873,28 +1836,65 @@ NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Are
                 }
             }
 
+            auto & final_aggregate_column = out_cols.final_aggregate_columns[aggregate_functions_destroy_index];
             size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
-            aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(0, places.size(), places.data(), offset);
+
+            /** We increase aggregate_functions_destroy_index because by function contract if insertResultIntoBatch
+              * throws exception, it also must destroy all necessary states.
+              * Then code need to continue to destroy other aggregate function states with next function index.
+              */
+            size_t destroy_index = aggregate_functions_destroy_index;
+            ++aggregate_functions_destroy_index;
+
+            /// For State AggregateFunction ownership of aggregate place is passed to result column after insert
+            bool is_state = aggregate_functions[destroy_index]->isState();
+            bool destroy_place_after_insert = !is_state;
+
+            aggregate_functions[destroy_index]->insertResultIntoBatch(
+                0, places.size(), places.data(), offset, *final_aggregate_column, arena, destroy_place_after_insert);
+        }
+    }
+    catch (...)
+    {
+        exception = std::current_exception();
+    }
+
+    for (; aggregate_functions_destroy_index < params.aggregates_size; ++aggregate_functions_destroy_index)
+    {
+        if constexpr (use_compiled_functions)
+        {
+            if (is_aggregate_function_compiled[aggregate_functions_destroy_index])
+            {
+                ++aggregate_functions_destroy_index;
+                continue;
+            }
         }
 
-        if (exception)
-            std::rethrow_exception(exception);
+        size_t offset = offsets_of_aggregate_states[aggregate_functions_destroy_index];
+        aggregate_functions[aggregate_functions_destroy_index]->destroyBatch(0, places.size(), places.data(), offset);
+    }
 
-        return finalizeBlock(params, getHeader(/* final */ true), std::move(out_cols), /* final */ true, places.size());
-    };
+    if (exception)
+        std::rethrow_exception(exception);
 
+    return finalizeBlock(params, getHeader(/* final */ true), std::move(out_cols), /* final */ true, places.size());
+}
+
+template <typename Method, bool use_compiled_functions, bool return_single_block, typename Table>
+Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
+Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, size_t) const
+{
     const size_t max_block_size = params.max_block_size;
+    const bool final = true;
     ConvertToBlockRes<return_single_block> res;
 
     std::optional<OutputBlockColumns> out_cols;
     std::optional<Sizes> shuffled_key_sizes;
-    const Sizes * key_sizes_ptr = nullptr;
     PaddedPODArray<AggregateDataPtr> places;
 
     auto init_out_cols = [&]()
     {
-        out_cols = prepareOutputBlockColumns(
-            params, aggregate_functions, getHeader(/* final */ true), aggregates_pools, /* final */ true, max_block_size);
+        out_cols = prepareOutputBlockColumns(params, aggregate_functions, getHeader(final), aggregates_pools, final, max_block_size);
 
         if constexpr (Method::low_cardinality_optimization)
         {
@@ -1906,7 +1906,6 @@ NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Are
         }
 
         shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
-        key_sizes_ptr = shuffled_key_sizes ? &*shuffled_key_sizes : &key_sizes;
 
         places.reserve(max_block_size);
     };
@@ -1920,7 +1919,8 @@ NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Are
             if (!out_cols.has_value())
                 init_out_cols();
 
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, *key_sizes_ptr);
+            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
             places.emplace_back(mapped);
 
             /// Mark the cell as destroyed so it will not be destroyed in destructor.
@@ -1930,7 +1930,7 @@ NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Are
             {
                 if (places.size() >= max_block_size)
                 {
-                    res.emplace_back(insert_results_into_cols(places, out_cols.value()));
+                    res.emplace_back(insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena));
                     places.clear();
                     out_cols.reset();
                 }
@@ -1939,12 +1939,12 @@ NO_INLINE Aggregator::convertToBlockImplFinal(Method & method, Table & data, Are
 
     if constexpr (return_single_block)
     {
-        return insert_results_into_cols(places, out_cols.value());
+        return insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena);
     }
     else
     {
-        if (!places.empty())
-            res.emplace_back(insert_results_into_cols(places, out_cols.value()));
+        if (out_cols.has_value())
+            res.emplace_back(insertResultsIntoColumns<use_compiled_functions>(places, std::move(out_cols.value()), arena));
         return res;
     }
 }
@@ -1954,16 +1954,15 @@ Aggregator::ConvertToBlockRes<return_single_block> NO_INLINE
 Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t) const
 {
     const size_t max_block_size = params.max_block_size;
+    const bool final = false;
     ConvertToBlockRes<return_single_block> res;
 
     std::optional<OutputBlockColumns> out_cols;
     std::optional<Sizes> shuffled_key_sizes;
-    const Sizes * key_sizes_ptr = nullptr;
 
     auto init_out_cols = [&]()
     {
-        out_cols = prepareOutputBlockColumns(
-            params, aggregate_functions, getHeader(/* final */ false), aggregates_pools, /* final */ false, max_block_size);
+        out_cols = prepareOutputBlockColumns(params, aggregate_functions, getHeader(final), aggregates_pools, final, max_block_size);
 
         if constexpr (Method::low_cardinality_optimization)
         {
@@ -1979,7 +1978,6 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
         }
 
         shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
-        key_sizes_ptr = shuffled_key_sizes ? &*shuffled_key_sizes : &key_sizes;
     };
 
     // should be invoked at least once, because null data might be the only content of the `data`
@@ -1993,7 +1991,8 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
             if (!out_cols.has_value())
                 init_out_cols();
 
-            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, *key_sizes_ptr);
+            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref);
 
             /// reserved, so push_back does not throw exceptions
             for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -2007,8 +2006,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
             {
                 if (rows_in_current_block >= max_block_size)
                 {
-                    res.emplace_back(finalizeBlock(
-                        params, getHeader(/* final */ false), std::move(out_cols.value()), /* final */ false, rows_in_current_block));
+                    res.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols.value()), final, rows_in_current_block));
                     out_cols.reset();
                     rows_in_current_block = 0;
                 }
@@ -2017,13 +2015,12 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
 
     if constexpr (return_single_block)
     {
-        return finalizeBlock(params, getHeader(/* final */ false), std::move(out_cols).value(), /* final */ false, rows_in_current_block);
+        return finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block);
     }
     else
     {
         if (rows_in_current_block)
-            res.emplace_back(
-                finalizeBlock(params, getHeader(/* final */ false), std::move(out_cols).value(), /* final */ false, rows_in_current_block));
+            res.emplace_back(finalizeBlock(params, getHeader(final), std::move(out_cols).value(), final, rows_in_current_block));
         return res;
     }
     return res;
