@@ -17,7 +17,7 @@ def start_cluster():
 def test_lc_of_string(start_cluster):
     result = node.query("WITH (  SELECT toLowCardinality('a') ) AS bar SELECT bar")
 
-    assert result == "a\n""
+    assert result == "a\n"
 
 
 def test_lc_of_int(start_cluster):
