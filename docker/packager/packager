@@ -237,7 +237,11 @@ def parse_env_variables(
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
-        result.append("CCACHE_MAXSIZE=15G")
+        cache_maxsize = "15G"
+        if clang_tidy:
+            # 15G is not enough for tidy build
+            cache_maxsize = "25G"
+        result.append(f"CCACHE_MAXSIZE={cache_maxsize}")
         # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
