@@ -24,9 +24,15 @@ class DistinctSortedTransform : public ISimpleTransform
 public:
     /// Empty columns_ means all columns.
     DistinctSortedTransform(
-        Block header_, SortDescription sort_description, const SizeLimits & set_size_limits_, UInt64 limit_hint_, const Names & columns);
+        const Block & header_,
+        const SortDescription & sort_description,
+        const SizeLimits & set_size_limits_,
+        UInt64 limit_hint_,
+        const Names & columns);
 
     String getName() const override { return "DistinctSortedTransform"; }
+
+    static bool isApplicable(const Block & header, const SortDescription & sort_description, const Names & column_names);
 
 protected:
     void transform(Chunk & chunk) override;
@@ -45,7 +51,7 @@ private:
         ClearableSetVariants & variants) const;
 
     Block header;
-    SortDescription description;
+    SortDescription sort_description;
 
     struct PreviousChunk
     {
@@ -58,7 +64,7 @@ private:
     ColumnNumbers column_positions;      /// DISTINCT columns positions in header
     ColumnNumbers sort_prefix_positions; /// DISTINCT columns positions which form sort prefix of sort description
     ColumnRawPtrs column_ptrs;           /// DISTINCT columns from chunk
-    ColumnRawPtrs sort_prefix_columns; /// DISTINCT columns from chunk which form sort prefix of sort description
+    ColumnRawPtrs sort_prefix_columns;   /// DISTINCT columns from chunk which form sort prefix of sort description
 
     ClearableSetVariants data;
     Sizes key_sizes;
