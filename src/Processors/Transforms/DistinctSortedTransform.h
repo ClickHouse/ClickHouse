@@ -28,7 +28,7 @@ public:
         const SortDescription & sort_description,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
-        const Names & columns);
+        const Names & column_names);
 
     String getName() const override { return "DistinctSortedTransform"; }
 
@@ -38,7 +38,7 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    static bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m);
+    bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m) const;
 
     /// return true if has new data
     template <typename Method>
@@ -50,8 +50,7 @@ private:
         size_t rows,
         ClearableSetVariants & variants) const;
 
-    Block header;
-    SortDescription sort_description;
+    std::vector<int> sorted_columns_nulls_direction;
 
     struct PreviousChunk
     {
@@ -60,7 +59,6 @@ private:
     };
     PreviousChunk prev_chunk;
 
-    Names column_names;
     ColumnNumbers column_positions;      /// DISTINCT columns positions in header
     ColumnNumbers sort_prefix_positions; /// DISTINCT columns positions which form sort prefix of sort description
     ColumnRawPtrs column_ptrs;           /// DISTINCT columns from chunk
