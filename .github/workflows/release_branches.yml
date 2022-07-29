@@ -11,7 +11,8 @@ on: # yamllint disable-line rule:truthy
       - reopened
       - opened
     branches:
-      - '**/22.3*'
+      #- '**/22.3*'
+      - '**/ci-enable-testflows-again-customizations_22.3'
   release:
     types:
       - published
@@ -216,173 +217,173 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  ##############################################################################################
-  ########################### FUNCTIONAl STATELESS TESTS #######################################
-  ##############################################################################################
-  FunctionalStatelessTestRelease:
-    needs: [BuilderDebRelease]
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/stateless_debug
-          REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, actions)
-          REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
-          KILL_TIMEOUT=10800
-          EOF
-      - name: Download json reports
-        uses: actions/download-artifact@v2
-        with:
-          path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Functional test
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-      - name: Cleanup
-        if: always()
-        run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr "$TEMP_PATH"
-  ##############################################################################################
-  ############################ FUNCTIONAl STATEFUL TESTS #######################################
-  ##############################################################################################
-  FunctionalStatefulTestRelease:
-    needs: [BuilderDebRelease]
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/stateful_debug
-          REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (release, actions)
-          REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
-          KILL_TIMEOUT=3600
-          EOF
-      - name: Download json reports
-        uses: actions/download-artifact@v2
-        with:
-          path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Functional test
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-      - name: Cleanup
-        if: always()
-        run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr "$TEMP_PATH"
-  #############################################################################################
-  ############################# INTEGRATION TESTS #############################################
-  #############################################################################################
-  IntegrationTestsRelease0:
-    needs: [BuilderDebRelease]
-    runs-on: [self-hosted, stress-tester]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/integration_tests_release
-          REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (release, actions)
-          REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
-          RUN_BY_HASH_NUM=0
-          RUN_BY_HASH_TOTAL=2
-          EOF
-      - name: Download json reports
-        uses: actions/download-artifact@v2
-        with:
-          path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Integration test
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 integration_test_check.py "$CHECK_NAME"
-      - name: Cleanup
-        if: always()
-        run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr "$TEMP_PATH"
-  IntegrationTestsRelease1:
-    needs: [BuilderDebRelease]
-    runs-on: [self-hosted, stress-tester]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/integration_tests_release
-          REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (release, actions)
-          REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
-          RUN_BY_HASH_NUM=1
-          RUN_BY_HASH_TOTAL=2
-          EOF
-      - name: Download json reports
-        uses: actions/download-artifact@v2
-        with:
-          path: ${{ env.REPORTS_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Integration test
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 integration_test_check.py "$CHECK_NAME"
-      - name: Cleanup
-        if: always()
-        run: |
-          # shellcheck disable=SC2046
-          docker kill $(docker ps -q) ||:
-          # shellcheck disable=SC2046
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr "$TEMP_PATH"
+# ##############################################################################################
+# ########################### FUNCTIONAl STATELESS TESTS #######################################
+# ##############################################################################################
+# FunctionalStatelessTestRelease:
+#   needs: [BuilderDebRelease]
+#   runs-on: [self-hosted, func-tester]
+#   steps:
+#     - name: Set envs
+#       run: |
+#         cat >> "$GITHUB_ENV" << 'EOF'
+#         TEMP_PATH=${{runner.temp}}/stateless_debug
+#         REPORTS_PATH=${{runner.temp}}/reports_dir
+#         CHECK_NAME=Stateless tests (release, actions)
+#         REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
+#         KILL_TIMEOUT=10800
+#         EOF
+#     - name: Download json reports
+#       uses: actions/download-artifact@v2
+#       with:
+#         path: ${{ env.REPORTS_PATH }}
+#     - name: Clear repository
+#       run: |
+#         sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+#     - name: Check out repository code
+#       uses: actions/checkout@v2
+#     - name: Functional test
+#       run: |
+#         sudo rm -fr "$TEMP_PATH"
+#         mkdir -p "$TEMP_PATH"
+#         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#     - name: Cleanup
+#       if: always()
+#       run: |
+#         # shellcheck disable=SC2046
+#         docker kill $(docker ps -q) ||:
+#         # shellcheck disable=SC2046
+#         docker rm -f $(docker ps -a -q) ||:
+#         sudo rm -fr "$TEMP_PATH"
+# ##############################################################################################
+# ############################ FUNCTIONAl STATEFUL TESTS #######################################
+# ##############################################################################################
+# FunctionalStatefulTestRelease:
+#   needs: [BuilderDebRelease]
+#   runs-on: [self-hosted, func-tester]
+#   steps:
+#     - name: Set envs
+#       run: |
+#         cat >> "$GITHUB_ENV" << 'EOF'
+#         TEMP_PATH=${{runner.temp}}/stateful_debug
+#         REPORTS_PATH=${{runner.temp}}/reports_dir
+#         CHECK_NAME=Stateful tests (release, actions)
+#         REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
+#         KILL_TIMEOUT=3600
+#         EOF
+#     - name: Download json reports
+#       uses: actions/download-artifact@v2
+#       with:
+#         path: ${{ env.REPORTS_PATH }}
+#     - name: Clear repository
+#       run: |
+#         sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+#     - name: Check out repository code
+#       uses: actions/checkout@v2
+#     - name: Functional test
+#       run: |
+#         sudo rm -fr "$TEMP_PATH"
+#         mkdir -p "$TEMP_PATH"
+#         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+#         cd "$REPO_COPY/tests/ci"
+#         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+#     - name: Cleanup
+#       if: always()
+#       run: |
+#         # shellcheck disable=SC2046
+#         docker kill $(docker ps -q) ||:
+#         # shellcheck disable=SC2046
+#         docker rm -f $(docker ps -a -q) ||:
+#         sudo rm -fr "$TEMP_PATH"
+# #############################################################################################
+# ############################# INTEGRATION TESTS #############################################
+# #############################################################################################
+# IntegrationTestsRelease0:
+#   needs: [BuilderDebRelease]
+#   runs-on: [self-hosted, stress-tester]
+#   steps:
+#     - name: Set envs
+#       run: |
+#         cat >> "$GITHUB_ENV" << 'EOF'
+#         TEMP_PATH=${{runner.temp}}/integration_tests_release
+#         REPORTS_PATH=${{runner.temp}}/reports_dir
+#         CHECK_NAME=Integration tests (release, actions)
+#         REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
+#         RUN_BY_HASH_NUM=0
+#         RUN_BY_HASH_TOTAL=2
+#         EOF
+#     - name: Download json reports
+#       uses: actions/download-artifact@v2
+#       with:
+#         path: ${{ env.REPORTS_PATH }}
+#     - name: Clear repository
+#       run: |
+#         sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+#     - name: Check out repository code
+#       uses: actions/checkout@v2
+#     - name: Integration test
+#       run: |
+#         sudo rm -fr "$TEMP_PATH"
+#         mkdir -p "$TEMP_PATH"
+#         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+#         cd "$REPO_COPY/tests/ci"
+#         python3 integration_test_check.py "$CHECK_NAME"
+#     - name: Cleanup
+#       if: always()
+#       run: |
+#         # shellcheck disable=SC2046
+#         docker kill $(docker ps -q) ||:
+#         # shellcheck disable=SC2046
+#         docker rm -f $(docker ps -a -q) ||:
+#         sudo rm -fr "$TEMP_PATH"
+# IntegrationTestsRelease1:
+#   needs: [BuilderDebRelease]
+#   runs-on: [self-hosted, stress-tester]
+#   steps:
+#     - name: Set envs
+#       run: |
+#         cat >> "$GITHUB_ENV" << 'EOF'
+#         TEMP_PATH=${{runner.temp}}/integration_tests_release
+#         REPORTS_PATH=${{runner.temp}}/reports_dir
+#         CHECK_NAME=Integration tests (release, actions)
+#         REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
+#         RUN_BY_HASH_NUM=1
+#         RUN_BY_HASH_TOTAL=2
+#         EOF
+#     - name: Download json reports
+#       uses: actions/download-artifact@v2
+#       with:
+#         path: ${{ env.REPORTS_PATH }}
+#     - name: Clear repository
+#       run: |
+#         sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+#     - name: Check out repository code
+#       uses: actions/checkout@v2
+#     - name: Integration test
+#       run: |
+#         sudo rm -fr "$TEMP_PATH"
+#         mkdir -p "$TEMP_PATH"
+#         cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+#         cd "$REPO_COPY/tests/ci"
+#         python3 integration_test_check.py "$CHECK_NAME"
+#     - name: Cleanup
+#       if: always()
+#       run: |
+#         # shellcheck disable=SC2046
+#         docker kill $(docker ps -q) ||:
+#         # shellcheck disable=SC2046
+#         docker rm -f $(docker ps -a -q) ||:
+#         sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     needs:
       - DockerHubPush
       - BuilderReport
-      - FunctionalStatelessTestRelease
-      - FunctionalStatefulTestRelease
-      - IntegrationTestsRelease0
-      - IntegrationTestsRelease1
+#     - FunctionalStatelessTestRelease
+#     - FunctionalStatefulTestRelease
+#     - IntegrationTestsRelease0
+#     - IntegrationTestsRelease1
       - CompatibilityCheck
     runs-on: [self-hosted, style-checker]
     steps:
