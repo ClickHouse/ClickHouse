@@ -73,10 +73,11 @@ public:
     enum DigestVersion : uint8_t
     {
         NO_DIGEST = 0,
-        V0 = 1
+        V0 = 1,
+        V1 = 2  // added system nodes that modify the digest on startup so digest from V0 is invalid
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V0;
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V1;
 
     struct ResponseForSession
     {
