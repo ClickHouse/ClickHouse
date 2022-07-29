@@ -69,17 +69,8 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
     // have resized it.
-    Block header = pipeline.getHeader();
-    if (!window_description.partition_by.empty())
-    {
-        ColumnNumbers key_columns;
-        key_columns.reserve(window_description.partition_by.size());
-        for (auto & col : window_description.partition_by)
-        {
-            key_columns.push_back(header.getPositionByName(col.column_name));
-        }
-        pipeline.addTransform(std::make_shared<ScatterByPartitionTransform>(header, pipeline.getNumThreads(), std::move(key_columns)));
-    }
+    if (window_description.full_sort_description.empty())
+        pipeline.resize(1);
 
     pipeline.addSimpleTransform(
         [&](const Block & /*header*/)

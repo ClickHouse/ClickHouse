@@ -24,6 +24,20 @@ public:
         VolumePtr tmp_volume_,
         size_t min_free_disk_space_);
 
+    /// Full with partitioning
+    SortingStep(
+        const DataStream & input_stream,
+        const SortDescription & description_,
+        const SortDescription & partition_by_description_,
+        size_t max_block_size_,
+        UInt64 limit_,
+        SizeLimits size_limits_,
+        size_t max_bytes_before_remerge_,
+        double remerge_lowered_memory_bytes_ratio_,
+        size_t max_bytes_before_external_sort_,
+        VolumePtr tmp_volume_,
+        size_t min_free_disk_space_);
+
     /// FinishSorting
     SortingStep(
         const DataStream & input_stream_,
@@ -67,6 +81,9 @@ private:
 
     SortDescription prefix_description;
     SortDescription result_description;
+
+    SortDescription partition_by_description;
+
     size_t max_block_size;
     UInt64 limit;
     SizeLimits size_limits;

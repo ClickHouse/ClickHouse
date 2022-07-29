@@ -1,9 +1,7 @@
-#include <utility>
-#include <utility>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 
-#include "Common/PODArray.h"
-#include "Core/ColumnNumbers.h"
+#include <Common/PODArray.h>
+#include <Core/ColumnNumbers.h>
 
 namespace DB
 {
@@ -36,8 +34,16 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
     }
 
     if (!all_outputs_processed)
+    {
+        auto output_it = outputs.begin();
+        bool can_push = false;
+        for (size_t i = 0; i < output_size; ++i, ++output_it)
+            if (!was_output_processed[i] && output_it->canPush())
+                can_push = true;
+        if (!can_push)
+            return Status::PortFull;
         return Status::Ready;
-
+    }
     /// Try get chunk from input.
 
     if (input.isFinished())

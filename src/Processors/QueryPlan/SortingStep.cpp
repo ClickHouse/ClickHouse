@@ -1,3 +1,4 @@
+#include <memory>
 #include <stdexcept>
 #include <IO/Operators.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -8,6 +9,9 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+
+#include "Processors/ResizeProcessor.h"
+#include "Processors/Transforms/ScatterByPartitionTransform.h"
 
 namespace DB
 {
@@ -53,6 +57,15 @@ SortingStep::SortingStep(
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;
     output_stream->sort_mode = DataStream::SortMode::Stream;
+}
+
+SortingStep::SortingStep(const DataStream& input_stream, const SortDescription& description_,
+        const SortDescription& partition_by_description_, size_t max_block_size_, UInt64 limit_, SizeLimits size_limits_,
+        size_t max_bytes_before_remerge_, double remerge_lowered_memory_bytes_ratio_,
+        size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_, size_t min_free_disk_space_)
+    : SortingStep(input_stream, description_, max_block_size_, limit_, size_limits_, max_bytes_before_remerge_, remerge_lowered_memory_bytes_ratio_, max_bytes_before_external_sort_, tmp_volume_, min_free_disk_space_)
+{
+    partition_by_description = partition_by_description_;
 }
 
 SortingStep::SortingStep(
@@ -160,6 +173,52 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     }
     else if (type == Type::Full)
     {
+        size_t threads = pipeline.getNumThreads();
+        size_t streams = pipeline.getNumStreams();
+
+        if (!partition_by_description.empty() && threads > 1)
+        {
+            Block stream_header = pipeline.getHeader();
+
+            ColumnNumbers key_columns;
+            key_columns.reserve(partition_by_description.size());
+            for (auto & col : partition_by_description)
+            {
+                key_columns.push_back(stream_header.getPositionByName(col.column_name));
+            }
+
+            pipeline.transform([&](OutputPortRawPtrs ports)
+            {
+                Processors processors;
+                for (auto * port : ports)
+                {
+                    auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, threads, key_columns);
+                    connect(*port, scatter->getInputs().front());
+                    processors.push_back(scatter);
+                }
+                return processors;
+            });
+
+            if (streams > 1)
+            {
+                pipeline.transform([&](OutputPortRawPtrs ports)
+               {
+                   Processors processors;
+                   for (size_t i = 0; i < threads; ++i)
+                   {
+                       size_t output_it = i;
+                       auto resize = std::make_shared<ResizeProcessor>(ports[output_it]->getHeader(), streams, 1);
+                       auto & inputs = resize->getInputs();
+
+                       for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += threads, ++input_it)
+                           connect(*ports[output_it], *input_it);
+                       processors.push_back(resize);
+                   }
+                   return processors;
+               });
+            }
+        }
+
         pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -206,7 +265,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         });
 
         /// If there are several streams, then we merge them into one
-        if (pipeline.getNumStreams() > 1)
+        if (pipeline.getNumStreams() > 1 && partition_by_description.empty())
         {
             auto transform = std::make_shared<MergingSortedTransform>(
                     pipeline.getHeader(),

@@ -1,7 +1,7 @@
 #pragma once
-#include "Common/WeakHash.h"
-#include "Core/ColumnNumbers.h"
-#include "Processors/IProcessor.h"
+#include <Common/WeakHash.h>
+#include <Core/ColumnNumbers.h>
+#include <Processors/IProcessor.h>
 
 namespace DB
 {
