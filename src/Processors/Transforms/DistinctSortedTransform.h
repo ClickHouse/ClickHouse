@@ -32,10 +32,6 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    ColumnRawPtrs getKeyColumns(const Chunk & chunk) const;
-    /// When clearing_columns changed, we can clean HashSet to memory optimization
-    /// clearing_columns is a left-prefix of SortDescription exists in key_columns
-    ColumnRawPtrs getClearingColumns(const ColumnRawPtrs & key_columns) const;
     static bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m);
 
     /// return true if has new data
@@ -59,7 +55,11 @@ private:
     PreviousChunk prev_chunk;
 
     Names column_names;
-    ColumnNumbers column_positions;
+    ColumnNumbers column_positions;      /// DISTINCT columns positions in header
+    ColumnNumbers sort_prefix_positions; /// DISTINCT columns positions which form sort prefix of sort description
+    ColumnRawPtrs column_ptrs;           /// DISTINCT columns from chunk
+    ColumnRawPtrs sort_prefix_columns; /// DISTINCT columns from chunk which form sort prefix of sort description
+
     ClearableSetVariants data;
     Sizes key_sizes;
     UInt64 limit_hint;

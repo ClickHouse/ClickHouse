@@ -186,6 +186,12 @@ else()
     message(STATUS "ClickHouse disks mode: OFF")
 endif()
 
+if (ENABLE_CLICKHOUSE_SU)
+    message(STATUS "ClickHouse su: ON")
+else()
+    message(STATUS "ClickHouse su: OFF")
+endif()
+
 configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
@@ -486,4 +492,3 @@ endif()
 if (ENABLE_FUZZING)
     add_compile_definitions(FUZZING_MODE=1)
 endif ()
-
