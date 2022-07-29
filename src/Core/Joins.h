@@ -92,4 +92,26 @@ inline constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality
     return ASOFJoinInequality::None;
 }
 
+enum class JoinAlgorithm
+{
+    DEFAULT = 0,
+    AUTO,
+    HASH,
+    PARTIAL_MERGE,
+    PREFER_PARTIAL_MERGE,
+    PARALLEL_HASH,
+    DIRECT,
+    FULL_SORTING_MERGE,
+};
+
+const char * toString(JoinAlgorithm join_algorithm);
+
+enum class JoinTableSide
+{
+    Left,
+    Right
+};
+
+const char * toString(JoinTableSide join_table_side);
+
 }

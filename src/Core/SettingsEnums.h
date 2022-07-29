@@ -30,18 +30,6 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
 
-enum class JoinAlgorithm
-{
-    DEFAULT = 0,
-    AUTO,
-    HASH,
-    PARTIAL_MERGE,
-    PREFER_PARTIAL_MERGE,
-    PARALLEL_HASH,
-    DIRECT,
-    FULL_SORTING_MERGE,
-};
-
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 
 

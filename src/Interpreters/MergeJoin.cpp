@@ -1140,9 +1140,9 @@ bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
     auto kind = table_join->kind();
     auto strictness = table_join->strictness();
 
-    bool is_any = (strictness == ASTTableJoin::Strictness::Any);
-    bool is_all = (strictness == ASTTableJoin::Strictness::All);
-    bool is_semi = (strictness == ASTTableJoin::Strictness::Semi);
+    bool is_any = (strictness == JoinStrictness::Any);
+    bool is_all = (strictness == JoinStrictness::All);
+    bool is_semi = (strictness == JoinStrictness::Semi);
 
     bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
     bool special_left = isInnerOrLeft(kind) && (is_any || is_semi);
