@@ -916,7 +916,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     if (global_ctx->deduplicate)
     {
-        if (!sort_description.empty())
+        if (DistinctSortedTransform::isApplicable(header, sort_description, global_ctx->deduplicate_by_columns))
             res_pipe.addTransform(std::make_shared<DistinctSortedTransform>(
                 res_pipe.getHeader(), sort_description, SizeLimits(), 0 /*limit_hint*/, global_ctx->deduplicate_by_columns));
         else
