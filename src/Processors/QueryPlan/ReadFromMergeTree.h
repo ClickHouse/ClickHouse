@@ -141,14 +141,9 @@ public:
     void setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info);
 
 private:
-    static InputOrderInfoPtr getInputOrderInfo(const SelectQueryInfo & query_info_)
-    {
-        return query_info_.input_order_info ? query_info_.input_order_info
-                                            : (query_info_.projection ? query_info_.projection->input_order_info : nullptr);
-    }
     int getSortDirection() const
     {
-        const InputOrderInfoPtr & order_info = getInputOrderInfo(query_info);
+        const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
         if (order_info)
             return order_info->direction;
 

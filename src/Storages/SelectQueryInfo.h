@@ -191,6 +191,11 @@ struct SelectQueryInfo : SelectQueryInfoBase
 
     /// Make subquery_for_sets reusable across different interpreters.
     SubqueriesForSets subquery_for_sets;
+
+    InputOrderInfoPtr getInputOrderInfo() const
+    {
+        return input_order_info ? input_order_info : (projection ? projection->input_order_info : nullptr);
+    }
 };
 
 }
