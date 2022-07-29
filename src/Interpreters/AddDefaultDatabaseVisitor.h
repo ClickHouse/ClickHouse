@@ -169,7 +169,7 @@ private:
 
     void visit(ASTSubquery & subquery, ASTPtr &) const
     {
-        tryVisit<ASTSelectWithUnionQuery>(subquery.children[0]);
+        tryVisit<ASTSelectWithUnionQuery>(subquery.children.front());
     }
 
     void visit(ASTFunction & function, ASTPtr &) const
@@ -181,20 +181,21 @@ private:
         {
             if (child.get() == function.arguments.get())
             {
-                for (size_t i = 0; i < child->children.size(); ++i)
+                auto it = child->children.begin();
+                for (size_t i = 0; it != child->children.end(); ++i, ++it)
                 {
                     if (is_dict_get && i == 0)
                     {
-                        if (auto * identifier = child->children[i]->as<ASTIdentifier>())
+                        if (auto * identifier = (*it)->as<ASTIdentifier>())
                         {
                             /// Identifier already qualified
                             if (identifier->compound())
                                 continue;
 
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
-                            child->children[i] = std::make_shared<ASTIdentifier>(qualified_dictionary_name.getParts());
+                            *it = std::make_shared<ASTIdentifier>(qualified_dictionary_name.getParts());
                         }
-                        else if (auto * literal = child->children[i]->as<ASTLiteral>())
+                        else if (auto * literal = (*it)->as<ASTLiteral>())
                         {
                             auto & literal_value = literal->value;
 
@@ -210,22 +211,22 @@ private:
                     {
                         /// XXX: for some unknown reason this place assumes that argument can't be an alias,
                         ///      like in the similar code in `MarkTableIdentifierVisitor`.
-                        if (auto * identifier = child->children[i]->as<ASTIdentifier>())
+                        if (auto * identifier = (*it)->as<ASTIdentifier>())
                         {
                             /// If identifier is broken then we can do nothing and get an exception
                             auto maybe_table_identifier = identifier->createTable();
                             if (maybe_table_identifier)
-                                child->children[i] = maybe_table_identifier;
+                                *it = maybe_table_identifier;
                         }
 
                         /// Second argument of the "in" function (or similar) may be a table name or a subselect.
                         /// Rewrite the table name or descend into subselect.
-                        if (!tryVisit<ASTTableIdentifier>(child->children[i]))
-                            visit(child->children[i]);
+                        if (!tryVisit<ASTTableIdentifier>(*it))
+                            visit(*it);
                     }
                     else
                     {
-                        visit(child->children[i]);
+                        visit(*it);
                     }
                 }
             }

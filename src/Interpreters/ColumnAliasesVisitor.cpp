@@ -53,7 +53,7 @@ void ColumnAliasesMatcher::visit(ASTFunction & node, ASTPtr & /*ast*/, Data & da
             }
         }
         /// visit child with masked local aliases
-        Visitor(data).visit(node.arguments->children[1]);
+        Visitor(data).visit(*++node.arguments->children.begin());
         for (const auto & name : local_aliases)
             data.private_aliases.erase(name);
     }

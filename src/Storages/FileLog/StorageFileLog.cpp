@@ -745,7 +745,7 @@ void registerStorageFileLog(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
 
         bool has_settings = args.storage_def->settings;
@@ -800,8 +800,8 @@ void registerStorageFileLog(StorageFactory & factory)
             throw Exception(
                 "Arguments size of StorageFileLog should be 2, path and format name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto path_ast = evaluateConstantExpressionAsLiteral(engine_args[0], args.getContext());
-        auto format_ast = evaluateConstantExpressionAsLiteral(engine_args[1], args.getContext());
+        auto path_ast = evaluateConstantExpressionAsLiteral(engine_args.front(), args.getContext());
+        auto format_ast = evaluateConstantExpressionAsLiteral(engine_args.back(), args.getContext());
 
         auto path = checkAndGetLiteralArgument<String>(path_ast, "path");
         auto format = checkAndGetLiteralArgument<String>(format_ast, "format");

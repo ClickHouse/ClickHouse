@@ -385,7 +385,7 @@ SinkToStoragePtr StoragePostgreSQL::write(
 }
 
 
-StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
+StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTList engine_args, ContextPtr context)
 {
     StoragePostgreSQLConfiguration configuration;
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
@@ -416,7 +416,9 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+        auto it = engine_args.begin();
+        const auto & host_port = checkAndGetLiteralArgument<String>(*it, "host:port");
+        ++it;
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
@@ -425,15 +427,25 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
             configuration.host = configuration.addresses[0].first;
             configuration.port = configuration.addresses[0].second;
         }
-        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "host:port");
-        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
-        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
+        configuration.database = checkAndGetLiteralArgument<String>(*it, "host:port");
+        ++it;
+        configuration.table = checkAndGetLiteralArgument<String>(*it, "table");
+        ++it;
+        configuration.username = checkAndGetLiteralArgument<String>(*it, "username");
+        ++it;
+        configuration.password = checkAndGetLiteralArgument<String>(*it, "password");
+        ++it;
 
         if (engine_args.size() >= 6)
-            configuration.schema = checkAndGetLiteralArgument<String>(engine_args[5], "schema");
+        {
+            configuration.schema = checkAndGetLiteralArgument<String>(*it, "schema");
+            ++it;
+        }
         if (engine_args.size() >= 7)
-            configuration.on_conflict = checkAndGetLiteralArgument<String>(engine_args[6], "on_conflict");
+        {
+            configuration.on_conflict = checkAndGetLiteralArgument<String>(*it, "on_conflict");
+            ++it;
+        }
     }
     for (const auto & address : configuration.addresses)
         context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));

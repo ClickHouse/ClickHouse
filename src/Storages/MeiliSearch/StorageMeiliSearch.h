@@ -29,7 +29,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
 
-    MeiliSearchConfiguration static getConfiguration(ASTs engine_args, ContextPtr context);
+    MeiliSearchConfiguration static getConfiguration(ASTList engine_args, ContextPtr context);
 
 private:
     MeiliSearchConfiguration config;

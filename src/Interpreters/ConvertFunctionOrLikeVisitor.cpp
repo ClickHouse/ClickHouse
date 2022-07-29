@@ -20,7 +20,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
     {
         if (auto * expr_list_fn = child->as<ASTExpressionList>())
         {
-            ASTs unique_elems;
+            ASTList unique_elems;
             for (const auto & child_expr_fn : expr_list_fn->children)
             {
                 unique_elems.push_back(child_expr_fn);
@@ -40,8 +40,8 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
                         continue;
 
                     /// Second one is string literal.
-                    auto identifier = arguments[0];
-                    auto * literal = arguments[1]->as<ASTLiteral>();
+                    auto identifier = arguments.front();
+                    auto * literal = arguments.back()->as<ASTLiteral>();
                     if (!identifier || !literal || literal->value.getType() != Field::Types::String)
                         continue;
 
@@ -56,7 +56,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
                     {
                         it = identifier_to_literals.insert({identifier, std::make_shared<ASTLiteral>(Field{Array{}})}).first;
                         auto match = makeASTFunction("multiMatchAny");
-                        match->arguments->children.push_back(arguments[0]);
+                        match->arguments->children.push_back(arguments.front());
                         match->arguments->children.push_back(it->second);
                         unique_elems.push_back(std::move(match));
                     }

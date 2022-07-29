@@ -115,23 +115,23 @@ namespace
             {
                 auto check_and_insert = [&](const size_t index, const ComparisonGraph::CompareResult need_result)
                 {
-                    if (!onlyConstants(func->arguments->children[1 - index]))
+                    if (!onlyConstants(*std::next(func->arguments->children.begin(), 1 - index)))
                         return false;
 
                     for (const auto & primary_key_ast : primary_key_only_asts)
                     {
                         ComparisonGraph::CompareResult actual_result;
                         if (index == 0)
-                            actual_result = graph.compare(primary_key_ast, func->arguments->children[index]);
+                            actual_result = graph.compare(primary_key_ast, *std::next(func->arguments->children.begin(), index));
                         else
-                            actual_result = graph.compare(func->arguments->children[index], primary_key_ast);
+                            actual_result = graph.compare(*std::next(func->arguments->children.begin(), index), primary_key_ast);
 
                         if (canBeSequence(need_result, actual_result))
                         {
                             ASTPtr helper_ast = func->clone();
                             auto * helper_func = helper_ast->as<ASTFunction>();
                             helper_func->name = getReverseRelationMap().at(mostStrict(need_result, actual_result));
-                            helper_func->arguments->children[index] = primary_key_ast->clone();
+                            *std::next(helper_func->arguments->children.begin(), index) = primary_key_ast->clone();
                             result.insert(CNFQuery::AtomicFormula{atom.negative, helper_ast});
                             return true;
                         }

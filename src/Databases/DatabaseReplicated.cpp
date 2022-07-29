@@ -389,18 +389,21 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
                 return;
 
             ASTList & args_ref = create->storage->engine->arguments->children;
-            ASTList args = args_ref;
-            if (args.size() < 2)
+            if (args_ref.size() < 2)
                 return;
 
+            auto & arg_ref_first = *args_ref.begin();
+            auto & arg_ref_second = *++args_ref.begin();
+            ASTs args = {arg_ref_first, arg_ref_second};
+
             /// It can be a constant expression. Try to evaluate it, ignore exception if we cannot.
-            bool has_expression_argument = args_ref[0]->as<ASTFunction>() || args_ref[1]->as<ASTFunction>();
+            bool has_expression_argument = args[0]->as<ASTFunction>() || args[1]->as<ASTFunction>();
             if (has_expression_argument)
             {
                 try
                 {
-                    args[0] = evaluateConstantExpressionAsLiteral(args_ref[0]->clone(), query_context);
-                    args[1] = evaluateConstantExpressionAsLiteral(args_ref[1]->clone(), query_context);
+                    args[0] = evaluateConstantExpressionAsLiteral(args[0]->clone(), query_context);
+                    args[1] = evaluateConstantExpressionAsLiteral(args[1]->clone(), query_context);
                 }
                 catch (...)
                 {
@@ -440,8 +443,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             {
                 if (maybe_path.empty() || maybe_path.back() != '/')
                     maybe_path += '/';
-                args_ref[0]->as<ASTLiteral>()->value = maybe_path + "auto_{shard}";
-                args_ref[1]->as<ASTLiteral>()->value = maybe_replica + "auto_{replica}";
+                arg_ref_first->as<ASTLiteral>()->value = maybe_path + "auto_{shard}";
+                arg_ref_second->as<ASTLiteral>()->value = maybe_replica + "auto_{replica}";
                 return;
             }
 

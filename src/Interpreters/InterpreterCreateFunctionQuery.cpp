@@ -71,7 +71,7 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
     if (lambda_function_expression_list.size() != 2)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments and body");
 
-    const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
+    const ASTFunction * tuple_function_arguments = lambda_function_expression_list.front()->as<ASTFunction>();
 
     if (!tuple_function_arguments || !tuple_function_arguments->arguments)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid arguments");
@@ -91,7 +91,7 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Identifier {} already used as function parameter", argument_name);
     }
 
-    ASTPtr function_body = lambda_function_expression_list[1];
+    ASTPtr function_body = lambda_function_expression_list.back();
     if (!function_body)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid function body");
 

@@ -174,7 +174,7 @@ private:
                     "Function '{}' expects two arguments, given: '{}'",
                     node.name, node.formatForErrorMessage());
             }
-            auto & subquery = node.arguments->children.at(1);
+            auto & subquery = node.arguments->children.back();
             std::vector<ASTPtr> renamed;
             NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, &node, nullptr);
             NonGlobalTableVisitor(table_data).visit(subquery);
@@ -236,7 +236,7 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
     if (tables_in_select_query.children.empty())
         return;
 
-    const auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
+    const auto & tables_element = tables_in_select_query.children.front()->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return;
 

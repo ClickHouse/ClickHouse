@@ -629,7 +629,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const ASTExpressionList * constraints)
 {
-    ASTs constraints_data;
+    ASTList constraints_data;
     if (constraints)
         for (const auto & constraint : constraints->children)
             constraints_data.push_back(constraint->clone());

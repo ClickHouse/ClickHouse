@@ -753,7 +753,7 @@ void registerStorageKafka(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
         size_t args_count = engine_args.size();
         bool has_settings = args.storage_def->settings;
 
@@ -792,20 +792,20 @@ void registerStorageKafka(StorageFactory & factory)
                 {                                                           \
                     if ((EVAL) == 1)                                        \
                     {                                                       \
-                        engine_args[(ARG_NUM)-1] =                          \
+                        *std::next(engine_args.begin(), (ARG_NUM)-1) =      \
                             evaluateConstantExpressionAsLiteral(            \
-                                engine_args[(ARG_NUM)-1],                   \
+                                *std::next(engine_args.begin(), (ARG_NUM)-1),\
                                 args.getLocalContext());                    \
                     }                                                       \
                     if ((EVAL) == 2)                                        \
                     {                                                       \
-                        engine_args[(ARG_NUM)-1] =                          \
+                        *std::next(engine_args.begin(), (ARG_NUM)-1) =      \
                            evaluateConstantExpressionOrIdentifierAsLiteral( \
-                                engine_args[(ARG_NUM)-1],                   \
+                                *std::next(engine_args.begin(), (ARG_NUM)-1),\
                                 args.getLocalContext());                    \
                     }                                                       \
                     kafka_settings->PAR_NAME =                              \
-                        engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
+                        (*std::next(engine_args.begin(), (ARG_NUM)-1))->as<ASTLiteral &>().value; \
                 }                                                           \
             }
 
@@ -825,7 +825,7 @@ void registerStorageKafka(StorageFactory & factory)
         String collection_name;
         if (named_collection)
         {
-            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
+            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args.front().get())->name();
         }
         else
         {

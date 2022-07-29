@@ -39,27 +39,27 @@ BlockIO InterpreterExternalDDLQuery::execute()
     if (external_ddl_query.from->name == "MySQL")
     {
 #if USE_MYSQL
-        const ASTs & arguments = external_ddl_query.from->arguments->children;
+        const ASTList & arguments = external_ddl_query.from->arguments->children;
 
-        if (arguments.size() != 2 || !arguments[0]->as<ASTIdentifier>() || !arguments[1]->as<ASTIdentifier>())
+        if (arguments.size() != 2 || !arguments.front()->as<ASTIdentifier>() || !arguments.back()->as<ASTIdentifier>())
             throw Exception("MySQL External require two identifier arguments.", ErrorCodes::BAD_ARGUMENTS);
 
         if (external_ddl_query.external_ddl->as<ASTDropQuery>())
             return MySQLInterpreter::InterpreterMySQLDropQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
+                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments.front()),
+                getIdentifierName(arguments.back())).execute();
         else if (external_ddl_query.external_ddl->as<ASTRenameQuery>())
             return MySQLInterpreter::InterpreterMySQLRenameQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
+                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments.front()),
+                getIdentifierName(arguments.back())).execute();
         else if (external_ddl_query.external_ddl->as<MySQLParser::ASTAlterQuery>())
             return MySQLInterpreter::InterpreterMySQLAlterQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
+                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments.front()),
+                getIdentifierName(arguments.back())).execute();
         else if (external_ddl_query.external_ddl->as<MySQLParser::ASTCreateQuery>())
             return MySQLInterpreter::InterpreterMySQLCreateQuery(
-                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments[0]),
-                getIdentifierName(arguments[1])).execute();
+                external_ddl_query.external_ddl, getContext(), getIdentifierName(arguments.front()),
+                getIdentifierName(arguments.back())).execute();
 #endif
     }
 

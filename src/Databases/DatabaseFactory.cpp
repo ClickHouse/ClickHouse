@@ -180,9 +180,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
 
-
-            arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
-            const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
+            auto it = arguments.begin();
+            const auto & host_port = safeGetLiteralValue<String>(*it, engine_name);
+            it++;
+            *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, context);
 
             if (engine_name == "MySQL")
             {
@@ -196,9 +197,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 configuration.port = remote_port;
             }
 
-            configuration.database = safeGetLiteralValue<String>(arguments[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
+            configuration.username = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
+            configuration.password = safeGetLiteralValue<String>(*it, engine_name);
         }
 
         try
@@ -298,7 +301,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        AstList & engine_args = engine->arguments->children;
+        ASTList & engine_args = engine->arguments->children;
         auto use_table_cache = false;
         StoragePostgreSQLConfiguration configuration;
 
@@ -330,32 +333,39 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-            const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+            auto it = engine_args.begin();
+            const auto & host_port = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
             size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
 
             configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
+            configuration.username = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
+            configuration.password = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
 
             bool is_deprecated_syntax = false;
             if (engine_args.size() >= 5)
             {
-                auto arg_value = engine_args[4]->as<ASTLiteral>()->value;
+                auto arg_value = (*it)->as<ASTLiteral>()->value;
                 if (arg_value.getType() == Field::Types::Which::String)
                 {
-                    configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+                    configuration.schema = safeGetLiteralValue<String>(*it, engine_name);
                 }
                 else
                 {
-                    use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
+                    use_table_cache = safeGetLiteralValue<UInt8>(*it, engine_name);
                     LOG_WARNING(&Poco::Logger::get("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
                     is_deprecated_syntax = true;
                 }
+                ++it;
             }
 
             if (!is_deprecated_syntax && engine_args.size() >= 6)
-                use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+                use_table_cache = safeGetLiteralValue<UInt8>(*it, engine_name);
+            ++it;
         }
 
         const auto & settings = context->getSettingsRef();
@@ -396,13 +406,18 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(engine_args[0], engine_name), 5432);
+            auto it = engine_args.begin();
+            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(*it, engine_name), 5432);
+            ++it;
 
             configuration.host = parsed_host_port.first;
             configuration.port = parsed_host_port.second;
-            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
+            configuration.username = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
+            configuration.password = safeGetLiteralValue<String>(*it, engine_name);
+            ++it;
         }
 
         auto connection_info = postgres::formatConnectionString(

@@ -95,7 +95,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
             context->addScalar(it.first, it.second);
     }
 
-    ASTPtr subquery_select = subquery.children.at(0);
+    ASTPtr subquery_select = subquery.children.front();
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1, true);
     options.analyze(data.only_analyze);
@@ -304,9 +304,16 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
             if (child != func.arguments)
                 out.push_back(&child);
             else
-                for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
-                    if (i != 1 || !func.arguments->children[i]->as<ASTSubquery>())
-                        out.push_back(&func.arguments->children[i]);
+            {
+                size_t i = 0;
+                for (auto & arg : func.arguments->children)
+                {
+                    if (i != 1 || !arg->as<ASTSubquery>())
+                        out.push_back(&arg);
+
+                    ++i;
+                }
+            }
         }
     }
     else

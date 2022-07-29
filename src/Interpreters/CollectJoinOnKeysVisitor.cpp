@@ -101,8 +101,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
 
     if (func.name == "equals")
     {
-        ASTPtr left = func.arguments->children.at(0);
-        ASTPtr right = func.arguments->children.at(1);
+        ASTPtr left = func.arguments->children.front();
+        ASTPtr right = func.arguments->children.back();
         auto table_numbers = getTableNumbers(left, right, data);
         if (table_numbers.first == table_numbers.second)
         {
@@ -132,8 +132,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
             throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 
-        ASTPtr left = func.arguments->children.at(0);
-        ASTPtr right = func.arguments->children.at(1);
+        ASTPtr left = func.arguments->children.front();
+        ASTPtr right = func.arguments->children.back();
         auto table_numbers = getTableNumbers(left, right, data);
 
         data.addAsofJoinKeys(left, right, table_numbers, inequality);

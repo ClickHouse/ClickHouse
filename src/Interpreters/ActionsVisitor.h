@@ -221,7 +221,7 @@ private:
     static void visit(ASTExpressionList & expression_list, const ASTPtr & ast, Data & data);
 
     static SetPtr makeSet(const ASTFunction & node, Data & data, bool no_subqueries);
-    static ASTs doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
+    static ASTList doUntuple(const ASTFunction * function, ActionsMatcher::Data & data);
     static std::optional<NameAndTypePair> getNameAndTypeFromAST(const ASTPtr & ast, Data & data);
 };
 

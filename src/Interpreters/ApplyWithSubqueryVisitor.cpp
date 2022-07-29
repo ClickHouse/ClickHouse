@@ -84,9 +84,9 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
 {
     /// Special CTE case, where the right argument of IN is alias (ASTIdentifier) from WITH clause.
 
-    if (checkFunctionIsInOrGlobalInOperator(func))
+    if (checkFunctionIsInOrGlobalInOperator(func) && func.arguments->children.size() > 1)
     {
-        auto & ast = func.arguments->children.at(1);
+        auto & ast = *++func.arguments->children.begin();
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
             if (identifier->isShort())
@@ -96,11 +96,11 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 auto subquery_it = data.subqueries.find(name);
                 if (subquery_it != data.subqueries.end())
                 {
-                    auto old_alias = func.arguments->children[1]->tryGetAlias();
-                    func.arguments->children[1] = subquery_it->second->clone();
-                    func.arguments->children[1]->as<ASTSubquery &>().cte_name = name;
+                    auto old_alias = ast->tryGetAlias();
+                    ast = subquery_it->second->clone();
+                    ast->as<ASTSubquery &>().cte_name = name;
                     if (!old_alias.empty())
-                        func.arguments->children[1]->setAlias(old_alias);
+                        ast->setAlias(old_alias);
                 }
             }
         }

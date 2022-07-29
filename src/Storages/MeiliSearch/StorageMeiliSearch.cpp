@@ -125,7 +125,7 @@ SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const Stora
     return std::make_shared<SinkMeiliSearch>(config, metadata_snapshot->getSampleBlock(), local_context);
 }
 
-MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, ContextPtr context)
+MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTList engine_args, ContextPtr context)
 {
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
@@ -155,11 +155,14 @@ MeiliSearchConfiguration StorageMeiliSearch::getConfiguration(ASTs engine_args, 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
-        String index = checkAndGetLiteralArgument<String>(engine_args[1], "index");
+        auto it = engine_args.begin();
+        String url = checkAndGetLiteralArgument<String>(*it, "url");
+        ++it;
+        String index = checkAndGetLiteralArgument<String>(*it, "index");
+        ++it;
         String key;
         if (engine_args.size() == 3)
-            key = checkAndGetLiteralArgument<String>(engine_args[2], "key");
+            key = checkAndGetLiteralArgument<String>(*it, "key");
         return MeiliSearchConfiguration(url, index, key);
     }
 }

@@ -71,7 +71,7 @@ struct ExternalDataSourceInfo
  */
 template <typename T = EmptySettingsTraits>
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true, const BaseSettings<T> & storage_settings = {});
+    const ASTList & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true, const BaseSettings<T> & storage_settings = {});
 
 using HasConfigKeyFunc = std::function<bool(const String &)>;
 
@@ -131,12 +131,12 @@ struct URLBasedDataSourceConfig
     StorageSpecificArgs specific_args;
 };
 
-std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTList & args, ContextPtr context);
 
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
 template<typename T>
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);
+bool getExternalDataSourceConfiguration(const ASTList & args, BaseSettings<T> & settings, ContextPtr context);
 
 }

@@ -111,7 +111,7 @@ void DuplicateOrderByData::visit(ASTSelectQuery & select_query, ASTPtr &)
                 if (!select_table->children.empty())
                 {
                     DuplicateOrderByFromSubqueriesVisitor::Data data{false};
-                    DuplicateOrderByFromSubqueriesVisitor(data).visit(select_table->children[0]);
+                    DuplicateOrderByFromSubqueriesVisitor(data).visit(select_table->children.front());
                 }
             }
         }

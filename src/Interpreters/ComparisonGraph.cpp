@@ -17,7 +17,7 @@ namespace
 {
 
 /// Make function a > b or a >= b
-ASTPtr normalizeAtom(const ASTPtr & atom)
+static ASTPtr normalizeAtom(const ASTPtr & atom)
 {
     static const std::map<std::string, std::string> inverse_relations =
     {
@@ -30,7 +30,7 @@ ASTPtr normalizeAtom(const ASTPtr & atom)
     {
         if (const auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
         {
-            res = makeASTFunction(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
+            res = makeASTFunction(it->second, func->arguments->children.back()->clone(), func->arguments->children.front()->clone());
         }
     }
 
@@ -96,8 +96,8 @@ ComparisonGraph::ComparisonGraph(const ASTs & atomic_formulas)
         const auto * func = atom->as<ASTFunction>();
         if (func && func->arguments->children.size() == 2)
         {
-            auto index_left = get_index(func->arguments->children[0], g);
-            auto index_right = get_index(func->arguments->children[1], g);
+            auto index_left = get_index(func->arguments->children.front(), g);
+            auto index_right = get_index(func->arguments->children.back(), g);
 
             if (index_left && index_right)
             {
@@ -135,8 +135,8 @@ ComparisonGraph::ComparisonGraph(const ASTs & atomic_formulas)
 
         if (func && not_equals_functions.contains(func->name))
         {
-            auto index_left = graph.ast_hash_to_component.at(func->arguments->children[0]->getTreeHash());
-            auto index_right = graph.ast_hash_to_component.at(func->arguments->children[1]->getTreeHash());
+            auto index_left = graph.ast_hash_to_component.at(func->arguments->children.front()->getTreeHash());
+            auto index_right = graph.ast_hash_to_component.at(func->arguments->children.back()->getTreeHash());
 
             if (index_left == index_right)
                 throw Exception(ErrorCodes::VIOLATED_CONSTRAINT,

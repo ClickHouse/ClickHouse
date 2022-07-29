@@ -32,7 +32,7 @@ public:
     struct Arguments
     {
         const String & engine_name;
-        ASTs & engine_args;
+        ASTList & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;
         /// Path to table data.

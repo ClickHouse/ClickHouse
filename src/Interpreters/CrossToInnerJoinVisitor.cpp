@@ -124,8 +124,8 @@ std::map<size_t, std::vector<ASTPtr>> moveExpressionToJoinOn(
 
             /// Check if the identifiers are from different joined tables.
             /// If it's a self joint, tables should have aliases.
-            auto left_table_pos = IdentifierSemantic::getIdentsMembership(func->arguments->children[0], tables, aliases);
-            auto right_table_pos = IdentifierSemantic::getIdentsMembership(func->arguments->children[1], tables, aliases);
+            auto left_table_pos = IdentifierSemantic::getIdentsMembership(func->arguments->children.front(), tables, aliases);
+            auto right_table_pos = IdentifierSemantic::getIdentsMembership(func->arguments->children.back(), tables, aliases);
 
             /// Identifiers from different table move to JOIN ON
             if (left_table_pos && right_table_pos && *left_table_pos != *right_table_pos)
@@ -149,8 +149,7 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     if (expressions.size() == 1)
         return expressions[0]->clone();
 
-    std::vector<ASTPtr> arguments;
-    arguments.reserve(expressions.size());
+    ASTList arguments;
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());
 
@@ -198,7 +197,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
             if (!join->children.empty())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "CROSS JOIN has {} expressions: [{}, ...]",
-                    join->children.size(), queryToString(join->children[0]));
+                    join->children.size(), queryToString(join->children.front()));
         }
     }
 

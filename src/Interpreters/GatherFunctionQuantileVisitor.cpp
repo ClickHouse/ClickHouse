@@ -61,14 +61,14 @@ void GatherFunctionQuantileData::FuseQuantileAggregatesData::addFuncNode(ASTPtr 
     if (arguments.size() != (need_two_args ? 2 : 1))
         return;
 
-    if (arguments[0]->getColumnName().find(',') != std::string::npos)
+    if (arguments.front()->getColumnName().find(',') != std::string::npos)
         return;
-    String arg_name = arguments[0]->getColumnName();
+    String arg_name = arguments.front()->getColumnName();
     if (need_two_args)
     {
-        if (arguments[1]->getColumnName().find(',') != std::string::npos)
+        if (arguments.back()->getColumnName().find(',') != std::string::npos)
             return;
-        arg_name += "," + arguments[1]->getColumnName();
+        arg_name += "," + arguments.back()->getColumnName();
     }
 
     arg_map_function[arg_name].push_back(&ast);

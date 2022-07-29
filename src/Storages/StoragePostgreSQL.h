@@ -42,7 +42,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    static StoragePostgreSQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    static StoragePostgreSQLConfiguration getConfiguration(ASTList engine_args, ContextPtr context);
 
 private:
     String remote_table_name;

@@ -135,7 +135,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                 "Positional argument out of bounds: {} (exprected in range [1, {}]",
                         pos, columns.size());
 
-    const auto & column = columns[--pos];
+    const auto & column = *std::next(columns.begin(), --pos);
     if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))
     {
         argument = column->clone();
@@ -338,7 +338,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         if (ASTPtr group_by_ast = select_query->groupBy())
         {
             NameToIndexMap unique_keys;
-            ASTs & group_asts = group_by_ast->children;
+            ASTList & group_asts = group_by_ast->children;
 
             if (select_query->group_by_with_rollup)
                 group_by_kind = GroupByKind::ROLLUP;

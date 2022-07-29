@@ -23,34 +23,34 @@ namespace
 const ASTFunction * getInternalFunction(const ASTFunction & func)
 {
     if (func.arguments && func.arguments->children.size() == 1)
-        return func.arguments->children[0]->as<ASTFunction>();
+        return func.arguments->children.front()->as<ASTFunction>();
     return nullptr;
 }
 
-ASTPtr exchangeExtractFirstArgument(const String & func_name, const ASTFunction & child_func)
+static ASTPtr exchangeExtractFirstArgument(const String & func_name, const ASTFunction & child_func)
 {
-    ASTs new_child_args;
-    new_child_args.push_back(child_func.arguments->children[1]);
+    ASTList new_child_args;
+    new_child_args.push_back(child_func.arguments->children.back());
 
     auto new_child = makeASTFunction(func_name, new_child_args);
 
-    ASTs new_args;
-    new_args.push_back(child_func.arguments->children[0]);
+    ASTList new_args;
+    new_args.push_back(child_func.arguments->children.front());
     new_args.push_back(new_child);
 
     return makeASTFunction(child_func.name, new_args);
 }
 
-ASTPtr exchangeExtractSecondArgument(const String & func_name, const ASTFunction & child_func)
+static ASTPtr exchangeExtractSecondArgument(const String & func_name, const ASTFunction & child_func)
 {
-    ASTs new_child_args;
-    new_child_args.push_back(child_func.arguments->children[0]);
+    ASTList new_child_args;
+    new_child_args.push_back(child_func.arguments->children.front());
 
     auto new_child = makeASTFunction(func_name, new_child_args);
 
-    ASTs new_args;
+    ASTList new_args;
     new_args.push_back(new_child);
-    new_args.push_back(child_func.arguments->children[1]);
+    new_args.push_back(child_func.arguments->children.back());
 
     return makeASTFunction(child_func.name, new_args);
 }
@@ -109,8 +109,8 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
 
     auto original_alias = func.tryGetAlias();
     const auto & child_func_args = child_func->arguments->children;
-    const auto * first_literal = child_func_args[0]->as<ASTLiteral>();
-    const auto * second_literal = child_func_args[1]->as<ASTLiteral>();
+    const auto * first_literal = child_func_args.front()->as<ASTLiteral>();
+    const auto * second_literal = child_func_args.back()->as<ASTLiteral>();
 
     ASTPtr optimized_ast;
 
@@ -149,8 +149,8 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTFunction & func, ASTPt
         /// Main visitor is bottom-up. This is top-down part.
         /// We've found an aggregate function an now move it down through others: sum(mul(mul)) -> mul(mul(sum)).
         /// It's not dangerous cause main visitor already has visited this part of tree.
-        auto & expression_list = ast->children[0];
-        visit(expression_list->children[0], data);
+        auto & expression_list = ast->children.front();
+        visit(expression_list->children.front(), data);
     }
 }
 

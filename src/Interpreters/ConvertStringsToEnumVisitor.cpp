@@ -144,24 +144,28 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (function_node.arguments->children.size() != 2)
             return;
 
-        const ASTLiteral * literal1 = function_node.arguments->children[1]->as<ASTLiteral>();
-        const ASTLiteral * literal2 = function_node.arguments->children[2]->as<ASTLiteral>();
+        const ASTLiteral * literal1 = function_node.arguments->children.front()->as<ASTLiteral>();
+        const ASTLiteral * literal2 = function_node.arguments->children.back()->as<ASTLiteral>();
         if (!literal1 || !literal2)
             return;
 
         if (literal1->value.getTypeName() != "String" || literal2->value.getTypeName() != "String")
             return;
 
-        changeIfArguments(function_node.arguments->children[1],
-                            function_node.arguments->children[2]);
+        changeIfArguments(function_node.arguments->children.front(),
+                            function_node.arguments->children.back());
     }
     else if (function_node.name == "transform")
     {
         if (function_node.arguments->children.size() != 4)
             return;
 
-        const ASTLiteral * literal_to = function_node.arguments->children[2]->as<ASTLiteral>();
-        const ASTLiteral * literal_other = function_node.arguments->children[3]->as<ASTLiteral>();
+        auto it = std::next(function_node.arguments->children.begin(), 2);
+        auto & arg_to = *it;
+        auto & arg_other = *(++it);
+
+        const ASTLiteral * literal_to = arg_to->as<ASTLiteral>();
+        const ASTLiteral * literal_other = arg_other->as<ASTLiteral>();
         if (!literal_to || !literal_other)
             return;
 
@@ -176,7 +180,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (!to_strings)
             return;
 
-        changeTransformArguments(function_node.arguments->children[2], function_node.arguments->children[3]);
+        changeTransformArguments(arg_to, arg_other);
     }
 }
 

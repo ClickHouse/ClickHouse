@@ -237,10 +237,10 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
             /// Fill tuple values by evaluation of constant expressions.
             size_t i = 0;
-            for (; i < tuple_size; ++i)
+            for (auto it = func->arguments->children.begin(); i < tuple_size; ++i, ++it)
             {
                 Field value = tuple ? convertFieldToType((*tuple)[i], *types[i])
-                                    : extractValueFromNode(func->arguments->children[i], *types[i], context);
+                                    : extractValueFromNode(*it, *types[i], context);
 
                 bool need_insert_null = transform_null_in && types[i]->isNullable();
 
@@ -332,7 +332,7 @@ Block createBlockForSet(
         if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
-            auto element = func->arguments->children.at(0);
+            auto element = func->arguments->children.front();
             std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(element, context);
             return std::make_shared<DataTypeTuple>(DataTypes({value_raw.second}));
         }
@@ -384,8 +384,8 @@ SetPtr makeExplicitSet(
     if (args.children.size() != 2)
         throw Exception("Wrong number of arguments passed to function in", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTPtr & left_arg = args.children.at(0);
-    const ASTPtr & right_arg = args.children.at(1);
+    const ASTPtr & left_arg = args.children.front();
+    const ASTPtr & right_arg = args.children.back();
 
     auto column_name = left_arg->getColumnName();
     const auto & dag_node = actions.findInIndex(column_name);
@@ -725,14 +725,14 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
     return {};
 }
 
-ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Data & data)
+ASTList ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Data & data)
 {
     if (function->arguments->children.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Number of arguments for function untuple doesn't match. Passed {}, should be 1",
                         function->arguments->children.size());
 
-    auto & child = function->arguments->children[0];
+    auto & child = function->arguments->children.front();
 
     /// Calculate nested function.
     visit(child, data);
@@ -749,12 +749,12 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
                         "Function untuple expect tuple argument, got {}",
                         tuple_name_type->type->getName());
 
-    ASTs columns;
+    ASTList columns;
     size_t tid = 0;
     auto func_alias = function->tryGetAlias();
     for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
-        auto tuple_ast = function->arguments->children[0];
+        auto tuple_ast = function->arguments->children.front();
 
         /// This transformation can lead to exponential growth of AST size, let's check it.
         tuple_ast->checkSize(data.getContext()->getSettingsRef().max_ast_elements);
@@ -780,27 +780,21 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 void ActionsMatcher::visit(ASTExpressionList & expression_list, const ASTPtr &, Data & data)
 {
     size_t num_children = expression_list.children.size();
-    for (size_t i = 0; i < num_children; ++i)
+    for (auto it = expression_list.children.begin(); it != expression_list.children.end(); ++it)
     {
-        if (const auto * function = expression_list.children[i]->as<ASTFunction>())
+        const auto * function = (*it)->as<ASTFunction>();
+        while (function && function->name == "untuple")
         {
-            if (function->name == "untuple")
-            {
-                auto columns = doUntuple(function, data);
-
-                if (columns.empty())
-                    continue;
-
-                expression_list.children.erase(expression_list.children.begin() + i);
-                expression_list.children.insert(expression_list.children.begin() + i, columns.begin(), columns.end());
-                num_children += columns.size() - 1;
-                i += columns.size() - 1;
-            }
-            else
-                visit(expression_list.children[i], data);
+            auto columns = doUntuple(function, data);
+            expression_list.children.splice(it, std::move(columns));
+            it = expression_list.children.erase(it);
         }
-        else
-            visit(expression_list.children[i], data);
+
+        if (it != expression_list.children.end())
+        {
+            visit(*it, data);
+            function = (*it)->as<ASTFunction>();
+        }
     }
 }
 
@@ -847,7 +841,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (node.arguments->children.size() != 1)
             throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
 
-        ASTPtr arg = node.arguments->children.at(0);
+        ASTPtr arg = node.arguments->children.front();
         visit(arg, data);
         if (!data.only_consts)
             data.addArrayJoin(arg->getColumnName(), column_name);
@@ -908,7 +902,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
-        visit(node.arguments->children.at(0), data);
+        visit(node.arguments->children.front(), data);
 
         if (!data.no_makeset && (prepared_set = makeSet(node, data, data.no_subqueries)))
         {
@@ -921,7 +915,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 /// We are in the part of the tree that we are not going to compute. You just need to define types.
                 /// Do not evaluate subquery and create sets. We replace "in*" function to "in*IgnoreSet".
 
-                auto argument_name = node.arguments->children.at(0)->getColumnName();
+                auto argument_name = node.arguments->children.front()->getColumnName();
                 data.addFunction(
                     FunctionFactory::instance().get(node.name + "IgnoreSet", data.getContext()),
                     {argument_name, argument_name},
@@ -999,12 +993,12 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             auto & node_parameters = node.parameters->children;
             size_t parameters_size = node_parameters.size();
-            parameters.resize(parameters_size);
+            parameters.reserve(parameters_size);
 
-            for (size_t i = 0; i < parameters_size; ++i)
+            for (const auto & param : node_parameters)
             {
-                ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
-                parameters[i] = literal->as<ASTLiteral>()->value;
+                ASTPtr literal = evaluateConstantExpressionAsLiteral(param, current_context);
+                parameters.push_back(literal->as<ASTLiteral>()->value);
             }
         }
 
@@ -1035,35 +1029,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.arguments)
     {
-        size_t num_arguments = node.arguments->children.size();
-        for (size_t arg = 0; arg < num_arguments; ++arg)
+        size_t arg = 0;
+        for (auto it = node.arguments->children.begin(); it != node.arguments->children.end(); ++it, ++arg)
         {
-            auto & child = node.arguments->children[arg];
-
-            const auto * function = child->as<ASTFunction>();
-            const auto * identifier = child->as<ASTTableIdentifier>();
-            if (function && function->name == "lambda")
-            {
-                /// If the argument is a lambda expression, just remember its approximate type.
-                if (function->arguments->children.size() != 2)
-                    throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-                const auto * lambda_args_tuple = function->arguments->children.at(0)->as<ASTFunction>();
-
-                if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
-                    throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
-
-                has_lambda_arguments = true;
-                argument_types.emplace_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_args_tuple->arguments->children.size())));
-                /// Select the name in the next cycle.
-                argument_names.emplace_back();
-            }
-            else if (function && function->name == "untuple")
+            const auto * function = (*it)->as<ASTFunction>();
+            while (function && function->name == "untuple")
             {
                 auto columns = doUntuple(function, data);
-
-                if (columns.empty())
-                    continue;
 
                 for (const auto & column : columns)
                 {
@@ -1076,10 +1048,35 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         arguments_present = false;
                 }
 
-                node.arguments->children.erase(node.arguments->children.begin() + arg);
-                node.arguments->children.insert(node.arguments->children.begin() + arg, columns.begin(), columns.end());
-                num_arguments += columns.size() - 1;
                 arg += columns.size() - 1;
+
+                node.arguments->children.splice(it, std::move(columns));
+                it = node.arguments->children.erase(it);
+
+                if (it != node.arguments->children.end())
+                    function = (*it)->as<ASTFunction>();
+            }
+
+            if (it == node.arguments->children.end())
+                break;
+
+            auto & child = *it;
+            const auto * identifier = child->as<ASTTableIdentifier>();
+            if (function && function->name == "lambda")
+            {
+                /// If the argument is a lambda expression, just remember its approximate type.
+                if (function->arguments->children.size() != 2)
+                    throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+                const auto * lambda_args_tuple = function->arguments->children.front()->as<ASTFunction>();
+
+                if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
+                    throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
+
+                has_lambda_arguments = true;
+                argument_types.emplace_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_args_tuple->arguments->children.size())));
+                /// Select the name in the next cycle.
+                argument_names.emplace_back();
             }
             else if (checkFunctionIsInOrGlobalInOperator(node) && arg == 1 && prepared_set)
             {
@@ -1145,21 +1142,23 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             function_builder->getLambdaArgumentTypes(argument_types);
 
             /// Call recursively for lambda expressions.
-            for (size_t i = 0; i < node.arguments->children.size(); ++i)
+            auto it = node.arguments->children.begin();
+            for (size_t i = 0; it != node.arguments->children.end(); ++i, ++it)
             {
-                ASTPtr child = node.arguments->children[i];
+                ASTPtr child = *it;
 
                 const auto * lambda = child->as<ASTFunction>();
                 if (lambda && lambda->name == "lambda")
                 {
                     const DataTypeFunction * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
-                    const auto * lambda_args_tuple = lambda->arguments->children.at(0)->as<ASTFunction>();
-                    const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+                    const auto * lambda_args_tuple = lambda->arguments->children.front()->as<ASTFunction>();
+                    const ASTList & lambda_arg_asts = lambda_args_tuple->arguments->children;
                     NamesAndTypesList lambda_arguments;
 
-                    for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
+                    auto jt = lambda_arg_asts.begin();
+                    for (size_t j = 0; jt != lambda_arg_asts.end(); ++j, ++jt)
                     {
-                        auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[j]);
+                        auto opt_arg_name = tryGetIdentifierName(*jt);
                         if (!opt_arg_name)
                             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
@@ -1167,10 +1166,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     }
 
                     data.actions_stack.pushLevel(lambda_arguments);
-                    visit(lambda->arguments->children.at(1), data);
+                    visit(*++lambda->arguments->children.begin(), data);
                     auto lambda_dag = data.actions_stack.popLevel();
 
-                    String result_name = lambda->arguments->children.at(1)->getColumnName();
+                    String result_name = (*++lambda->arguments->children.begin())->getColumnName();
                     lambda_dag->removeUnusedActions(Names(1, result_name));
 
                     auto lambda_actions = std::make_shared<ExpressionActions>(
@@ -1277,8 +1276,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
       * The enumeration of values is parsed as a function `tuple`.
       */
     const IAST & args = *node.arguments;
-    const ASTPtr & left_in_operand = args.children.at(0);
-    const ASTPtr & right_in_operand = args.children.at(1);
+    const ASTPtr & left_in_operand = args.children.front();
+    const ASTPtr & right_in_operand = args.children.back();
 
     /// If the subquery or table name for SELECT.
     const auto * identifier = right_in_operand->as<ASTTableIdentifier>();

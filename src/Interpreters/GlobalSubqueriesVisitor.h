@@ -213,7 +213,7 @@ private:
              && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
             || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
         {
-            ASTPtr & ast = func.arguments->children[1];
+            ASTPtr & ast = *++func.arguments->children.begin();
 
             /// Literal or function can use regular IN.
             /// NOTE: We don't support passing table functions to IN.
