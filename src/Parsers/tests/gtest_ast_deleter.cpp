@@ -58,12 +58,12 @@ TEST(ASTDeleter, SimpleChain)
 {
     size_t depth = 0;
     size_t max_depth = 5;
-    size_t chain_lenght = 10;
+    size_t chain_length = 10;
 
     {
         DB::ASTPtr ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
-        for (size_t i = 0; i < chain_lenght; ++i)
+        for (size_t i = 0; i < chain_length; ++i)
             ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
     }
 }
@@ -72,12 +72,12 @@ TEST(ASTDeleter, SimpleChainLong)
 {
     size_t depth = 0;
     size_t max_depth = 5;
-    size_t chain_lenght = 100000;
+    size_t chain_length = 100000;
 
     {
         DB::ASTPtr ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
-        for (size_t i = 0; i < chain_lenght; ++i)
+        for (size_t i = 0; i < chain_length; ++i)
             ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
     }
 }
@@ -87,12 +87,12 @@ TEST(ASTDeleter, ChainWithExtraMember)
     size_t depth = 0;
     size_t max_depth = 5;
     size_t member_depth = 10;
-    size_t chain_lenght = 100;
+    size_t chain_length = 100;
 
     {
         DB::ASTPtr ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
-        for (size_t i = 0; i < chain_lenght; ++i)
+        for (size_t i = 0; i < chain_length; ++i)
         {
             ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
             if (i > member_depth)
@@ -110,13 +110,13 @@ TEST(ASTDeleter, DoubleChain)
 {
     size_t depth = 0;
     size_t max_depth = 5;
-    size_t chain_lenght = 10;
+    size_t chain_length = 10;
 
     {
         DB::ASTPtr ast1 = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
         DB::ASTPtr ast2 = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
-        for (size_t i = 0; i < chain_lenght; ++i)
+        for (size_t i = 0; i < chain_length; ++i)
         {
             ast1 = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast1)}, depth, max_depth);
             ast2 = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast2)}, depth, max_depth);
@@ -130,13 +130,13 @@ TEST(ASTDeleter, DoubleChainLong)
 {
     size_t depth = 0;
     size_t max_depth = 5;
-    size_t chain_lenght = 100000;
+    size_t chain_length = 100000;
 
     {
         DB::ASTPtr ast1 = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
         DB::ASTPtr ast2 = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
-        for (size_t i = 0; i < chain_lenght; ++i)
+        for (size_t i = 0; i < chain_length; ++i)
         {
             ast1 = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast1)}, depth, max_depth);
             ast2 = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast2)}, depth, max_depth);
