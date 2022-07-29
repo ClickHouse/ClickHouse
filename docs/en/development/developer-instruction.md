@@ -269,16 +269,10 @@ Most probably some of the builds will fail at first times. This is due to the fa
 
 ## Faster builds for development: Split build configuration {#split-build}
 
-ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
+ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries, allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
 ```
 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1
 ```
-
-Note that the split build has several drawbacks:
-* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
-* Risk of segfault if you run any of the programs while rebuilding the project.
-* You cannot run the integration tests since they only work a single complete binary.
-* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
 
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```
