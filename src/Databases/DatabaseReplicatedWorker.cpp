@@ -66,8 +66,24 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
-    if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
+
+    String digest;
+    if (!zookeeper->tryGet(database->replica_path + "/digest", digest))
     {
+        /// Database was created by old ClickHouse versions, let's create the node
+        digest = toString(database->tables_metadata_digest);
+        zookeeper->create(database->replica_path + "/digest", digest, zkutil::CreateMode::Persistent);
+    }
+
+    bool is_new_replica = our_log_ptr == 0;
+    bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
+    bool lost_according_to_digest = database->db_settings.check_consistency && database->tables_metadata_digest != parse<UInt64>(digest);
+
+    if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
+    {
+        if (!is_new_replica)
+            LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
+                        our_log_ptr, max_log_ptr, database->tables_metadata_digest, digest);
         database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
         zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));

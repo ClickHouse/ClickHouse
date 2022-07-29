@@ -40,7 +40,7 @@ public:
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
-    void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) const override;
+    void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) override;
 
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 
@@ -111,6 +111,9 @@ private:
         return is_recovering && typeid_cast<DatabaseAtomic *>(&to_database);
     }
 
+    UInt64 getMetadataHash(const String & table_name) const;
+    bool debugCheckDigest(const ContextPtr & local_context) const;
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
@@ -124,6 +127,11 @@ private:
     std::atomic_bool is_recovering = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     UInt32 max_log_ptr_at_creation = 0;
+
+    /// Usually operation with metadata are single-threaded because of the way replication works,
+    /// but StorageReplicatedMergeTree may call alterTable outside from DatabaseReplicatedDDLWorker causing race conditions.
+    std::mutex metadata_mutex;
+    UInt64 tables_metadata_digest = 0;
 
     mutable ClusterPtr cluster;
 };

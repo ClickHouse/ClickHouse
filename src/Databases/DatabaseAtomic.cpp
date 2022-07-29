@@ -117,13 +117,19 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
     if (table)
         table->dropInnerTableIfAny(sync, local_context);
     else
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
-                        backQuote(getDatabaseName()), backQuote(table_name));
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist", backQuote(getDatabaseName()), backQuote(table_name));
 
+    dropTableImpl(local_context, table_name, sync);
+}
+
+void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & table_name, bool sync)
+{
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
+    StoragePtr table;
     {
         std::lock_guard lock(mutex);
+        table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
         auto txn = local_context->getZooKeeperMetadataTransaction();
         if (txn && !local_context->isInternalSubquery())
