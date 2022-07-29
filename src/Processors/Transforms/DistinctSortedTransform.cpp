@@ -43,7 +43,7 @@ bool DistinctSortedTransform::isApplicable(const Block & header, const SortDescr
     if (sort_description.empty())
         return false;
 
-    /// check if first sorted column in header
+    /// check if at least first sorted column in header
     const SortColumnDescription & column_sort_descr = sort_description.front();
     if (!header.has(column_sort_descr.column_name))
         return false;
@@ -51,21 +51,18 @@ bool DistinctSortedTransform::isApplicable(const Block & header, const SortDescr
     ColumnNumbers column_positions;
     calcColumnPositionsInHeader(header, column_names, column_positions);
 
-    /// check if sorted column matches any DISTINCT column
+    /// check if the sorted column matches any DISTINCT column
     const auto pos = header.getPositionByName(column_sort_descr.column_name);
     return std::find(begin(column_positions), end(column_positions), pos) != column_positions.end();
 }
 
 DistinctSortedTransform::DistinctSortedTransform(
-    const Block & header_,
-    const SortDescription & sort_description_,
+    const Block & header,
+    const SortDescription & sort_description,
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
-    const Names & columns)
-    : ISimpleTransform(header_, header_, true)
-    , header(header_)
-    , sort_description(sort_description_)
-    , column_names(columns)
+    const Names & column_names)
+    : ISimpleTransform(header, header, true)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
 {
@@ -74,26 +71,31 @@ DistinctSortedTransform::DistinctSortedTransform(
     column_ptrs.reserve(column_positions.size());
     all_columns_const = column_positions.empty();
 
-    /// pre-calculate DISTINCT column positions which form sort prefix of sort description
-    sort_prefix_positions.reserve(sort_description.size());
-    for (const auto & column_sort_descr : sort_description)
+    if (!all_columns_const)
     {
-        /// check if there is such column in header
-        if (!header.has(column_sort_descr.column_name))
-            break;
+        /// pre-calculate DISTINCT column positions which form sort prefix of sort description
+        sort_prefix_positions.reserve(sort_description.size());
+        sorted_columns_nulls_direction.reserve(sort_description.size());
+        for (const auto & column_sort_descr : sort_description)
+        {
+            /// check if there is such column in header
+            if (!header.has(column_sort_descr.column_name))
+                break;
 
-        /// check if sorted column position matches any DISTINCT column
-        const auto pos = header.getPositionByName(column_sort_descr.column_name);
-        if (std::find(begin(column_positions), end(column_positions), pos) == column_positions.end())
-            break;
+            /// check if sorted column position matches any DISTINCT column
+            const auto pos = header.getPositionByName(column_sort_descr.column_name);
+            if (std::find(begin(column_positions), end(column_positions), pos) == column_positions.end())
+                break;
 
-        sort_prefix_positions.emplace_back(pos);
+            sort_prefix_positions.emplace_back(pos);
+            sorted_columns_nulls_direction.emplace_back(column_sort_descr.nulls_direction);
+        }
+        if (sort_prefix_positions.empty())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "DistinctSortedTransform: columns have to form a sort prefix for provided sort description");
+
+        sort_prefix_columns.reserve(sort_prefix_positions.size());
     }
-    if (sort_prefix_positions.empty())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "DistinctSortedTransform: columns have to form a sort prefix for provided sort description");
-
-    sort_prefix_columns.reserve(sort_prefix_positions.size());
 }
 
 void DistinctSortedTransform::transform(Chunk & chunk)
@@ -220,13 +222,13 @@ bool DistinctSortedTransform::buildFilter(
     return has_new_data;
 }
 
-bool DistinctSortedTransform::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m)
+bool DistinctSortedTransform::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m) const
 {
     for (size_t column_index = 0, num_columns = lhs.size(); column_index < num_columns; ++column_index)
     {
         const auto & lhs_column = *lhs[column_index];
         const auto & rhs_column = *rhs[column_index];
-        if (lhs_column.compareAt(n, m, rhs_column, 0) != 0) /// not equal
+        if (lhs_column.compareAt(n, m, rhs_column, sorted_columns_nulls_direction[column_index]) != 0) /// not equal
             return false;
     }
     return true;
