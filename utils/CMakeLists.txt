@@ -17,6 +17,8 @@ endif ()
 add_subdirectory (config-processor)
 add_subdirectory (report)
 
+message (WARNING "DEBUG 1 ${ENABLE_UTILS}")
+
 # Not used in package
 if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (compressor)

@@ -571,6 +571,8 @@ include_directories(${ConfigIncludePath})
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
 
+message (WARNING "DEBUG 0 ${ENABLE_UTILS}")
+
 add_subdirectory (base)
 add_subdirectory (src)
 add_subdirectory (programs)
