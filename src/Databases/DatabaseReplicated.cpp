@@ -53,6 +53,7 @@ static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 
+static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
@@ -64,6 +65,13 @@ static inline String getHostID(ContextPtr global_context, const UUID & db_uuid)
     return Cluster::Address::toString(getFQDNOrHostName(), global_context->getTCPPort()) + ':' + toString(db_uuid);
 }
 
+static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
+{
+    SipHash hash;
+    hash.update(table_name);
+    hash.update(metadata);
+    return hash.get64();
+}
 
 DatabaseReplicated::~DatabaseReplicated() = default;
 
@@ -394,6 +402,7 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/digest", "0", zkutil::CreateMode::Persistent));
         /// In addition to creating the replica nodes, we record the max_log_ptr at the instant where
         /// we declared ourself as an existing replica. We'll need this during recoverLostReplica to
         /// notify other nodes that issued new queries while this node was recovering.
@@ -426,13 +435,72 @@ void DatabaseReplicated::loadStoredObjects(
     DatabaseAtomic::loadStoredObjects(local_context, mode, skip_startup_tables);
 }
 
+UInt64 DatabaseReplicated::getMetadataHash(const String & table_name) const
+{
+    return DB::getMetadataHash(table_name, readMetadataFile(table_name));
+}
+
 void DatabaseReplicated::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
 {
     DatabaseAtomic::startupTables(thread_pool, mode);
+
+    /// TSA: No concurrent writes are possible during loading
+    UInt64 digest = 0;
+    for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
+        digest += getMetadataHash(table.first);
+
+    LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", TSA_SUPPRESS_WARNING_FOR_READ(tables).size(), digest);
+    chassert(!tables_metadata_digest);
+    tables_metadata_digest = digest;
+
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     if (is_probably_dropped)
         return;
     ddl_worker->startup();
+}
+
+bool DatabaseReplicated::debugCheckDigest(const ContextPtr & local_context) const
+{
+    /// Reduce number of debug checks
+    //if (thread_local_rng() % 16)
+    //    return true;
+
+    LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
+
+    /// Database is probably being dropped
+    if (!local_context->getZooKeeperMetadataTransaction() && !ddl_worker->isCurrentlyActive())
+        return true;
+
+    UInt64 local_digest = 0;
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & table : TSA_SUPPRESS_WARNING_FOR_READ(tables))
+            local_digest += getMetadataHash(table.first);
+    }
+
+    if (local_digest != tables_metadata_digest)
+    {
+        LOG_ERROR(log, "Digest of local metadata ({}) is not equal to in-memory digest ({})", local_digest, tables_metadata_digest);
+        return false;
+    }
+
+    /// Do not check digest in Keeper after internal subquery, it's probably not committed yet
+    if (local_context->isInternalSubquery())
+        return true;
+
+    /// Check does not make sense to check digest in Keeper during recovering
+    if (is_recovering)
+        return true;
+
+    String zk_digest = getZooKeeper()->get(replica_path + "/digest");
+    String local_digest_str = toString(local_digest);
+    if (zk_digest != local_digest_str)
+    {
+        LOG_ERROR(log, "Digest of local metadata ({}) is not equal to digest in Keeper ({})", local_digest_str, zk_digest);
+        return false;
+    }
+
+    return true;
 }
 
 void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_context) const
@@ -637,7 +705,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         auto in_zk = table_name_to_metadata.find(name);
         if (in_zk == table_name_to_metadata.end() || in_zk->second != readMetadataFile(name))
         {
-            /// Local table does not exits in ZooKeeper or has different metadata
+            /// Local table does not exist in ZooKeeper or has different metadata
             tables_to_detach.emplace_back(std::move(name));
         }
     }
@@ -699,7 +767,13 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             assert(db_name < to_database_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_database_name, to_name);
             auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name);
-            DatabaseAtomic::renameTable(make_query_context(), broken_table_name, *to_db_ptr, to_name, false, false);
+
+            std::lock_guard lock{metadata_mutex};
+            UInt64 new_digest = tables_metadata_digest;
+            new_digest -= getMetadataHash(broken_table_name);
+            DatabaseAtomic::renameTable(make_query_context(), broken_table_name, *to_db_ptr, to_name, /* exchange */ false, /* dictionary */ false);
+            tables_metadata_digest = new_digest;
+            assert(debugCheckDigest(getContext()));
             ++moved_tables;
         };
 
@@ -708,9 +782,24 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
             dropped_dictionaries += table->isDictionary();
-
             table->flushAndShutdown();
-            DatabaseAtomic::dropTable(make_query_context(), table_name, true);
+
+            if (table->getName() == "MaterializedView")
+            {
+                /// We have to drop MV inner table, so MV will not try to do it implicitly breaking some invariants.
+                /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
+                /// Yep, I hate inner tables of materialized views.
+                auto mv_drop_inner_table_context = make_query_context();
+                table->dropInnerTableIfAny(sync, mv_drop_inner_table_context);
+                mv_drop_inner_table_context->getZooKeeperMetadataTransaction()->commit();
+            }
+
+            std::lock_guard lock{metadata_mutex};
+            UInt64 new_digest = tables_metadata_digest;
+            new_digest -= getMetadataHash(table_name);
+            DatabaseAtomic::dropTableImpl(make_query_context(), table_name, /* sync */ true);
+            tables_metadata_digest = new_digest;
+            assert(debugCheckDigest(getContext()));
         }
         else if (!table->supportsReplication())
         {
@@ -736,7 +825,15 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// TODO Maybe we should do it in two steps: rename all tables to temporary names and then rename them to actual names?
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::min(from, to));
         DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, std::max(from, to));
+
+        std::lock_guard lock{metadata_mutex};
+        UInt64 new_digest = tables_metadata_digest;
+        String statement = readMetadataFile(from);
+        new_digest -= DB::getMetadataHash(from, statement);
+        new_digest += DB::getMetadataHash(to, statement);
         DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
+        tables_metadata_digest = new_digest;
+        assert(debugCheckDigest(getContext()));
     }
 
     for (const auto & id : dropped_tables)
@@ -771,6 +868,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 LOG_INFO(log, "Marked recovered {} as finished", entry_name);
         }
     }
+
+    std::lock_guard lock{metadata_mutex};
+    chassert(debugCheckDigest(getContext()));
+    current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
 }
 
 std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr)
@@ -881,7 +982,17 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
+
+    std::lock_guard lock{metadata_mutex};
+    UInt64 new_digest = tables_metadata_digest;
+    new_digest -= getMetadataHash(table_name);
+    if (txn)
+        txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+
     DatabaseAtomic::dropTable(local_context, table_name, sync);
+    tables_metadata_digest = new_digest;
+
+    assert(debugCheckDigest(local_context));
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
@@ -889,6 +1000,11 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(txn);
+
+    String statement = readMetadataFile(table_name);
+    String statement_to;
+    if (exchange)
+        statement_to = readMetadataFile(to_table_name);
 
     if (txn->isInitialQuery())
     {
@@ -901,20 +1017,32 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
         if (exchange && !to_database.isTableExist(to_table_name, local_context))
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
 
-        String statement = readMetadataFile(table_name);
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         String metadata_zk_path_to = zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
         if (exchange)
         {
-            String statement_to = readMetadataFile(to_table_name);
             txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
             txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
         }
         txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
     }
 
+    std::lock_guard lock{metadata_mutex};
+    UInt64 new_digest = tables_metadata_digest;
+    new_digest -= DB::getMetadataHash(table_name, statement);
+    new_digest += DB::getMetadataHash(to_table_name, statement);
+    if (exchange)
+    {
+        new_digest -= DB::getMetadataHash(to_table_name, statement_to);
+        new_digest += DB::getMetadataHash(table_name, statement_to);
+    }
+    if (txn)
+        txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+
     DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+    tables_metadata_digest = new_digest;
+    assert(debugCheckDigest(local_context));
 }
 
 void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -923,14 +1051,24 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
+
+    String statement = getObjectDefinitionFromCreateQuery(query.clone());
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
-        String statement = getObjectDefinitionFromCreateQuery(query.clone());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
         txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
     }
+
+    std::lock_guard lock{metadata_mutex};
+    UInt64 new_digest = tables_metadata_digest;
+    new_digest += DB::getMetadataHash(query.getTable(), statement);
+    if (txn)
+        txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+
     DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
+    tables_metadata_digest = new_digest;
+    assert(debugCheckDigest(query_context));
 }
 
 void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
@@ -943,7 +1081,17 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
         txn->addOp(zkutil::makeSetRequest(metadata_zk_path, statement, -1));
     }
+
+    std::lock_guard lock{metadata_mutex};
+    UInt64 new_digest = tables_metadata_digest;
+    new_digest -= getMetadataHash(table_id.table_name);
+    new_digest += DB::getMetadataHash(table_id.table_name, statement);
+    if (txn)
+        txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
+    tables_metadata_digest = new_digest;
+    assert(debugCheckDigest(query_context));
 }
 
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)
@@ -957,10 +1105,19 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
+
+    std::lock_guard lock{metadata_mutex};
+    UInt64 new_digest = tables_metadata_digest;
+    new_digest -= getMetadataHash(table_name);
+    if (txn)
+        txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+
     DatabaseAtomic::detachTablePermanently(local_context, table_name);
+    tables_metadata_digest = new_digest;
+    assert(debugCheckDigest(local_context));
 }
 
-void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context, const String & table_name, const String & table_metadata_path, bool attach) const
+void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context, const String & table_name, const String & table_metadata_path, bool attach)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn);
@@ -970,14 +1127,26 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
         String statement = readMetadataFile(table_name);
         txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
     }
+
+    std::lock_guard lock{metadata_mutex};
+    UInt64 new_digest = tables_metadata_digest;
+    if (attach)
+    {
+        new_digest += getMetadataHash(table_name);
+        if (txn)
+            txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+    }
+
     DatabaseAtomic::removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, attach);
+    tables_metadata_digest = new_digest;
+    assert(debugCheckDigest(local_context));
 }
 
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
     String statement;
-    ReadBufferFromFile in(getObjectMetadataPath(table_name), 4096);
+    ReadBufferFromFile in(getObjectMetadataPath(table_name), METADATA_FILE_BUFFER_SIZE);
     readStringUntilEOF(statement, in);
     return statement;
 }

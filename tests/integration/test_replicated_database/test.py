@@ -554,6 +554,62 @@ def test_alters_from_different_replicas(started_cluster):
     snapshot_recovering_node.query("DROP DATABASE testdb SYNC")
 
 
+def create_some_tables(db):
+    settings = {"distributed_ddl_task_timeout": 0}
+    main_node.query(
+        "CREATE TABLE {}.t1 (n int) ENGINE=Memory".format(db), settings=settings
+    )
+    dummy_node.query(
+        "CREATE TABLE {}.t2 (s String) ENGINE=Memory".format(db), settings=settings
+    )
+    main_node.query(
+        "CREATE TABLE {}.mt1 (n int) ENGINE=MergeTree order by n".format(db),
+        settings=settings,
+    )
+    dummy_node.query(
+        "CREATE TABLE {}.mt2 (n int) ENGINE=MergeTree order by n".format(db),
+        settings=settings,
+    )
+    main_node.query(
+        "CREATE TABLE {}.rmt1 (n int) ENGINE=ReplicatedMergeTree order by n".format(db),
+        settings=settings,
+    )
+    dummy_node.query(
+        "CREATE TABLE {}.rmt2 (n int) ENGINE=ReplicatedMergeTree order by n".format(db),
+        settings=settings,
+    )
+    main_node.query(
+        "CREATE TABLE {}.rmt3 (n int) ENGINE=ReplicatedMergeTree order by n".format(db),
+        settings=settings,
+    )
+    dummy_node.query(
+        "CREATE TABLE {}.rmt5 (n int) ENGINE=ReplicatedMergeTree order by n".format(db),
+        settings=settings,
+    )
+    main_node.query(
+        "CREATE MATERIALIZED VIEW {}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM recover.rmt1".format(
+            db
+        ),
+        settings=settings,
+    )
+    dummy_node.query(
+        "CREATE MATERIALIZED VIEW {}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM recover.rmt2".format(
+            db
+        ),
+        settings=settings,
+    )
+    main_node.query(
+        "CREATE DICTIONARY {}.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
+        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())".format(db)
+    )
+    dummy_node.query(
+        "CREATE DICTIONARY {}.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) "
+        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())".format(db)
+    )
+
+
 def test_recover_staled_replica(started_cluster):
     main_node.query(
         "CREATE DATABASE recover ENGINE = Replicated('/clickhouse/databases/recover', 'shard1', 'replica1');"
@@ -566,52 +622,7 @@ def test_recover_staled_replica(started_cluster):
     )
 
     settings = {"distributed_ddl_task_timeout": 0}
-    main_node.query("CREATE TABLE recover.t1 (n int) ENGINE=Memory", settings=settings)
-    dummy_node.query(
-        "CREATE TABLE recover.t2 (s String) ENGINE=Memory", settings=settings
-    )
-    main_node.query(
-        "CREATE TABLE recover.mt1 (n int) ENGINE=MergeTree order by n",
-        settings=settings,
-    )
-    dummy_node.query(
-        "CREATE TABLE recover.mt2 (n int) ENGINE=MergeTree order by n",
-        settings=settings,
-    )
-    main_node.query(
-        "CREATE TABLE recover.rmt1 (n int) ENGINE=ReplicatedMergeTree order by n",
-        settings=settings,
-    )
-    dummy_node.query(
-        "CREATE TABLE recover.rmt2 (n int) ENGINE=ReplicatedMergeTree order by n",
-        settings=settings,
-    )
-    main_node.query(
-        "CREATE TABLE recover.rmt3 (n int) ENGINE=ReplicatedMergeTree order by n",
-        settings=settings,
-    )
-    dummy_node.query(
-        "CREATE TABLE recover.rmt5 (n int) ENGINE=ReplicatedMergeTree order by n",
-        settings=settings,
-    )
-    main_node.query(
-        "CREATE MATERIALIZED VIEW recover.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM recover.rmt1",
-        settings=settings,
-    )
-    dummy_node.query(
-        "CREATE MATERIALIZED VIEW recover.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM recover.rmt2",
-        settings=settings,
-    )
-    main_node.query(
-        "CREATE DICTIONARY recover.d1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
-        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
-        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())"
-    )
-    dummy_node.query(
-        "CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
-        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt2' PASSWORD '' DB 'recover')) "
-        "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT())"
-    )
+    create_some_tables("recover")
 
     for table in ["t1", "t2", "mt1", "mt2", "rmt1", "rmt2", "rmt3", "rmt5"]:
         main_node.query("INSERT INTO recover.{} VALUES (42)".format(table))
@@ -932,3 +943,42 @@ def test_force_synchronous_settings(started_cluster):
         "CREATE TABLE test_force_synchronous_settings.t (n String) ENGINE=ReplicatedMergeTree('/test/same/path/{shard}', '{replica}') ORDER BY tuple()"
     )
     select_thread.join()
+
+
+def test_recover_digest_mismatch(started_cluster):
+    main_node.query(
+        "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica2');"
+    )
+
+    create_some_tables("recover_digest_mismatch")
+
+    ways_to_corrupt_metadata = [
+        f"mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
+        f"sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
+        f"rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
+        # f"rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/", # Directory already exists
+        f"rm -rf /var/lib/clickhouse/store",
+    ]
+
+    for command in ways_to_corrupt_metadata:
+        need_remove_is_active_node = "rm -rf" in command
+        dummy_node.stop_clickhouse(kill=not need_remove_is_active_node)
+        dummy_node.exec_in_container(["bash", "-c", command])
+        dummy_node.start_clickhouse()
+
+        query = (
+            "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover_digest_mismatch' AND name NOT LIKE '.inner_id.%' "
+            "ORDER BY name SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1"
+        )
+        expected = main_node.query(query)
+
+        if "rm -rf" in command:
+            # NOTE Otherwise it fails to recreate ReplicatedMergeTree table due to "Replica already exists"
+            main_node.query(
+                "SYSTEM DROP REPLICA '2' FROM DATABASE recover_digest_mismatch"
+            )
+
+        assert_eq_with_retry(dummy_node, query, expected)
