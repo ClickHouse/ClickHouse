@@ -173,6 +173,24 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         reconfigure(new_config);
     }
 
+    uint64_t getFollowersCount()
+    {
+        if (!is_leader())
+        {
+            return 0;
+        }
+        return get_num_voting_members() - 1 - get_not_responding_peers();
+    }
+
+    uint64_t getSyncedFollowerCount()
+    {
+        if (!is_leader())
+        {
+            return 0;
+        }
+        return get_num_voting_members() - 1 - get_num_stale_peers();
+    }
+
     using nuraft::raft_server::raft_server;
 
     // peers are initially marked as responding because at least one cycle
@@ -474,26 +492,14 @@ bool KeeperServer::isLeaderAlive() const
     return raft_instance->is_leader_alive();
 }
 
-/// TODO test whether taking failed peer in count
 uint64_t KeeperServer::getFollowerCount() const
 {
-    return raft_instance->get_peer_info_all().size();
+    return raft_instance->getFollowersCount();
 }
 
 uint64_t KeeperServer::getSyncedFollowerCount() const
 {
-    uint64_t last_log_idx = raft_instance->get_last_log_idx();
-    const auto followers = raft_instance->get_peer_info_all();
-
-    uint64_t stale_followers = 0;
-
-    const uint64_t stale_follower_gap = raft_instance->get_current_params().stale_log_gap_;
-    for (const auto & fl : followers)
-    {
-        if (last_log_idx > fl.last_log_idx_ + stale_follower_gap)
-            stale_followers++;
-    }
-    return followers.size() - stale_followers;
+    return raft_instance->getSyncedFollowerCount();
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
