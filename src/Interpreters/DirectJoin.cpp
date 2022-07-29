@@ -71,9 +71,9 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
         throw DB::Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Not supported by direct JOIN");
     }
 
-    if (table_join->strictness() != ASTTableJoin::Strictness::All &&
-        table_join->strictness() != ASTTableJoin::Strictness::Any &&
-        table_join->strictness() != ASTTableJoin::Strictness::RightAny)
+    if (table_join->strictness() != JoinStrictness::All &&
+        table_join->strictness() != JoinStrictness::Any &&
+        table_join->strictness() != JoinStrictness::RightAny)
     {
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported by direct JOIN");
     }

@@ -62,7 +62,7 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     const auto & table_join = join->table_join->as<ASTTableJoin &>();
 
     /// TODO: Push down for CROSS JOIN is not OK [disabled]
-    if (table_join.kind == ASTTableJoin::Kind::Cross)
+    if (table_join.kind == JoinKind::Cross)
         return;
 
     /* Do not push down predicates for ASOF because it can lead to incorrect results
