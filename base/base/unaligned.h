@@ -2,7 +2,39 @@
 
 #include <cstring>
 #include <type_traits>
+#include <bit>
 
+inline void reverseMemcpy(void *dst, const void *src, int length)
+{
+    uint8_t *d = reinterpret_cast<uint8_t*>(dst);
+    const uint8_t *s = reinterpret_cast<const uint8_t*>(src);
+
+    d += length;
+    while (length--)
+        *--d = *s++;
+}
+
+template <typename T>
+inline T unalignedLoadLE(const void * address)
+{
+    T res {};
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(&res, address, sizeof(res));
+    else
+        reverseMemcpy(&res, address, sizeof(res));
+    return res;
+}
+
+template <typename T>
+inline void unalignedStoreLE(void * address,
+                           const typename std::enable_if<true, T>::type & src)
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(address, &src, sizeof(src));
+    else
+        reverseMemcpy(address, &src, sizeof(src));
+}
 
 template <typename T>
 inline T unalignedLoad(const void * address)
