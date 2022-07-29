@@ -3348,6 +3348,10 @@ jobs:
 ###################################### JEPSEN TESTS #########################################
 #############################################################################################
   Jepsen:
+    # This is special test NOT INCLUDED in FinishCheck
+    # When it's skipped, all dependent tasks will be skipped too.
+    # DO NOT add it there
+    if: contains(github.event.pull_request.labels.*.name, 'jepsen-test')
     needs: [BuilderBinRelease]
     uses: ./.github/workflows/jepsen.yml
 
@@ -3419,7 +3423,6 @@ jobs:
       - SplitBuildSmokeTest
       - CompatibilityCheck
       - IntegrationTestsFlakyCheck
-      - Jepsen
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
