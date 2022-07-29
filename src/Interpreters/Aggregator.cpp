@@ -3130,7 +3130,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     }
     else
     {
-        // Used during memory efficient merging in SortingAggregatedTransform (expects single chunk for each bucket_id).
+        // Used during memory efficient merging (SortingAggregatedTransform expects single chunk for each bucket_id).
         constexpr bool return_single_block = true;
         block = prepareBlockAndFillSingleLevel<return_single_block>(result, final);
     }
