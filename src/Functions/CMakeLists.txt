@@ -28,6 +28,7 @@ list (APPEND PUBLIC_LIBS
 )
 
 list (APPEND PRIVATE_LIBS
+        ch_contrib::punycode
         ch_contrib::zlib
         boost::filesystem
         divide_impl
