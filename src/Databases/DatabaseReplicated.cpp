@@ -784,7 +784,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
             table->flushAndShutdown();
 
-            if (table->getName() == "MaterializedView")
+            if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
             {
                 /// We have to drop MV inner table, so MV will not try to do it implicitly breaking some invariants.
                 /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
