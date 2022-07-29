@@ -14,6 +14,7 @@
 #include <Common/NetException.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
@@ -879,6 +880,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
 
     volume->getDisk()->createDirectories(data_part_storage->getFullPath());
 
+    auto metadata_storage = volume->getDisk()->getMetadataStorage();
+    auto tx = metadata_storage->createTransaction();
+
     size_t files;
     readBinary(files, in);
 
@@ -892,10 +896,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
 
         String metadata_file = fs::path(data_part_storage->getFullPath()) / file_name;
 
-        {
-            auto file_out = std::make_unique<WriteBufferFromFile>(metadata_file, DBMS_DEFAULT_BUFFER_SIZE, -1, 0666, nullptr, 0);
+        String received_data;
 
-            HashingWriteBuffer hashing_out(*file_out);
+        {
+            DB::WriteBufferFromString simple_buf(received_data);
+
+            HashingWriteBuffer hashing_out(simple_buf);
 
             copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
 
@@ -919,7 +925,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
                     metadata_file, replica_path);
             }
         }
+
+        tx->createMetadataFileFromContent(metadata_file, received_data);
     }
+
+    tx->commit();
 
     assertEOF(in);
 

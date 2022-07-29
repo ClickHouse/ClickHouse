@@ -53,6 +53,21 @@ private:
 };
 
 
+struct UnlinkIndexFileOperation final : public IMetadataOperation
+{
+    UnlinkIndexFileOperation(const std::string & path_, const std::string & index_path_, IDisk & disk_);
+
+    void execute(std::unique_lock<std::shared_mutex> & metadata_lock) override;
+
+    void undo() override;
+
+private:
+    std::string path;
+    std::string index_path;
+    IDisk & disk;
+};
+
+
 struct CreateDirectoryOperation final : public IMetadataOperation
 {
     CreateDirectoryOperation(const std::string & path_, IDisk & disk_);
@@ -118,6 +133,7 @@ struct WriteFileOperation final : public IMetadataOperation
     void execute(std::unique_lock<std::shared_mutex> & metadata_lock) override;
 
     void undo() override;
+
 private:
     std::string path;
     IDisk & disk;
@@ -146,6 +162,29 @@ private:
     const MetadataStorageFromDisk & metadata_storage;
 };
 
+struct WriteFileAndCreateHardLinkOperation final : public IMetadataOperation
+{
+    WriteFileAndCreateHardLinkOperation(
+        const std::string & path_,
+        const std::string & index_path_,
+        IDisk & disk_,
+        const std::string & data_,
+        const MetadataStorageFromDisk & metadata_storage_);
+
+    void execute(std::unique_lock<std::shared_mutex> & metadata_lock) override;
+
+    void undo() override;
+
+private:
+    std::string path;
+    std::string index_path;
+    IDisk & disk;
+    std::string data;
+    bool existed = false;
+    std::string prev_data;
+    std::unique_ptr<WriteFileOperation> write_operation;
+    const MetadataStorageFromDisk & metadata_storage;
+};
 
 struct MoveFileOperation final : public IMetadataOperation
 {
@@ -250,6 +289,7 @@ private:
 
     std::unique_ptr<WriteFileOperation> write_operation;
     std::unique_ptr<UnlinkFileOperation> unlink_operation;
+    std::unique_ptr<UnlinkIndexFileOperation> unlink_index_operation;
 };
 
 struct SetReadonlyFileOperation final : public IMetadataOperation

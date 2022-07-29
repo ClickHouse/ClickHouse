@@ -628,6 +628,15 @@ void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, 
         std::make_unique<CopyFileObjectStorageOperation>(object_storage, metadata_storage, from_file_path, to_file_path));
 }
 
+void DiskObjectStorageTransaction::createMetadataFileFromContent(const std::string & path, const std::string & data)
+{
+    operations_to_execute.emplace_back(
+        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path, data](MetadataTransactionPtr tx)
+        {
+            tx->createMetadataFileFromContent(path, data);
+        }));
+}
+
 void DiskObjectStorageTransaction::commit()
 {
     for (size_t i = 0; i < operations_to_execute.size(); ++i)

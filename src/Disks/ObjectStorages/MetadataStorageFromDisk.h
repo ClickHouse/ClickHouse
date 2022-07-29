@@ -90,6 +90,8 @@ public:
 
     void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
+    void createMetadataFileFromContent(const std::string & path, const std::string & content) override;
+
     void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;

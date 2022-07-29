@@ -65,6 +65,9 @@ public:
     /// Create metadata file on paths with content (blob_name, size_in_bytes)
     virtual void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) = 0;
 
+    /// Create metadata file on paths with content
+    virtual void createMetadataFileFromContent(const std::string & path, const std::string & content) = 0;
+
     /// Add to new blob to metadata file (way to implement appends)
     virtual void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) = 0;
 

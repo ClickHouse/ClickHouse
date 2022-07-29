@@ -122,6 +122,11 @@ public:
         disk.createHardLink(src_path, dst_path);
     }
 
+    void createMetadataFileFromContent(const std::string & /* path */, const std::string & /* data */) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Called fake createMetadataFileFromContent");
+    }
+
 private:
     IDisk & disk;
 };

@@ -110,6 +110,9 @@ public:
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
     void unlinkMetadata(const std::string & path) override;
+
+    void createMetadataFileFromContent(const std::string & path, const std::string & content) override;
+
 };
 
 }

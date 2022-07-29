@@ -111,6 +111,8 @@ public:
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
     void setReadOnly(const std::string & path) override;
     void createHardLink(const std::string & src_path, const std::string & dst_path) override;
+
+    void createMetadataFileFromContent(const std::string & path, const std::string & data) override;
 };
 
 using DiskObjectStorageTransactionPtr = std::shared_ptr<DiskObjectStorageTransaction>;

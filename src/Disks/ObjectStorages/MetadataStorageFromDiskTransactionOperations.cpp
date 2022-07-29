@@ -56,6 +56,23 @@ void UnlinkFileOperation::undo()
     buf->finalize();
 }
 
+UnlinkIndexFileOperation::UnlinkIndexFileOperation(const std::string & path_, const std::string & index_path_, IDisk & disk_)
+    : path(path_)
+    , index_path(index_path_)
+    , disk(disk_)
+{
+}
+
+void UnlinkIndexFileOperation::execute(std::unique_lock<std::shared_mutex> &)
+{
+    disk.removeFile(index_path);
+}
+
+void UnlinkIndexFileOperation::undo()
+{
+    disk.createHardLink(path, index_path);
+}
+
 CreateDirectoryOperation::CreateDirectoryOperation(const std::string & path_, IDisk & disk_)
     : path(path_)
     , disk(disk_)
@@ -147,7 +164,11 @@ void RemoveRecursiveOperation::finalize()
         disk.removeRecursive(path);
 }
 
-CreateHardlinkOperation::CreateHardlinkOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_)
+CreateHardlinkOperation::CreateHardlinkOperation(
+    const std::string & path_from_,
+    const std::string & path_to_,
+    IDisk & disk_,
+    const MetadataStorageFromDisk & metadata_storage_)
     : path_from(path_from_)
     , path_to(path_to_)
     , disk(disk_)
@@ -269,6 +290,74 @@ void WriteFileOperation::undo()
     }
 }
 
+WriteFileAndCreateHardLinkOperation::WriteFileAndCreateHardLinkOperation(
+    const std::string & path_,
+    const std::string & index_path_,
+    IDisk & disk_,
+    const std::string & data_,
+    const MetadataStorageFromDisk & metadata_storage_
+    )
+    : path(path_)
+    , index_path(index_path_)
+    , disk(disk_)
+    , data(data_)
+    , metadata_storage(metadata_storage_)
+{
+}
+
+void WriteFileAndCreateHardLinkOperation::execute(std::unique_lock<std::shared_mutex> & lock)
+{
+    if (disk.exists(path))
+    {
+        existed = true;
+        auto buf = disk.readFile(path);
+        readStringUntilEOF(prev_data, *buf);
+    }
+
+    if (disk.exists(index_path))
+    {
+        // Another metadata for this object already exists
+        // So we create hardlink instead of new metadata file
+        auto metadata = metadata_storage.readMetadataUnlocked(index_path, lock);
+        metadata->incrementRefCount();
+        write_operation = std::make_unique<WriteFileOperation>(index_path, disk, metadata->serializeToString());
+        write_operation->execute(lock);
+        disk.createHardLink(index_path, path);
+    }
+    else
+    {
+        auto buf = disk.writeFile(path);
+        writeString(data, *buf);
+        buf->finalize();
+        disk.createDirectories(directoryPath(index_path));
+        disk.createHardLink(path, index_path);
+        // No call for incrementRefConut here
+        // 'index' link needs not to be count in ref_count
+    }
+}
+
+void WriteFileAndCreateHardLinkOperation::undo()
+{
+    if (write_operation)
+    {  // Restore ref_count in index file
+        write_operation->undo();
+    }
+    else
+    {
+        disk.removeFileIfExists(index_path);
+    }
+
+    if (!existed)
+    {
+        disk.removeFileIfExists(path);
+    }
+    else
+    {
+        auto buf = disk.writeFile(path);
+        writeString(prev_data, *buf);
+    }
+}
+
 void AddBlobOperation::execute(std::unique_lock<std::shared_mutex> & metadata_lock)
 {
     DiskObjectStorageMetadataPtr metadata;
@@ -300,6 +389,15 @@ void UnlinkMetadataFileOperation::execute(std::unique_lock<std::shared_mutex> & 
         write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
         write_operation->execute(metadata_lock);
     }
+    else
+    {
+        auto index_path = metadata->getIndexPath();
+        if (!index_path.empty())
+        {
+            unlink_index_operation = std::make_unique<UnlinkIndexFileOperation>(path, index_path, disk);
+            unlink_index_operation->execute(metadata_lock);
+        }
+    }
     unlink_operation = std::make_unique<UnlinkFileOperation>(path, disk);
     unlink_operation->execute(metadata_lock);
 }
@@ -311,6 +409,9 @@ void UnlinkMetadataFileOperation::undo()
 
     if (unlink_operation)
         unlink_operation->undo();
+
+    if (unlink_index_operation)
+        unlink_index_operation->undo();
 }
 
 void SetReadonlyFileOperation::execute(std::unique_lock<std::shared_mutex> & metadata_lock)

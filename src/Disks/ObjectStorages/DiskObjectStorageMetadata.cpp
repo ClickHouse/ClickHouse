@@ -6,6 +6,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
+#include <Common/hex.h>
 
 namespace DB
 {
@@ -130,5 +132,16 @@ void DiskObjectStorageMetadata::addObject(const String & path, size_t size)
     storage_objects.emplace_back(path, size);
 }
 
+std::string DiskObjectStorageMetadata::getIndexPath() const
+{
+    if (storage_objects.empty())
+        return "";
+
+    UInt128 key = sipHash128(storage_objects[0].relative_path.data(), storage_objects[0].relative_path.size());
+
+    auto key_str = getHexUIntLowercase(key);
+
+    return fs::path(common_metadata_path) / "metadata" / key_str.substr(0, 3) / key_str;
+}
 
 }

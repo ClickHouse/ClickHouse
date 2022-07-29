@@ -197,4 +197,11 @@ void FakeMetadataStorageFromDiskTransaction::unlinkMetadata(const std::string & 
     disk->removeFile(path);
 }
 
+void FakeMetadataStorageFromDiskTransaction::createMetadataFileFromContent(
+    const std::string & /* path */, const std::string & /* content */)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Called fake createMetadataFileFromContent");
+}
+
+
 }

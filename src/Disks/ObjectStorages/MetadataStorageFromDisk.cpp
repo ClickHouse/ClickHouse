@@ -311,9 +311,46 @@ void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & 
 
     metadata->addObject(blob_name, size_in_bytes);
 
+    auto metadataIndexPath = metadata->getIndexPath();
+
     auto data = metadata->serializeToString();
     if (!data.empty())
-        addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
+        addOperation(std::make_unique<WriteFileAndCreateHardLinkOperation>(
+            path,
+            metadataIndexPath,
+            *metadata_storage.getDisk(),
+            data,
+            metadata_storage));
+}
+
+void MetadataStorageFromDiskTransaction::createMetadataFileFromContent(const std::string & path, const std::string & content)
+{
+    DiskObjectStorageMetadataPtr source_metadata = std::make_unique<DiskObjectStorageMetadata>(
+        metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
+
+    source_metadata->deserializeFromString(content);
+
+    auto objects = source_metadata->getBlobsRelativePaths();
+
+    if (objects.empty())
+        return;
+
+    DiskObjectStorageMetadataPtr metadata = std::make_unique<DiskObjectStorageMetadata>(
+        metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
+
+    for (auto object : objects)
+        metadata->addObject(object.relative_path, object.bytes_size);
+
+    auto metadataIndexPath = metadata->getIndexPath();
+
+    auto data = metadata->serializeToString();
+    if (!data.empty())
+        addOperation(std::make_unique<WriteFileAndCreateHardLinkOperation>(
+            path,
+            metadataIndexPath,
+            *metadata_storage.getDisk(),
+            data,
+            metadata_storage));
 }
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes)

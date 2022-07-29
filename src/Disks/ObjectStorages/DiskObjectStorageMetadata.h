@@ -59,7 +59,7 @@ public:
         return object_storage_root_path;
     }
 
-    RelativePathsWithSize getBlobsRelativePaths() const
+    const RelativePathsWithSize & getBlobsRelativePaths() const
     {
         return storage_objects;
     }
@@ -98,6 +98,8 @@ public:
     {
         read_only = true;
     }
+
+    std::string getIndexPath() const;
 
 };
 
