@@ -360,6 +360,9 @@ private:
 
     inline static ContextPtr global_context_instance;
 
+    /// A flag, used to mark if reader needs to apply deleted rows mask.
+    bool apply_deleted_mask = true;
+
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
@@ -607,8 +610,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(const StringRef & name, const String & value);
-    void setSetting(const StringRef & name, const Field & value);
+    void setSetting(std::string_view name, const String & value);
+    void setSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -911,6 +914,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool applyDeletedMask() const { return apply_deleted_mask; }
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
     ActionLocksManagerPtr getActionLocksManager();
 
