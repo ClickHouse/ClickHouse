@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int LOGICAL_ERROR;
 }
 
 void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
@@ -75,7 +76,10 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
         }
         if (lambda)
         {
-            auto body = lambda->as<const ASTFunction &>().arguments->children.at(1)->clone();
+            const auto & lambda_args = lambda->as<const ASTFunction &>().arguments->children;
+            if (lambda_args.size() < 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 2 agruments in lambda");
+            auto body = (*++lambda_args.begin())->clone();
             std::stack<ASTPtr> stack;
             stack.push(body);
             while (!stack.empty())
@@ -155,7 +159,7 @@ void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, Fo
     if (children.size() > 1)
         settings.ostr << "(";
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (auto it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
@@ -180,7 +184,7 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
     if (children.size() > 1)
         writeChar('(', ostr);
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (auto it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
             writeCString(", ", ostr);
@@ -298,7 +302,7 @@ void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, F
     if (children.size() > 1)
         settings.ostr << "(";
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (auto it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
             settings.ostr << ", ";
@@ -319,7 +323,7 @@ void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const
     if (children.size() > 1)
         writeChar('(', ostr);
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (auto it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
             writeCString(", ", ostr);

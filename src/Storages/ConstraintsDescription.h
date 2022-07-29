@@ -14,7 +14,7 @@ struct ConstraintsDescription
 {
 public:
     ConstraintsDescription() { update(); }
-    explicit ConstraintsDescription(const ASTs & constraints_);
+    explicit ConstraintsDescription(const ASTList & constraints_);
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);
 
@@ -61,7 +61,7 @@ private:
     std::unique_ptr<ComparisonGraph> buildGraph() const;
     void update();
 
-    ASTs constraints;
+    ASTList constraints;
     std::vector<std::vector<CNFQuery::AtomicFormula>> cnf_constraints;
     std::map<IAST::Hash, AtomIds> ast_to_atom_ids;
     std::unique_ptr<ComparisonGraph> graph;

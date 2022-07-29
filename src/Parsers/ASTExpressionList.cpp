@@ -17,7 +17,7 @@ void ASTExpressionList::formatImpl(const FormatSettings & settings, FormatState 
     if (frame.expression_list_prepend_whitespace)
         settings.ostr << ' ';
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (auto it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
@@ -50,7 +50,7 @@ void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, For
 
     ++frame.indent;
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (auto it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {

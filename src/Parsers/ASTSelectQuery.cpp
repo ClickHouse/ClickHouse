@@ -30,12 +30,14 @@ ASTPtr ASTSelectQuery::clone() const
      * For distributed query processing, in case one of the servers is localhost and the other one is not, localhost query is executed
      * within the process and is cloned, and the request is sent to the remote server in text form via TCP.
      * And if the cloning order does not match the parsing order then different servers will get different identifiers.
-     *
-     * Since the positions map uses <key, position> we can copy it as is and ensure the new children array is created / pushed
-     * in the same order as the existing one */
+     */
     res->children.clear();
+    std::unordered_map<IAST*, ASTList::iterator> map;
     for (const auto & child : children)
-        res->children.push_back(child->clone());
+        map[child.get()] = res->children.insert(res->children.end(), child->clone());
+
+    for (auto & pos : res->positions)
+        pos.second = map[pos.second->get()];
 
     return res;
 }
@@ -212,7 +214,7 @@ static const ASTTableExpression * getFirstTableExpression(const ASTSelectQuery &
     if (tables_in_select_query.children.empty())
         return {};
 
-    const auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
+    const auto & tables_element = tables_in_select_query.children.front()->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return {};
 
@@ -228,7 +230,7 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
     if (tables_in_select_query.children.empty())
         return {};
 
-    auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
+    auto & tables_element = tables_in_select_query.children.front()->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return {};
 
@@ -416,20 +418,16 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         auto it = positions.find(expr);
         if (it == positions.end())
         {
-            positions[expr] = children.size();
-            children.emplace_back(ast);
+            positions[expr] = children.insert(children.end(), ast);
         }
         else
-            children[it->second] = ast;
+            *it->second = ast;
     }
     else if (positions.contains(expr))
     {
-        size_t pos = positions[expr];
-        children.erase(children.begin() + pos);
+        auto pos = positions[expr];
+        children.erase(pos);
         positions.erase(expr);
-        for (auto & pr : positions)
-            if (pr.second > pos)
-                --pr.second;
     }
 }
 
@@ -437,7 +435,7 @@ ASTPtr & ASTSelectQuery::getExpression(Expression expr)
 {
     if (!positions.contains(expr))
         throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
-    return children[positions[expr]];
+    return *positions[expr];
 }
 
 void ASTSelectQuery::setFinal() // NOLINT method can be made const
@@ -447,7 +445,7 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
     if (tables_in_select_query.children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables list is empty, it's a bug");
 
-    auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
+    auto & tables_element = tables_in_select_query.children.front()->as<ASTTablesInSelectQueryElement &>();
 
     if (!tables_element.table_expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");

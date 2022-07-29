@@ -493,12 +493,12 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
 
 
 template<typename T>
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context)
+bool getExternalDataSourceConfiguration(const ASTList & args, BaseSettings<T> & settings, ContextPtr context)
 {
     if (args.empty())
         return false;
 
-    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
+    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args.front().get()))
     {
         const auto & config = context->getConfigRef();
         const auto & config_prefix = fmt::format("named_collections.{}", collection->name());
@@ -509,9 +509,12 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & set
         auto config_settings = getSettingsChangesFromConfig(settings, config, config_prefix);
 
         /// Check key-value arguments.
-        for (size_t i = 1; i < args.size(); ++i)
+        for (auto it = args.begin(); it != args.end(); ++it)
         {
-            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
+            if (it == args.begin())
+                continue;
+
+            if (const auto * ast_function = typeid_cast<const ASTFunction *>(it->get()))
             {
                 const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
                 auto function_args = args_expr->children;
@@ -537,22 +540,22 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & set
 
 #if USE_AMQPCPP
 template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQSettingsTraits> & settings, ContextPtr context);
+bool getExternalDataSourceConfiguration(const ASTList & args, BaseSettings<RabbitMQSettingsTraits> & settings, ContextPtr context);
 #endif
 
 #if USE_RDKAFKA
 template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
+bool getExternalDataSourceConfiguration(const ASTList & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
 #endif
 
 #if USE_NATSIO
 template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<NATSSettingsTraits> & settings, ContextPtr context);
+bool getExternalDataSourceConfiguration(const ASTList & args, BaseSettings<NATSSettingsTraits> & settings, ContextPtr context);
 #endif
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<EmptySettingsTraits> & storage_settings);
+    const ASTList & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<EmptySettingsTraits> & storage_settings);
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
@@ -566,7 +569,7 @@ SettingsChanges getSettingsChangesFromConfig(
 #if USE_MYSQL
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<MySQLSettingsTraits> & storage_settings);
+    const ASTList & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<MySQLSettingsTraits> & storage_settings);
 
 template
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(

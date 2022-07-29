@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-void ICompressionCodec::setCodecDescription(const String & codec_name, const ASTs & arguments)
+void ICompressionCodec::setCodecDescription(const String & codec_name, const ASTList & arguments)
 {
     std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
     result->name = "CODEC";
@@ -66,7 +66,7 @@ ASTPtr ICompressionCodec::getCodecDesc() const
     auto arguments = getFullCodecDesc()->as<ASTFunction>()->arguments;
     /// If it has exactly one argument, than it's single codec, return it
     if (arguments->children.size() == 1)
-        return arguments->children[0];
+        return arguments->children.front();
     else  /// Otherwise we have multiple codecs and return them as expression list
         return arguments;
 }

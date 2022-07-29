@@ -197,7 +197,7 @@ void registerCodecDelta(CompressionCodecFactory & factory)
                 throw Exception("Delta codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
             const auto children = arguments->children;
-            const auto * literal = children[0]->as<ASTLiteral>();
+            const auto * literal = children.front()->as<ASTLiteral>();
             if (!literal)
                 throw Exception("Delta codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
 

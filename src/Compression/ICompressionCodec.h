@@ -99,7 +99,7 @@ protected:
     virtual void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const = 0;
 
     /// Construct and set codec description from codec name and arguments. Must be called in codec constructor.
-    void setCodecDescription(const String & name, const ASTs & arguments = {});
+    void setCodecDescription(const String & name, const ASTList & arguments = {});
 
 private:
     ASTPtr full_codec_desc;

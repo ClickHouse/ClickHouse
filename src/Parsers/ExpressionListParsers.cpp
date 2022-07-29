@@ -95,7 +95,7 @@ const char * ParserTupleElementExpression::operators[] =
 
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTs elements;
+    ASTList elements;
 
     auto parse_element = [&]
     {
@@ -125,7 +125,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_distinct_parser("DISTINCT");
     ParserKeyword s_except_parser("EXCEPT");
     ParserKeyword s_intersect_parser("INTERSECT");
-    ASTs elements;
+    ASTList elements;
 
     auto parse_element = [&]
     {
@@ -249,7 +249,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
 
     /// subquery --> (SELECT aggregate_function(*) FROM subquery)
     auto aggregate_function = makeASTFunction(aggregate_function_name, std::make_shared<ASTAsterisk>());
-    auto subquery_node = function->children[0]->children[1];
+    auto subquery_node = *(++function->children.front()->children.begin());
 
     auto table_expression = std::make_shared<ASTTableExpression>();
     table_expression->subquery = std::move(subquery_node);
@@ -279,7 +279,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
 
     auto new_subquery = std::make_shared<ASTSubquery>();
     new_subquery->children.push_back(select_with_union_query);
-    ast->children[0]->children.back() = std::move(new_subquery);
+    ast->children.front()->children.back() = std::move(new_subquery);
 
     return true;
 }

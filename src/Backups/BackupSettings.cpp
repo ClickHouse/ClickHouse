@@ -138,18 +138,19 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
 
     if (array_of_shards->arguments)
     {
-        const ASTs shards = array_of_shards->arguments->children;
-        res.resize(shards.size());
+        const auto & shards = array_of_shards->arguments->children;
+        res.reserve(shards.size());
 
-        for (size_t i = 0; i != shards.size(); ++i)
+        for (const auto & shard : shards)
         {
-            const auto * array_of_replicas = typeid_cast<const ASTLiteral *>(shards[i].get());
+            const auto * array_of_replicas = typeid_cast<const ASTLiteral *>(shard.get());
             if (!array_of_replicas || (array_of_replicas->value.getType() != Field::Types::Array))
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                     "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
             const auto & replicas = array_of_replicas->value.get<const Array &>();
-            res[i].resize(replicas.size());
+            res.emplace_back();
+            res.back().resize(replicas.size());
             for (size_t j = 0; j != replicas.size(); ++j)
             {
                 const auto & replica = replicas[j];
@@ -157,7 +158,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                         "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-                res[i][j] = replica.get<const String &>();
+                res.back()[j] = replica.get<const String &>();
             }
         }
     }
@@ -175,7 +176,6 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
     auto res_replicas = std::make_shared<ASTExpressionList>();
     res->arguments = res_replicas;
     res->children.push_back(res_replicas);
-    res_replicas->children.resize(cluster_host_ids.size());
 
     for (size_t i = 0; i != cluster_host_ids.size(); ++i)
     {
@@ -186,7 +186,7 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
         for (size_t j = 0; j != shard.size(); ++j)
             res_shard[j] = Field{shard[j]};
 
-        res_replicas->children[i] = std::make_shared<ASTLiteral>(Field{std::move(res_shard)});
+        res_replicas->children.emplace_back(std::make_shared<ASTLiteral>(Field{std::move(res_shard)}));
     }
 
     return res;

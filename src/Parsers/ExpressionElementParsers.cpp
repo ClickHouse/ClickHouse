@@ -241,7 +241,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     std::vector<String> parts;
-    std::vector<ASTPtr> params;
+    ASTList params;
     const auto & list = id_list->as<ASTExpressionList &>();
     for (const auto & child : list.children)
     {
@@ -645,7 +645,7 @@ namespace
             ASTExpressionList * in_args = typeid_cast<ASTExpressionList *>(func_in->arguments.get());
             if (in_args && in_args->children.size() == 2)
             {
-                node = makeASTFunction("position", in_args->children[1], in_args->children[0]);
+                node = makeASTFunction("position", in_args->children.back(), in_args->children.front());
                 return true;
             }
         }
@@ -1156,7 +1156,7 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
 
     function.name += "If";
-    function.arguments->children.push_back(condition->children[0]);
+    function.arguments->children.push_back(condition->children.front());
     return true;
 }
 
@@ -2100,15 +2100,15 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
                 if (func->arguments->children.size() != 2)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda requires two arguments");
 
-                const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
+                const auto * lambda_args_tuple = func->arguments->children.front()->as<ASTFunction>();
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "First argument of lambda must be a tuple");
 
-                const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+                const auto & lambda_arg_asts = lambda_args_tuple->arguments->children;
                 if (lambda_arg_asts.size() != 1)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "APPLY column transformer can only accept lambda with one argument");
 
-                if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[0]); opt_arg_name)
+                if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts.front()); opt_arg_name)
                     lambda_arg = *opt_arg_name;
                 else
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
@@ -2177,7 +2177,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         if (strict.ignore(pos, expected))
             is_strict = true;
 
-        ASTs identifiers;
+        ASTList identifiers;
         ASTPtr regex_node;
         ParserStringLiteral regex;
         auto parse_id = [&identifiers, &pos, &expected]
@@ -2222,7 +2222,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         if (strict.ignore(pos, expected))
             is_strict = true;
 
-        ASTs replacements;
+        ASTList replacements;
         ParserExpression element_p;
         ParserIdentifier ident_p;
         auto parse_id = [&]

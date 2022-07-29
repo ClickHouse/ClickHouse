@@ -19,18 +19,19 @@ namespace ErrorCodes
 
 Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const std::string & error_context, ContextPtr context)
 {
-    const ASTs & parameters = expression_list->children;
+    const auto & parameters = expression_list->children;
     if (parameters.empty())
         throw Exception("Parameters list to aggregate functions cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-    Array params_row(parameters.size());
+    Array params_row;
+    params_row.reserve(parameters.size());
 
-    for (size_t i = 0; i < parameters.size(); ++i)
+    for (const auto & param : parameters)
     {
         ASTPtr literal;
         try
         {
-            literal = evaluateConstantExpressionAsLiteral(parameters[i], context);
+            literal = evaluateConstantExpressionAsLiteral(param, context);
         }
         catch (Exception & e)
         {
@@ -39,13 +40,13 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
                     ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
                     "Parameters to aggregate functions must be literals. "
                     "Got parameter '{}'{}",
-                    parameters[i]->formatForErrorMessage(),
+                    param->formatForErrorMessage(),
                     (error_context.empty() ? "" : " (in " + error_context +")"));
 
             throw;
         }
 
-        params_row[i] = literal->as<ASTLiteral>()->value;
+        params_row.push_back(literal->as<ASTLiteral>()->value);
     }
 
     return params_row;

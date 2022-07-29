@@ -93,21 +93,15 @@ void ASTProjectionSelectQuery::setExpression(Expression expr, ASTPtr && ast)
     {
         auto it = positions.find(expr);
         if (it == positions.end())
-        {
-            positions[expr] = children.size();
-            children.emplace_back(ast);
-        }
+            positions[expr] = children.insert(children.end(), ast);
         else
-            children[it->second] = ast;
+            *it->second = ast;
     }
     else if (positions.contains(expr))
     {
-        size_t pos = positions[expr];
-        children.erase(children.begin() + pos);
+        auto pos = positions[expr];
+        children.erase(pos);
         positions.erase(expr);
-        for (auto & pr : positions)
-            if (pr.second > pos)
-                --pr.second;
     }
 }
 
@@ -115,7 +109,7 @@ ASTPtr & ASTProjectionSelectQuery::getExpression(Expression expr)
 {
     if (!positions.contains(expr))
         throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
-    return children[positions[expr]];
+    return *positions[expr];
 }
 
 ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const

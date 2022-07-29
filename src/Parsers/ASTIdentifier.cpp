@@ -24,7 +24,7 @@ ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
         children.push_back(std::move(name_param));
 }
 
-ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, std::vector<ASTPtr> && name_params)
+ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, ASTList && name_params)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     assert(!name_parts.empty());
@@ -108,7 +108,8 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
 
     if (compound())
     {
-        for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
+        auto jt = children.begin();
+        for (size_t i = 0, size = name_parts.size(); i < size; ++i)
         {
             if (i != 0)
                 settings.ostr << '.';
@@ -116,10 +117,10 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
             /// Some AST rewriting code, like IdentifierSemantic::setColumnLongName,
             /// does not respect children of identifier.
             /// Here we also ignore children if they are empty.
-            if (name_parts[i].empty() && j < children.size())
+            if (name_parts[i].empty() && jt != children.end())
             {
-                children[j]->formatImpl(settings, state, frame);
-                ++j;
+                (*jt)->formatImpl(settings, state, frame);
+                ++jt;
             }
             else
                 format_element(name_parts[i]);
@@ -163,12 +164,12 @@ void ASTIdentifier::resetFullName()
         full_name += '.' + name_parts[i];
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const String & table_name, ASTList && name_params)
     : ASTIdentifier({table_name}, true, std::move(name_params))
 {
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, ASTList && name_params)
     : ASTIdentifier(
         table_id.database_name.empty() ? std::vector<String>{table_id.table_name}
                                        : std::vector<String>{table_id.database_name, table_id.table_name},
@@ -177,7 +178,7 @@ ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, std::vector<A
     uuid = table_id.uuid;
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, ASTList && name_params)
     : ASTIdentifier({database_name, table_name}, true, std::move(name_params))
 {
 }
@@ -209,14 +210,14 @@ ASTPtr ASTTableIdentifier::getTable() const
             return std::make_shared<ASTIdentifier>(name_parts[1]);
 
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[1]->clone());
+            return std::make_shared<ASTIdentifier>("", children.back()->clone());
         else
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
+            return std::make_shared<ASTIdentifier>("", children.front()->clone());
     }
     else if (name_parts.size() == 1)
     {
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
+            return std::make_shared<ASTIdentifier>("", children.front()->clone());
         else
             return std::make_shared<ASTIdentifier>(name_parts[0]);
     }
@@ -228,7 +229,7 @@ ASTPtr ASTTableIdentifier::getDatabase() const
     if (name_parts.size() == 2)
     {
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
+            return std::make_shared<ASTIdentifier>("", children.front()->clone());
         else
             return std::make_shared<ASTIdentifier>(name_parts[0]);
     }

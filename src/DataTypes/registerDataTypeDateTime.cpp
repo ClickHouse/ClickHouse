@@ -39,7 +39,7 @@ getArgument(const ASTPtr & arguments, size_t argument_index, const char * argume
     const ASTLiteral * argument = nullptr;
 
     if (!arguments || arguments->children.size() <= argument_index
-        || !(argument = arguments->children[argument_index]->as<ASTLiteral>())
+        || !(argument = (*std::next(arguments->children.begin(), argument_index))->as<ASTLiteral>())
         || argument->value.getType() != field_type)
     {
         if constexpr (Kind == ArgumentKind::Optional)

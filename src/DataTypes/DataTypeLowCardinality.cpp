@@ -155,7 +155,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("LowCardinality data type family must have single argument - type of elements",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    return std::make_shared<DataTypeLowCardinality>(DataTypeFactory::instance().get(arguments->children[0]));
+    return std::make_shared<DataTypeLowCardinality>(DataTypeFactory::instance().get(arguments->children.front()));
 }
 
 void registerDataTypeLowCardinality(DataTypeFactory & factory)

@@ -22,7 +22,7 @@ void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, 
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (auto it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {

@@ -23,7 +23,7 @@ class ASTIdentifier : public ASTWithAlias
 {
 public:
     explicit ASTIdentifier(const String & short_name, ASTPtr && name_param = {});
-    explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false, std::vector<ASTPtr> && name_params = {});
+    explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false, ASTList && name_params = {});
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
@@ -71,9 +71,9 @@ private:
 class ASTTableIdentifier : public ASTIdentifier
 {
 public:
-    explicit ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params = {});
-    explicit ASTTableIdentifier(const StorageID & table_id, std::vector<ASTPtr> && name_params = {});
-    ASTTableIdentifier(const String & database_name, const String & table_name, std::vector<ASTPtr> && name_params = {});
+    explicit ASTTableIdentifier(const String & table_name, ASTList && name_params = {});
+    explicit ASTTableIdentifier(const StorageID & table_id, ASTList && name_params = {});
+    ASTTableIdentifier(const String & database_name, const String & table_name, ASTList && name_params = {});
 
     String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
     ASTPtr clone() const override;

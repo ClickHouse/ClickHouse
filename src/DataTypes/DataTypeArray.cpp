@@ -64,7 +64,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!arguments || arguments->children.size() != 1)
         throw Exception("Array data type family must have exactly one argument - type of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    return std::make_shared<DataTypeArray>(DataTypeFactory::instance().get(arguments->children[0]));
+    return std::make_shared<DataTypeArray>(DataTypeFactory::instance().get(arguments->children.front()));
 }
 
 

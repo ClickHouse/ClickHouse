@@ -46,7 +46,7 @@ public:
     bool hasOverride(const String & name) const;
 
 private:
-    std::map<String, size_t> positions;
+    std::map<String, ASTList::iterator> positions;
 };
 
 }

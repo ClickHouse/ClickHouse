@@ -711,7 +711,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
                                 ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
             const auto children = arguments->children;
-            const auto * literal = children[0]->as<ASTLiteral>();
+            const auto * literal = children.front()->as<ASTLiteral>();
             if (!literal)
                 throw Exception("Wrong modification for T64. Expected: 'bit', 'byte')",
                                 ErrorCodes::ILLEGAL_CODEC_PARAMETER);

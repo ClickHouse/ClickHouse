@@ -24,7 +24,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool has_case_expr = !s_when.ignore(pos, expected);
     pos = old_pos;
 
-    ASTs args;
+    ASTList args;
 
     auto parse_branches = [&]()
     {

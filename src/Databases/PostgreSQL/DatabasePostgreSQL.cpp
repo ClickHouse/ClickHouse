@@ -407,14 +407,14 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
 
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
-    ASTs storage_children = ast_storage->children;
+    auto storage_children = ast_storage->children;
     auto storage_engine_arguments = ast_storage->engine->arguments;
 
     if (storage_engine_arguments->children.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected number of arguments: {}", storage_engine_arguments->children.size());
 
     /// Check for named collection.
-    if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
+    if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children.front().get()))
     {
         storage_engine_arguments->children.push_back(makeASTFunction("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_id.table_name)));
     }
@@ -426,7 +426,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
         /// Add table_name to engine arguments.
         if (storage_engine_arguments->children.size() >= 2)
-            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
+            storage_engine_arguments->children.insert(++(++storage_engine_arguments->children.begin()), std::make_shared<ASTLiteral>(table_id.table_name));
     }
 
     return create_table_query;

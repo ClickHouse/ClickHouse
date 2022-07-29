@@ -23,7 +23,7 @@ namespace ErrorCodes
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
 {
-    ASTs arguments;
+    ASTList arguments;
     for (const auto & codec : codecs)
         arguments.push_back(codec->getCodecDesc());
     /// Special case, codec doesn't have name and contain list of codecs.

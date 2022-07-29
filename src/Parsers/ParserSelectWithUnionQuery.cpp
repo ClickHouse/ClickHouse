@@ -23,9 +23,9 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     auto & expr_list = list_node->as<ASTExpressionList &>();
     if (expr_list.children.size() == 1)
     {
-        if (expr_list.children.at(0)->as<ASTSelectWithUnionQuery>())
+        if (expr_list.children.front()->as<ASTSelectWithUnionQuery>())
         {
-            node = std::move(expr_list.children.at(0));
+            node = std::move(expr_list.children.front());
             return true;
         }
     }

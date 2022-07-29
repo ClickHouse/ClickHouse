@@ -159,7 +159,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         StorageMySQLConfiguration configuration;
-        ASTs & arguments = engine->arguments->children;
+        ASTList & arguments = engine->arguments->children;
         MySQLSettings mysql_settings;
 
         if (auto named_collection = getExternalDataSourceConfiguration(arguments, context, true, true, mysql_settings))
@@ -258,7 +258,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         const auto & arguments = engine->arguments->children;
 
-        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
+        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments.front(), "Lazy");
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
     }
 
@@ -273,9 +273,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         for (auto & engine_arg : arguments)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        String zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
-        String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
-        String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
+        String zookeeper_path = safeGetLiteralValue<String>(arguments.front(), "Replicated");
+        String shard_name = safeGetLiteralValue<String>(*++arguments.begin(), "Replicated");
+        String replica_name  = safeGetLiteralValue<String>(arguments.back(), "Replicated");
 
         zookeeper_path = context->getMacros()->expand(zookeeper_path);
         shard_name = context->getMacros()->expand(shard_name);
@@ -298,7 +298,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        ASTs & engine_args = engine->arguments->children;
+        AstList & engine_args = engine->arguments->children;
         auto use_table_cache = false;
         StoragePostgreSQLConfiguration configuration;
 
@@ -375,7 +375,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        ASTs & engine_args = engine->arguments->children;
+        ASTList & engine_args = engine->arguments->children;
         StoragePostgreSQLConfiguration configuration;
 
         if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
@@ -431,7 +431,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         const auto & arguments = engine->arguments->children;
 
-        String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
+        String database_path = safeGetLiteralValue<String>(arguments.front(), "SQLite");
 
         return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
     }

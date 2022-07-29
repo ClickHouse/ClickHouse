@@ -50,7 +50,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Object data type family must have one argument - name of schema format");
 
-    ASTPtr schema_argument = arguments->children[0];
+    ASTPtr schema_argument = arguments->children.front();
     bool is_nullable = false;
 
     if (const auto * func = schema_argument->as<ASTFunction>())
@@ -59,7 +59,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
                 "Expected 'Nullable(<schema_name>)' as parameter for type Object", func->name);
 
-        schema_argument = func->arguments->children[0];
+        schema_argument = func->arguments->children.front();
         is_nullable = true;
     }
 

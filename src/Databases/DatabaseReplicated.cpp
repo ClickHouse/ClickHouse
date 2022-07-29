@@ -388,8 +388,8 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             if (!replicated_table || !create->storage->engine->arguments)
                 return;
 
-            ASTs & args_ref = create->storage->engine->arguments->children;
-            ASTs args = args_ref;
+            ASTList & args_ref = create->storage->engine->arguments->children;
+            ASTList args = args_ref;
             if (args.size() < 2)
                 return;
 

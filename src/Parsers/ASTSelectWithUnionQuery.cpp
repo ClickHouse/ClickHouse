@@ -43,11 +43,12 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
         return "";
     };
 
-    for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
+    size_t i = 0;
+    for (auto it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it, ++i)
     {
         if (it != list_of_selects->children.begin())
             settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
-                          << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
+                          << mode_to_str((is_normalized) ? union_mode : list_of_modes[i - 1])
                           << (settings.hilite ? hilite_none : "");
 
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
@@ -56,7 +57,7 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
             if (node->list_of_selects->children.size() == 1)
             {
-                (node->list_of_selects->children.at(0))->formatImpl(settings, state, frame);
+                (node->list_of_selects->children.front())->formatImpl(settings, state, frame);
             }
             else
             {

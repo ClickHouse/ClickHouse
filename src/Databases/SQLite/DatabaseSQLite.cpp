@@ -190,7 +190,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     auto storage_engine_arguments = ast_storage->engine->arguments;
     auto table_id = storage->getStorageID();
     /// Add table_name to engine arguments
-    storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 1, std::make_shared<ASTLiteral>(table_id.table_name));
+    storage_engine_arguments->children.insert(++storage_engine_arguments->children.begin(), std::make_shared<ASTLiteral>(table_id.table_name));
 
     auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
                                                             getContext()->getSettingsRef().max_parser_depth, throw_on_error);

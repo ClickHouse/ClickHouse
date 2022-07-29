@@ -30,7 +30,7 @@ public:
     {
         auto res = std::make_shared<ASTExplainQuery>(*this);
         res->children.clear();
-        res->children.push_back(children[0]->clone());
+        res->children.push_back(children.front()->clone());
         cloneOutputOptions(*res);
         return res;
     }

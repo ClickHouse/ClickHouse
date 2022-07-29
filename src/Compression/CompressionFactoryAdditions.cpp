@@ -65,9 +65,10 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         std::set<size_t> encryption_codecs;
 
         bool can_substitute_codec_arguments = true;
-        for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
+        auto it = func->arguments->children.begin();
+        for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i, ++it)
         {
-            const auto & inner_codec_ast = func->arguments->children[i];
+            const auto & inner_codec_ast = *it;
             String codec_family_name;
             ASTPtr codec_arguments;
             if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())

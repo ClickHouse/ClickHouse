@@ -96,7 +96,7 @@ void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatSt
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
 
-    for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
         {

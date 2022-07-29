@@ -7,19 +7,19 @@ namespace DB
 
 void ASTQualifiedAsterisk::appendColumnName(WriteBuffer & ostr) const
 {
-    const auto & qualifier = children.at(0);
+    const auto & qualifier = children.front();
     qualifier->appendColumnName(ostr);
     writeCString(".*", ostr);
 }
 
 void ASTQualifiedAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    const auto & qualifier = children.at(0);
+    const auto & qualifier = children.front();
     qualifier->formatImpl(settings, state, frame);
     settings.ostr << ".*";
 
     /// Format column transformers
-    for (ASTs::const_iterator it = children.begin() + 1; it != children.end(); ++it)
+    for (auto it = ++children.begin(); it != children.end(); ++it)
     {
         settings.ostr << ' ';
         (*it)->formatImpl(settings, state, frame);

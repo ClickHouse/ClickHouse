@@ -79,7 +79,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         throw Exception("Data type SimpleAggregateFunction requires parameters: "
                         "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (const ASTFunction * parametric = arguments->children[0]->as<ASTFunction>())
+    if (const ASTFunction * parametric = arguments->children.front()->as<ASTFunction>())
     {
         if (parametric->parameters)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
@@ -87,29 +87,29 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
 
         if (parametric->arguments)
         {
-            const ASTs & parameters = parametric->arguments->as<ASTExpressionList &>().children;
-            params_row.resize(parameters.size());
+            const auto & parameters = parametric->arguments->as<ASTExpressionList &>().children;
+            params_row.reserve(parameters.size());
 
-            for (size_t i = 0; i < parameters.size(); ++i)
+            for (const auto & param : parameters)
             {
-                const ASTLiteral * lit = parameters[i]->as<ASTLiteral>();
+                const ASTLiteral * lit = param->as<ASTLiteral>();
                 if (!lit)
                     throw Exception(
                         ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
                         "Parameters to aggregate functions must be literals. "
                         "Got parameter '{}' for function '{}'",
-                        parameters[i]->formatForErrorMessage(),
+                        param->formatForErrorMessage(),
                         function_name);
 
-                params_row[i] = lit->value;
+                params_row.push_back(lit->value);
             }
         }
     }
-    else if (auto opt_name = tryGetIdentifierName(arguments->children[0]))
+    else if (auto opt_name = tryGetIdentifierName(arguments->children.front()))
     {
         function_name = *opt_name;
     }
-    else if (arguments->children[0]->as<ASTLiteral>())
+    else if (arguments->children.front()->as<ASTLiteral>())
     {
         throw Exception("Aggregate function name for data type SimpleAggregateFunction must be passed as identifier (without quotes) or function",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -118,8 +118,9 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
         throw Exception("Unexpected AST element passed as aggregate function name for data type SimpleAggregateFunction. Must be identifier or function.",
                         ErrorCodes::BAD_ARGUMENTS);
 
-    for (size_t i = 1; i < arguments->children.size(); ++i)
-        argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
+    for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
+        if (it != arguments->children.begin())
+            argument_types.push_back(DataTypeFactory::instance().get(*it));
 
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);

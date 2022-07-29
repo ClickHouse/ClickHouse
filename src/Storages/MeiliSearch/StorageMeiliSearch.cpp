@@ -60,7 +60,7 @@ ASTPtr getFunctionParams(ASTPtr node, const String & name)
     if (ptr && ptr->name == name)
     {
         if (node->children.size() == 1)
-            return node->children[0];
+            return node->children.front();
         else
             return nullptr;
     }

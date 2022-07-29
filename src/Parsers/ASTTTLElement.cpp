@@ -16,8 +16,8 @@ ASTPtr ASTTTLElement::clone() const
 {
     auto clone = std::make_shared<ASTTTLElement>(*this);
     clone->children.clear();
-    clone->ttl_expr_pos = -1;
-    clone->where_expr_pos = -1;
+    clone->ttl_expr_pos = clone->children.end();
+    clone->where_expr_pos = clone->children.end();
 
     clone->setExpression(clone->ttl_expr_pos, getExpression(ttl_expr_pos, true));
     clone->setExpression(clone->where_expr_pos, getExpression(where_expr_pos, true));
@@ -87,28 +87,24 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
     }
 }
 
-void ASTTTLElement::setExpression(int & pos, ASTPtr && ast)
+void ASTTTLElement::setExpression(ASTList::iterator & pos, ASTPtr && ast)
 {
     if (ast)
     {
-        if (pos == -1)
-        {
-            pos = children.size();
-            children.emplace_back(ast);
-        }
+        if (pos == children.end())
+            pos = children.insert(children.end(), ast);
         else
-            children[pos] = ast;
+            *pos = ast;
     }
-    else if (pos != -1)
+    else if (pos != children.end())
     {
-        children[pos] = ASTPtr{};
-        pos = -1;
+        children.erase(pos);
     }
 }
 
-ASTPtr ASTTTLElement::getExpression(int  pos, bool clone) const
+ASTPtr ASTTTLElement::getExpression(ASTList::iterator pos, bool clone) const
 {
-    return pos != -1 ? (clone ? children[pos]->clone() : children[pos]) : ASTPtr{};
+    return pos != children.end() ? (clone ? (*pos)->clone() : *pos) : ASTPtr{};
 }
 
 }

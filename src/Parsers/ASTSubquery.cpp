@@ -49,7 +49,7 @@ void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, Format
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
     ++frame_nested.indent;
-    children[0]->formatImpl(settings, state, frame_nested);
+    children.front()->formatImpl(settings, state, frame_nested);
     settings.ostr << nl_or_nothing << indent_str << ")";
 }
 

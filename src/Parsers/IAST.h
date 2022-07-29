@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <set>
+#include <list>
 
 
 class SipHash;
@@ -32,7 +33,7 @@ using Strings = std::vector<String>;
 class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
 {
 public:
-    ASTs children;
+    ASTList children;
 
     virtual ~IAST() = default;
     IAST() = default;

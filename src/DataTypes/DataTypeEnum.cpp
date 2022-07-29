@@ -194,8 +194,7 @@ static void checkASTStructure(const ASTPtr & child)
 static void autoAssignNumberForEnum(const ASTPtr & arguments)
 {
     Int64 literal_child_assign_num = 1;
-    ASTs assign_number_child;
-    assign_number_child.reserve(arguments->children.size());
+    ASTList assign_number_child;
     bool is_first_child = true;
     size_t assign_count= 0;
 
@@ -213,7 +212,7 @@ static void autoAssignNumberForEnum(const ASTPtr & arguments)
             {
                 checkASTStructure(child);
                 const auto * func = child->as<ASTFunction>();
-                const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
+                const auto * value_literal = func->arguments->children.back()->as<ASTLiteral>();
 
                 if (!value_literal
                     || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
@@ -256,8 +255,8 @@ static DataTypePtr createExact(const ASTPtr & arguments)
         checkASTStructure(child);
 
         const auto * func = child->as<ASTFunction>();
-        const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
-        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
+        const auto * name_literal = func->arguments->children.front()->as<ASTLiteral>();
+        const auto * value_literal = func->arguments->children.back()->as<ASTLiteral>();
 
         if (!name_literal
             || !value_literal
@@ -291,7 +290,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         checkASTStructure(child);
 
         const auto * func = child->as<ASTFunction>();
-        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
+        const auto * value_literal = func->arguments->children.back()->as<ASTLiteral>();
 
         if (!value_literal
             || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))

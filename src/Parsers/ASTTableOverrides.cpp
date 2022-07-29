@@ -81,7 +81,15 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
 ASTPtr ASTTableOverrideList::clone() const
 {
     auto res = std::make_shared<ASTTableOverrideList>(*this);
-    res->cloneChildren();
+    res->children.clear();
+
+    std::unordered_map<IAST*, ASTList::iterator> map;
+    for (const auto & child : children)
+        map[child.get()] = res->children.insert(res->children.end(), child->clone());
+
+    for (auto & pos : res->positions)
+        pos.second = map[pos.second->get()];
+
     return res;
 }
 
@@ -90,7 +98,7 @@ ASTPtr ASTTableOverrideList::tryGetTableOverride(const String & name) const
     auto it = positions.find(name);
     if (it == positions.end())
         return nullptr;
-    return children[it->second];
+    return *(it->second);
 }
 
 void ASTTableOverrideList::setTableOverride(const String & name, ASTPtr ast)
@@ -98,12 +106,11 @@ void ASTTableOverrideList::setTableOverride(const String & name, ASTPtr ast)
     auto it = positions.find(name);
     if (it == positions.end())
     {
-        positions[name] = children.size();
-        children.emplace_back(ast);
+        positions[name] = children.insert(children.end(), ast);
     }
     else
     {
-        children[it->second] = ast;
+        *it->second = ast;
     }
 }
 
@@ -111,12 +118,9 @@ void ASTTableOverrideList::removeTableOverride(const String & name)
 {
     if (hasOverride(name))
     {
-        size_t pos = positions[name];
-        children.erase(children.begin() + pos);
+        auto it = positions[name];
+        children.erase(it);
         positions.erase(name);
-        for (auto & pr : positions)
-            if (pr.second > pos)
-                --pr.second;
     }
 }
 
@@ -130,7 +134,7 @@ void ASTTableOverrideList::formatImpl(const FormatSettings & settings, FormatSta
     if (frame.expression_list_prepend_whitespace)
         settings.ostr << ' ';
 
-    for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (auto it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {

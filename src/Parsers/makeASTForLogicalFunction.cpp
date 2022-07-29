@@ -9,7 +9,7 @@
 namespace DB
 {
 
-ASTPtr makeASTForLogicalAnd(ASTs && arguments)
+ASTPtr makeASTForLogicalAnd(ASTList && arguments)
 {
     bool partial_result = true;
     boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
@@ -26,7 +26,7 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
     if (arguments.empty())
         return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
     if (arguments.size() == 1)
-        return arguments[0];
+        return arguments.front();
 
     auto function = std::make_shared<ASTFunction>();
     auto exp_list = std::make_shared<ASTExpressionList>();
@@ -38,7 +38,7 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
 }
 
 
-ASTPtr makeASTForLogicalOr(ASTs && arguments)
+ASTPtr makeASTForLogicalOr(ASTList && arguments)
 {
     bool partial_result = false;
     boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
@@ -55,7 +55,7 @@ ASTPtr makeASTForLogicalOr(ASTs && arguments)
     if (arguments.empty())
         return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(0)});
     if (arguments.size() == 1)
-        return arguments[0];
+        return arguments.front();
 
     auto function = std::make_shared<ASTFunction>();
     auto exp_list = std::make_shared<ASTExpressionList>();

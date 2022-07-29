@@ -437,7 +437,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
             if (table_override->columns)
             {
                 auto children = table_override->columns->children;
-                const auto & columns = children[0]->as<ASTExpressionList>();
+                const auto & columns = children.front()->as<ASTExpressionList>();
                 if (columns)
                 {
                     for (const auto & child : columns->children)
@@ -448,7 +448,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                     }
                 }
 
-                columns_declare_list->set(columns_declare_list->columns, children[0]);
+                columns_declare_list->set(columns_declare_list->columns, children.front());
             }
             else
             {

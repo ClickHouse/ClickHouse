@@ -194,7 +194,7 @@ namespace
         if (!function.arguments || function.arguments->children.size() <= arg_idx)
             return;
 
-        auto & arg = function.arguments->as<ASTExpressionList>()->children[arg_idx];
+        auto & arg = *std::next(function.arguments->as<ASTExpressionList>()->children.begin(), arg_idx);
         if (auto * literal = arg->as<ASTLiteral>())
         {
             if (literal->value.getType() != Field::Types::String)
@@ -235,7 +235,7 @@ namespace
         if (!function.arguments || function.arguments->children.size() <= arg_idx)
             return;
 
-        auto & arg = function.arguments->as<ASTExpressionList>()->children[arg_idx];
+        auto & arg = *std::next(function.arguments->as<ASTExpressionList>()->children.begin(), arg_idx);
         auto * literal = arg->as<ASTLiteral>();
         if (!literal || (literal->value.getType() != Field::Types::String))
             return;

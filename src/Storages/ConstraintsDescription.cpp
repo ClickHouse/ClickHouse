@@ -153,7 +153,7 @@ const std::vector<std::vector<CNFQuery::AtomicFormula>> & ConstraintsDescription
     return cnf_constraints;
 }
 
-const std::vector<ASTPtr> & ConstraintsDescription::getConstraints() const
+const ASTList & ConstraintsDescription::getConstraints() const
 {
     return constraints;
 }
@@ -175,7 +175,7 @@ std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomsById(const 
     return result;
 }
 
-ConstraintsDescription::ConstraintsDescription(const ASTs & constraints_)
+ConstraintsDescription::ConstraintsDescription(const ASTList & constraints_)
     : constraints(constraints_)
 {
     update();
@@ -183,7 +183,6 @@ ConstraintsDescription::ConstraintsDescription(const ASTs & constraints_)
 
 ConstraintsDescription::ConstraintsDescription(const ConstraintsDescription & other)
 {
-    constraints.reserve(other.constraints.size());
     for (const auto & constraint : other.constraints)
         constraints.emplace_back(constraint->clone());
     update();
@@ -191,9 +190,8 @@ ConstraintsDescription::ConstraintsDescription(const ConstraintsDescription & ot
 
 ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDescription & other)
 {
-    constraints.resize(other.constraints.size());
-    for (size_t i = 0; i < constraints.size(); ++i)
-        constraints[i] = other.constraints[i]->clone();
+    for (const auto & expr : constraints)
+        constraints.emplace_back(expr->clone());
     update();
     return *this;
 }

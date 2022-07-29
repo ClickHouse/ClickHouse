@@ -44,8 +44,11 @@ namespace
         if (engine_args.size() < 2)
             return;
 
-        auto * zookeeper_path_ast = typeid_cast<ASTLiteral *>(engine_args[0].get());
-        auto * replica_name_ast = typeid_cast<ASTLiteral *>(engine_args[1].get());
+        auto it = engine_args.begin();
+        auto * zookeeper_path_ast = typeid_cast<ASTLiteral *>(it->get());
+        ++it;
+        auto * replica_name_ast = typeid_cast<ASTLiteral *>(it->get());
+        ++it;
         if (zookeeper_path_ast && (zookeeper_path_ast->value.getType() == Field::Types::String) &&
             replica_name_ast && (replica_name_ast->value.getType() == Field::Types::String))
         {
@@ -60,9 +63,9 @@ namespace
             const auto & config = data.global_context->getConfigRef();
             if ((zookeeper_path_arg == StorageReplicatedMergeTree::getDefaultZooKeeperPath(config))
                 && (replica_name_arg == StorageReplicatedMergeTree::getDefaultReplicaName(config))
-                && ((engine_args.size() == 2) || !engine_args[2]->as<ASTLiteral>()))
+                && ((engine_args.size() == 2) || !(*it)->as<ASTLiteral>()))
             {
-                engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
+                engine_args.erase(engine_args.begin(), it);
             }
         }
     }

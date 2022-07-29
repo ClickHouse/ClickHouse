@@ -39,7 +39,6 @@ ASTPtr BackupInfo::toAST() const
     auto list = std::make_shared<ASTExpressionList>();
     func->arguments = list;
     func->children.push_back(list);
-    list->children.reserve(args.size() + !id_arg.empty());
 
     if (!id_arg.empty())
         list->children.push_back(std::make_shared<ASTIdentifier>(id_arg));
@@ -66,21 +65,21 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
         if (!list)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected list, got {}", serializeAST(*func->arguments));
 
-        size_t index = 0;
+        auto it = list->children.begin();
         if (!list->children.empty())
         {
-            const auto * id = list->children[0]->as<const ASTIdentifier>();
+            const auto * id = list->children.front()->as<const ASTIdentifier>();
             if (id)
             {
                 res.id_arg = id->name();
-                ++index;
+                ++it;
             }
         }
 
-        res.args.reserve(list->children.size() - index);
-        for (; index < list->children.size(); ++index)
+        res.args.reserve(list->children.size());
+        for (; it != list->children.end(); ++it)
         {
-            const auto & elem = list->children[index];
+            const auto & elem = *it;
             const auto * lit = elem->as<const ASTLiteral>();
             if (!lit)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", serializeAST(*elem));

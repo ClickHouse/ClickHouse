@@ -66,7 +66,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!arguments || arguments->children.size() != 1)
         throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
+    DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children.front());
 
     return std::make_shared<DataTypeNullable>(nested_type);
 }

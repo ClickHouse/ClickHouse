@@ -18,8 +18,8 @@ public:
     String destination_name;
     bool if_exists = false;
 
-    ASTs group_by_key;
-    ASTs group_by_assignments;
+    ASTList group_by_key;
+    ASTList group_by_assignments;
 
     ASTPtr recompression_codec;
 
@@ -28,8 +28,8 @@ public:
         , destination_type(destination_type_)
         , destination_name(destination_name_)
         , if_exists(if_exists_)
-        , ttl_expr_pos(-1)
-        , where_expr_pos(-1)
+        , ttl_expr_pos(children.end())
+        , where_expr_pos(children.end())
     {
     }
 
@@ -47,11 +47,11 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
-    int ttl_expr_pos;
-    int where_expr_pos;
+    ASTList::iterator ttl_expr_pos;
+    ASTList::iterator where_expr_pos;
 
-    void setExpression(int & pos, ASTPtr && ast);
-    ASTPtr getExpression(int pos, bool clone = false) const;
+    void setExpression(ASTList::iterator & pos, ASTPtr && ast);
+    ASTPtr getExpression(ASTList::iterator, bool clone = false) const;
 };
 
 }

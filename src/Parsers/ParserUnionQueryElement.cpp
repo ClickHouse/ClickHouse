@@ -14,7 +14,7 @@ bool ParserUnionQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
 
     if (const auto * ast_subquery = node->as<ASTSubquery>())
-        node = ast_subquery->children.at(0);
+        node = ast_subquery->children.front();
 
     return true;
 }

@@ -102,7 +102,7 @@ void DDLDependencyVisitor::extractTableNameFromArgument(const ASTFunction & func
 
     QualifiedTableName qualified_name;
 
-    const auto * arg = function.arguments->as<ASTExpressionList>()->children[arg_idx].get();
+    const auto * arg = std::next(function.arguments->as<ASTExpressionList>()->children.begin(), arg_idx)->get();
     if (const auto * literal = arg->as<ASTLiteral>())
     {
         if (literal->value.getType() != Field::Types::String)

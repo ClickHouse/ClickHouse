@@ -121,7 +121,7 @@ public:
     {
         auto it = positions.find(expr);
         if (it != positions.end())
-            return clone ? children[it->second]->clone() : children[it->second];
+            return clone ? (*it->second)->clone() : *it->second;
         return {};
     }
 
@@ -146,7 +146,7 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
-    std::unordered_map<Expression, size_t> positions;
+    std::unordered_map<Expression, std::list<ASTPtr>::iterator> positions;
 
     ASTPtr & getExpression(Expression expr);
 };

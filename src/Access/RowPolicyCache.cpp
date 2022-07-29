@@ -52,8 +52,8 @@ namespace
         }
 
     private:
-        ASTs permissions;
-        ASTs restrictions;
+        ASTList permissions;
+        ASTList restrictions;
     };
 }
 

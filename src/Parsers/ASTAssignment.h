@@ -13,7 +13,7 @@ public:
 
     ASTPtr expression() const
     {
-        return children.at(0);
+        return children.front();
     }
 
     String getID(char delim) const override { return "Assignment" + (delim + column_name); }

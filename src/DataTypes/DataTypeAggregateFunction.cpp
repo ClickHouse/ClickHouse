@@ -141,20 +141,20 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Data type AggregateFunction requires parameters: "
             "version(optionally), name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTPtr data_type_ast = arguments->children[0];
+    ASTPtr data_type_ast = arguments->children.front();
     size_t argument_types_start_idx = 1;
 
     /* If aggregate function definition doesn't have version, it will have in AST children args [ASTFunction, types...] - in case
      * it is parametric, or [ASTIdentifier, types...] - otherwise. If aggregate function has version in AST, then it will be:
      * [ASTLiteral, ASTFunction (or ASTIdentifier), types...].
      */
-    if (auto * version_ast = arguments->children[0]->as<ASTLiteral>())
+    if (auto * version_ast = arguments->children.front()->as<ASTLiteral>())
     {
         if (arguments->children.size() < 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Data type AggregateFunction has version, but it requires at least one more parameter - name of aggregate function");
         version = version_ast->value.safeGet<UInt64>();
-        data_type_ast = arguments->children[1];
+        data_type_ast = arguments->children.back();
         argument_types_start_idx = 2;
     }
 
@@ -167,20 +167,20 @@ static DataTypePtr create(const ASTPtr & arguments)
 
         if (parametric->arguments)
         {
-            const ASTs & parameters = parametric->arguments->children;
-            params_row.resize(parameters.size());
+            const auto & parameters = parametric->arguments->children;
+            params_row.reserve(parameters.size());
 
-            for (size_t i = 0; i < parameters.size(); ++i)
+            for (const auto & param : parameters)
             {
-                const auto * literal = parameters[i]->as<ASTLiteral>();
+                const auto * literal = param->as<ASTLiteral>();
                 if (!literal)
                     throw Exception(
                         ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
                         "Parameters to aggregate functions must be literals. "
                         "Got parameter '{}' for function '{}'",
-                        parameters[i]->formatForErrorMessage(), function_name);
+                        param->formatForErrorMessage(), function_name);
 
-                params_row[i] = literal->value;
+                params_row.emplace_back(literal->value);
             }
         }
     }
@@ -197,8 +197,15 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Unexpected AST element passed as aggregate function name for data type AggregateFunction. Must be identifier or function.",
             ErrorCodes::BAD_ARGUMENTS);
 
-    for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
-        argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
+    for (const auto & arg : arguments->children)
+    {
+        if (argument_types_start_idx)
+        {
+            --argument_types_start_idx;
+            continue;
+        }
+        argument_types.push_back(DataTypeFactory::instance().get(arg));
+    }
 
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
