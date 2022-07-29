@@ -3,6 +3,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
     MergeTreeDataPartCloner::MergeTreeDataPartCloner(
         const MergeTreeData & merge_tree_data_,
         const DataPartPtr & src_part_,
