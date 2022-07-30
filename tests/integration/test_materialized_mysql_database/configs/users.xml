@@ -3,7 +3,6 @@
     <profiles>
         <default>
             <allow_experimental_database_materialized_mysql>1</allow_experimental_database_materialized_mysql>
-            <default_database_engine>Atomic</default_database_engine>
             <allow_introspection_functions>1</allow_introspection_functions>
             <optimize_on_insert>0</optimize_on_insert>
         </default>

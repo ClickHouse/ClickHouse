@@ -87,10 +87,15 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
+    bool hasLightweightDeletedMask() const override;
+
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 
     CancellationCode killMutation(const String & mutation_id) override;
+
+    /// Makes backup entries to backup the data of the storage.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
@@ -181,6 +186,7 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version);
     void waitForMutation(const String & mutation_id) override;
+    void waitForMutation(Int64 version, const String & mutation_id);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
 
@@ -254,6 +260,8 @@ private:
     void fillNewPartName(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
+
+    BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
     void attachRestoredParts(MutableDataPartsVector && parts) override;

@@ -1,8 +1,10 @@
 #include <algorithm>
+#include <memory>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Common/checkStackSize.h>
+#include <Core/SettingsEnums.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
@@ -26,7 +28,9 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/RewriteOrderByVisitor.hpp>
 
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -429,21 +433,28 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are impossible.
 /// Also remove all INTERPOLATE columns which are not in SELECT anymore.
-void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups, bool reorder_columns_as_required_header)
+void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
     ASTs & elements = select_query->select()->children;
 
-    std::map<String, size_t> required_columns_with_duplicate_count;
+    std::unordered_map<String, size_t> required_columns_with_duplicate_count;
+    /// Order of output columns should match order in required_result_columns,
+    /// otherwise UNION queries may have incorrect header when subselect has duplicated columns.
+    ///
+    /// NOTE: multimap is required since there can be duplicated column names.
+    std::unordered_multimap<String, size_t> output_columns_positions;
 
     if (!required_result_columns.empty())
     {
         /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
-        for (const auto & name : required_result_columns)
+        for (size_t i = 0; i < required_result_columns.size(); ++i)
         {
+            const auto & name = required_result_columns[i];
             if (remove_dups)
                 required_columns_with_duplicate_count[name] = 1;
             else
                 ++required_columns_with_duplicate_count[name];
+            output_columns_positions.emplace(name, i);
         }
     }
     else if (remove_dups)
@@ -455,49 +466,44 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
     else
         return;
 
-    ASTs new_elements;
-    new_elements.reserve(elements.size());
+    ASTs new_elements(elements.size() + output_columns_positions.size());
+    size_t new_elements_size = 0;
 
     NameSet remove_columns;
-
-    /// Resort columns according to required_result_columns.
-    if (reorder_columns_as_required_header && !required_result_columns.empty())
-    {
-        std::unordered_map<String, size_t> name_pos;
-        {
-            size_t pos = 0;
-            for (const auto & name : required_result_columns)
-                name_pos[name] = pos++;
-        }
-        ::sort(elements.begin(), elements.end(), [&](const auto & lhs, const auto & rhs)
-        {
-            String lhs_name = lhs->getAliasOrColumnName();
-            String rhs_name = rhs->getAliasOrColumnName();
-            size_t lhs_pos = name_pos.size();
-            size_t rhs_pos = name_pos.size();
-            if (auto it = name_pos.find(lhs_name); it != name_pos.end())
-                lhs_pos = it->second;
-            if (auto it = name_pos.find(rhs_name); it != name_pos.end())
-                rhs_pos = it->second;
-            return lhs_pos < rhs_pos;
-        });
-    }
 
     for (const auto & elem : elements)
     {
         String name = elem->getAliasOrColumnName();
 
+        /// Columns that are presented in output_columns_positions should
+        /// appears in the same order in the new_elements, hence default
+        /// result_index goes after all elements of output_columns_positions
+        /// (it is for columns that are not located in
+        /// output_columns_positions, i.e. untuple())
+        size_t result_index = output_columns_positions.size() + new_elements_size;
+
+        /// Note, order of duplicated columns is not important here (since they
+        /// are the same), only order for unique columns is important, so it is
+        /// fine to use multimap here.
+        if (auto it = output_columns_positions.find(name); it != output_columns_positions.end())
+        {
+            result_index = it->second;
+            output_columns_positions.erase(it);
+        }
+
         auto it = required_columns_with_duplicate_count.find(name);
         if (required_columns_with_duplicate_count.end() != it && it->second)
         {
-            new_elements.push_back(elem);
+            new_elements[result_index] = elem;
             --it->second;
+            ++new_elements_size;
         }
         else if (select_query->distinct || hasArrayJoin(elem))
         {
             /// ARRAY JOIN cannot be optimized out since it may change number of rows,
             /// so as DISTINCT.
-            new_elements.push_back(elem);
+            new_elements[result_index] = elem;
+            ++new_elements_size;
         }
         else
         {
@@ -508,13 +514,20 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// Never remove untuple. It's result column may be in required columns.
             /// It is not easy to analyze untuple here, because types were not calculated yet.
             if (func && func->name == "untuple")
-                new_elements.push_back(elem);
-
+            {
+                new_elements[result_index] = elem;
+                ++new_elements_size;
+            }
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
             if (func && AggregateUtils::isAggregateFunction(*func) && !select_query->groupBy())
-                new_elements.push_back(elem);
+            {
+                new_elements[result_index] = elem;
+                ++new_elements_size;
+            }
         }
     }
+    /// Remove empty nodes.
+    std::erase(new_elements, ASTPtr{});
 
     if (select_query->interpolate())
     {
@@ -599,13 +612,13 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
     auto & table_join = const_cast<ASTTablesInSelectQueryElement *>(node)->table_join->as<ASTTableJoin &>();
 
-    if (table_join.strictness == ASTTableJoin::Strictness::Unspecified &&
-        table_join.kind != ASTTableJoin::Kind::Cross)
+    if (table_join.strictness == JoinStrictness::Unspecified &&
+        table_join.kind != JoinKind::Cross)
     {
-        if (join_default_strictness == JoinStrictness::ANY)
-            table_join.strictness = ASTTableJoin::Strictness::Any;
-        else if (join_default_strictness == JoinStrictness::ALL)
-            table_join.strictness = ASTTableJoin::Strictness::All;
+        if (join_default_strictness == JoinStrictness::Any)
+            table_join.strictness = JoinStrictness::Any;
+        else if (join_default_strictness == JoinStrictness::All)
+            table_join.strictness = JoinStrictness::All;
         else
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
                             DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
@@ -613,21 +626,20 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
     if (old_any)
     {
-        if (table_join.strictness == ASTTableJoin::Strictness::Any &&
-            table_join.kind == ASTTableJoin::Kind::Inner)
+        if (table_join.strictness == JoinStrictness::Any &&
+            table_join.kind == JoinKind::Inner)
         {
-            table_join.strictness = ASTTableJoin::Strictness::Semi;
-            table_join.kind = ASTTableJoin::Kind::Left;
+            table_join.strictness = JoinStrictness::Semi;
+            table_join.kind = JoinKind::Left;
         }
 
-        if (table_join.strictness == ASTTableJoin::Strictness::Any)
-            table_join.strictness = ASTTableJoin::Strictness::RightAny;
+        if (table_join.strictness == JoinStrictness::Any)
+            table_join.strictness = JoinStrictness::RightAny;
     }
     else
     {
-        if (table_join.strictness == ASTTableJoin::Strictness::Any)
-            if (table_join.kind == ASTTableJoin::Kind::Full)
-                throw Exception("ANY FULL JOINs are not implemented.", ErrorCodes::NOT_IMPLEMENTED);
+        if (table_join.strictness == JoinStrictness::Any && table_join.kind == JoinKind::Full)
+            throw Exception("ANY FULL JOINs are not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     out_table_join = table_join;
@@ -672,7 +684,7 @@ bool tryJoinOnConst(TableJoin & analyzed_join, ASTPtr & on_expression, ContextPt
     else
         return false;
 
-    if (!analyzed_join.forceHashJoin())
+    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "JOIN ON constant ({}) supported only with join algorithm 'hash'",
                         queryToString(on_expression));
@@ -708,7 +720,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
     else if (table_join.on_expression)
     {
-        bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
+        bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         if (auto * or_func = table_join.on_expression->as<ASTFunction>(); or_func && or_func->name == "or")
@@ -759,7 +771,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                 data.asofToJoinKeys();
             }
 
-            if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
+            if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
                 throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
         }
     }
@@ -1193,7 +1205,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
-    bool reorder_columns_as_required_header = select_options.reorder_columns_as_required_header;
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -1245,7 +1256,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
-    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates, reorder_columns_as_required_header);
+    removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, result.local_scalars, select_options.only_analyze);
@@ -1317,6 +1328,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             !select_query->groupBy() && !select_query->having() &&
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
             (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
+
+    // remove outer braces in order by
+    RewriteOrderByVisitor::Data data;
+    RewriteOrderByVisitor(data).visit(query);
 
     return std::make_shared<const TreeRewriterResult>(result);
 }

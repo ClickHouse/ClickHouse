@@ -21,6 +21,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -105,20 +106,31 @@ KeeperServer::KeeperServer(
     SnapshotsQueue & snapshots_queue_)
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
-    , state_machine(nuraft::cs_new<KeeperStateMachine>(
-          responses_queue_,
-          snapshots_queue_,
-          configuration_and_settings_->snapshot_storage_path,
-          coordination_settings,
-          checkAndGetSuperdigest(configuration_and_settings_->super_digest),
-          config.getBool("keeper_server.digest_enabled", true)))
-    , state_manager(nuraft::cs_new<KeeperStateManager>(
-          server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
     , is_recovering(config.has("keeper_server.force_recovery") && config.getBool("keeper_server.force_recovery"))
+    , keeper_context{std::make_shared<KeeperContext>()}
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
+
+    keeper_context->digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    keeper_context->ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
+
+    state_machine = nuraft::cs_new<KeeperStateMachine>(
+        responses_queue_,
+        snapshots_queue_,
+        configuration_and_settings_->snapshot_storage_path,
+        coordination_settings,
+        keeper_context,
+        checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+
+    state_manager = nuraft::cs_new<KeeperStateManager>(
+        server_id,
+        "keeper_server",
+        configuration_and_settings_->log_storage_path,
+        configuration_and_settings_->state_file_path,
+        config,
+        coordination_settings);
 }
 
 /**
@@ -340,6 +352,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
 
     launchRaftServer(enable_ipv6);
+
+    keeper_context->server_state = KeeperContext::Phase::RUNNING;
 }
 
 void KeeperServer::shutdownRaftServer()
@@ -444,13 +458,11 @@ bool KeeperServer::isLeader() const
     return raft_instance->is_leader();
 }
 
-
 bool KeeperServer::isObserver() const
 {
     auto srv_config = state_manager->get_srv_config();
     return srv_config->is_learner();
 }
-
 
 bool KeeperServer::isFollower() const
 {
@@ -576,7 +588,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
     auto set_initialized = [this]()
     {
-        std::unique_lock lock(initialized_mutex);
+        std::lock_guard lock(initialized_mutex);
         initialized_flag = true;
         initialized_cv.notify_all();
     };
@@ -804,6 +816,27 @@ bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
     else
         LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
     return true;
+}
+
+Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
+{
+    Keeper4LWInfo result;
+    result.is_leader = raft_instance->is_leader();
+
+    auto srv_config = state_manager->get_srv_config();
+    result.is_observer = srv_config->is_learner();
+
+    result.is_follower = !result.is_leader && !result.is_observer;
+    result.has_leader = result.is_leader || isLeaderAlive();
+    result.is_standalone = !result.is_follower && getFollowerCount() == 0;
+    if (result.is_leader)
+    {
+        result.follower_count = getFollowerCount();
+        result.synced_follower_count = getSyncedFollowerCount();
+    }
+    result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
+    result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
+    return result;
 }
 
 }
