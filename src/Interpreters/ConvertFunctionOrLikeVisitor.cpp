@@ -18,7 +18,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
     std::unordered_map<ASTPtr, std::shared_ptr<ASTLiteral>> identifier_to_literals;
     for (auto & child : function.children)
     {
-        if (auto expr_list_fn = child->as<ASTExpressionList>())
+        if (auto * expr_list_fn = child->as<ASTExpressionList>())
         {
             ASTs unique_elems;
             for (const auto & child_expr_fn : expr_list_fn->children)
@@ -41,7 +41,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
 
                     /// Second one is string literal.
                     auto identifier = arguments[0];
-                    auto literal = arguments[1]->as<ASTLiteral>();
+                    auto * literal = arguments[1]->as<ASTLiteral>();
                     if (!identifier || !literal || literal->value.getType() != Field::Types::String)
                         continue;
 

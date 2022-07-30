@@ -13,9 +13,9 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths:
+      - 'docker/docs/**'
       - 'docs/**'
       - 'website/**'
-      - 'docker/docs/**'
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
@@ -102,6 +102,9 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{ runner.temp }}/style_check
+          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+          RCSK
           EOF
       - name: Download changed images
         # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
@@ -122,8 +125,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   DocsCheck:
     needs: DockerHubPush
@@ -153,8 +158,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     needs:

@@ -5,7 +5,7 @@
 #include <algorithm>
 
 #include <cassert>
-#include <string.h>
+#include <cstring>
 #include <unistd.h>
 #include <sys/select.h>
 #include <sys/time.h>

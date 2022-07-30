@@ -1,6 +1,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/typeid_cast.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
@@ -58,10 +59,10 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     if (!is_regexp)
         args[0] = database_ast;
-    source_database_name_or_regexp = database_ast->as<ASTLiteral &>().value.safeGet<String>();
+    source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
 
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
-    source_table_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    source_table_regexp = checkAndGetLiteralArgument<String>(args[1], "table_name_regexp");
 }
 
 

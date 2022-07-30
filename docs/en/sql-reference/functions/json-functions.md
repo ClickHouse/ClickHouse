@@ -3,7 +3,7 @@ sidebar_position: 56
 sidebar_label: JSON
 ---
 
-# Functions for Working with JSON {#functions-for-working-with-json}
+# Functions for Working with JSON
 
 ClickHouse has special functions for working with this JSON. All the JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
 
@@ -14,37 +14,37 @@ The following assumptions are made:
 3.  Fields are searched for on any nesting level, indiscriminately. If there are multiple matching fields, the first occurrence is used.
 4.  The JSON does not have space characters outside of string literals.
 
-## visitParamHas(params, name) {#visitparamhasparams-name}
+## visitParamHas(params, name)
 
 Checks whether there is a field with the `name` name.
 
 Alias: `simpleJSONHas`.
 
-## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
+## visitParamExtractUInt(params, name)
 
 Parses UInt64 from the value of the field named `name`. If this is a string field, it tries to parse a number from the beginning of the string. If the field does not exist, or it exists but does not contain a number, it returns 0.
 
 Alias: `simpleJSONExtractUInt`.
 
-## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
+## visitParamExtractInt(params, name)
 
 The same as for Int64.
 
 Alias: `simpleJSONExtractInt`.
 
-## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
+## visitParamExtractFloat(params, name)
 
 The same as for Float64.
 
 Alias: `simpleJSONExtractFloat`.
 
-## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
+## visitParamExtractBool(params, name)
 
 Parses a true/false value. The result is UInt8.
 
 Alias: `simpleJSONExtractBool`.
 
-## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
+## visitParamExtractRaw(params, name)
 
 Returns the value of a field, including separators.
 
@@ -57,7 +57,7 @@ visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"';
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 ```
 
-## visitParamExtractString(params, name) {#visitparamextractstringparams-name}
+## visitParamExtractString(params, name)
 
 Parses the string in double quotes. The value is unescaped. If unescaping failed, it returns an empty string.
 
@@ -76,7 +76,7 @@ There is currently no support for code points in the format `\uXXXX\uYYYY` that 
 
 The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
 
-## isValidJSON(json) {#isvalidjsonjson}
+## isValidJSON(json)
 
 Checks that passed string is a valid json.
 
@@ -87,7 +87,7 @@ SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
 SELECT isValidJSON('not a json') = 0
 ```
 
-## JSONHas(json\[, indices_or_keys\]…) {#jsonhasjson-indices-or-keys}
+## JSONHas(json\[, indices_or_keys\]…)
 
 If the value exists in the JSON document, `1` will be returned.
 
@@ -120,7 +120,7 @@ SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## JSONLength(json\[, indices_or_keys\]…) {#jsonlengthjson-indices-or-keys}
+## JSONLength(json\[, indices_or_keys\]…)
 
 Return the length of a JSON array or a JSON object.
 
@@ -133,7 +133,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
-## JSONType(json\[, indices_or_keys\]…) {#jsontypejson-indices-or-keys}
+## JSONType(json\[, indices_or_keys\]…)
 
 Return the type of a JSON value.
 
@@ -147,13 +147,13 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
-## JSONExtractUInt(json\[, indices_or_keys\]…) {#jsonextractuintjson-indices-or-keys}
+## JSONExtractUInt(json\[, indices_or_keys\]…)
 
-## JSONExtractInt(json\[, indices_or_keys\]…) {#jsonextractintjson-indices-or-keys}
+## JSONExtractInt(json\[, indices_or_keys\]…)
 
-## JSONExtractFloat(json\[, indices_or_keys\]…) {#jsonextractfloatjson-indices-or-keys}
+## JSONExtractFloat(json\[, indices_or_keys\]…)
 
-## JSONExtractBool(json\[, indices_or_keys\]…) {#jsonextractbooljson-indices-or-keys}
+## JSONExtractBool(json\[, indices_or_keys\]…)
 
 Parses a JSON and extract a value. These functions are similar to `visitParam` functions.
 
@@ -167,7 +167,7 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
-## JSONExtractString(json\[, indices_or_keys\]…) {#jsonextractstringjson-indices-or-keys}
+## JSONExtractString(json\[, indices_or_keys\]…)
 
 Parses a JSON and extract a string. This function is similar to `visitParamExtractString` functions.
 
@@ -185,7 +185,7 @@ SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
 SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-## JSONExtract(json\[, indices_or_keys…\], Return_type) {#jsonextractjson-indices-or-keys-return-type}
+## JSONExtract(json\[, indices_or_keys…\], Return_type)
 
 Parses a JSON and extract a value of the given ClickHouse data type.
 
@@ -206,7 +206,7 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues(json\[, indices_or_keys…\], Value_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
+## JSONExtractKeysAndValues(json\[, indices_or_keys…\], Value_type)
 
 Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
 
@@ -216,7 +216,7 @@ Example:
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
-## JSONExtractKeys {#jsonextractkeysjson-indices-or-keys}
+## JSONExtractKeys
 
 Parses a JSON string and extracts the keys.
 
@@ -254,7 +254,7 @@ text
 └────────────────────────────────────────────────────────────┘
 ```
 
-## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
+## JSONExtractRaw(json\[, indices_or_keys\]…)
 
 Returns a part of JSON as unparsed string.
 
@@ -266,7 +266,7 @@ Example:
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]';
 ```
 
-## JSONExtractArrayRaw(json\[, indices_or_keys…\]) {#jsonextractarrayrawjson-indices-or-keys}
+## JSONExtractArrayRaw(json\[, indices_or_keys…\])
 
 Returns an array with elements of JSON array, each represented as unparsed string.
 
@@ -278,7 +278,7 @@ Example:
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"'];
 ```
 
-## JSONExtractKeysAndValuesRaw {#json-extract-keys-and-values-raw}
+## JSONExtractKeysAndValuesRaw
 
 Extracts raw data from a JSON object.
 
@@ -344,7 +344,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## JSON_EXISTS(json, path) {#json-exists}
+## JSON_EXISTS(json, path)
 
 If the value exists in the JSON document, `1` will be returned.
 
@@ -363,7 +363,7 @@ SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 Before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
 :::
 
-## JSON_QUERY(json, path) {#json-query}
+## JSON_QUERY(json, path)
 
 Parses a JSON and extract a value as JSON array or JSON object.
 
@@ -390,7 +390,7 @@ String
 Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
 :::
 
-## JSON_VALUE(json, path) {#json-value}
+## JSON_VALUE(json, path)
 
 Parses a JSON and extract a value as JSON scalar.
 
@@ -418,7 +418,7 @@ String
 Before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
 :::
 
-## toJSONString {#tojsonstring}
+## toJSONString
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
 64-bit [integers](../../sql-reference/data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.

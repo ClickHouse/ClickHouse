@@ -68,6 +68,8 @@ static void loadDiskLocalConfig(const String & name,
             throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         if (path.back() != '/')
             throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        if (path == context->getPath())
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path ('{}') cannot be equal to <path>. Use <default> disk instead.", path);
     }
 
     bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
@@ -112,12 +114,15 @@ std::optional<size_t> fileSizeSafe(const fs::path & path)
 class DiskLocalReservation : public IReservation
 {
 public:
-    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_)
-        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
-    {
-    }
+    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_, UInt64 unreserved_space_)
+        : disk(disk_)
+        , size(size_)
+        , unreserved_space(unreserved_space_)
+        , metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    {}
 
     UInt64 getSize() const override { return size; }
+    UInt64 getUnreservedSpace() const override { return unreserved_space; }
 
     DiskPtr getDisk(size_t i) const override
     {
@@ -165,11 +170,12 @@ public:
 private:
     DiskLocalPtr disk;
     UInt64 size;
+    UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;
 };
 
 
-class DiskLocalDirectoryIterator final : public IDiskDirectoryIterator
+class DiskLocalDirectoryIterator final : public IDirectoryIterator
 {
 public:
     DiskLocalDirectoryIterator() = default;
@@ -201,32 +207,38 @@ private:
 
 ReservationPtr DiskLocal::reserve(UInt64 bytes)
 {
-    if (!tryReserve(bytes))
+    auto unreserved_space = tryReserve(bytes);
+    if (!unreserved_space.has_value())
         return {};
-    return std::make_unique<DiskLocalReservation>(std::static_pointer_cast<DiskLocal>(shared_from_this()), bytes);
+    return std::make_unique<DiskLocalReservation>(
+        std::static_pointer_cast<DiskLocal>(shared_from_this()),
+        bytes, unreserved_space.value());
 }
 
-bool DiskLocal::tryReserve(UInt64 bytes)
+std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes)
 {
     std::lock_guard lock(DiskLocal::reservation_mutex);
+
+    UInt64 available_space = getAvailableSpace();
+    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
+
     if (bytes == 0)
     {
         LOG_DEBUG(log, "Reserving 0 bytes on disk {}", backQuote(name));
         ++reservation_count;
-        return true;
+        return {unreserved_space};
     }
 
-    auto available_space = getAvailableSpace();
-    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
         LOG_DEBUG(log, "Reserving {} on disk {}, having unreserved {}.",
             ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
-        return true;
+        return {unreserved_space - bytes};
     }
-    return false;
+
+    return {};
 }
 
 static UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
@@ -315,7 +327,7 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
     fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
-DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
 {
     fs::path meta_path = fs::path(disk_path) / path;
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
@@ -377,7 +389,7 @@ void DiskLocal::removeRecursive(const String & path)
     fs::remove_all(fs::path(disk_path) / path);
 }
 
-void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
+void DiskLocal::listFiles(const String & path, std::vector<String> & file_names) const
 {
     file_names.clear();
     for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
@@ -389,9 +401,14 @@ void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & tim
     FS::setModificationTime(fs::path(disk_path) / path, timestamp.epochTime());
 }
 
-Poco::Timestamp DiskLocal::getLastModified(const String & path)
+Poco::Timestamp DiskLocal::getLastModified(const String & path) const
 {
     return FS::getModificationTimestamp(fs::path(disk_path) / path);
+}
+
+time_t DiskLocal::getLastChanged(const String & path) const
+{
+    return FS::getChangeTime(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
@@ -437,7 +454,7 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     }
     else
-        copyThroughBuffers(from_path, to_disk, to_path); /// Base implementation.
+        copyThroughBuffers(from_path, to_disk, to_path, /* copy_root_dir */ true); /// Base implementation.
 }
 
 void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
@@ -445,7 +462,7 @@ void DiskLocal::copyDirectoryContent(const String & from_dir, const std::shared_
     if (isSameDiskType(*this, *to_disk))
         fs::copy(from_dir, to_dir, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     else
-        copyThroughBuffers(from_dir, to_disk, to_dir); /// Base implementation.
+        copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir */ false); /// Base implementation.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
@@ -484,7 +501,7 @@ DiskLocal::DiskLocal(
         disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
 }
 
-void DiskLocal::startup()
+void DiskLocal::startup(ContextPtr)
 {
     try
     {
@@ -627,27 +644,27 @@ bool DiskLocal::setup()
 
     /// Try to create a new checker file. The disk status can be either broken or readonly.
     if (disk_checker_magic_number == -1)
-    try
-    {
-        pcg32_fast rng(randomSeed());
-        UInt32 magic_number = rng();
+        try
         {
-            auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
-            writeIntBinary(magic_number, *buf);
+            pcg32_fast rng(randomSeed());
+            UInt32 magic_number = rng();
+            {
+                auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+                writeIntBinary(magic_number, *buf);
+            }
+            disk_checker_magic_number = magic_number;
         }
-        disk_checker_magic_number = magic_number;
-    }
-    catch (...)
-    {
-        LOG_WARNING(
-            logger,
-            "Cannot create/write to {0}. Disk {1} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
-            "will not be started. Disk is assumed to be RW. Try manually fix the disk and do `SYSTEM RESTART DISK {1}`",
-            disk_checker_path,
-            name);
-        disk_checker_can_check_read = false;
-        return true;
-    }
+        catch (...)
+        {
+            LOG_WARNING(
+                logger,
+                "Cannot create/write to {0}. Disk {1} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
+                "will not be started. Disk is assumed to be RW. Try manually fix the disk and do `SYSTEM RESTART DISK {1}`",
+                disk_checker_path,
+                name);
+            disk_checker_can_check_read = false;
+            return true;
+        }
 
     if (disk_checker_magic_number == -1)
         throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -672,7 +689,7 @@ void registerDiskLocal(DiskFactory & factory)
 
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
-        disk->startup();
+        disk->startup(context);
         return std::make_shared<DiskRestartProxy>(disk);
     };
     factory.registerDiskType("local", creator);

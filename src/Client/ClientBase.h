@@ -117,7 +117,7 @@ protected:
 private:
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
-    void receiveLogs(ASTPtr parsed_query);
+    void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQuery();
     void cancelQuery();
@@ -154,6 +154,7 @@ private:
 
 protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
+    bool processMultiQueryFromFile(const String & file_name);
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
@@ -172,6 +173,7 @@ protected:
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
+    bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
 
     ServerConnectionPtr connection;
@@ -179,6 +181,7 @@ protected:
 
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
+    bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
     String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
@@ -256,6 +259,7 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+    ClientInfo::QueryKind query_kind;
 
     bool fake_drop = false;
 

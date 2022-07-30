@@ -265,9 +265,11 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(arguments[0]))
+        if (!isStringOrFixedString(removeNullable(arguments[0])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -280,22 +282,37 @@ public:
             return makeNullable(result_type);
         }
 
-        return result_type;
+        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column = arguments[0].column;
+        ColumnPtr column = arguments[0].column;
+        ColumnPtr null_map_column;
+        const NullMap * null_map = nullptr;
+        if (column->isNullable())
+        {
+            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
+            column = column_nullable->getNestedColumnPtr();
+            null_map_column = column_nullable->getNullMapColumnPtr();
+            null_map = &column_nullable->getNullMapData();
+        }
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
         {
             if (cast_ipv4_ipv6_default_on_conversion_error)
             {
-                return convertToIPv6<IPStringToNumExceptionMode::Default>(column);
+                auto result = convertToIPv6<IPStringToNumExceptionMode::Default>(column, null_map);
+                if (null_map && !result->isNullable())
+                    return ColumnNullable::create(result, null_map_column);
+                return result;
             }
         }
 
-        return convertToIPv6<exception_mode>(column);
+        auto result = convertToIPv6<exception_mode>(column, null_map);
+        if (null_map && !result->isNullable())
+            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
+        return result;
     }
 
 private:
@@ -390,9 +407,11 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
+        if (!isString(removeNullable(arguments[0])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -405,22 +424,37 @@ public:
             return makeNullable(result_type);
         }
 
-        return result_type;
+        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr & column = arguments[0].column;
+        ColumnPtr column = arguments[0].column;
+        ColumnPtr null_map_column;
+        const NullMap * null_map = nullptr;
+        if (column->isNullable())
+        {
+            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
+            column = column_nullable->getNestedColumnPtr();
+            null_map_column = column_nullable->getNullMapColumnPtr();
+            null_map = &column_nullable->getNullMapData();
+        }
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
         {
             if (cast_ipv4_ipv6_default_on_conversion_error)
             {
-                return convertToIPv4<IPStringToNumExceptionMode::Default>(column);
+                auto result = convertToIPv4<IPStringToNumExceptionMode::Default>(column, null_map);
+                if (null_map && !result->isNullable())
+                    return ColumnNullable::create(result, null_map_column);
+                return result;
             }
         }
 
-        return convertToIPv4<exception_mode>(column);
+        auto result = convertToIPv4<exception_mode>(column, null_map);
+        if (null_map && !result->isNullable())
+            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
+        return result;
     }
 
 private:
@@ -506,7 +540,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
+        if (!isString(removeNullable(arguments[0])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -519,7 +553,7 @@ public:
             return makeNullable(result_type);
         }
 
-        return result_type;
+        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
     }
 };
 
@@ -543,7 +577,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(arguments[0]))
+        if (!isStringOrFixedString(removeNullable(arguments[0])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -556,7 +590,7 @@ public:
             return makeNullable(result_type);
         }
 
-        return result_type;
+        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
     }
 };
 
@@ -1094,7 +1128,7 @@ public:
 struct NameFunctionIPv4NumToString { static constexpr auto name = "IPv4NumToString"; };
 struct NameFunctionIPv4NumToStringClassC { static constexpr auto name = "IPv4NumToStringClassC"; };
 
-void registerFunctionsCoding(FunctionFactory & factory)
+REGISTER_FUNCTION(Coding)
 {
     factory.registerFunction<FunctionCutIPv6>();
     factory.registerFunction<FunctionIPv4ToIPv6>();
