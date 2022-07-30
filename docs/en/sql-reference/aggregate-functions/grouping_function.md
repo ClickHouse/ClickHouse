@@ -13,7 +13,7 @@ The GROUPING function takes a column as an argument, and returns a 1 or a 0.
 
 ## GROUPING SETS
 
-By default, the CUBE modifier calculates subtotals for all possible combinations of the columns passed to CUBE.  GROUPING SETS allows you to specify the specific combinations to calculate.
+By default, the CUBE modifier calculates subtotals for all possible combinations of the columns passed to CUBE. GROUPING SETS allows you to specify the specific combinations to calculate.
 
 ```sql
 SELECT
