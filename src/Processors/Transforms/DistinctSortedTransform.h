@@ -12,6 +12,9 @@ namespace DB
 /** This class is intended for implementation of SELECT DISTINCT clause and
   * leaves only unique rows in the stream.
   *
+  * DistinctSortedTransform::isApplicable() have to be used to check if DistinctSortedTransform can be constructed with particular arguments,
+  * otherwise the constructor can throw LOGICAL_ERROR exception
+  *
   * Implementation for case, when input stream has rows for same DISTINCT key or at least its prefix,
   *  grouped together (going consecutively).
   *
@@ -24,7 +27,7 @@ class DistinctSortedTransform : public ISimpleTransform
 public:
     /// Empty columns_ means all columns.
     DistinctSortedTransform(
-        const Block & header_,
+        const Block & header,
         const SortDescription & sort_description,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
@@ -38,7 +41,7 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m) const;
+    static bool rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m);
 
     /// return true if has new data
     template <typename Method>
@@ -49,8 +52,6 @@ private:
         IColumn::Filter & filter,
         size_t rows,
         ClearableSetVariants & variants) const;
-
-    std::vector<int> sorted_columns_nulls_direction;
 
     struct PreviousChunk
     {
@@ -70,7 +71,6 @@ private:
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
-    bool all_columns_const;
 };
 
 }
