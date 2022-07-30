@@ -24,7 +24,7 @@ for table_engine in "${table_engines[@]}"; do
 
                     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_metadata_cache.check_part_metadata_cache SYNC;"
                     ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS test_metadata_cache;"
-                    ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE test_metadata_cache ENGINE = ${database_engine};"
+                    ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "CREATE DATABASE test_metadata_cache ENGINE = ${database_engine};"
 
                     table_engine_clause=""
                     if [[ "$table_engine" == "ReplicatedMergeTree" ]]; then

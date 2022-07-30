@@ -25,6 +25,9 @@ struct ProgressValues
     size_t written_rows;
     size_t written_bytes;
 
+    size_t result_rows;
+    size_t result_bytes;
+
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
     void writeJSON(WriteBuffer & out) const;
@@ -47,6 +50,15 @@ struct WriteProgress
 
     WriteProgress(size_t written_rows_, size_t written_bytes_)
         : written_rows(written_rows_), written_bytes(written_bytes_) {}
+};
+
+struct ResultProgress
+{
+    size_t result_rows;
+    size_t result_bytes;
+
+    ResultProgress(size_t result_rows_, size_t result_bytes_)
+        : result_rows(result_rows_), result_bytes(result_bytes_) {}
 };
 
 struct FileProgress
@@ -77,6 +89,9 @@ struct Progress
     std::atomic<size_t> written_rows {0};
     std::atomic<size_t> written_bytes {0};
 
+    std::atomic<size_t> result_rows {0};
+    std::atomic<size_t> result_bytes {0};
+
     Progress() = default;
 
     Progress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
@@ -86,7 +101,10 @@ struct Progress
         : read_rows(read_progress.read_rows), read_bytes(read_progress.read_bytes), total_rows_to_read(read_progress.total_rows_to_read) {}
 
     explicit Progress(WriteProgress write_progress)
-        : written_rows(write_progress.written_rows), written_bytes(write_progress.written_bytes)  {}
+        : written_rows(write_progress.written_rows), written_bytes(write_progress.written_bytes) {}
+
+    explicit Progress(ResultProgress result_progress)
+        : result_rows(result_progress.result_rows), result_bytes(result_progress.result_bytes) {}
 
     explicit Progress(FileProgress file_progress)
         : read_bytes(file_progress.read_bytes), total_bytes_to_read(file_progress.total_bytes_to_read) {}

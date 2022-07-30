@@ -189,7 +189,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (...)
         {
-            std::unique_lock lock(storage.last_queue_update_exception_lock);
+            std::lock_guard lock(storage.last_queue_update_exception_lock);
             storage.last_queue_update_exception = getCurrentExceptionMessage(false);
             throw;
         }

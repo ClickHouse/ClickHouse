@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Storages/MergeTree/DataPartStorageOnDisk.h>
+#include <Columns/ColumnsNumber.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/SquashingTransform.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -45,6 +46,7 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
 
     return true;
 }
+
 
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
@@ -168,10 +170,31 @@ getColumnsForNewDataPart(
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
     ColumnsDescription part_columns(source_part->getColumns());
+    NamesAndTypesList system_columns;
+    if (source_part->supportLightweightDeleteMutate())
+        system_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
+
+    /// Preserve system columns that have persisted values in the source_part
+    for (const auto & column : system_columns)
+    {
+        if (part_columns.has(column.name) && !storage_columns.contains(column.name))
+            storage_columns.emplace_back(column);
+    }
 
     /// All commands are validated in AlterCommand so we don't care about order
     for (const auto & command : commands_for_removes)
     {
+        if (command.type == MutationCommand::UPDATE)
+        {
+            for (const auto & [column_name, _] : command.column_to_update_expression)
+            {
+                /// Allow to update and persist values of system column
+                auto column = system_columns.tryGetByName(column_name);
+                if (column && !storage_columns.contains(column_name))
+                    storage_columns.emplace_back(column_name, column->type);
+            }
+        }
+
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
             continue;
@@ -636,7 +659,7 @@ struct MutationContext
 
     QueryPipelineBuilder mutating_pipeline_builder;
     QueryPipeline mutating_pipeline; // in
-    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor{nullptr};
     ProgressCallback progress_callback;
     Block updated_header;
 
@@ -690,8 +713,7 @@ public:
         MergeTreeData::MutableDataPartsVector && parts_,
         const ProjectionDescription & projection_,
         size_t & block_num_,
-        MutationContextPtr ctx_
-        )
+        MutationContextPtr ctx_)
         : name(std::move(name_))
         , parts(std::move(parts_))
         , projection(projection_)
@@ -736,9 +758,11 @@ public:
             if (next_level_parts.empty())
             {
                 LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-                selected_parts[0]->renameTo(projection.name + ".proj", true);
+                auto builder = selected_parts[0]->data_part_storage->getBuilder();
+                selected_parts[0]->renameTo(projection.name + ".proj", true, builder);
                 selected_parts[0]->name = projection.name;
                 selected_parts[0]->is_temp = false;
+                builder->commit();
                 ctx->new_data_part->addProjectionPart(name, std::move(selected_parts[0]));
 
                 /// Task is finished
@@ -944,6 +968,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             {
                 auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, projection_block, projection, ctx->data_part_storage_builder, ctx->new_data_part.get(), ++block_num);
+                tmp_part.builder->commit();
                 tmp_part.finalize();
                 projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
             }
@@ -966,6 +991,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         {
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *ctx->data, ctx->log, projection_block, projection, ctx->data_part_storage_builder, ctx->new_data_part.get(), ++block_num);
+            temp_part.builder->commit();
             temp_part.finalize();
             projection_parts[projection.name].emplace_back(std::move(temp_part.part));
         }
@@ -1457,6 +1483,9 @@ bool MutateTask::prepare()
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
+        /// Always disable filtering in mutations: we want to read and write all rows because for updates we rewrite only some of the
+        /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of rows.
+        ctx->interpreter->setApplyDeletedMask(false);
         ctx->mutating_pipeline_builder = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
         ctx->progress_callback = MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress);
@@ -1552,5 +1581,9 @@ const MergeTreeData::HardlinkedFiles & MutateTask::getHardlinkedFiles() const
     return ctx->hardlinked_files;
 }
 
+DataPartStorageBuilderPtr MutateTask::getBuilder() const
+{
+    return ctx->data_part_storage_builder;
+}
 
 }

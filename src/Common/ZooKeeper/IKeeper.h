@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Coordination/KeeperConstants.h>
 
 #include <vector>
 #include <memory>
@@ -57,6 +58,8 @@ struct Stat
     int32_t dataLength{0}; /// NOLINT
     int32_t numChildren{0}; /// NOLINT
     int64_t pzxid{0};
+
+    bool operator==(const Stat &) const = default;
 };
 
 enum class Error : int32_t
@@ -108,7 +111,6 @@ bool isHardwareError(Error code);
 bool isUserError(Error code);
 
 const char * errorMessage(Error code);
-
 
 struct Request;
 using RequestPtr = std::shared_ptr<Request>;
@@ -279,6 +281,13 @@ struct SetResponse : virtual Response
     Stat stat;
 
     size_t bytesSize() const override { return sizeof(stat); }
+};
+
+enum class ListRequestType : uint8_t
+{
+    ALL,
+    PERSISTENT_ONLY,
+    EPHEMERAL_ONLY
 };
 
 struct ListRequest : virtual Request
@@ -492,6 +501,7 @@ public:
 
     virtual void list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) = 0;
 
@@ -507,6 +517,8 @@ public:
     virtual void multi(
         const Requests & requests,
         MultiCallback callback) = 0;
+
+    virtual DB::KeeperApiVersion getApiVersion() = 0;
 
     /// Expire session and finish all pending requests
     virtual void finalize(const String & reason) = 0;

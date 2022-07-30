@@ -294,7 +294,6 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
     }
 }
 
-
 IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreeData & storage_,
     const String & name_,
@@ -603,22 +602,6 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
     return *minimum_size_column;
 }
 
-// String IMergeTreeDataPart::getFullPath() const
-// {
-//     if (relative_path.empty())
-//         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
-
-//     return fs::path(storage.getFullPathOnDisk(volume->getDisk())) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-// }
-
-// String IMergeTreeDataPart::getRelativePath() const
-// {
-//     if (relative_path.empty())
-//         throw Exception("Part relative_path cannot be empty. It's bug.", ErrorCodes::LOGICAL_ERROR);
-
-//     return fs::path(storage.relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
-// }
-
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     assertOnDisk();
@@ -626,7 +609,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     try
     {
@@ -1208,6 +1191,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
     setSerializationInfos(infos);
 }
 
+/// Project part / part with project parts / compact part doesn't support LWD.
+bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
+{
+    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact) &&
+        parent_part == nullptr && projection_parts.empty();
+}
+
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
 {
     TransactionID expected_tid = txn ? txn->tid : Tx::PrehistoricTID;
@@ -1358,20 +1348,7 @@ bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & stora
     return data_part_storage->shallParticipateInMerges(*storage_policy);
 }
 
-// UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DataPartStoragePtr & data_part_storage_, const String & from)
-// {
-//     if (data_part_storage_->isFile(from))
-//         return data_part_storage_->getFileSize(from);
-//     std::vector<std::string> files;
-//     disk_->listFiles(from, files);
-//     UInt64 res = 0;
-//     for (const auto & file : files)
-//         res += calculateTotalSizeOnDisk(data_part_storage_, fs::path(from) / file);
-//     return res;
-// }
-
-
-void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
+void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, DataPartStorageBuilderPtr builder) const
 try
 {
     assertOnDisk();
@@ -1390,7 +1367,8 @@ try
 
     metadata_manager->deleteAll(true);
     metadata_manager->assertAllDeleted(true);
-    data_part_storage->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
+    builder->rename(to.parent_path(), to.filename(), storage.log, remove_new_dir_if_exists, fsync_dir);
+    data_part_storage->onRename(to.parent_path(), to.filename());
     metadata_manager->updateAll(true);
 
     for (const auto & [p_name, part] : projection_parts)
@@ -1486,9 +1464,9 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
     return "detached/" + getRelativePathForPrefix(prefix, /* detached */ true);
 }
 
-void IMergeTreeDataPart::renameToDetached(const String & prefix) const
+void IMergeTreeDataPart::renameToDetached(const String & prefix, DataPartStorageBuilderPtr builder) const
 {
-    renameTo(getRelativePathForDetachedPart(prefix), true);
+    renameTo(getRelativePathForDetachedPart(prefix), true, builder);
     part_is_probably_removed_from_disk = true;
 }
 

@@ -223,16 +223,23 @@ public:
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Returns a slightly changed version of the CREATE TABLE query which must be written to a backup.
-    /// The function can throw `TABLE_IS_DROPPED` if this storage is not attached to a database.
-    virtual ASTPtr getCreateQueryForBackup(const ContextPtr & context, DatabasePtr * database) const;
-    virtual ASTPtr getCreateQueryForBackup(const BackupEntriesCollector & backup_entries_collector) const;
+    /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
+    virtual void adjustCreateQueryForBackup(ASTPtr & create_query) const;
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
 
     /// Extracts data from the backup and put it to the storage.
     virtual void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+
+    /// Returns true if the storage supports backup/restore for specific partitions.
+    virtual bool supportsBackupPartition() const { return false; }
+
+    /// Return true if there is at least one part containing lightweight deleted mask.
+    virtual bool hasLightweightDeletedMask() const { return false; }
+
+    /// Return true if storage can execute lightweight delete mutations.
+    virtual bool supportsLightweightDelete() const { return false; }
 
 private:
 
@@ -396,7 +403,7 @@ public:
       */
     virtual void drop() {}
 
-    virtual void dropInnerTableIfAny(bool /* no_delay */, ContextPtr /* context */) {}
+    virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).

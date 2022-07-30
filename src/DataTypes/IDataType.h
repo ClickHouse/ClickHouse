@@ -532,6 +532,12 @@ inline bool isBool(const DataTypePtr & data_type)
     return data_type->getName() == "Bool";
 }
 
+inline bool isAggregateFunction(const DataTypePtr & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isAggregateFunction();
+}
+
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
@@ -565,4 +571,31 @@ class DataTypeEnum;
 
 template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = true;
 
+#define FOR_BASIC_NUMERIC_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Float32) \
+    M(Float64)
+
+#define FOR_NUMERIC_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(UInt128) \
+    M(UInt256) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Int128) \
+    M(Int256) \
+    M(Float32) \
+    M(Float64)
 }
