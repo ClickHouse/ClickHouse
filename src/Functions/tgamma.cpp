@@ -11,7 +11,7 @@ using FunctionTGamma = FunctionMathUnary<UnaryFunctionVectorized<TGammaName, std
 
 }
 
-void registerFunctionTGamma(FunctionFactory & factory)
+REGISTER_FUNCTION(TGamma)
 {
     factory.registerFunction<FunctionTGamma>();
 }
