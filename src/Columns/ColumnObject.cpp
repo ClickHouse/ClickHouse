@@ -21,9 +21,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
-    extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
-    extern const int NOT_IMPLEMENTED;
+    extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -138,7 +138,7 @@ public:
         type_indexes.insert(TypeToTypeIndex<NearestFieldType<T>>);
     }
 
-    DataTypePtr getScalarType() const { return getLeastSupertype(type_indexes, true); }
+    DataTypePtr getScalarType() const { return getLeastSupertypeOrString(type_indexes); }
     bool haveNulls() const { return have_nulls; }
     bool needConvertField() const { return field_types.size() > 1; }
 
@@ -167,6 +167,7 @@ FieldInfo getFieldInfo(const Field & field)
 ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_, bool is_nullable_)
     : least_common_type(getDataTypeByColumn(*data_))
     , is_nullable(is_nullable_)
+    , num_rows(data_->size())
 {
     data.push_back(std::move(data_));
 }
@@ -176,18 +177,16 @@ ColumnObject::Subcolumn::Subcolumn(
     : least_common_type(std::make_shared<DataTypeNothing>())
     , is_nullable(is_nullable_)
     , num_of_defaults_in_prefix(size_)
+    , num_rows(size_)
 {
 }
 
-size_t ColumnObject::Subcolumn::Subcolumn::size() const
+size_t ColumnObject::Subcolumn::size() const
 {
-    size_t res = num_of_defaults_in_prefix;
-    for (const auto & part : data)
-        res += part->size();
-    return res;
+    return num_rows;
 }
 
-size_t ColumnObject::Subcolumn::Subcolumn::byteSize() const
+size_t ColumnObject::Subcolumn::byteSize() const
 {
     size_t res = 0;
     for (const auto & part : data)
@@ -195,12 +194,43 @@ size_t ColumnObject::Subcolumn::Subcolumn::byteSize() const
     return res;
 }
 
-size_t ColumnObject::Subcolumn::Subcolumn::allocatedBytes() const
+size_t ColumnObject::Subcolumn::allocatedBytes() const
 {
     size_t res = 0;
     for (const auto & part : data)
         res += part->allocatedBytes();
     return res;
+}
+
+void ColumnObject::Subcolumn::get(size_t n, Field & res) const
+{
+    if (isFinalized())
+    {
+        getFinalizedColumn().get(n, res);
+        return;
+    }
+
+    size_t ind = n;
+    if (ind < num_of_defaults_in_prefix)
+    {
+        res = least_common_type.get()->getDefault();
+        return;
+    }
+
+    ind -= num_of_defaults_in_prefix;
+    for (const auto & part : data)
+    {
+        if (ind < part->size())
+        {
+            part->get(ind, res);
+            res = convertFieldToTypeOrThrow(res, *least_common_type.get());
+            return;
+        }
+
+        ind -= part->size();
+    }
+
+    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Index ({}) for getting field is out of range", n);
 }
 
 void ColumnObject::Subcolumn::checkTypes() const
@@ -221,7 +251,7 @@ void ColumnObject::Subcolumn::checkTypes() const
 
 void ColumnObject::Subcolumn::insert(Field field)
 {
-    auto info = getFieldInfo(field);
+    auto info = DB::getFieldInfo(field);
     insert(std::move(field), std::move(info));
 }
 
@@ -244,8 +274,8 @@ static bool isConversionRequiredBetweenIntegers(const IDataType & lhs, const IDa
     bool is_native_int = which_lhs.isNativeInt() && which_rhs.isNativeInt();
     bool is_native_uint = which_lhs.isNativeUInt() && which_rhs.isNativeUInt();
 
-    return (is_native_int || is_native_uint)
-        && lhs.getSizeOfValueInMemory() <= rhs.getSizeOfValueInMemory();
+    return (!is_native_int && !is_native_uint)
+        || lhs.getSizeOfValueInMemory() > rhs.getSizeOfValueInMemory();
 }
 
 void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
@@ -268,7 +298,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
         value_dim = column_dim;
 
     if (value_dim != column_dim)
-        throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
+        throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATCHED,
             "Dimension of types mismatched between inserted value and column. "
             "Dimension of value: {}. Dimension of column: {}",
              value_dim, column_dim);
@@ -288,9 +318,9 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
     }
     else if (!least_common_base_type->equals(*base_type) && !isNothing(base_type))
     {
-        if (!isConversionRequiredBetweenIntegers(*base_type, *least_common_base_type))
+        if (isConversionRequiredBetweenIntegers(*base_type, *least_common_base_type))
         {
-            base_type = getLeastSupertype(DataTypes{std::move(base_type), least_common_base_type}, true);
+            base_type = getLeastSupertypeOrString(DataTypes{std::move(base_type), least_common_base_type});
             type_changed = true;
             if (!least_common_base_type->equals(*base_type))
                 addNewColumnPart(createArrayOfType(std::move(base_type), value_dim));
@@ -301,40 +331,102 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
         field = convertFieldToTypeOrThrow(field, *least_common_type.get());
 
     data.back()->insert(field);
+    ++num_rows;
 }
 
 void ColumnObject::Subcolumn::insertRangeFrom(const Subcolumn & src, size_t start, size_t length)
 {
-    assert(src.isFinalized());
-
-    const auto & src_column = src.data.back();
-    const auto & src_type = src.least_common_type.get();
+    assert(start + length <= src.size());
+    size_t end = start + length;
+    num_rows += length;
 
     if (data.empty())
     {
-        addNewColumnPart(src.least_common_type.get());
-        data.back()->insertRangeFrom(*src_column, start, length);
+        addNewColumnPart(src.getLeastCommonType());
     }
-    else if (least_common_type.get()->equals(*src_type))
+    else if (!least_common_type.get()->equals(*src.getLeastCommonType()))
     {
-        data.back()->insertRangeFrom(*src_column, start, length);
-    }
-    else
-    {
-        auto new_least_common_type = getLeastSupertype(DataTypes{least_common_type.get(), src_type}, true);
-        auto casted_column = castColumn({src_column, src_type, ""}, new_least_common_type);
-
-        if (!least_common_type.get()->equals(*new_least_common_type))
+        auto new_least_common_type = getLeastSupertypeOrString(DataTypes{least_common_type.get(), src.getLeastCommonType()});
+        if (!new_least_common_type->equals(*least_common_type.get()))
             addNewColumnPart(std::move(new_least_common_type));
+    }
 
-        data.back()->insertRangeFrom(*casted_column, start, length);
+    if (end <= src.num_of_defaults_in_prefix)
+    {
+        data.back()->insertManyDefaults(length);
+        return;
+    }
+
+    if (start < src.num_of_defaults_in_prefix)
+        data.back()->insertManyDefaults(src.num_of_defaults_in_prefix - start);
+
+    auto insert_from_part = [&](const auto & column, size_t from, size_t n)
+    {
+        assert(from + n <= column->size());
+        auto column_type = getDataTypeByColumn(*column);
+
+        if (column_type->equals(*least_common_type.get()))
+        {
+            data.back()->insertRangeFrom(*column, from, n);
+            return;
+        }
+
+        /// If we need to insert large range, there is no sense to cut part of column and cast it.
+        /// Casting of all column and inserting from it can be faster.
+        /// Threshold is just a guess.
+
+        if (n * 3 >= column->size())
+        {
+            auto casted_column = castColumn({column, column_type, ""}, least_common_type.get());
+            data.back()->insertRangeFrom(*casted_column, from, n);
+            return;
+        }
+
+        auto casted_column = column->cut(from, n);
+        casted_column = castColumn({casted_column, column_type, ""}, least_common_type.get());
+        data.back()->insertRangeFrom(*casted_column, 0, n);
+    };
+
+    size_t pos = 0;
+    size_t processed_rows = src.num_of_defaults_in_prefix;
+
+    /// Find the first part of the column that intersects the range.
+    while (pos < src.data.size() && processed_rows + src.data[pos]->size() < start)
+    {
+        processed_rows += src.data[pos]->size();
+        ++pos;
+    }
+
+    /// Insert from the first part of column.
+    if (pos < src.data.size() && processed_rows < start)
+    {
+        size_t part_start = start - processed_rows;
+        size_t part_length = std::min(src.data[pos]->size() - part_start, end - start);
+        insert_from_part(src.data[pos], part_start, part_length);
+        processed_rows += src.data[pos]->size();
+        ++pos;
+    }
+
+    /// Insert from the parts of column in the middle of range.
+    while (pos < src.data.size() && processed_rows + src.data[pos]->size() < end)
+    {
+        insert_from_part(src.data[pos], 0, src.data[pos]->size());
+        processed_rows += src.data[pos]->size();
+        ++pos;
+    }
+
+    /// Insert from the last part of column if needed.
+    if (pos < src.data.size() && processed_rows < end)
+    {
+        size_t part_end = end - processed_rows;
+        insert_from_part(src.data[pos], 0, part_end);
     }
 }
 
 bool ColumnObject::Subcolumn::isFinalized() const
 {
-    return data.empty() ||
-        (data.size() == 1 && !data[0]->isSparse() && num_of_defaults_in_prefix == 0);
+    return num_of_defaults_in_prefix == 0 &&
+        (data.empty() || (data.size() == 1 && !data[0]->isSparse()));
 }
 
 void ColumnObject::Subcolumn::finalize()
@@ -396,6 +488,8 @@ void ColumnObject::Subcolumn::insertDefault()
         ++num_of_defaults_in_prefix;
     else
         data.back()->insertDefault();
+
+    ++num_rows;
 }
 
 void ColumnObject::Subcolumn::insertManyDefaults(size_t length)
@@ -404,12 +498,15 @@ void ColumnObject::Subcolumn::insertManyDefaults(size_t length)
         num_of_defaults_in_prefix += length;
     else
         data.back()->insertManyDefaults(length);
+
+    num_rows += length;
 }
 
 void ColumnObject::Subcolumn::popBack(size_t n)
 {
     assert(n <= size());
 
+    num_rows -= n;
     size_t num_removed = 0;
     for (auto it = data.rbegin(); it != data.rend(); ++it)
     {
@@ -433,6 +530,13 @@ void ColumnObject::Subcolumn::popBack(size_t n)
     num_of_defaults_in_prefix -= n;
 }
 
+ColumnObject::Subcolumn ColumnObject::Subcolumn::cut(size_t start, size_t length) const
+{
+    Subcolumn new_subcolumn(0, is_nullable);
+    new_subcolumn.insertRangeFrom(*this, start, length);
+    return new_subcolumn;
+}
+
 Field ColumnObject::Subcolumn::getLastField() const
 {
     if (data.empty())
@@ -443,21 +547,29 @@ Field ColumnObject::Subcolumn::getLastField() const
     return (*last_part)[last_part->size() - 1];
 }
 
+FieldInfo ColumnObject::Subcolumn::getFieldInfo() const
+{
+    const auto & base_type = least_common_type.getBase();
+    return FieldInfo
+    {
+        .scalar_type = base_type,
+        .have_nulls = base_type->isNullable(),
+        .need_convert = false,
+        .num_dimensions = least_common_type.getNumberOfDimensions(),
+    };
+}
+
 ColumnObject::Subcolumn ColumnObject::Subcolumn::recreateWithDefaultValues(const FieldInfo & field_info) const
 {
     auto scalar_type = field_info.scalar_type;
     if (is_nullable)
         scalar_type = makeNullable(scalar_type);
 
-    Subcolumn new_subcolumn;
+    Subcolumn new_subcolumn(*this);
     new_subcolumn.least_common_type = LeastCommonType{createArrayOfType(scalar_type, field_info.num_dimensions)};
-    new_subcolumn.is_nullable = is_nullable;
-    new_subcolumn.num_of_defaults_in_prefix = num_of_defaults_in_prefix;
-    new_subcolumn.data.reserve(data.size());
 
-    for (const auto & part : data)
-        new_subcolumn.data.push_back(recreateColumnWithDefaultValues(
-            part, scalar_type, field_info.num_dimensions));
+    for (auto & part : new_subcolumn.data)
+        part = recreateColumnWithDefaultValues(part, scalar_type, field_info.num_dimensions);
 
     return new_subcolumn;
 }
@@ -478,6 +590,13 @@ const ColumnPtr & ColumnObject::Subcolumn::getFinalizedColumnPtr() const
 {
     assert(isFinalized());
     return data[0];
+}
+
+ColumnObject::Subcolumn::LeastCommonType::LeastCommonType()
+    : type(std::make_shared<DataTypeNothing>())
+    , base_type(type)
+    , num_dimensions(0)
+{
 }
 
 ColumnObject::Subcolumn::LeastCommonType::LeastCommonType(DataTypePtr type_)
@@ -526,16 +645,6 @@ size_t ColumnObject::size() const
     return num_rows;
 }
 
-MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
-{
-    /// cloneResized with new_size == 0 is used for cloneEmpty().
-    if (new_size != 0)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "ColumnObject doesn't support resize to non-zero length");
-
-    return ColumnObject::create(is_nullable);
-}
-
 size_t ColumnObject::byteSize() const
 {
     size_t res = 0;
@@ -554,23 +663,21 @@ size_t ColumnObject::allocatedBytes() const
 
 void ColumnObject::forEachSubcolumn(ColumnCallback callback)
 {
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot iterate over non-finalized ColumnObject");
-
     for (auto & entry : subcolumns)
-        callback(entry->data.data.back());
+        for (auto & part : entry->data.data)
+            callback(part);
 }
 
 void ColumnObject::insert(const Field & field)
 {
     const auto & object = field.get<const Object &>();
 
-    HashSet<StringRef, StringRefHash> inserted;
+    HashSet<StringRef, StringRefHash> inserted_paths;
     size_t old_size = size();
     for (const auto & [key_str, value] : object)
     {
         PathInData key(key_str);
-        inserted.insert(key_str);
+        inserted_paths.insert(key_str);
         if (!hasSubcolumn(key))
             addSubcolumn(key, old_size);
 
@@ -579,8 +686,14 @@ void ColumnObject::insert(const Field & field)
     }
 
     for (auto & entry : subcolumns)
-        if (!inserted.has(entry->path.getPath()))
-            entry->data.insertDefault();
+    {
+        if (!inserted_paths.has(entry->path.getPath()))
+        {
+            bool inserted = tryInsertDefaultFromNested(entry);
+            if (!inserted)
+                entry->data.insertDefault();
+        }
+    }
 
     ++num_rows;
 }
@@ -595,58 +708,60 @@ void ColumnObject::insertDefault()
 
 Field ColumnObject::operator[](size_t n) const
 {
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Field from non-finalized ColumnObject");
-
-    Object object;
-    for (const auto & entry : subcolumns)
-        object[entry->path.getPath()] = (*entry->data.data.back())[n];
-
+    Field object;
+    get(n, object);
     return object;
 }
 
 void ColumnObject::get(size_t n, Field & res) const
 {
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Field from non-finalized ColumnObject");
+    assert(n < size());
+    res = Object();
 
     auto & object = res.get<Object &>();
     for (const auto & entry : subcolumns)
     {
         auto it = object.try_emplace(entry->path.getPath()).first;
-        entry->data.data.back()->get(n, it->second);
+        entry->data.get(n, it->second);
     }
+}
+
+void ColumnObject::insertFrom(const IColumn & src, size_t n)
+{
+    insert(src[n]);
+    finalize();
 }
 
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
 
+    for (const auto & entry : src_object.subcolumns)
+    {
+        if (!hasSubcolumn(entry->path))
+        {
+            if (entry->path.hasNested())
+                addNestedSubcolumn(entry->path, entry->data.getFieldInfo(), num_rows);
+            else
+                addSubcolumn(entry->path, num_rows);
+        }
+
+        auto & subcolumn = getSubcolumn(entry->path);
+        subcolumn.insertRangeFrom(entry->data, start, length);
+    }
+
     for (auto & entry : subcolumns)
     {
-        if (src_object.hasSubcolumn(entry->path))
-            entry->data.insertRangeFrom(src_object.getSubcolumn(entry->path), start, length);
-        else
-            entry->data.insertManyDefaults(length);
+        if (!src_object.hasSubcolumn(entry->path))
+        {
+            bool inserted = tryInsertManyDefaultsFromNested(entry);
+            if (!inserted)
+                entry->data.insertManyDefaults(length);
+        }
     }
 
     num_rows += length;
     finalize();
-}
-
-ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
-{
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replicate non-finalized ColumnObject");
-
-    auto res_column = ColumnObject::create(is_nullable);
-    for (const auto & entry : subcolumns)
-    {
-        auto replicated_data = entry->data.data.back()->replicate(offsets)->assumeMutable();
-        res_column->addSubcolumn(entry->path, std::move(replicated_data));
-    }
-
-    return res_column;
 }
 
 void ColumnObject::popBack(size_t length)
@@ -655,6 +770,55 @@ void ColumnObject::popBack(size_t length)
         entry->data.popBack(length);
 
     num_rows -= length;
+}
+
+template <typename Func>
+MutableColumnPtr ColumnObject::applyForSubcolumns(Func && func) const
+{
+    if (!isFinalized())
+    {
+        auto finalized = IColumn::mutate(getPtr());
+        auto & finalized_object = assert_cast<ColumnObject &>(*finalized);
+        finalized_object.finalize();
+        return finalized_object.applyForSubcolumns(std::forward<Func>(func));
+    }
+
+    auto res = ColumnObject::create(is_nullable);
+    for (const auto & subcolumn : subcolumns)
+    {
+        auto new_subcolumn = func(subcolumn->data.getFinalizedColumn());
+        res->addSubcolumn(subcolumn->path, new_subcolumn->assumeMutable());
+    }
+
+    return res;
+}
+
+ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.permute(perm, limit); });
+}
+
+ColumnPtr ColumnObject::filter(const Filter & filter, ssize_t result_size_hint) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.filter(filter, result_size_hint); });
+}
+
+ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.index(indexes, limit); });
+}
+
+ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
+{
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.replicate(offsets); });
+}
+
+MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
+{
+    if (new_size == 0)
+        return ColumnObject::create(is_nullable);
+
+    return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.cloneResized(new_size); });
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const
@@ -746,6 +910,92 @@ void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & 
 
     if (num_rows == 0)
         num_rows = new_size;
+    else if (new_size != num_rows)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Required size of subcolumn {} ({}) is inconsistent with column size ({})",
+            key.getPath(), new_size, num_rows);
+}
+
+const ColumnObject::Subcolumns::Node * ColumnObject::getLeafOfTheSameNested(const Subcolumns::NodePtr & entry) const
+{
+    if (!entry->path.hasNested())
+        return nullptr;
+
+    size_t old_size = entry->data.size();
+    const auto * current_node = subcolumns.findLeaf(entry->path);
+    const Subcolumns::Node * leaf = nullptr;
+
+    while (current_node)
+    {
+        /// Try to find the first Nested up to the current node.
+        const auto * node_nested = subcolumns.findParent(current_node,
+            [](const auto & candidate) { return candidate.isNested(); });
+
+        if (!node_nested)
+            break;
+
+        /// Find the leaf with subcolumn that contains values
+        /// for the last rows.
+        /// If there are no leaves, skip current node and find
+        /// the next node up to the current.
+        leaf = subcolumns.findLeaf(node_nested,
+            [&](const auto & candidate)
+            {
+                return candidate.data.size() > old_size;
+            });
+
+        if (leaf)
+            break;
+
+        current_node = node_nested->parent;
+    }
+
+    if (leaf && isNothing(leaf->data.getLeastCommonTypeBase()))
+        return nullptr;
+
+    return leaf;
+}
+
+bool ColumnObject::tryInsertManyDefaultsFromNested(const Subcolumns::NodePtr & entry) const
+{
+    const auto * leaf = getLeafOfTheSameNested(entry);
+    if (!leaf)
+        return false;
+
+    size_t old_size = entry->data.size();
+    auto field_info = entry->data.getFieldInfo();
+
+    /// Cut the needed range from the found leaf
+    /// and replace scalar values to the correct
+    /// default values for given entry.
+    auto new_subcolumn = leaf->data
+        .cut(old_size, leaf->data.size() - old_size)
+        .recreateWithDefaultValues(field_info);
+
+    entry->data.insertRangeFrom(new_subcolumn, 0, new_subcolumn.size());
+    return true;
+}
+
+bool ColumnObject::tryInsertDefaultFromNested(const Subcolumns::NodePtr & entry) const
+{
+    const auto * leaf = getLeafOfTheSameNested(entry);
+    if (!leaf)
+        return false;
+
+    auto last_field = leaf->data.getLastField();
+    if (last_field.isNull())
+        return false;
+
+    size_t leaf_num_dimensions = leaf->data.getNumberOfDimensions();
+    size_t entry_num_dimensions = entry->data.getNumberOfDimensions();
+
+    auto default_scalar = entry_num_dimensions > leaf_num_dimensions
+        ? createEmptyArrayField(entry_num_dimensions - leaf_num_dimensions)
+        : entry->data.getLeastCommonTypeBase()->getDefault();
+
+    auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar, leaf_num_dimensions), last_field);
+    entry->data.insert(std::move(default_field));
+    return true;
 }
 
 PathsInData ColumnObject::getKeys() const
@@ -771,7 +1021,7 @@ void ColumnObject::finalize()
     {
         const auto & least_common_type = entry->data.getLeastCommonType();
 
-        /// Do not add subcolumns, which consists only from NULLs.
+        /// Do not add subcolumns, which consist only from NULLs.
         if (isNothing(getBaseTypeOfArray(least_common_type)))
             continue;
 

@@ -105,36 +105,24 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };
     const auto & metadata_snapshot = storage_snapshot->metadata;
 
+    IMergeTreeReader::ValueSizeMap value_size_map;
+
     if (!reader)
     {
         if (use_uncompressed_cache)
             owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
         owned_mark_cache = storage.getContext()->getMarkCache();
-
-        reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
-            owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-            IMergeTreeReader::ValueSizeMap{}, profile_callback);
-
-        if (prewhere_info)
-            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                IMergeTreeReader::ValueSizeMap{}, profile_callback);
     }
-    else
+    else if (part_name != last_readed_part_name)
     {
-        /// in other case we can reuse readers, anyway they will be "seeked" to required mark
-        if (part_name != last_readed_part_name)
-        {
-            /// retain avg_value_size_hints
-            reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                reader->getAvgValueSizeHints(), profile_callback);
+        value_size_map = reader->getAvgValueSizeHints();
+    }
 
-            if (prewhere_info)
-                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
-                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                reader->getAvgValueSizeHints(), profile_callback);
-        }
+    const bool init_new_readers = !reader || part_name != last_readed_part_name;
+    if (init_new_readers)
+    {
+        initializeMergeTreeReadersForPart(task->data_part, task->task_columns, metadata_snapshot,
+            task->mark_ranges, value_size_map, profile_callback);
     }
 
     last_readed_part_name = part_name;
@@ -144,7 +132,7 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
 void MergeTreeThreadSelectProcessor::finish()
 {
     reader.reset();
-    pre_reader.reset();
+    pre_reader_for_step.clear();
 }
 
 

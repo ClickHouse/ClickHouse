@@ -3,7 +3,7 @@ sidebar_position: 301
 sidebar_label: welchTTest
 ---
 
-# welchTTest {#welchttest}
+# welchTTest
 
 Applies Welch's t-test to samples from two populations.
 
@@ -69,4 +69,3 @@ Result:
 -   [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
 -   [studentTTest function](studentttest.md#studentttest)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/welchTTest/) <!--hide-->

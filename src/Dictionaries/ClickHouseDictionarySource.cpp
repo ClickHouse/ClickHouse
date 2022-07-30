@@ -110,29 +110,29 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-Pipe ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
+QueryPipeline ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
 {
     return createStreamForQuery(load_all_query, result_size_hint);
 }
 
-Pipe ClickHouseDictionarySource::loadAll()
+QueryPipeline ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
 }
 
-Pipe ClickHouseDictionarySource::loadUpdatedAll()
+QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
     return createStreamForQuery(load_update_query);
 }
 
-Pipe ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     return createStreamForQuery(query_builder.composeLoadIdsQuery(ids));
 }
 
 
-Pipe ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);
@@ -162,9 +162,9 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
+QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
 {
-    QueryPipelineBuilder builder;
+    QueryPipeline pipeline;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
@@ -175,32 +175,25 @@ Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std:
 
     if (configuration.is_local)
     {
-        builder.init(executeQuery(query, context_copy, true).pipeline);
-        auto converting = ActionsDAG::makeConvertingActions(
-            builder.getHeader().getColumnsWithTypeAndName(),
-            empty_sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+        pipeline = executeQuery(query, context_copy, true).pipeline;
 
-        builder.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, std::make_shared<ExpressionActions>(converting));
-        });
+        pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
     }
     else
     {
-        builder.init(Pipe(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false)));
+        pipeline = QueryPipeline(std::make_shared<RemoteSource>(
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false));
     }
 
     if (result_size_hint)
     {
-        builder.setProgressCallback([result_size_hint](const Progress & progress)
+        pipeline.setProgressCallback([result_size_hint](const Progress & progress)
         {
             *result_size_hint += progress.total_rows_to_read;
         });
     }
 
-    return QueryPipelineBuilder::getPipe(std::move(builder));
+    return pipeline;
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
@@ -217,7 +210,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     }
     else
     {
-        /// We pass empty block to RemoteBlockInputStream, because we don't know the structure of the result.
+        /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
         Block invalidate_sample_block;
         QueryPipeline pipeline(std::make_shared<RemoteSource>(
             std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false));

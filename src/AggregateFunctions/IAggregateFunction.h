@@ -123,6 +123,10 @@ public:
      */
     virtual void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
+    /// Adds several default values of arguments into aggregation data on which place points to.
+    /// Default values must be a the 0-th positions in columns.
+    virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
+
     /// Merges state (on which place points to) with other state of current aggregation function.
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
@@ -146,7 +150,7 @@ public:
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
     virtual void predictValues(
-        ConstAggregateDataPtr /* place */,
+        ConstAggregateDataPtr __restrict /* place */,
         IColumn & /*to*/,
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
@@ -205,7 +209,7 @@ public:
     virtual void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
@@ -214,7 +218,7 @@ public:
     virtual void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena) const = 0;
 
@@ -224,7 +228,7 @@ public:
     virtual void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
@@ -233,7 +237,7 @@ public:
     virtual void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1)
@@ -366,7 +370,7 @@ template <typename Derived>
 class IAggregateFunctionHelper : public IAggregateFunction
 {
 private:
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
+    static void addFree(const IAggregateFunction * that, AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena)
     {
         static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
     }
@@ -376,6 +380,16 @@ public:
         : IAggregateFunction(argument_types_, parameters_) {}
 
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
+
+    void addManyDefaults(
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        size_t length,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < length; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, 0, arena);
+    }
 
     void addBatch( /// NOLINT
         size_t row_begin,
@@ -413,13 +427,9 @@ public:
     {
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
-        auto offset_it = column_sparse.begin();
+        auto offset_it = column_sparse.getIterator(row_begin);
 
-        /// FIXME: make it more optimal
-        for (size_t i = 0; i < row_begin; ++i, ++offset_it)
-            ;
-
-        for (size_t i = 0; i < row_end; ++i, ++offset_it)
+        for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
             static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
                                                     &values, offset_it.getValueIndex(), arena);
     }
@@ -440,7 +450,7 @@ public:
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
@@ -464,27 +474,26 @@ public:
     void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena) const override
     {
-        /// TODO: add values and defaults separately if order of adding isn't important.
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
-        auto offset_it = column_sparse.begin();
+        const auto & offsets = column_sparse.getOffsetsData();
 
-        /// FIXME: make it more optimal
-        for (size_t i = 0; i < row_begin; ++i, ++offset_it)
-            ;
+        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
 
-        for (size_t i = 0; i < row_end; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(place, &values, offset_it.getValueIndex(), arena);
+        size_t num_defaults = (row_end - row_begin) - (to - from);
+        static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
+        static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
@@ -508,7 +517,7 @@ public:
     void addBatchSinglePlaceFromInterval( /// NOLINT
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr place,
+        AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1)
@@ -540,7 +549,7 @@ public:
         Arena * arena)
         const override
     {
-        size_t current_offset = 0;
+        size_t current_offset = offsets[static_cast<ssize_t>(row_begin) - 1];
         for (size_t i = row_begin; i < row_end; ++i)
         {
             size_t next_offset = offsets[i];
@@ -652,7 +661,7 @@ public:
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
         : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
-    void create(AggregateDataPtr place) const override /// NOLINT
+    void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
         new (place) Data;
     }

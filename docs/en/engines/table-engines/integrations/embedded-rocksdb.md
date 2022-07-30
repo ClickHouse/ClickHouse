@@ -3,7 +3,7 @@ sidebar_position: 9
 sidebar_label: EmbeddedRocksDB
 ---
 
-# EmbeddedRocksDB Engine {#EmbeddedRocksDB-engine}
+# EmbeddedRocksDB Engine
 
 This engine allows integrating ClickHouse with [rocksdb](http://rocksdb.org/).
 

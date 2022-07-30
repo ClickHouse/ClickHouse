@@ -24,4 +24,4 @@ namespace SentryWriter
         int sig,
         const std::string & error_message,
         const StackTrace & stack_trace);
-};
+}

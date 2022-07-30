@@ -35,7 +35,7 @@ namespace DB
         const RedisStorageType & storage_type_,
         const DB::Block & sample_block,
         size_t max_block_size_)
-        : SourceWithProgress(sample_block)
+        : ISource(sample_block)
         , connection(std::move(connection_))
         , keys(keys_)
         , storage_type(storage_type_)
