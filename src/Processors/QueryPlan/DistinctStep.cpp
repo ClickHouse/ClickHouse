@@ -140,15 +140,19 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
                 if (distinct_sort_desc.size() < columns.size())
                 {
-                    pipeline.addSimpleTransform(
-                        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                        {
-                            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                                return nullptr;
+                    if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
+                    {
+                        pipeline.addSimpleTransform(
+                            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                            {
+                                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                                    return nullptr;
 
-                            return std::make_shared<DistinctSortedTransform>(
-                                header, distinct_sort_desc, set_size_limits, limit_hint, columns);
-                        });
+                                return std::make_shared<DistinctSortedTransform>(
+                                    header, distinct_sort_desc, set_size_limits, limit_hint, columns);
+                            });
+                        return;
+                    }
                 }
                 else
                 {
@@ -161,8 +165,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                             return std::make_shared<DistinctSortedChunkTransform>(
                                 header, set_size_limits, limit_hint, distinct_sort_desc, columns, true);
                         });
+                    return;
                 }
-                return;
             }
         }
     }
