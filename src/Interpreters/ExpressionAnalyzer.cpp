@@ -1201,9 +1201,9 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
         return nullptr;
     }
 
-    if (analyzed_join->strictness() != ASTTableJoin::Strictness::All &&
-        analyzed_join->strictness() != ASTTableJoin::Strictness::Any &&
-        analyzed_join->strictness() != ASTTableJoin::Strictness::RightAny)
+    if (analyzed_join->strictness() != JoinStrictness::All &&
+        analyzed_join->strictness() != JoinStrictness::Any &&
+        analyzed_join->strictness() != JoinStrictness::RightAny)
     {
         return nullptr;
     }
