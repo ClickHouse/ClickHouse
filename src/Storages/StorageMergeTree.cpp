@@ -564,6 +564,11 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
         waitForMutation(version);
 }
 
+bool StorageMergeTree::hasLightweightDeletedMask() const
+{
+    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
+}
+
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids) const
 {
     std::unique_lock lock(currently_processing_in_background_mutex);
