@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Interpreters/Aggregator.h>
 
 namespace DB
