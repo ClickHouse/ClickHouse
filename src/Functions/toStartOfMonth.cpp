@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionToStartOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfMonthImpl>;
 
-void registerFunctionToStartOfMonth(FunctionFactory & factory)
+REGISTER_FUNCTION(ToStartOfMonth)
 {
     factory.registerFunction<FunctionToStartOfMonth>();
 }
