@@ -1,6 +1,6 @@
 ---
-toc_priority: 32
-toc_title: Atomic
+sidebar_position: 32
+sidebar_label: Atomic
 ---
 
 # Atomic {#atomic}

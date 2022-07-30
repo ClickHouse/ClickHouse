@@ -90,7 +90,7 @@ DiskCacheWrapper::DiskCacheWrapper(
 
 std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(const String & path) const
 {
-    std::unique_lock<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
     auto it = file_downloads.find(path);
     if (it != file_downloads.end())
@@ -101,7 +101,7 @@ std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(
         new FileDownloadMetadata,
         [this, path] (FileDownloadMetadata * p)
         {
-            std::unique_lock<std::mutex> erase_lock{mutex};
+            std::lock_guard erase_lock{mutex};
             file_downloads.erase(path);
             delete p;
         });
@@ -309,23 +309,26 @@ void DiskCacheWrapper::removeSharedFile(const String & path, bool keep_s3)
     DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
-void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
+void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_all, const NameSet & files_to_keep)
 {
     if (cache_disk->exists(path))
-        cache_disk->removeSharedRecursive(path, keep_s3);
-    DiskDecorator::removeSharedRecursive(path, keep_s3);
+        cache_disk->removeSharedRecursive(path, keep_all, files_to_keep);
+    DiskDecorator::removeSharedRecursive(path, keep_all, files_to_keep);
 }
 
 
-void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_s3)
+void DiskCacheWrapper::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all, const NameSet & files_to_keep)
 {
     for (const auto & file : files)
     {
         if (cache_disk->exists(file.path))
-            cache_disk->removeSharedFile(file.path, keep_s3);
+        {
+            bool keep_file = keep_all || files_to_keep.contains(fs::path(file.path).filename());
+            cache_disk->removeSharedFile(file.path, keep_file);
+        }
     }
 
-    DiskDecorator::removeSharedFiles(files, keep_s3);
+    DiskDecorator::removeSharedFiles(files, keep_all, files_to_keep);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)

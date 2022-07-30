@@ -12,23 +12,27 @@ namespace ErrorCodes
 static void checkSingleInput(const IProcessor & transform)
 {
     if (transform.getInputs().size() != 1)
-        throw Exception("Transform for chain should have single input, "
-                        "but " + transform.getName() + " has " +
-                        toString(transform.getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Transform for chain should have single input, but {} has {} inputs",
+            transform.getName(),
+            transform.getInputs().size());
 
     if (transform.getInputs().front().isConnected())
-        throw Exception("Transform for chain has connected input.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Transform for chain has connected input", ErrorCodes::LOGICAL_ERROR);
 }
 
 static void checkSingleOutput(const IProcessor & transform)
 {
     if (transform.getOutputs().size() != 1)
-        throw Exception("Transform for chain should have single output, "
-                        "but " + transform.getName() + " has " +
-                        toString(transform.getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Transform for chain should have single output, but {} has {} outputs",
+            transform.getName(),
+            transform.getOutputs().size());
 
     if (transform.getOutputs().front().isConnected())
-        throw Exception("Transform for chain has connected input.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Transform for chain has connected output", ErrorCodes::LOGICAL_ERROR);
 }
 
 static void checkTransform(const IProcessor & transform)
@@ -40,7 +44,7 @@ static void checkTransform(const IProcessor & transform)
 static void checkInitialized(const std::list<ProcessorPtr> & processors)
 {
     if (processors.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Drain is not initialized");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chain is not initialized");
 }
 
 Chain::Chain(ProcessorPtr processor)
@@ -61,15 +65,17 @@ Chain::Chain(std::list<ProcessorPtr> processors_) : processors(std::move(process
     {
         for (const auto & input : processor->getInputs())
             if (&input != &getInputPort() && !input.isConnected())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Cannot initialize chain because there is a not connected input for {}",
-                                processor->getName());
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot initialize chain because there is a disconnected input for {}",
+                    processor->getName());
 
         for (const auto & output : processor->getOutputs())
             if (&output != &getOutputPort() && !output.isConnected())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Cannot initialize chain because there is a not connected output for {}",
-                                processor->getName());
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot initialize chain because there is a disconnected output for {}",
+                    processor->getName());
     }
 }
 
@@ -90,7 +96,7 @@ void Chain::addSink(ProcessorPtr processor)
     if (!processors.empty())
         connect(getOutputPort(), processor->getInputs().front());
 
-    processors.emplace_front(std::move(processor));
+    processors.emplace_back(std::move(processor));
 }
 
 IProcessor & Chain::getSource()

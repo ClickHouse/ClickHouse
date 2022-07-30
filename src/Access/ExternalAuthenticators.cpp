@@ -231,18 +231,23 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
         params.prefix = config.getString(prefix + ".prefix");
 }
 
-void ExternalAuthenticators::reset()
+void ExternalAuthenticators::resetImpl()
 {
-    std::scoped_lock lock(mutex);
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
     kerberos_params.reset();
 }
 
+void ExternalAuthenticators::reset()
+{
+    std::scoped_lock lock(mutex);
+    resetImpl();
+}
+
 void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
 {
     std::scoped_lock lock(mutex);
-    reset();
+    resetImpl();
 
     Poco::Util::AbstractConfiguration::Keys all_keys;
     config.keys("", all_keys);
@@ -279,7 +284,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
             if (bracket_pos != std::string::npos)
                 ldap_server_name.resize(bracket_pos);
 
-            if (ldap_client_params_blueprint.count(ldap_server_name) > 0)
+            if (ldap_client_params_blueprint.contains(ldap_server_name))
                 throw Exception("Multiple LDAP servers with the same name are not allowed", ErrorCodes::BAD_ARGUMENTS);
 
             LDAPClient::Params ldap_client_params_tmp;

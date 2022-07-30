@@ -1,8 +1,8 @@
 #include <unistd.h>
-#include <stdlib.h>
+#include <cstdlib>
 #include <fcntl.h>
-#include <signal.h>
-#include <time.h>
+#include <csignal>
+#include <ctime>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -548,11 +548,13 @@ private:
             json_out << double_quote << connections[i]->getDescription() << ": {\n";
             json_out << double_quote << "statistics" << ": {\n";
 
-            print_key_value("QPS", info->queries / info->work_time);
-            print_key_value("RPS", info->read_rows / info->work_time);
-            print_key_value("MiBPS", info->read_bytes / info->work_time);
-            print_key_value("RPS_result", info->result_rows / info->work_time);
-            print_key_value("MiBPS_result", info->result_bytes / info->work_time);
+            double seconds = info->work_time / concurrency;
+
+            print_key_value("QPS", info->queries.load() / seconds);
+            print_key_value("RPS", info->read_rows / seconds);
+            print_key_value("MiBPS", info->read_bytes / seconds / 1048576);
+            print_key_value("RPS_result", info->result_rows / seconds);
+            print_key_value("MiBPS_result", info->result_bytes / seconds / 1048576);
             print_key_value("num_queries", info->queries.load());
             print_key_value("num_errors", info->errors, false);
 
@@ -601,10 +603,23 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
     {
         using boost::program_options::value;
 
+        /// Note: according to the standard, subsequent calls to getenv can mangle previous result.
+        /// So we copy the results to std::string.
+        std::optional<std::string> env_user_str;
+        std::optional<std::string> env_password_str;
+
+        const char * env_user = getenv("CLICKHOUSE_USER");
+        if (env_user != nullptr)
+            env_user_str.emplace(std::string(env_user));
+
+        const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+        if (env_password != nullptr)
+            env_password_str.emplace(std::string(env_password));
+
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
             ("help",                                                            "produce help message")
-            ("query",      value<std::string>()->default_value(""),             "query to execute")
+            ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
             ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
@@ -613,12 +628,12 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
             ("host,h",        value<Strings>()->multitoken(),                   "list of hosts")
-            ("port,p",        value<Ports>()->multitoken(),                     "list of ports")
+            ("port",          value<Ports>()->multitoken(),                     "list of ports")
             ("roundrobin",                                                      "Instead of comparing queries for different --host/--port just pick one random --host/--port for every query and send query to it.")
             ("cumulative",                                                      "prints cumulative data instead of data per interval")
             ("secure,s",                                                        "Use TLS connection")
-            ("user",          value<std::string>()->default_value("default"),   "")
-            ("password",      value<std::string>()->default_value(""),          "")
+            ("user,u",        value<std::string>()->default_value(env_user_str.value_or("default")), "")
+            ("password",      value<std::string>()->default_value(env_password_str.value_or("")), "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
             ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")

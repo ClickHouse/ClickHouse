@@ -65,6 +65,8 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         /// do it under share lock
         storage.clearOldWriteAheadLogs();
         storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
+        if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
+            storage.clearOldBrokenPartsFromDetachedDirecory();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -246,17 +248,17 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", stat.version));
 
-            try
-            {
-                zookeeper->multi(ops);
-            }
-            catch (const zkutil::KeeperMultiException & e)
+            Coordination::Responses responses;
+            Coordination::Error e = zookeeper->tryMulti(ops, responses);
+
+            if (e == Coordination::Error::ZNONODE)
             {
                 /// Another replica already deleted the same node concurrently.
-                if (e.code == Coordination::Error::ZNONODE)
-                    break;
-
-                throw;
+                break;
+            }
+            else
+            {
+                zkutil::KeeperMultiException::check(e, ops, responses);
             }
             ops.clear();
         }
@@ -404,7 +406,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         NameSet blocks_set(blocks.begin(), blocks.end());
         for (auto it = cached_block_stats.begin(); it != cached_block_stats.end();)
         {
-            if (!blocks_set.count(it->first))
+            if (!blocks_set.contains(it->first))
                 it = cached_block_stats.erase(it);
             else
                 ++it;
@@ -471,6 +473,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     for (const String & replica : replicas)
     {
         String pointer;
+        // No Need to check return value to delete mutations.
         zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/mutation_pointer", pointer);
         if (pointer.empty())
             return; /// One replica hasn't done anything yet so we can't delete any mutations.

@@ -1,7 +1,7 @@
 # package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-client"
-arch: "all"
+arch: "${DEB_ARCH}" # amd64, arm64
 platform: "linux"
 version: "${CLICKHOUSE_VERSION_STRING}"
 vendor: "ClickHouse Inc."
@@ -18,9 +18,9 @@ conflicts:
 maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
 description: |
   Client binary for ClickHouse
-    ClickHouse is a column-oriented database management system
+    ClickHouse is a column-oriented database management system.
     that allows generating analytical data reports in real time.
-    This package provides clickhouse-client , clickhouse-local and clickhouse-benchmark
+    This package provides clickhouse-client, clickhouse-local and clickhouse-benchmark.
 
 overrides:
   deb:

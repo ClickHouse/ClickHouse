@@ -20,6 +20,10 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #if !defined(__clang__)
 #    pragma GCC diagnostic push
@@ -34,9 +38,9 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     NamesAndTypesList names_and_types;
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
-    StoragePtr table = StorageLog::create(
+    StoragePtr table = std::make_shared<StorageLog>(
         "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
-        ConstraintsDescription{}, String{}, false, 1048576);
+        ConstraintsDescription{}, String{}, false, getContext().context);
 
     table->startup();
 
@@ -126,7 +130,12 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
         context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
-    QueryPipeline pipeline(table->read(column_names, storage_snapshot, query_info, context, stage, 8192, 1));
+    QueryPlan plan;
+    table->read(plan, column_names, storage_snapshot, query_info, context, stage, 8192, 1);
+
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context))));
 
     Block sample;
     {

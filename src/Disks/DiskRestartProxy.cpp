@@ -5,6 +5,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int DEADLOCK_AVOIDED;
@@ -54,7 +55,7 @@ public:
     RestartAwareWriteBuffer(const DiskRestartProxy & disk, std::unique_ptr<WriteBuffer> impl_)
         : WriteBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
 
-    virtual ~RestartAwareWriteBuffer() override
+    ~RestartAwareWriteBuffer() override
     {
         try
         {
@@ -170,7 +171,7 @@ void DiskRestartProxy::moveDirectory(const String & from_path, const String & to
     DiskDecorator::moveDirectory(from_path, to_path);
 }
 
-DiskDirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::iterateDirectory(path);
@@ -200,7 +201,13 @@ void DiskRestartProxy::copy(const String & from_path, const std::shared_ptr<IDis
     DiskDecorator::copy(from_path, to_disk, to_path);
 }
 
-void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file_names)
+void DiskRestartProxy::copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir)
+{
+    ReadLock lock (mutex);
+    DiskDecorator::copyDirectoryContent(from_dir, to_disk, to_dir);
+}
+
+void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file_names) const
 {
     ReadLock lock (mutex);
     DiskDecorator::listFiles(path, file_names);
@@ -251,16 +258,16 @@ void DiskRestartProxy::removeSharedFile(const String & path, bool keep_s3)
     DiskDecorator::removeSharedFile(path, keep_s3);
 }
 
-void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+void DiskRestartProxy::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     ReadLock lock (mutex);
-    DiskDecorator::removeSharedFiles(files, keep_in_remote_fs);
+    DiskDecorator::removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
 }
 
-void DiskRestartProxy::removeSharedRecursive(const String & path, bool keep_s3)
+void DiskRestartProxy::removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     ReadLock lock (mutex);
-    DiskDecorator::removeSharedRecursive(path, keep_s3);
+    DiskDecorator::removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
 }
 
 void DiskRestartProxy::setLastModified(const String & path, const Poco::Timestamp & timestamp)
@@ -269,7 +276,7 @@ void DiskRestartProxy::setLastModified(const String & path, const Poco::Timestam
     DiskDecorator::setLastModified(path, timestamp);
 }
 
-Poco::Timestamp DiskRestartProxy::getLastModified(const String & path)
+Poco::Timestamp DiskRestartProxy::getLastModified(const String & path) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getLastModified(path);
@@ -311,19 +318,20 @@ String DiskRestartProxy::getCacheBasePath() const
     return DiskDecorator::getCacheBasePath();
 }
 
-std::vector<String> DiskRestartProxy::getRemotePaths(const String & path) const
+StoredObjects DiskRestartProxy::getStorageObjects(const String & path) const
 {
     ReadLock lock (mutex);
-    return DiskDecorator::getRemotePaths(path);
+    return DiskDecorator::getStorageObjects(path);
 }
 
-void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
+void DiskRestartProxy::getRemotePathsRecursive(
+    const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
 {
     ReadLock lock (mutex);
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
-void DiskRestartProxy::restart()
+void DiskRestartProxy::restart(ContextPtr context)
 {
     /// Speed up processing unhealthy requests.
     DiskDecorator::shutdown();
@@ -346,7 +354,7 @@ void DiskRestartProxy::restart()
 
     LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
-    DiskDecorator::startup();
+    DiskDecorator::startup(context);
 
     LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());
 }

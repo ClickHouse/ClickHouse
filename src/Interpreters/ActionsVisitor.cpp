@@ -1,6 +1,12 @@
+#include <memory>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/ColumnWithTypeAndName.h>
 
+#include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
@@ -8,10 +14,12 @@
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Columns/ColumnSet.h>
@@ -56,6 +64,9 @@ namespace ErrorCodes
     extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -455,14 +466,32 @@ public:
         return *node;
     }
 
-    bool contains(const std::string & name) const { return map.count(name) > 0; }
+    bool contains(const std::string & name) const { return map.contains(name); }
+
+    std::vector<std::string_view> getAllNames() const
+    {
+        std::vector<std::string_view> result;
+        result.reserve(map.size());
+        for (auto const & e : map)
+            result.emplace_back(e.first);
+        return result;
+    }
 };
 
 ActionsMatcher::Data::Data(
-    ContextPtr context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-    const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
-    PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-    bool no_subqueries_, bool no_makeset_, bool only_consts_, bool create_source_for_in_)
+    ContextPtr context_,
+    SizeLimits set_size_limit_,
+    size_t subquery_depth_,
+    std::reference_wrapper<const NamesAndTypesList> source_columns_,
+    ActionsDAGPtr actions_dag,
+    PreparedSets & prepared_sets_,
+    SubqueriesForSets & subqueries_for_sets_,
+    bool no_subqueries_,
+    bool no_makeset_,
+    bool only_consts_,
+    bool create_source_for_in_,
+    AggregationKeysInfo aggregation_keys_info_,
+    bool build_expression_with_window_functions_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -475,6 +504,8 @@ ActionsMatcher::Data::Data(
     , create_source_for_in(create_source_for_in_)
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
+    , aggregation_keys_info(aggregation_keys_info_)
+    , build_expression_with_window_functions(build_expression_with_window_functions_)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
 {
 }
@@ -482,6 +513,12 @@ ActionsMatcher::Data::Data(
 bool ActionsMatcher::Data::hasColumn(const String & column_name) const
 {
     return actions_stack.getLastActionsIndex().contains(column_name);
+}
+
+std::vector<std::string_view> ActionsMatcher::Data::getAllColumnNames() const
+{
+    const auto & index = actions_stack.getLastActionsIndex();
+    return index.getAllNames();
 }
 
 ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_) : WithContext(context_)
@@ -525,7 +562,7 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
     {
         --i;
 
-        if (stack[i].inputs.count(name))
+        if (stack[i].inputs.contains(name))
             return i;
 
         const auto * node = stack[i].index->tryGetNode(name);
@@ -783,8 +820,9 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
         {
             if (column_name_type.name == column_name)
             {
-                throw Exception("Column " + backQuote(column_name) + " is not under aggregate function and not in GROUP BY",
-                                ErrorCodes::NOT_AN_AGGREGATE);
+                throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                    "Column {} is not under aggregate function and not in GROUP BY. Have columns: {}",
+                    backQuote(column_name), toString(data.getAllColumnNames()));
             }
         }
 
@@ -814,6 +852,55 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (!data.only_consts)
             data.addArrayJoin(arg->getColumnName(), column_name);
 
+        return;
+    }
+
+    if (node.name == "grouping")
+    {
+        if (data.only_consts)
+            return; // Can not perform constant folding, because this function can be executed only after GROUP BY
+
+        size_t arguments_size = node.arguments->children.size();
+        if (arguments_size == 0)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function GROUPING expects at least one argument");
+        if (arguments_size > 64)
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Function GROUPING can have up to 64 arguments, but {} provided", arguments_size);
+        auto keys_info = data.aggregation_keys_info;
+        auto aggregation_keys_number = keys_info.aggregation_keys.size();
+
+        ColumnNumbers arguments_indexes;
+        for (auto const & arg : node.arguments->children)
+        {
+            size_t pos = keys_info.aggregation_keys.getPosByName(arg->getColumnName());
+            if (pos == aggregation_keys_number)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of GROUPING function {} is not a part of GROUP BY clause", arg->getColumnName());
+            arguments_indexes.push_back(pos);
+        }
+
+        switch (keys_info.group_by_kind)
+        {
+            case GroupByKind::GROUPING_SETS:
+            {
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys)), { "__grouping_set" }, column_name);
+                break;
+            }
+            case GroupByKind::ROLLUP:
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
+                break;
+            case GroupByKind::CUBE:
+            {
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
+                break;
+            }
+            case GroupByKind::ORDINARY:
+            {
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes))), {}, column_name);
+                break;
+            }
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected kind of GROUP BY clause for GROUPING function: {}", keys_info.group_by_kind);
+        }
         return;
     }
 
@@ -852,6 +939,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
+    // Now we need to correctly process window functions and any expression which depend on them.
     if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
@@ -859,7 +947,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             visit(node.window_definition, data);
         }
-
         // Also manually add columns for arguments of the window function itself.
         // ActionVisitor is written in such a way that this method must itself
         // descend into all needed function children. Window functions can't have
@@ -878,19 +965,57 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // aggregate functions.
         return;
     }
+    else if (node.compute_after_window_functions)
+    {
+        if (!data.build_expression_with_window_functions)
+        {
+            for (const auto & arg : node.arguments->children)
+            {
+                if (auto const * function = arg->as<ASTFunction>();
+                    function && function->name == "lambda")
+                {
+                    // Lambda function is a special case. It shouldn't be visited here.
+                    continue;
+                }
+                visit(arg, data);
+            }
+            return;
+        }
+    }
 
     // An aggregate function can also be calculated as a window function, but we
     // checked for it above, so no need to do anything more.
-    if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
+    if (AggregateUtils::isAggregateFunction(node))
         return;
 
-    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
+    FunctionOverloadResolverPtr function_builder;
+
+    auto current_context = data.getContext();
+
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
+    {
+        Array parameters;
+        if (node.parameters)
+        {
+            auto & node_parameters = node.parameters->children;
+            size_t parameters_size = node_parameters.size();
+            parameters.resize(parameters_size);
+
+            for (size_t i = 0; i < parameters_size; ++i)
+            {
+                ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
+                parameters[i] = literal->as<ASTLiteral>()->value;
+            }
+        }
+
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
+    }
 
     if (!function_builder)
     {
         try
         {
-            function_builder = FunctionFactory::instance().get(node.name, data.getContext());
+            function_builder = FunctionFactory::instance().get(node.name, current_context);
         }
         catch (Exception & e)
         {

@@ -6,6 +6,7 @@
 namespace DB
 {
 class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 /// Information about a backup.
 struct BackupInfo
@@ -16,6 +17,8 @@ struct BackupInfo
 
     String toString() const;
     static BackupInfo fromString(const String & str);
+
+    ASTPtr toAST() const;
     static BackupInfo fromAST(const IAST & ast);
 };
 

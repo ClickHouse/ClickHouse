@@ -7,9 +7,9 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "validateODBCConnectionString.h"
-#include "ODBCConnectionFactory.h"
+#include "ODBCPooledConnectionFactory.h"
 #include <sql.h>
 #include <sqlext.h>
 
@@ -50,7 +50,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     {
         std::string connection_string = params.get("connection_string");
 
-        auto connection = ODBCConnectionFactory::instance().get(
+        auto connection = ODBCPooledConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 

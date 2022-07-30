@@ -1,9 +1,9 @@
 ---
-toc_priority: 12
-toc_title: MaterializedPostgreSQL
+sidebar_position: 12
+sidebar_label: MaterializedPostgreSQL
 ---
 
-# MaterializedPostgreSQL {#materialize-postgresql}
+# MaterializedPostgreSQL
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
@@ -52,5 +52,8 @@ PRIMARY KEY key;
 SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
-!!! warning "Warning"
-    Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+:::warning
+Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
+:::
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/materialized-postgresql) <!--hide-->

@@ -93,7 +93,7 @@ private:
             if (!first)
                 writeChar(',', out);
             first = false;
-            writeIntText(T(bit), out);
+            writeIntText(static_cast<T>(bit), out);
         }
     }
 
@@ -329,7 +329,7 @@ public:
 
 }
 
-void registerFunctionsBitToArray(FunctionFactory & factory)
+REGISTER_FUNCTION(BitToArray)
 {
     factory.registerFunction<FunctionBitPositionsToArray>();
     factory.registerFunction<FunctionBitmaskToArray>();

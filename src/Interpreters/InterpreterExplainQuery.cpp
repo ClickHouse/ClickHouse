@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -145,12 +146,14 @@ namespace
 struct QueryASTSettings
 {
     bool graph = false;
+    bool optimize = false;
 
     constexpr static char name[] = "AST";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"graph", graph},
+        {"optimize", optimize}
     };
 };
 
@@ -269,11 +272,20 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
+    SelectQueryOptions options;
+    options.setExplain();
+
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
+            if (settings.optimize)
+            {
+                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+                ExplainAnalyzedSyntaxVisitor(data).visit(query);
+            }
+
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
@@ -299,7 +311,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
             interpreter.buildQueryPlan(plan);
 
             if (settings.optimize)
@@ -334,7 +346,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
 
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
                 interpreter.buildQueryPlan(plan);
                 auto pipeline = plan.buildQueryPipeline(
                     QueryPlanOptimizationSettings::fromContext(getContext()),
@@ -343,7 +355,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (settings.graph)
                 {
                     /// Pipe holds QueryPlan, should not go out-of-scope
-                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline));
+                    QueryPlanResourceHolder resources;
+                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
                     const auto & processors = pipe.getProcessors();
 
                     if (settings.compact)

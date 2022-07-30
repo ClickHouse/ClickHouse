@@ -30,7 +30,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 #include <base/scope_guard.h>
 
@@ -123,7 +123,7 @@ DistributedSink::DistributedSink(
     , insert_timeout(insert_timeout_)
     , main_table(main_table_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
-    , log(&Poco::Logger::get("DistributedBlockOutputStream"))
+    , log(&Poco::Logger::get("DistributedSink"))
 {
     const auto & settings = context->getSettingsRef();
     if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
@@ -610,7 +610,7 @@ void DistributedSink::writeSplitAsync(const Block & block)
 
 void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
-    OpenTelemetrySpanHolder span("DistributedBlockOutputStream::writeAsyncImpl()");
+    OpenTelemetrySpanHolder span("DistributedSink::writeAsyncImpl()");
 
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
@@ -764,10 +764,10 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             /// And note that it is safe, because we have checksum and size for header.
 
             /// Write the header.
-            const StringRef header = header_buf.stringRef();
+            const std::string_view header = header_buf.stringView();
             writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
-            writeStringBinary(header, out);
-            writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
+            writeStringBinary(StringRef(header), out);
+            writePODBinary(CityHash_v1_0_2::CityHash128(header.data(), header.size()), out);
 
             stream.write(block);
 

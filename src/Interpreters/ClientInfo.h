@@ -93,7 +93,7 @@ public:
     String http_user_agent;
     String http_referer;
 
-    /// For mysql
+    /// For mysql and postgresql
     UInt64 connection_id = 0;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).

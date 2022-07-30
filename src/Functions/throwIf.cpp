@@ -125,7 +125,7 @@ public:
         if (in)
         {
             const auto & in_data = in->getData();
-            if (!memoryIsZero(in_data.data(), in_data.size() * sizeof(in_data[0])))
+            if (!memoryIsZero(in_data.data(), 0, in_data.size() * sizeof(in_data[0])))
             {
                 throw Exception(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO,
                     message.value_or("Value passed to '" + getName() + "' function is non zero"));
@@ -143,7 +143,7 @@ public:
 
 }
 
-void registerFunctionThrowIf(FunctionFactory & factory)
+REGISTER_FUNCTION(ThrowIf)
 {
     factory.registerFunction<FunctionThrowIf>();
 }

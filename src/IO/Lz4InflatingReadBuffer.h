@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 
@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class Lz4InflatingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
+class Lz4InflatingReadBuffer : public CompressedReadBufferWrapper
 {
 public:
     explicit Lz4InflatingReadBuffer(
@@ -24,8 +24,6 @@ public:
 
 private:
     bool nextImpl() override;
-
-    std::unique_ptr<ReadBuffer> in;
 
     LZ4F_dctx* dctx;
 

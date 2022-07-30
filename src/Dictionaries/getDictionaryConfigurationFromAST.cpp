@@ -4,6 +4,7 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
@@ -287,6 +288,14 @@ void buildSingleAttribute(
         AutoPtr<Text> hierarchical(doc->createTextNode("true"));
         hierarchical_element->appendChild(hierarchical);
         attribute_element->appendChild(hierarchical_element);
+    }
+
+    if (dict_attr->bidirectional)
+    {
+        AutoPtr<Element> bidirectional_element(doc->createElement("bidirectional"));
+        AutoPtr<Text> bidirectional(doc->createTextNode("true"));
+        bidirectional_element->appendChild(bidirectional);
+        attribute_element->appendChild(bidirectional_element);
     }
 
     if (dict_attr->injective)
@@ -629,11 +638,18 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 
     info.table_name = {database, table};
 
-    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
-    if (!isLocalAddress({host, port}, default_port))
-        return info;
+    try
+    {
+        UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
+        if (isLocalAddress({host, port}, default_port))
+            info.is_local = true;
+    }
+    catch (const Poco::Net::DNSException &)
+    {
+        /// Server may fail to start if we cannot resolve some hostname. It's ok to ignore exception and leave is_local false.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
-    info.is_local = true;
     return info;
 }
 

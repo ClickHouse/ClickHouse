@@ -64,7 +64,7 @@ namespace
 }
 
 
-class ColumnsSource : public SourceWithProgress
+class ColumnsSource : public ISource
 {
 public:
     ColumnsSource(
@@ -75,7 +75,7 @@ public:
         ColumnPtr tables_,
         Storages storages_,
         ContextPtr context)
-        : SourceWithProgress(header_)
+        : ISource(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
         , total_tables(tables->size()), access(context->getAccess())
@@ -323,7 +323,7 @@ Pipe StorageSystemColumns::read(
     std::vector<UInt8> columns_mask(sample_block.columns());
     for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
     {
-        if (names_set.count(sample_block.getByPosition(i).name))
+        if (names_set.contains(sample_block.getByPosition(i).name))
         {
             columns_mask[i] = 1;
             header.insert(sample_block.getByPosition(i));

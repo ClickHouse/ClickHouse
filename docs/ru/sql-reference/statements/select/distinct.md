@@ -1,5 +1,5 @@
 ---
-toc_title: DISTINCT
+sidebar_label: DISTINCT
 ---
 
 # Секция DISTINCT {#select-distinct}

@@ -154,7 +154,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         new_job_or_shutdown.notify_one();
     }
 
-    return ReturnType(true);
+    return static_cast<ReturnType>(true);
 }
 
 template <typename Thread>
@@ -209,7 +209,7 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::finalize()
 {
     {
-        std::unique_lock lock(mutex);
+        std::lock_guard lock(mutex);
         shutdown = true;
     }
 
@@ -224,14 +224,14 @@ void ThreadPoolImpl<Thread>::finalize()
 template <typename Thread>
 size_t ThreadPoolImpl<Thread>::active() const
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     return scheduled_jobs;
 }
 
 template <typename Thread>
 bool ThreadPoolImpl<Thread>::finished() const
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
     return shutdown;
 }
 
@@ -290,7 +290,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 job = {};
 
                 {
-                    std::unique_lock lock(mutex);
+                    std::lock_guard lock(mutex);
                     if (!first_exception)
                         first_exception = std::current_exception(); // NOLINT
                     if (shutdown_on_exception)
@@ -305,7 +305,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         }
 
         {
-            std::unique_lock lock(mutex);
+            std::lock_guard lock(mutex);
             --scheduled_jobs;
 
             if (threads.size() > scheduled_jobs + max_free_threads)

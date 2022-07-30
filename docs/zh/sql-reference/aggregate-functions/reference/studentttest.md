@@ -1,6 +1,6 @@
 ---
-toc_priority: 300
-toc_title: studentTTest
+sidebar_position: 300
+sidebar_label: studentTTest
 ---
 
 # studentTTest {#studentttest}

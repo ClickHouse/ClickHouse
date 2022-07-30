@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: ROLE
+sidebar_position: 46
+sidebar_label: ROLE
 ---
 
 # ALTER ROLE {#alter-role-statement}

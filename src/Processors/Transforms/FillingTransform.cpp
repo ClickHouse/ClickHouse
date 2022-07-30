@@ -26,7 +26,7 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 
     /// Columns which are not from sorting key may not be constant anymore.
     for (auto & column : header)
-        if (column.column && isColumnConst(*column.column) && !sort_keys.count(column.name))
+        if (column.column && isColumnConst(*column.column) && !sort_keys.contains(column.name))
             column.column = column.type->createColumn();
 
     return header;
@@ -53,6 +53,23 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     auto max_type = Field::Types::Null;
     WhichDataType which(type);
     DataTypePtr to_type;
+
+    /// For Date/DateTime types TO/FROM type should match column type
+    if (descr.fill_from_type)
+    {
+        WhichDataType which_from(descr.fill_from_type);
+        if ((which_from.isDateOrDate32() || which_from.isDateTime() || which_from.isDateTime64()) &&
+            !descr.fill_from_type->equals(*type))
+                return false;
+    }
+
+    if (descr.fill_to_type)
+    {
+        WhichDataType which_to(descr.fill_to_type);
+        if ((which_to.isDateOrDate32() || which_to.isDateTime() || which_to.isDateTime64()) &&
+            !descr.fill_to_type->equals(*type))
+                return false;
+    }
 
     /// TODO Wrong results for big integers.
     if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
@@ -90,9 +107,9 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         if (which.isDate() || which.isDate32())
         {
             Int64 avg_seconds = get<Int64>(descr.fill_step) * descr.step_kind->toAvgSeconds();
-            if (avg_seconds < 86400)
+            if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                                "Value of step is to low ({} seconds). Must be >= 1 day", avg_seconds);
+                                "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
         }
 
         if (which.isDate())
@@ -155,7 +172,7 @@ FillingTransform::FillingTransform(
     std::vector<bool> is_fill_column(header_.columns());
     for (size_t i = 0, size = sort_description.size(); i < size; ++i)
     {
-        if (interpolate_description && interpolate_description->result_columns_set.count(sort_description[i].column_name))
+        if (interpolate_description && interpolate_description->result_columns_set.contains(sort_description[i].column_name))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
                 sort_description[i].column_name);
@@ -193,7 +210,7 @@ FillingTransform::FillingTransform(
                 p != interpolate_description->required_columns_map.end())
                     input_positions.emplace_back(idx, p->second);
 
-        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.count(column.name)))
+        if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name)))
                 other_column_positions.push_back(idx);
 
         ++idx;
@@ -215,6 +232,13 @@ IProcessor::Status FillingTransform::prepare()
 
         if (first || filling_row < next_row)
         {
+            /// Output if has data.
+            if (has_output)
+            {
+                output.pushData(std::move(output_data));
+                has_output = false;
+            }
+
             generate_suffix = true;
             return Status::Ready;
         }

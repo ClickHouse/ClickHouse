@@ -1,4 +1,4 @@
-# system.roles {#system_tables-roles}
+# roles
 
 Contains information about configured [roles](../../operations/access-rights.md#role-management).
 

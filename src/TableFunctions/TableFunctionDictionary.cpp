@@ -7,6 +7,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Storages/StorageDictionary.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -35,7 +36,7 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    dictionary_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    dictionary_name = checkAndGetLiteralArgument<String>(args[0], "dictionary_name");
 }
 
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context) const
@@ -53,7 +54,7 @@ StoragePtr TableFunctionDictionary::executeImpl(
     StorageID dict_id(getDatabaseName(), table_name);
     auto dictionary_table_structure = getActualTableStructure(context);
 
-    auto result = StorageDictionary::create(
+    auto result = std::make_shared<StorageDictionary>(
         dict_id, dictionary_name, std::move(dictionary_table_structure), String{}, StorageDictionary::Location::Custom, context);
 
     return result;

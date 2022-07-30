@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
@@ -23,10 +21,24 @@ using HashJoinPtr = std::shared_ptr<HashJoin>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin final : public shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
+class StorageJoin final : public StorageSetOrJoinBase
 {
-    friend struct shared_ptr_helper<StorageJoin>;
 public:
+    StorageJoin(
+        DiskPtr disk_,
+        const String & relative_path_,
+        const StorageID & table_id_,
+        const Names & key_names_,
+        bool use_nulls_,
+        SizeLimits limits_,
+        JoinKind kind_,
+        JoinStrictness strictness_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        bool overwrite,
+        bool persistent_);
+
     String getName() const override { return "Join"; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
@@ -82,8 +94,8 @@ private:
     const Names key_names;
     bool use_nulls;
     SizeLimits limits;
-    ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
-    ASTTableJoin::Strictness strictness;        /// ANY | ALL
+    JoinKind kind;                    /// LEFT | INNER ...
+    JoinStrictness strictness;        /// ANY | ALL
     bool overwrite;
 
     std::shared_ptr<TableJoin> table_join;
@@ -98,22 +110,6 @@ private:
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
-
-protected:
-    StorageJoin(
-        DiskPtr disk_,
-        const String & relative_path_,
-        const StorageID & table_id_,
-        const Names & key_names_,
-        bool use_nulls_,
-        SizeLimits limits_,
-        ASTTableJoin::Kind kind_,
-        ASTTableJoin::Strictness strictness_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const String & comment,
-        bool overwrite,
-        bool persistent_);
 };
 
 }

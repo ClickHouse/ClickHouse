@@ -1,6 +1,6 @@
 ---
-toc_priority: 60
-toc_title: Nothing
+sidebar_position: 60
+sidebar_label: Nothing
 ---
 
 # Nothing {#nothing}

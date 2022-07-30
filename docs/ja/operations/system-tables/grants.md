@@ -1,1 +1,0 @@
-../../../en/operations/system-tables/grants.md

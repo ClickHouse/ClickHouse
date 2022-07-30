@@ -1,11 +1,11 @@
 ---
-toc_priority: 27
-toc_title: "Библиотеки для интеграции от сторонних разработчиков"
+sidebar_position: 27
+sidebar_label: "Библиотеки для интеграции от сторонних разработчиков"
 ---
 
 # Библиотеки для интеграции от сторонних разработчиков {#biblioteki-dlia-integratsii-ot-storonnikh-razrabotchikov}
 
-!!! warning "Disclaimer"
+:::danger "Disclaimer"
     ClickHouse, Inc. не занимается поддержкой перечисленных ниже инструментов и библиотек и не проводит тщательного тестирования для проверки их качества.
 
 ## Инфраструктурные продукты {#infrastrukturnye-produkty}

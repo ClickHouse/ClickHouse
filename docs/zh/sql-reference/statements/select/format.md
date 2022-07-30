@@ -1,5 +1,5 @@
 ---
-toc_title: FORMAT
+sidebar_label: FORMAT
 ---
 
 # 格式化子句 {#format-clause}

@@ -449,7 +449,7 @@ KeyCondition::KeyCondition(
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
         const auto & name = key_column_names[i];
-        if (!key_columns.count(name))
+        if (!key_columns.contains(name))
             key_columns[name] = i;
     }
 
@@ -487,7 +487,7 @@ KeyCondition::KeyCondition(
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
-    if (!key_columns.count(column))
+    if (!key_columns.contains(column))
         return false;
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, key_columns[column], range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
@@ -776,10 +776,10 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 {
     String expr_name = node->getColumnNameWithoutAlias();
 
-    if (array_joined_columns.count(expr_name))
+    if (array_joined_columns.contains(expr_name))
         return false;
 
-    if (key_subexpr_names.count(expr_name) == 0)
+    if (!key_subexpr_names.contains(expr_name))
         return false;
 
     if (out_value.isNull())
@@ -807,10 +807,10 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 {
     String expr_name = ast->getColumnNameWithoutAlias();
 
-    if (array_joined_columns.count(expr_name))
+    if (array_joined_columns.contains(expr_name))
         return false;
 
-    if (key_subexpr_names.count(expr_name) == 0)
+    if (!key_subexpr_names.contains(expr_name))
     {
         /// Let's check another one case.
         /// If our storage was created with moduloLegacy in partition key,
@@ -825,7 +825,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
         expr_name = adjusted_ast->getColumnName();
 
-        if (key_subexpr_names.count(expr_name) == 0)
+        if (!key_subexpr_names.contains(expr_name))
             return false;
     }
 
@@ -1080,7 +1080,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     // Key columns should use canonical names for index analysis
     String name = node->getColumnNameWithoutAlias();
 
-    if (array_joined_columns.count(name))
+    if (array_joined_columns.contains(name))
         return false;
 
     auto it = key_columns.find(name);
@@ -1300,7 +1300,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 }
                 else
                 {
-                    DataTypePtr common_type = tryGetLeastSupertype({key_expr_type_not_null, const_type});
+                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
                     if (!common_type)
                         return false;
 
@@ -2050,7 +2050,7 @@ bool KeyCondition::mayBeTrueInRange(
 }
 
 String KeyCondition::RPNElement::toString() const { return toString("column " + std::to_string(key_column), false); }
-String KeyCondition::RPNElement::toString(const std::string_view & column_name, bool print_constants) const
+String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const
 {
     auto print_wrapped_column = [this, &column_name, print_constants](WriteBuffer & buf)
     {

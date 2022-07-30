@@ -172,10 +172,6 @@ String getNameForSubstreamPath(
             else
                 stream_name += "." + it->tuple_element_name;
         }
-        else if (it->type == Substream::ObjectElement)
-        {
-            stream_name += escapeForFileName(".") + escapeForFileName(it->object_key_name);
-        }
     }
 
     return stream_name;

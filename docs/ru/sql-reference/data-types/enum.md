@@ -1,13 +1,13 @@
 ---
-toc_priority: 50
-toc_title: Enum
+sidebar_position: 50
+sidebar_label: Enum
 ---
 
 # Enum {#enum}
 
 Перечисляемый тип данных, содержащий именованные значения.
 
-Именованные значения задаются парами `'string' = integer`. ClickHouse хранит только числа, но допускает операции над ними с помощью заданных имён.
+Именованные значения задаются либо парами `'string' = integer`, либо именами `'string'`. ClickHouse хранит только числа, но допускает операции над ними с помощью заданных имён.
 
 ClickHouse поддерживает:
 
@@ -26,6 +26,39 @@ CREATE TABLE t_enum
     x Enum('hello' = 1, 'world' = 2)
 )
 ENGINE = TinyLog
+```
+
+Номера могут быть опущены - в этом случае ClickHouse автоматически присвоит последовательные номера, начиная с 1.
+
+``` sql
+CREATE TABLE t_enum
+(
+    x Enum('hello', 'world')
+)
+ENGINE = TinyLog
+```
+
+Можно также указать допустимый стартовый номер для первого имени.
+
+``` sql
+CREATE TABLE t_enum
+(
+    x Enum('hello' = 1, 'world')
+)
+ENGINE = TinyLog
+```
+
+``` sql
+CREATE TABLE t_enum
+(
+    x Enum8('hello' = -129, 'world')
+)
+ENGINE = TinyLog
+```
+
+``` text
+Exception on server:
+Code: 69. DB::Exception: Value -129 for element 'hello' exceeds range of Enum8.
 ```
 
 В столбец `x` можно сохранять только значения, перечисленные при определении типа, т.е. `'hello'` или `'world'`. Если вы попытаетесь сохранить любое другое значение, ClickHouse сгенерирует исключение. ClickHouse автоматически выберет размерность 8-bit для этого `Enum`.

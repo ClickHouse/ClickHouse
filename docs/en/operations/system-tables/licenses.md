@@ -1,4 +1,4 @@
-# system.licenses {#system-tables_system.licenses}
+# licenses 
 
 Сontains licenses of third-party libraries that are located in the [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) directory of ClickHouse sources.
 

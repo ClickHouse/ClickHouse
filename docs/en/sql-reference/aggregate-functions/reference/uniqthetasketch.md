@@ -1,8 +1,8 @@
 ---
-toc_priority: 195
+sidebar_position: 195
 ---
 
-# uniqTheta {#agg_function-uniqthetasketch}
+# uniqTheta
 
 Calculates the approximate number of different argument values, using the [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketchFramework.html).
 

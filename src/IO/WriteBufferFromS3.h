@@ -7,7 +7,7 @@
 #include <memory>
 #include <vector>
 #include <list>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/types.h>
 
 #include <Common/ThreadPool.h>
@@ -16,6 +16,8 @@
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteSettings.h>
+#include <Storages/StorageS3Settings.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 
@@ -46,18 +48,15 @@ class WriteBufferFromFile;
 class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit WriteBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    WriteBufferFromS3(
+        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
-        size_t minimum_upload_part_size_,
-        size_t upload_part_size_multiply_factor_,
-        size_t upload_part_size_multiply_threshold_,
-        size_t max_single_part_upload_size_,
+        const S3Settings::ReadWriteSettings & s3_settings_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ScheduleFunc schedule_ = {},
-        const String & blob_name = "",
+        const WriteSettings & write_settings_ = {},
         FileCachePtr cache_ = nullptr);
 
     ~WriteBufferFromS3() override;
@@ -93,12 +92,11 @@ private:
 
     String bucket;
     String key;
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    size_t upload_part_size = 0;
+    S3Settings::ReadWriteSettings s3_settings;
     std::optional<std::map<String, String>> object_metadata;
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
-    size_t upload_part_size;
-    const size_t upload_part_size_multiply_factor;
-    const size_t upload_part_size_multiply_threshold;
-    const size_t max_single_part_upload_size;
+
     /// Buffer to accumulate data.
     std::shared_ptr<Aws::StringStream> temporary_buffer;
     size_t last_part_size = 0;
@@ -123,7 +121,8 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 
-    const String blob_name;
+    WriteSettings write_settings;
+
     FileCachePtr cache;
     size_t current_download_offset = 0;
     std::optional<FileSegmentsHolder> file_segments_holder;

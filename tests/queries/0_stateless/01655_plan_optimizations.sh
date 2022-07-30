@@ -172,7 +172,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any left join (
         select number + 2 as b from numbers(3)
-    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0"
+    ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0" | sort
 
 echo "> one condition of filter is pushed down before INNER JOIN"
 $CLICKHOUSE_CLIENT -q "
@@ -201,7 +201,7 @@ echo "> function calculation should be done after sorting and limit (if possible
 echo "> Expression should be divided into two subexpressions and only one of them should be moved after Sorting"
 $CLICKHOUSE_CLIENT -q "
     explain actions = 1 select number as n, sipHash64(n) from numbers(100) order by number + 1 limit 5" |
-    sed 's/^ *//g' | grep -o "^ *\(Expression (Before ORDER BY.*)\|Sorting\|FUNCTION \w\+\)"
+    sed 's/^ *//g' | grep -o "^ *\(Expression (.*Before ORDER BY.*)\|Sorting\|FUNCTION \w\+\)"
 echo "> this query should be executed without throwing an exception"
 $CLICKHOUSE_CLIENT -q "
     select throwIf(number = 5) from (select * from numbers(10)) order by number limit 1"

@@ -1,44 +1,45 @@
 ---
-toc_priority: 66
-toc_title: ClickHouse Keeper
+sidebar_position: 66
+sidebar_label: ClickHouse Keeper
 ---
 
-# ClickHouse Keeper {#clickHouse-keeper}
+# ClickHouse Keeper
 
-ClickHouse server uses [ZooKeeper](https://zookeeper.apache.org/) coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is an alternative coordination system compatible with ZooKeeper.
+ClickHouse Keeper provides the coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is compatible with ZooKeeper.
 
 ## Implementation details {#implementation-details}
 
-ZooKeeper is one of the first well-known open-source coordination systems. It's implemented in Java, has quite a simple and powerful data model. ZooKeeper's coordination algorithm called ZAB (ZooKeeper Atomic Broadcast) doesn't provide linearizability guarantees for reads, because each ZooKeeper node serves reads locally. Unlike ZooKeeper ClickHouse Keeper is written in C++ and uses [RAFT algorithm](https://raft.github.io/) [implementation](https://github.com/eBay/NuRaft). This algorithm allows to have linearizability for reads and writes, has several open-source implementations in different languages.
+ZooKeeper is one of the first well-known open-source coordination systems. It's implemented in Java, and has quite a simple and powerful data model. ZooKeeper's coordination algorithm, ZooKeeper Atomic Broadcast (ZAB), doesn't provide linearizability guarantees for reads, because each ZooKeeper node serves reads locally. Unlike ZooKeeper ClickHouse Keeper is written in C++ and uses the [RAFT algorithm](https://raft.github.io/) [implementation](https://github.com/eBay/NuRaft). This algorithm allows linearizability for reads and writes, and has several open-source implementations in different languages.
 
-By default, ClickHouse Keeper provides the same guarantees as ZooKeeper (linearizable writes, non-linearizable reads). It has a compatible client-server protocol, so any standard ZooKeeper client can be used to interact with ClickHouse Keeper. Snapshots and logs have an incompatible format with ZooKeeper, but `clickhouse-keeper-converter` tool allows to convert ZooKeeper data to ClickHouse Keeper snapshot. Interserver protocol in ClickHouse Keeper is also incompatible with ZooKeeper so mixed ZooKeeper / ClickHouse Keeper cluster is impossible.
+By default, ClickHouse Keeper provides the same guarantees as ZooKeeper (linearizable writes, non-linearizable reads). It has a compatible client-server protocol, so any standard ZooKeeper client can be used to interact with ClickHouse Keeper. Snapshots and logs have an incompatible format with ZooKeeper, but the `clickhouse-keeper-converter` tool enables the conversion of ZooKeeper data to ClickHouse Keeper snapshots. The interserver protocol in ClickHouse Keeper is also incompatible with ZooKeeper so a mixed ZooKeeper / ClickHouse Keeper cluster is impossible.
 
-ClickHouse Keeper supports Access Control List (ACL) the same way as [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) does. ClickHouse Keeper supports the same set of permissions and has the identical built-in schemes: `world`, `auth`, `digest`, `host` and `ip`. Digest authentication scheme uses pair `username:password`. Password is encoded in Base64. 
+ClickHouse Keeper supports Access Control Lists (ACLs) the same way as [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) does. ClickHouse Keeper supports the same set of permissions and has the identical built-in schemes: `world`, `auth` and `digest`. The digest authentication scheme uses the pair `username:password`, the password is encoded in Base64.
 
-!!! info "Note"
-    External integrations are not supported.
+:::note
+External integrations are not supported.
+:::
 
 ## Configuration {#configuration}
 
-ClickHouse Keeper can be used as a standalone replacement for ZooKeeper or as an internal part of the ClickHouse server, but in both cases configuration is almost the same `.xml` file. The main ClickHouse Keeper configuration tag is `<keeper_server>`. Keeper configuration has the following parameters:
+ClickHouse Keeper can be used as a standalone replacement for ZooKeeper or as an internal part of the ClickHouse server. In both cases the configuration is almost the same `.xml` file. The main ClickHouse Keeper configuration tag is `<keeper_server>`. Keeper configuration has the following parameters:
 
 -    `tcp_port` — Port for a client to connect (default for ZooKeeper is `2181`).
 -    `tcp_port_secure` — Secure port for an SSL connection between client and keeper-server.
 -    `server_id` — Unique server id, each participant of the ClickHouse Keeper cluster must have a unique number (1, 2, 3, and so on).
--    `log_storage_path` — Path to coordination logs, better to store logs on the non-busy device (same for ZooKeeper).
+-    `log_storage_path` — Path to coordination logs, just like ZooKeeper it is best to store logs on non-busy nodes.
 -    `snapshot_storage_path` — Path to coordination snapshots.
 
 Other common parameters are inherited from the ClickHouse server config (`listen_host`, `logger`, and so on).
 
-Internal coordination settings are located in `<keeper_server>.<coordination_settings>` section:
+Internal coordination settings are located in the `<keeper_server>.<coordination_settings>` section:
 
 -    `operation_timeout_ms` — Timeout for a single client operation (ms) (default: 10000).
 -    `min_session_timeout_ms` — Min timeout for client session (ms) (default: 10000).
 -    `session_timeout_ms` — Max timeout for client session (ms) (default: 100000).
--    `dead_session_check_period_ms` — How often ClickHouse Keeper check dead sessions and remove them (ms) (default: 500).
+-    `dead_session_check_period_ms` — How often ClickHouse Keeper checks for dead sessions and removes them (ms) (default: 500).
 -    `heart_beat_interval_ms` — How often a ClickHouse Keeper leader will send heartbeats to followers (ms) (default: 500).
--    `election_timeout_lower_bound_ms` — If the follower didn't receive heartbeats from the leader in this interval, then it can initiate leader election (default: 1000).
--    `election_timeout_upper_bound_ms` — If the follower didn't receive heartbeats from the leader in this interval, then it must initiate leader election (default: 2000).
+-    `election_timeout_lower_bound_ms` — If the follower does not receive a heartbeat from the leader in this interval, then it can initiate leader election (default: 1000).
+-    `election_timeout_upper_bound_ms` — If the follower does not receive a heartbeat from the leader in this interval, then it must initiate leader election (default: 2000).
 -    `rotate_log_storage_interval` — How many log records to store in a single file (default: 100000).
 -    `reserved_log_items` — How many coordination log records to store before compaction (default: 100000).
 -    `snapshot_distance` — How often ClickHouse Keeper will create new snapshots (in the number of records in logs) (default: 100000).
@@ -52,9 +53,9 @@ Internal coordination settings are located in `<keeper_server>.<coordination_set
 -    `auto_forwarding` — Allow to forward write requests from followers to the leader (default: true).
 -    `shutdown_timeout` — Wait to finish internal connections and shutdown (ms) (default: 5000).
 -    `startup_timeout` — If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms) (default: 30000).
--    `four_letter_word_allow_list` — Allow list of 4lw commands (default: "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro").
+-    `four_letter_word_white_list` — White list of 4lw commands (default: `conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro`).
 
-Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description.
+Quorum configuration is located in the `<keeper_server>.<raft_configuration>` section and contain servers description.
 
 The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The parameter can be set `true` if SSL connection is required for internal communication between nodes, or left unspecified otherwise.
 
@@ -64,6 +65,9 @@ The main parameters for each `<server>` are:
 -    `hostname` — Hostname where this server is placed.
 -    `port` — Port where this server listens for connections.
 
+:::note
+In the case of a change in the topology of your ClickHouse Keeper cluster (e.g., replacing a server), please make sure to keep the mapping of `server_id` to `hostname` consistent and avoid shuffling or reusing an existing `server_id` for different servers (e.g., it can happen if your rely on automation scripts to deploy ClickHouse Keeper)
+:::
 
 Examples of configuration for quorum with three nodes can be found in [integration tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) with `test_keeper_` prefix. Example configuration for server #1:
 
@@ -108,7 +112,7 @@ ClickHouse Keeper is bundled into the ClickHouse server package, just add config
 clickhouse-keeper --config /etc/your_path_to_config/config.xml
 ```
 
-If you don't have the symlink (`clickhouse-keeper`) you can create it or specify `keeper` as argument:
+If you don't have the symlink (`clickhouse-keeper`) you can create it or specify `keeper` as an argument to `clickhouse`:
 
 ```bash
 clickhouse keeper --config /etc/your_path_to_config/config.xml
@@ -116,9 +120,9 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
 
 ## Four Letter Word Commands {#four-letter-word-commands}
 
-ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.  
+ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.
 
-The 4lw commands has a allow list configuration `four_letter_word_allow_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro".
+The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value `conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro`.
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
 
@@ -128,7 +132,7 @@ echo mntr | nc localhost 9181
 
 Bellow is the detailed 4lw commands:
 
-- `ruok`: Tests if server is running in a non-error state. The server will respond with imok if it is running. Otherwise it will not respond at all. A response of "imok" does not necessarily indicate that the server has joined the quorum, just that the server process is active and bound to the specified client port. Use "stat" for details on state wrt quorum and client connection information.
+- `ruok`: Tests if server is running in a non-error state. The server will respond with `imok` if it is running. Otherwise it will not respond at all. A response of `imok` does not necessarily indicate that the server has joined the quorum, just that the server process is active and bound to the specified client port. Use "stat" for details on state wrt quorum and client connection information.
 
 ```
 imok
@@ -198,7 +202,7 @@ Server stats reset.
 ```
 server_id=1
 tcp_port=2181
-four_letter_word_allow_list=*
+four_letter_word_white_list=*
 log_storage_path=./coordination/logs
 snapshot_storage_path=./coordination/snapshots
 max_requests_batch_size=100
@@ -318,3 +322,28 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 4. Copy snapshot to ClickHouse server nodes with a configured `keeper` or start ClickHouse Keeper instead of ZooKeeper. The snapshot must persist on all nodes, otherwise, empty nodes can be faster and one of them can become a leader.
 
 [Original article](https://clickhouse.com/docs/en/operations/clickhouse-keeper/) <!--hide-->
+
+## Recovering after losing quorum
+
+Because ClickHouse Keeper uses Raft it can tolerate certain amount of node crashes depending on the cluster size. \
+E.g. for a 3-node cluster, it will continue working correctly if only 1 node crashes.
+
+Cluster configuration can be dynamically configured but there are some limitations. Reconfiguration relies on Raft also
+so to add/remove a node from the cluster you need to have a quorum. If you lose too many nodes in your cluster at the same time without any chance
+of starting them again, Raft will stop working and not allow you to reconfigure your cluster using the conventional way.
+
+Nevertheless, ClickHouse Keeper has a recovery mode which allows you to forcefully reconfigure your cluster with only 1 node.
+This should be done only as your last resort if you cannot start your nodes again, or start a new instance on the same endpoint.
+
+Important things to note before continuing:
+- Make sure that the failed nodes cannot connect to the cluster again.
+- Do not start any of the new nodes until it's specified in the steps.
+
+After making sure that the above things are true, you need to do following:
+1. Pick a single Keeper node to be your new leader. Be aware that the data of that node will be used for the entire cluster so we recommend to use a node with the most up to date state.
+2. Before doing anything else, make a backup of the `log_storage_path` and `snapshot_storage_path` folders of the picked node.
+3. Reconfigure the cluster on all of the nodes you want to use.
+4. Send the four letter command `rcvr` to the node you picked which will move the node to the recovery mode OR stop Keeper instance on the picked node and start it again with the `--force-recovery` argument.
+5. One by one, start Keeper instances on the new nodes making sure that `mntr` returns `follower` for the `zk_server_state` before starting the next one.
+6. While in the recovery mode, the leader node will return error message for `mntr` command until it achieves quorum with the new nodes and refuse any requests from the client and the followers.
+7. After quorum is achieved, the leader node will return to the normal mode of operation, accepting all the requests using Raft - verify with `mntr` which should return `leader` for the `zk_server_state`.

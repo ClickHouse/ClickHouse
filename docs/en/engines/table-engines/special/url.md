@@ -1,9 +1,9 @@
 ---
-toc_priority: 41
-toc_title: URL
+sidebar_position: 80
+sidebar_label:  URL
 ---
 
-# URL Table Engine {#table_engines-url}
+# URL Table Engine
 
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
@@ -13,10 +13,10 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](../../../interfaces/formats.md#formats).
 
-- `CompressionMethod` indicates that whether the HTTP body should be compressed. If the compression is enabled, the HTTP packets sent by the URL engine contain 'Content-Encoding' header to indicate which compression method is used. 
+- `CompressionMethod` indicates that whether the HTTP body should be compressed. If the compression is enabled, the HTTP packets sent by the URL engine contain 'Content-Encoding' header to indicate which compression method is used.
 
 To enable compression, please first make sure the remote HTTP endpoint indicated by the `URL` parameter supports corresponding compression algorithm.
-   
+
 The supported `CompressionMethod` should be one of following:
 - gzip or gz
 - deflate
@@ -89,4 +89,3 @@ SELECT * FROM url_engine_table
     -   Indexes.
     -   Replication.
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/url/) <!--hide-->

@@ -18,6 +18,8 @@ enum SessionLogElementType : int8_t
 };
 
 class ContextAccess;
+struct User;
+using UserPtr = std::shared_ptr<const User>;
 
 /** A struct which will be inserted as row into session_log table.
   *
@@ -44,8 +46,8 @@ struct SessionLogElement
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
-    String user;
-    AuthenticationType user_identified_with = AuthenticationType::NO_PASSWORD;
+    std::optional<String> user;
+    std::optional<AuthenticationType> user_identified_with;
     String external_auth_server;
     Strings roles;
     Strings profiles;
@@ -60,6 +62,7 @@ struct SessionLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
+    static const char * getCustomColumnList() { return nullptr; }
 };
 
 
@@ -69,9 +72,9 @@ class SessionLog : public SystemLog<SessionLogElement>
     using SystemLog<SessionLogElement>::SystemLog;
 
 public:
-    void addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context);
-    void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const String & user, const Exception & reason);
-    void addLogOut(const UUID & auth_id, const String & user, const ClientInfo & client_info);
+    void addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const UserPtr & login_user);
+    void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const std::optional<String> & user, const Exception & reason);
+    void addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info);
 };
 
 }

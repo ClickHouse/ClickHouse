@@ -119,7 +119,7 @@ TEST(DateLUTTest, TimeValuesInMiddleOfRange)
     EXPECT_EQ(lut.toSecond(time), 11 /*unsigned*/);
     EXPECT_EQ(lut.toMinute(time), 20 /*unsigned*/);
     EXPECT_EQ(lut.toStartOfMinute(time), 1568650800 /*time_t*/);
-    EXPECT_EQ(lut.toStartOfFiveMinute(time), 1568650800 /*time_t*/);
+    EXPECT_EQ(lut.toStartOfFiveMinutes(time), 1568650800 /*time_t*/);
     EXPECT_EQ(lut.toStartOfFifteenMinutes(time), 1568650500 /*time_t*/);
     EXPECT_EQ(lut.toStartOfTenMinutes(time), 1568650800 /*time_t*/);
     EXPECT_EQ(lut.toStartOfHour(time), 1568649600 /*time_t*/);
@@ -181,7 +181,7 @@ TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
     EXPECT_EQ(lut.toSecond(time), 0 /*unsigned*/);
     EXPECT_EQ(lut.toMinute(time), 0 /*unsigned*/);
     EXPECT_EQ(lut.toStartOfMinute(time), 0 /*time_t*/);
-    EXPECT_EQ(lut.toStartOfFiveMinute(time), 0 /*time_t*/);
+    EXPECT_EQ(lut.toStartOfFiveMinutes(time), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfFifteenMinutes(time), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfTenMinutes(time), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfHour(time), 0 /*time_t*/);
@@ -244,7 +244,7 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
     EXPECT_EQ(lut.toMinute(time), 17 /*unsigned*/);
     EXPECT_EQ(lut.toSecond(time), 53 /*unsigned*/);
     EXPECT_EQ(lut.toStartOfMinute(time), 4294343820 /*time_t*/);
-    EXPECT_EQ(lut.toStartOfFiveMinute(time), 4294343700 /*time_t*/);
+    EXPECT_EQ(lut.toStartOfFiveMinutes(time), 4294343700 /*time_t*/);
     EXPECT_EQ(lut.toStartOfFifteenMinutes(time), 4294343700 /*time_t*/);
     EXPECT_EQ(lut.toStartOfTenMinutes(time), 4294343400 /*time_t*/);
     EXPECT_EQ(lut.toStartOfHour(time), 4294342800 /*time_t*/);

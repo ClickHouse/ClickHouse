@@ -9,12 +9,15 @@ import sys
 from github import Github
 
 from env_helper import CACHES_PATH, TEMP_PATH
-from pr_info import PRInfo
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status
+from commit_status_helper import (
+    post_commit_status,
+    fail_simple_check,
+)
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -25,7 +28,7 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
-NAME = "Fast test (actions)"
+NAME = "Fast test"
 
 
 def get_fasttest_cmd(
@@ -84,7 +87,6 @@ if __name__ == "__main__":
     stopwatch = Stopwatch()
 
     temp_path = TEMP_PATH
-    caches_path = CACHES_PATH
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -110,7 +112,10 @@ if __name__ == "__main__":
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
-    cache_path = os.path.join(caches_path, "fasttest")
+    if not os.path.exists(CACHES_PATH):
+        os.makedirs(CACHES_PATH)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {CACHES_PATH}", shell=True)
+    cache_path = os.path.join(CACHES_PATH, "fasttest")
 
     logging.info("Will try to fetch cache for our build")
     ccache_for_pr = get_ccache_if_not_exists(
@@ -214,7 +219,8 @@ if __name__ == "__main__":
 
     # Refuse other checks to run if fast test failed
     if state != "success":
-        if "force-tests" in pr_info.labels and state != "error":
-            print("'force-tests' enabled, will report success")
+        if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
+            print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
+            fail_simple_check(gh, pr_info, f"{NAME} failed")
             sys.exit(1)

@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: "База данных"
+sidebar_position: 35
+sidebar_label: "База данных"
 ---
 
 # CREATE DATABASE {#query-language-create-database}

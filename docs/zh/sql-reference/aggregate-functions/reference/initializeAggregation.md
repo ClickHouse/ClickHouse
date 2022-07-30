@@ -1,5 +1,5 @@
 ---
-toc_priority: 150
+sidebar_position: 150
 ---
 
 ## initializeAggregation {#initializeaggregation}

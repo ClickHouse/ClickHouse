@@ -1,8 +1,4 @@
 {
-    "docker/packager/deb": {
-        "name": "clickhouse/deb-builder",
-        "dependent": []
-    },
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
         "dependent": [
@@ -149,13 +145,7 @@
     "docker/docs/builder": {
         "name": "clickhouse/docs-builder",
         "dependent": [
-            "docker/docs/check",
-            "docker/docs/release"
         ]
-    },
-    "docker/docs/check": {
-        "name": "clickhouse/docs-check",
-        "dependent": []
     },
     "docker/docs/release": {
         "name": "clickhouse/docs-release",
