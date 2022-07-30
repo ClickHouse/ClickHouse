@@ -166,8 +166,7 @@ def test_deduplication_while_move(started_cluster):
             n.query(
                 "SELECT count() FROM test_deduplication_d",
                 settings={
-                    "allow_experimental_query_deduplication": 1,
-                    "allow_experimental_projection_optimization": 1,
+                    "allow_experimental_query_deduplication": 1
                 },
             )
         ) == TSV("2")
