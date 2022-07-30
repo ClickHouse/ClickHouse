@@ -11,9 +11,6 @@ aes-192-cbc	1
 aes-256-cbc	1
 aes-256-cbc	1
 aes-256-cbc	1
-aes-128-cfb128	1
-aes-128-cfb128	1
-aes-128-cfb128	1
 aes-128-ecb	1
 aes-128-ecb	1
 aes-128-ecb	1
@@ -42,9 +39,6 @@ aes-192-cbc	1
 aes-256-cbc	1
 aes-256-cbc	1
 aes-256-cbc	1
-aes-128-cfb128	1
-aes-128-cfb128	1
-aes-128-cfb128	1
 aes-128-ctr	1
 aes-128-ctr	1
 aes-128-ctr	1

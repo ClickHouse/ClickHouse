@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# max {#agg_function-max}
+# max
 
 Aggregate function that calculates the maximum across a group of values.
 

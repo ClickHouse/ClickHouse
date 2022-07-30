@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -429,6 +430,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
     auto pipeline = select.buildQueryPipeline();
     pipeline.resize(1);
+    pipeline.dropTotalsAndExtremes();
 
     /// Squashing is needed here because the materialized view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

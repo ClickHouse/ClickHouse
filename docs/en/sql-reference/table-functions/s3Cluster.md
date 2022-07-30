@@ -3,7 +3,7 @@ sidebar_position: 55
 sidebar_label: s3Cluster
 ---
 
-# s3Cluster Table Function {#s3Cluster-table-function}
+# s3Cluster Table Function
 
 Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterics in S3 file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 

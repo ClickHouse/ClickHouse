@@ -20,7 +20,7 @@ namespace DB
         }
 
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
 
             if (background_exception)
                 std::rethrow_exception(background_exception);
@@ -30,7 +30,7 @@ namespace DB
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
     {
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             if (background_exception && can_throw_exception)
                 std::rethrow_exception(background_exception);
         }
@@ -178,40 +178,41 @@ namespace DB
 
             switch (unit.type)
             {
-                case ProcessingUnitType::START :
+                case ProcessingUnitType::START:
                 {
                     formatter->writePrefix();
                     break;
                 }
-                case ProcessingUnitType::PLAIN :
+                case ProcessingUnitType::PLAIN:
                 {
                     formatter->consume(std::move(unit.chunk));
                     break;
                 }
-                case ProcessingUnitType::PLAIN_FINISH :
+                case ProcessingUnitType::PLAIN_FINISH:
                 {
                     formatter->writeSuffix();
                     break;
                 }
-                case ProcessingUnitType::TOTALS :
+                case ProcessingUnitType::TOTALS:
                 {
                     formatter->consumeTotals(std::move(unit.chunk));
                     break;
                 }
-                case ProcessingUnitType::EXTREMES :
+                case ProcessingUnitType::EXTREMES:
                 {
                     if (are_totals_written)
                         formatter->setTotalsAreWritten();
                     formatter->consumeExtremes(std::move(unit.chunk));
                     break;
                 }
-                case ProcessingUnitType::FINALIZE :
+                case ProcessingUnitType::FINALIZE:
                 {
                     formatter->setOutsideStatistics(std::move(unit.statistics));
                     formatter->finalizeImpl();
                     break;
                 }
             }
+
             /// Flush all the data to handmade buffer.
             formatter->flush();
             unit.actual_memory_size = out_buffer.getActualSize();

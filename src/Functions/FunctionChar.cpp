@@ -113,7 +113,7 @@ private:
     }
 };
 
-void registerFunctionChar(FunctionFactory & factory)
+REGISTER_FUNCTION(Char)
 {
     factory.registerFunction<FunctionChar>(FunctionFactory::CaseInsensitive);
 }

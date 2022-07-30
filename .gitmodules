@@ -79,16 +79,13 @@
 	url = https://github.com/ClickHouse/snappy.git
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
-	url = https://github.com/ClickHouse/cppkafka.git
+	url = https://github.com/mfontanini/cppkafka.git
 [submodule "contrib/brotli"]
 	path = contrib/brotli
-	url = https://github.com/ClickHouse/brotli.git
+	url = https://github.com/google/brotli.git
 [submodule "contrib/h3"]
 	path = contrib/h3
 	url = https://github.com/ClickHouse/h3
-[submodule "contrib/hyperscan"]
-	path = contrib/hyperscan
-	url = https://github.com/ClickHouse/hyperscan.git
 [submodule "contrib/libunwind"]
 	path = contrib/libunwind
 	url = https://github.com/ClickHouse/libunwind.git
@@ -144,7 +141,7 @@
 	ignore = untracked
 [submodule "contrib/msgpack-c"]
 	path = contrib/msgpack-c
-	url = https://github.com/ClickHouse/msgpack-c
+	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
 	url = https://github.com/ClickHouse/libcpuid.git
@@ -262,9 +259,24 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/qpl"]
+	path = contrib/qpl
+	url = https://github.com/intel/qpl.git
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash.git
 [submodule "contrib/hashidsxx"]
 	path = contrib/hashidsxx
 	url = https://github.com/schoentoon/hashidsxx.git
+[submodule "contrib/nats-io"]
+	path = contrib/nats-io
+	url = https://github.com/ClickHouse/nats.c.git
+[submodule "contrib/vectorscan"]
+	path = contrib/vectorscan
+	url = https://github.com/VectorCamp/vectorscan.git
+[submodule "contrib/liburing"]
+	path = contrib/liburing
+	url = https://github.com/axboe/liburing.git
+[submodule "contrib/c-ares"]
+	path = contrib/c-ares
+	url = https://github.com/ClickHouse/c-ares

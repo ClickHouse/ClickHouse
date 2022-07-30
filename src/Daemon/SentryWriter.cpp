@@ -149,7 +149,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         sentry_set_tag("signal", strsignal(sig));
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
 
-        #if defined(__ELF__) && !defined(__FreeBSD__)
+        #if defined(__ELF__) && !defined(OS_FREEBSD)
             const String & build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
             sentry_set_tag("build_id", build_id_hex.c_str());
         #endif

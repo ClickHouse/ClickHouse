@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/Exception.h"
 #include <cstddef>
 #include <type_traits>
 
@@ -190,27 +191,29 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            bool result_is_bool = isBool(result_type);
-            for (size_t i = 0; i < input_rows_count; ++i)
+            if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
             {
-                if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+                if (isBool(result_type))
                 {
-                    if (result_is_bool)
+                    for (size_t i = 0; i < input_rows_count; ++i)
                     {
                         vec_to[i] = vec_from[i] != FromFieldType(0);
-                        continue;
                     }
+                    goto done;
                 }
+            }
 
-                if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
+            if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
+            {
+                throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else
+            {
+                if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
-                    throw Exception("Conversion between numeric types and UUID is not supported", ErrorCodes::NOT_IMPLEMENTED);
-                }
-                else
-                {
-                    if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                     {
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             ToFieldType result;
                             bool convert_result = false;
@@ -230,7 +233,10 @@ struct ConvertImpl
                                 (*vec_null_map_to)[i] = true;
                             }
                         }
-                        else
+                    }
+                    else
+                    {
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
                                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
@@ -242,10 +248,13 @@ struct ConvertImpl
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                         }
                     }
-                    else
+                }
+                else
+                {
+                    /// If From Data is Nan or Inf and we convert to integer type, throw exception
+                    if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
                     {
-                        /// If From Data is Nan or Inf and we convert to integer type, throw exception
-                        if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             if (!isFinite(vec_from[i]))
                             {
@@ -253,15 +262,46 @@ struct ConvertImpl
                                 {
                                     vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
-                                    continue;
                                 }
                                 else
                                     throw Exception("Unexpected inf or nan to integer conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                             }
-                        }
+                            else
+                            {
+                                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                                        || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                                {
+                                    bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
 
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-                                || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                                    if (!convert_result)
+                                    {
+                                        if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                                        {
+                                            vec_to[i] = 0;
+                                            (*vec_null_map_to)[i] = true;
+                                        }
+                                        else
+                                        {
+                                            throw Exception(
+                                                "Value in column " + named_from.column->getName() + " cannot be safely converted into type "
+                                                    + result_type->getName(),
+                                                ErrorCodes::CANNOT_CONVERT_TYPE);
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                                }
+                            }
+                        }
+                        goto done;
+                    }
+
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                            || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                    {
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
 
@@ -281,13 +321,37 @@ struct ConvertImpl
                                 }
                             }
                         }
+                    }
+                    else
+                    {
+                        if constexpr (std::is_same_v<FromDataType, DataTypeUInt64> && std::is_same_v<ToDataType, DataTypeFloat32>)
+                        {
+                            /// Turns out that when ClickHouse is compiled with AVX1 or AVX2 instructions, Clang's autovectorizer produces
+                            /// code for UInt64-to-Float23 conversion which is only ~50% as fast as scalar code. Interestingly, scalar code
+                            /// is equally fast than code compiled for SSE4.2, so we might as well disable vectorization. This situation
+                            /// may change with AVX512 which has a dediated instruction for that usecase (_mm512_cvtepi64_ps).
+#if defined(__x86_64__)
+#  ifdef __clang__
+#    pragma clang loop vectorize(disable) interleave(disable)
+#  endif
+#endif
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            }
+                        }
                         else
                         {
-                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            }
                         }
                     }
                 }
             }
+
+done:
 
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
@@ -705,7 +769,7 @@ template <>
 struct FormatImpl<DataTypeDate32>
 {
     template <typename ReturnType = void>
-    static ReturnType execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl *)
+    static ReturnType execute(const DataTypeDate32::FieldType x, WriteBuffer & wb, const DataTypeDate32 *, const DateLUTImpl *)
     {
         writeDateText(ExtendedDayNum(x), wb);
         return ReturnType(true);
@@ -1046,13 +1110,11 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
 
 /** Throw exception with verbose message when string value is not parsed completely.
   */
-[[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, const DataTypePtr result_type)
+[[noreturn]] inline void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, const IDataType & result_type)
 {
-    const IDataType & to_type = *result_type;
-
     WriteBufferFromOwnString message_buf;
     message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
-                << " as " << to_type.getName()
+                << " as " << result_type.getName()
                 << ": syntax error";
 
     if (read_buffer.offset())
@@ -1062,8 +1124,8 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
         message_buf << " at begin of string";
 
     // Currently there are no functions toIPv{4,6}Or{Null,Zero}
-    if (isNativeNumber(to_type) && !(to_type.getName() == "IPv4" || to_type.getName() == "IPv6"))
-        message_buf << ". Note: there are to" << to_type.getName() << "OrZero and to" << to_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
+    if (isNativeNumber(result_type) && !(result_type.getName() == "IPv4" || result_type.getName() == "IPv6"))
+        message_buf << ". Note: there are to" << result_type.getName() << "OrZero and to" << result_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
 
     throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);
 }
@@ -1091,8 +1153,6 @@ struct ConvertThroughParsing
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
-
-    // using ToFieldType = typename ToDataType::FieldType;
 
     static bool isAllRead(ReadBuffer & in)
     {
@@ -1253,7 +1313,7 @@ struct ConvertThroughParsing
                 }
 
                 if (!isAllRead(read_buffer))
-                    throwExceptionForIncompletelyParsedValue(read_buffer, res_type);
+                    throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
             }
             else
             {
@@ -1354,18 +1414,32 @@ struct ConvertImplGenericFromString
         static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
                 "Can be used only to parse from ColumnString or ColumnFixedString");
 
-        const IColumn & col_from = *arguments[0].column;
+        const IColumn & column_from = *arguments[0].column;
         const IDataType & data_type_to = *result_type;
-        if (const StringColumnType * col_from_string = checkAndGetColumn<StringColumnType>(&col_from))
-        {
-            auto res = data_type_to.createColumn();
+        auto res = data_type_to.createColumn();
+        auto serialization = data_type_to.getDefaultSerialization();
+        const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
 
-            IColumn & column_to = *res;
+        executeImpl(column_from, *res, *serialization, input_rows_count, null_map, result_type.get());
+        return res;
+    }
+
+    static void executeImpl(
+        const IColumn & column_from,
+        IColumn & column_to,
+        const ISerialization & serialization_from,
+        size_t input_rows_count,
+        const PaddedPODArray<UInt8> * null_map = nullptr,
+        const IDataType * result_type = nullptr)
+    {
+        static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
+                "Can be used only to parse from ColumnString or ColumnFixedString");
+
+        if (const StringColumnType * col_from_string = checkAndGetColumn<StringColumnType>(&column_from))
+        {
             column_to.reserve(input_rows_count);
 
             FormatSettings format_settings;
-            auto serialization = data_type_to.getDefaultSerialization();
-            const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if (null_map && (*null_map)[i])
@@ -1376,20 +1450,24 @@ struct ConvertImplGenericFromString
 
                 const auto & val = col_from_string->getDataAt(i);
                 ReadBufferFromMemory read_buffer(val.data, val.size);
-
-                serialization->deserializeWholeText(column_to, read_buffer, format_settings);
+                serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
-                    throwExceptionForIncompletelyParsedValue(read_buffer, result_type);
+                {
+                    if (result_type)
+                        throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                    else
+                        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
+                            "Cannot parse string to column {}. Expected eof", column_to.getName());
+                }
             }
-
-            return res;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                    + " of first argument of conversion function from string",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of conversion function from string",
+                column_from.getName());
     }
+
 };
 
 

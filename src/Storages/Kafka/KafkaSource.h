@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
+#include <Common/Stopwatch.h>
 
 
 namespace Poco
@@ -13,7 +14,7 @@ namespace Poco
 namespace DB
 {
 
-class KafkaSource : public SourceWithProgress
+class KafkaSource : public ISource
 {
 public:
     KafkaSource(
@@ -33,6 +34,8 @@ public:
     void commit();
     bool isStalled() const { return !buffer || buffer->isStalled(); }
 
+    void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
+
 private:
     StorageKafka & storage;
     StorageSnapshotPtr storage_snapshot;
@@ -49,6 +52,11 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
     const HandleKafkaErrorMode handle_error_mode;
+
+    Poco::Timespan max_execution_time = 0;
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
+
+    bool checkTimeLimit() const;
 
     Chunk generateImpl();
 };

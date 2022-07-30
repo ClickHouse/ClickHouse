@@ -3,7 +3,7 @@ sidebar_position: 43
 sidebar_label: DETACH
 ---
 
-# DETACH Statement {#detach}
+# DETACH Statement
 
 Makes the server "forget" about the existence of a table, a materialized view, or a dictionary.
 

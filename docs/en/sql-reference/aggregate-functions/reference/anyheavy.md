@@ -2,7 +2,7 @@
 sidebar_position: 103
 ---
 
-# anyHeavy {#anyheavyx}
+# anyHeavy
 
 Selects a frequently occurring value using the [heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf) algorithm. If there is a value that occurs more than in half the cases in each of the query’s execution threads, this value is returned. Normally, the result is nondeterministic.
 
