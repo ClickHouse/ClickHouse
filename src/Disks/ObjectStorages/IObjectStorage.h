@@ -7,6 +7,7 @@
 #include <optional>
 
 #include <Poco/Timestamp.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <IO/ReadSettings.h>

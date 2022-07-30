@@ -259,6 +259,9 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/qpl"]
+	path = contrib/qpl
+	url = https://github.com/intel/qpl.git
 [submodule "contrib/wyhash"]
 	path = contrib/wyhash
 	url = https://github.com/wangyi-fudan/wyhash.git
@@ -274,6 +277,6 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing.git
-[submodule "contrib/base-x"]
-	path = contrib/base-x
-	url = https://github.com/ClickHouse/base-x.git
+[submodule "contrib/c-ares"]
+	path = contrib/c-ares
+	url = https://github.com/ClickHouse/c-ares
