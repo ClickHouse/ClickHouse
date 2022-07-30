@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
-import time
-import os
 import csv
-from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
+import os
+import time
+from typing import Optional
+
 from ci_config import CI_CONFIG
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
+from github import Github
+from github.Commit import Commit
 from pr_info import SKIP_SIMPLE_CHECK_LABEL
 
 RETRY = 5
@@ -22,7 +26,9 @@ def override_status(status, check_name, invert=False):
     return status
 
 
-def get_commit(gh, commit_sha, retry_count=RETRY):
+def get_commit(
+    gh: Github, commit_sha: str, retry_count: int = RETRY
+) -> Optional[Commit]:
     for i in range(retry_count):
         try:
             repo = gh.get_repo(GITHUB_REPOSITORY)
