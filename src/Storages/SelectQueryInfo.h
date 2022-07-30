@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
 
@@ -47,8 +49,6 @@ using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 struct PrewhereInfo
 {
-    /// Actions which are executed in order to alias columns are used for prewhere actions.
-    ActionsDAGPtr alias_actions;
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
     ActionsDAGPtr row_level_filter;
@@ -128,7 +128,6 @@ struct ProjectionCandidate
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
     SortDescription group_by_elements_order_descr;
-    std::shared_ptr<SubqueriesForSets> subqueries_for_sets;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
@@ -137,11 +136,13 @@ struct ProjectionCandidate
   *  that can be used during query processing
   *  inside storage engines.
   */
-struct SelectQueryInfo
+struct SelectQueryInfoBase
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
+
+    std::shared_ptr<const StorageLimitsList> storage_limits;
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -154,6 +155,10 @@ struct SelectQueryInfo
     TreeRewriterResultPtr syntax_analyzer_result;
 
     PrewhereInfoPtr prewhere_info;
+
+    /// This is an additional filer applied to current table.
+    /// It is needed only for additional PK filtering.
+    ASTPtr additional_filter_ast;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
@@ -176,6 +181,16 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+};
+
+/// Contains non-copyable stuff
+struct SelectQueryInfo : SelectQueryInfoBase
+{
+    SelectQueryInfo() = default;
+    SelectQueryInfo(const SelectQueryInfo & other) : SelectQueryInfoBase(other) {}
+
+    /// Make subquery_for_sets reusable across different interpreters.
+    SubqueriesForSets subquery_for_sets;
 };
 
 }

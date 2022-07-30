@@ -1,6 +1,6 @@
 ---
-toc_priority: 44
-toc_title: "Математические функции"
+sidebar_position: 44
+sidebar_label: "Математические функции"
 ---
 
 # Математические функции {#matematicheskie-funktsii}

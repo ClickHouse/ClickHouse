@@ -15,8 +15,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int EMPTY_DATA_PASSED;
     extern const int BAD_ARGUMENTS;
+    extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 static std::optional<NamesAndTypesList> getOrderedColumnsList(
@@ -41,12 +43,18 @@ static std::optional<NamesAndTypesList> getOrderedColumnsList(
     return res;
 }
 
+bool isRetryableSchemaInferenceError(int code)
+{
+    return code == ErrorCodes::EMPTY_DATA_PASSED || code == ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA;
+}
+
 ColumnsDescription readSchemaFromFormat(
     const String & format_name,
     const std::optional<FormatSettings> & format_settings,
-    ReadBufferCreator read_buffer_creator,
-    ContextPtr context,
-    std::unique_ptr<ReadBuffer> & buf_out)
+    ReadBufferIterator & read_buffer_iterator,
+    bool retry,
+    ContextPtr & context,
+    std::unique_ptr<ReadBuffer> & buf)
 {
     NamesAndTypesList names_and_types;
     if (FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format_name))
@@ -58,24 +66,79 @@ ColumnsDescription readSchemaFromFormat(
         }
         catch (const DB::Exception & e)
         {
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}", format_name, e.message());
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, e.message());
         }
     }
     else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
     {
-        buf_out = read_buffer_creator();
-        if (buf_out->eof())
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file, file is empty", format_name);
+        std::string exception_messages;
+        SchemaReaderPtr schema_reader;
+        size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
+        size_t iterations = 0;
+        while (true)
+        {
+            bool is_eof = false;
+            try
+            {
+                buf = read_buffer_iterator();
+                if (!buf)
+                    break;
+                is_eof = buf->eof();
+            }
+            catch (...)
+            {
+                auto exception_message = getCurrentExceptionMessage(false);
+                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file: {}. You can specify the structure manually", format_name, exception_message);
+            }
+            ++iterations;
 
-        auto schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf_out, context, format_settings);
-        try
-        {
-            names_and_types = schema_reader->readSchema();
+            if (is_eof)
+            {
+                auto exception_message = fmt::format("Cannot extract table structure from {} format file, file is empty", format_name);
+
+                if (!retry)
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "{}. You can specify the structure manually", exception_message);
+
+                exception_messages += "\n" + exception_message;
+                continue;
+            }
+
+            try
+            {
+                schema_reader = FormatFactory::instance().getSchemaReader(format_name, *buf, context, format_settings);
+                schema_reader->setMaxRowsToRead(max_rows_to_read);
+                names_and_types = schema_reader->readSchema();
+                break;
+            }
+            catch (...)
+            {
+                auto exception_message = getCurrentExceptionMessage(false);
+                if (schema_reader)
+                {
+                    size_t rows_read = schema_reader->getNumRowsRead();
+                    assert(rows_read <= max_rows_to_read);
+                    max_rows_to_read -= schema_reader->getNumRowsRead();
+                    if (rows_read != 0 && max_rows_to_read == 0)
+                    {
+                        exception_message += "\nTo increase the maximum number of rows to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference";
+                        if (iterations > 1)
+                        {
+                            exception_messages += "\n" + exception_message;
+                            break;
+                        }
+                        retry = false;
+                    }
+                }
+
+                if (!retry || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, exception_message);
+
+                exception_messages += "\n" + exception_message;
+            }
         }
-        catch (const DB::Exception & e)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}", format_name, e.message());
-        }
+
+        if (names_and_types.empty())
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:{}\nYou can specify the structure manually", exception_messages);
 
         /// If we have "INSERT SELECT" query then try to order
         /// columns as they are ordered in table schema for formats
@@ -94,15 +157,15 @@ ColumnsDescription readSchemaFromFormat(
         }
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} file format doesn't support schema inference", format_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} file format doesn't support schema inference. You must specify the structure manually", format_name);
 
     return ColumnsDescription(names_and_types);
 }
 
-ColumnsDescription readSchemaFromFormat(const String & format_name, const std::optional<FormatSettings> & format_settings, ReadBufferCreator read_buffer_creator, ContextPtr context)
+ColumnsDescription readSchemaFromFormat(const String & format_name, const std::optional<FormatSettings> & format_settings, ReadBufferIterator & read_buffer_iterator, bool retry, ContextPtr & context)
 {
     std::unique_ptr<ReadBuffer> buf_out;
-    return readSchemaFromFormat(format_name, format_settings, read_buffer_creator, context, buf_out);
+    return readSchemaFromFormat(format_name, format_settings, read_buffer_iterator, retry, context, buf_out);
 }
 
 DataTypePtr makeNullableRecursivelyAndCheckForNothing(DataTypePtr type)

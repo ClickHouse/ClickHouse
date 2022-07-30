@@ -1,6 +1,6 @@
 ---
-toc_priority: 54
-toc_title: dictionary
+sidebar_position: 54
+sidebar_label: dictionary
 ---
 
 # dictionary {#dictionary-function}

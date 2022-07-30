@@ -1,9 +1,9 @@
 ---
-toc_priority: 28
-toc_title: Visual Interfaces
+sidebar_position: 28
+sidebar_label: Visual Interfaces
 ---
 
-# Visual Interfaces from Third-party Developers {#visual-interfaces-from-third-party-developers}
+# Visual Interfaces from Third-party Developers
 
 ## Open-Source {#open-source}
 
@@ -67,7 +67,7 @@ Features:
 
 ### Grafana {#grafana}
 
-[Grafana](https://grafana.com/grafana/plugins/vertamedia-clickhouse-datasource) is a platform for monitoring and visualization.
+[Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) is a platform for monitoring and visualization.
 
 "Grafana allows you to query, visualize, alert on and understand your metrics no matter where they are stored. Create, explore, and share dashboards with your team and foster a data driven culture. Trusted and loved by the community" &mdash; grafana.com.
 
@@ -146,6 +146,28 @@ Features:
 ### Zeppelin-Interpreter-for-ClickHouse {#zeppelin-interpreter-for-clickhouse}
 
 [Zeppelin-Interpreter-for-ClickHouse](https://github.com/SiderZhang/Zeppelin-Interpreter-for-ClickHouse) is a [Zeppelin](https://zeppelin.apache.org) interpreter for ClickHouse. Compared with JDBC interpreter, it can provide better timeout control for long running queries.
+
+### ClickCat {#clickcat}
+
+[ClickCat](https://github.com/clickcat-project/ClickCat) is a friendly user interface that lets you search, explore and visualize your ClickHouse Data.
+
+Features:
+
+-   An online SQL editor which can run your SQL code without any installing.
+-   You can observe all processes and mutations. For those unfinished processes, you can kill them in ui.
+-   The Metrics contains Cluster Analysis,Data Analysis,Query Analysis.
+
+### ClickVisual {#clickvisual}
+
+[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
+
+Features:
+
+- Supports one-click creation of analysis log libraries
+- Supports log collection configuration management
+- Supports user-defined index configuration
+- Supports alarm configuration
+- Support permission granularity to library and table permission configuration
 
 ## Commercial {#commercial}
 
@@ -239,7 +261,7 @@ Features:
 - Web-based interface.
 
 TABLUM.IO can be run as a self-hosted solution (as a docker image) or in the cloud.
-License: [commercial](https://tablum.io/pricing) product with 3-month free period. 
+License: [commercial](https://tablum.io/pricing) product with 3-month free period.
 
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)

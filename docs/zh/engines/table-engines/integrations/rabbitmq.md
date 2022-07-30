@@ -1,6 +1,6 @@
 ---
-toc_priority: 10
-toc_title: RabbitMQ
+sidebar_position: 10
+sidebar_label: RabbitMQ
 ---
 
 # RabbitMQ 引擎 {#rabbitmq-engine}

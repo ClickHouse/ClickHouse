@@ -196,7 +196,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, context);
-};
+}
 
 bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
@@ -213,11 +213,11 @@ bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
     return false;
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const DataPartStoragePtr & data_part_storage, const std::string & relative_path_prefix) const
 {
-    if (disk->exists(relative_path_prefix + ".idx2"))
+    if (data_part_storage->exists(relative_path_prefix + ".idx2"))
         return {2, ".idx2"};
-    else if (disk->exists(relative_path_prefix + ".idx"))
+    else if (data_part_storage->exists(relative_path_prefix + ".idx"))
         return {1, ".idx"};
     return {0 /* unknown */, ""};
 }

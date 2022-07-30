@@ -1,8 +1,6 @@
 ---
-toc_folder_title: "Вложенные структуры данных"
-toc_hidden: true
-toc_priority: 54
-toc_title: hidden
+sidebar_label: "Вложенные структуры данных"
+sidebar_position: 54
 ---
 
 # Вложенные структуры данных {#vlozhennye-struktury-dannykh}

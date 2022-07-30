@@ -16,7 +16,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/setThreadName.h>
-#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/noexcept_scope.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
@@ -49,7 +49,7 @@ void ThreadStatus::applyQuerySettings()
     initQueryProfiler();
 
     untracked_memory_limit = settings.max_untracked_memory;
-    if (settings.memory_profiler_step && settings.memory_profiler_step < UInt64(untracked_memory_limit))
+    if (settings.memory_profiler_step && settings.memory_profiler_step < static_cast<UInt64>(untracked_memory_limit))
         untracked_memory_limit = settings.memory_profiler_step;
 
 #if defined(OS_LINUX)
@@ -343,7 +343,7 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
-    LockMemoryExceptionInThread lock(VariableContext::Global);
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {
@@ -384,8 +384,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         span.finish_time_us =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-        span.attribute_names.push_back("clickhouse.thread_id");
-        span.attribute_values.push_back(thread_id);
+        span.attributes.push_back(Tuple{"clickhouse.thread_id", toString(thread_id)});
 
         opentelemetry_span_log->add(span);
     }
@@ -401,7 +400,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
-    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below (will reset to its parent).
     memory_tracker.setParent(thread_group->memory_tracker.getParent());
 
     query_id.clear();
@@ -412,7 +410,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     if (os_thread_priority)
     {
         LOG_TRACE(log, "Resetting nice");

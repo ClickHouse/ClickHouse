@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-ordinary-database
 
 # shellcheck disable=SC2015
 
@@ -35,17 +35,16 @@ function thread_insert_rollback()
 
 function thread_select()
 {
-    trap "exit 0" INT
     while true; do
-        # Result of `uniq | wc -l` must be 1 if the first and the last queries got the same result
+        # The first and the last queries must get the same result
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
-        SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt;
+        SET throw_on_unsupported_query_inside_transaction=0;
+        CREATE TEMPORARY TABLE tmp AS SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt FORMAT Null;
         SELECT throwIf((SELECT sum(n) FROM mt) != 0) FORMAT Null;
         SELECT throwIf((SELECT count() FROM mt) % 2 != 0) FORMAT Null;
-        SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt;
-        COMMIT;" | uniq | wc -l | grep -v "^1$" && $CLICKHOUSE_CLIENT -q "SELECT * FROM system.parts
-                    WHERE database='$CLICKHOUSE_DATABASE' AND table='mt'" ||:;
+        select throwIf((SELECT * FROM tmp) != (SELECT arraySort(groupArray(n)), arraySort(groupArray(m)), arraySort(groupArray(_part)) FROM mt)) FORMAT Null;
+        COMMIT;"
     done
 }
 
@@ -54,8 +53,9 @@ thread_insert_commit 2 & PID_2=$!
 thread_insert_rollback 3 & PID_3=$!
 thread_select & PID_4=$!
 wait $PID_1 && wait $PID_2 && wait $PID_3
-kill -INT $PID_4
+kill -TERM $PID_4
 wait
+wait_for_queries_to_finish
 
 $CLICKHOUSE_CLIENT --multiquery --query "
 BEGIN TRANSACTION;

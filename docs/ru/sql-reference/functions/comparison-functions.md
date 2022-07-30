@@ -1,6 +1,6 @@
 ---
-toc_priority: 36
-toc_title: "Функции сравнения"
+sidebar_position: 36
+sidebar_label: "Функции сравнения"
 ---
 
 # Функции сравнения {#funktsii-sravneniia}

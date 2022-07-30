@@ -5,14 +5,12 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MySQL/MySQLHelpers.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
@@ -21,7 +19,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -253,9 +251,9 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "replace_query")
-                configuration.replace_query = arg_value->as<ASTLiteral>()->value.safeGet<bool>();
+                configuration.replace_query = checkAndGetLiteralArgument<bool>(arg_value, "replace_query");
             else if (arg_name == "on_duplicate_clause")
-                configuration.on_duplicate_clause = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+                configuration.on_duplicate_clause = checkAndGetLiteralArgument<String>(arg_value, "on_duplicate_clause");
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."
@@ -273,18 +271,18 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
 
-        const auto & host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-        configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
+        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
+        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
         if (engine_args.size() >= 6)
-            configuration.replace_query = engine_args[5]->as<ASTLiteral &>().value.safeGet<UInt64>();
+            configuration.replace_query = checkAndGetLiteralArgument<UInt64>(engine_args[5], "replace_query");
         if (engine_args.size() == 7)
-            configuration.on_duplicate_clause = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.on_duplicate_clause = checkAndGetLiteralArgument<String>(engine_args[6], "on_duplicate_clause");
     }
     for (const auto & address : configuration.addresses)
         context_->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
@@ -311,7 +309,7 @@ void registerStorageMySQL(StorageFactory & factory)
 
         mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
-        return StorageMySQL::create(
+        return std::make_shared<StorageMySQL>(
             args.table_id,
             std::move(pool),
             configuration.database,

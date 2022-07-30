@@ -5,7 +5,6 @@ import string
 import os
 import time
 from multiprocessing.dummy import Pool
-from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -134,9 +133,9 @@ def test_server_restart(started_cluster):
         node2_zk = get_fake_zk("node2")
         node3_zk = get_fake_zk("node3")
         for child_node in range(1000):
-            stats1 = node1_zk.exists("/test_between_servers/" + str(child_node))
-            stats2 = node2_zk.exists("/test_between_servers/" + str(child_node))
-            stats3 = node3_zk.exists("/test_between_servers/" + str(child_node))
+            stats1 = node1_zk.exists("/test_server_restart/" + str(child_node))
+            stats2 = node2_zk.exists("/test_server_restart/" + str(child_node))
+            stats3 = node3_zk.exists("/test_server_restart/" + str(child_node))
             assert_eq_stats(stats1, stats2)
             assert_eq_stats(stats2, stats3)
 

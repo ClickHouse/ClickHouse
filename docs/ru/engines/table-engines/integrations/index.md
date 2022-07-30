@@ -1,6 +1,6 @@
 ---
-toc_folder_title: "Движки таблиц для интеграции"
-toc_priority: 30
+sidebar_label: "Движки таблиц для интеграции"
+sidebar_position: 30
 ---
 
 # Движки таблиц для интеграции {#table-engines-for-integrations}

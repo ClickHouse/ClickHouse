@@ -1,0 +1,106 @@
+-- enable distinct in order optimization
+-- create table with only primary key columns
+-- the same values in every chunk, pre-distinct should skip entire chunks with the same key as previous one
+0
+-- create table with only primary key columns
+-- pre-distinct should skip part of chunk since it contains values from previous one
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- create table with not only primary key columns
+-- distinct with primary key prefix only
+0
+-- distinct with primary key prefix only, order by sorted column
+0
+-- distinct with primary key prefix only, order by sorted column desc
+0
+-- distinct with full key, order by sorted column
+0	0
+0	1
+0	2
+0	3
+0	4
+-- distinct with full key, order by sorted column desc
+0	4
+0	3
+0	2
+0	1
+0	0
+-- distinct with key prefix and non-sorted column, order by non-sorted
+0	0
+0	1
+0	2
+0	3
+0	4
+0	5
+0	6
+0	7
+0	8
+0	9
+-- distinct with key prefix and non-sorted column, order by non-sorted desc
+0	9
+0	8
+0	7
+0	6
+0	5
+0	4
+0	3
+0	2
+0	1
+0	0
+-- distinct with non-key prefix and non-sorted column, order by non-sorted
+0	0
+1	1
+2	2
+3	3
+4	4
+0	5
+1	6
+2	7
+3	8
+4	9
+-- distinct with non-key prefix and non-sorted column, order by non-sorted desc
+4	9
+3	8
+2	7
+1	6
+0	5
+4	4
+3	3
+2	2
+1	1
+0	0
+-- distinct with constants columns
+-- { echoOn }
+select distinct 1 as x, 2 as y from distinct_in_order;
+1	2
+select distinct 1 as x, 2 as y from distinct_in_order order by x;
+1	2
+select distinct 1 as x, 2 as y from distinct_in_order order by x, y;
+1	2
+select distinct a, 1 as x from distinct_in_order order by x;
+0	1
+select distinct a, 1 as x, 2 as y from distinct_in_order order by a;
+0	1	2
+select distinct a, b, 1 as x, 2 as y from distinct_in_order order by a;
+0	0	1	2
+0	1	1	2
+0	2	1	2
+0	3	1	2
+0	4	1	2
+select distinct x, y from (select 1 as x, 2 as y from distinct_in_order order by x) order by y;
+1	2
+select distinct a, b, x, y from (select a, b, 1 as x, 2 as y from distinct_in_order order by a) order by b;
+0	0	1	2
+0	1	1	2
+0	2	1	2
+0	3	1	2
+0	4	1	2
+-- check that distinct in order has the same result as ordinary distinct

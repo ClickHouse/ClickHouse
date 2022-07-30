@@ -1,18 +1,17 @@
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <fcntl.h>
 #include <dlfcn.h>
 #include <unistd.h>
-#include <time.h>
 #include <csignal>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Common/waitForPid.h>
 
 
 namespace
@@ -94,53 +93,15 @@ ShellCommand::~ShellCommand()
 
 bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
 {
-    int status = 0;
-
     LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {}", pid, timeout_in_seconds);
 
     wait_called = true;
-    struct timespec interval {.tv_sec = 1, .tv_nsec = 0};
 
     in.close();
     out.close();
     err.close();
 
-    if (timeout_in_seconds == 0)
-    {
-        /// If there is no timeout before signal try to waitpid 1 time without block so we can avoid sending
-        /// signal if process is already normally terminated.
-
-        int waitpid_res = waitpid(pid, &status, WNOHANG);
-        bool process_terminated_normally = (waitpid_res == pid);
-        return process_terminated_normally;
-    }
-
-    /// If timeout is positive try waitpid without block in loop until
-    /// process is normally terminated or waitpid return error
-
-    while (timeout_in_seconds != 0)
-    {
-        int waitpid_res = waitpid(pid, &status, WNOHANG);
-        bool process_terminated_normally = (waitpid_res == pid);
-
-        if (process_terminated_normally)
-        {
-            return true;
-        }
-        else if (waitpid_res == 0)
-        {
-            --timeout_in_seconds;
-            nanosleep(&interval, nullptr);
-
-            continue;
-        }
-        else if (waitpid_res == -1 && errno != EINTR)
-        {
-            return false;
-        }
-    }
-
-    return false;
+    return waitForPid(pid, timeout_in_seconds);
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
@@ -207,15 +168,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         /// Replace the file descriptors with the ends of our pipes.
         if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
-            _exit(int(ReturnCodes::CANNOT_DUP_STDIN));
+            _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN));
 
         if (!config.pipe_stdin_only)
         {
             if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
-                _exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT));
 
             if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
-                _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
         for (size_t i = 0; i < config.read_fds.size(); ++i)
@@ -224,7 +185,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             auto fd = config.read_fds[i];
 
             if (fd != dup2(fds.fds_rw[1], fd))
-                _exit(int(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
         }
 
         for (size_t i = 0; i < config.write_fds.size(); ++i)
@@ -233,7 +194,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             auto fd = config.write_fds[i];
 
             if (fd != dup2(fds.fds_rw[0], fd))
-                _exit(int(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
         }
 
         // Reset the signal mask: it may be non-empty and will be inherited
@@ -246,7 +207,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
-        _exit(int(ReturnCodes::CANNOT_EXEC));
+        _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
     }
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(
@@ -356,17 +317,17 @@ void ShellCommand::wait()
     {
         switch (retcode)
         {
-            case int(ReturnCodes::CANNOT_DUP_STDIN):
+            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN):
                 throw Exception("Cannot dup2 stdin of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case int(ReturnCodes::CANNOT_DUP_STDOUT):
+            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT):
                 throw Exception("Cannot dup2 stdout of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case int(ReturnCodes::CANNOT_DUP_STDERR):
+            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR):
                 throw Exception("Cannot dup2 stderr of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case int(ReturnCodes::CANNOT_EXEC):
+            case static_cast<int>(ReturnCodes::CANNOT_EXEC):
                 throw Exception("Cannot execv in child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case int(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR):
+            case static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR):
                 throw Exception("Cannot dup2 read descriptor of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case int(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
+            case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
                 throw Exception("Cannot dup2 write descriptor of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
             default:
                 throw Exception("Child process was exited with return code " + toString(retcode), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);

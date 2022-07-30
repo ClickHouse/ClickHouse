@@ -1,5 +1,5 @@
 ---
-toc_priority: 154
+sidebar_position: 154
 ---
 
 # kurtSamp {#kurtsamp}

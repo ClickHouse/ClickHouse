@@ -145,7 +145,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || FormatFactory::instance().isOutputFormat(what)
                     || FormatFactory::instance().isInputFormat(what)
-                    || additional_names.count(what);
+                    || additional_names.contains(what);
             };
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);

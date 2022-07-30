@@ -85,13 +85,13 @@ ASTPtr ASTDeclareOptions::clone() const
 
 bool ParserAlwaysTrue::parseImpl(IParser::Pos & /*pos*/, ASTPtr & node, Expected & /*expected*/)
 {
-    node = std::make_shared<ASTLiteral>(Field(UInt64(1)));
+    node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(1)));
     return true;
 }
 
 bool ParserAlwaysFalse::parseImpl(IParser::Pos & /*pos*/, ASTPtr & node, Expected & /*expected*/)
 {
-    node = std::make_shared<ASTLiteral>(Field(UInt64(0)));
+    node = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(0)));
     return true;
 }
 

@@ -1,6 +1,6 @@
 ---
-toc_priority: 30
-toc_title: MaterializedPostgreSQL
+sidebar_position: 30
+sidebar_label: MaterializedPostgreSQL
 ---
 
 # [experimental] MaterializedPostgreSQL {#materialize-postgresql}

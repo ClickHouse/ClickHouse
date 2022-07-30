@@ -89,9 +89,9 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperLock.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Common/ZooKeeper/ZooKeeperNodeCache.cpp
 
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/BaseDaemon.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/SentryWriter.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../base/daemon/GraphiteWriter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/BaseDaemon.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/SentryWriter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Daemon/GraphiteWriter.cpp
 
         Keeper.cpp
         TinyContext.cpp
@@ -99,7 +99,7 @@ if (BUILD_STANDALONE_KEEPER)
 
     )
 
-    add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
+    clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
 
     # Remove some redundant dependencies
     target_compile_definitions (clickhouse-keeper PRIVATE -DKEEPER_STANDALONE_BUILD)
@@ -131,10 +131,10 @@ if (BUILD_STANDALONE_KEEPER)
     add_dependencies(clickhouse-keeper clickhouse_keeper_configs)
     set_target_properties(clickhouse-keeper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ../)
 
-    if (INSTALL_STRIPPED_BINARIES)
-        clickhouse_strip_binary(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${STRIPPED_BINARIES_OUTPUT} BINARY_PATH ../clickhouse-keeper)
+    if (SPLIT_DEBUG_SYMBOLS)
+        clickhouse_split_debug_symbols(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLITTED_DEBUG_SYMBOLS_DIR} BINARY_PATH ../clickhouse-keeper)
     else()
-        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${STRIPPED_BINARIES_OUTPUT})
+        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLITTED_DEBUG_SYMBOLS_DIR})
         install(TARGETS clickhouse-keeper RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif()
 endif()

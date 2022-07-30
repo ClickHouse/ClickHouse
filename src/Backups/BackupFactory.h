@@ -12,6 +12,7 @@
 
 namespace DB
 {
+class IBackupCoordination;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
@@ -30,6 +31,9 @@ public:
         int compression_level = -1;
         String password;
         ContextPtr context;
+        bool is_internal_backup = false;
+        std::shared_ptr<IBackupCoordination> backup_coordination;
+        std::optional<UUID> backup_uuid;
     };
 
     static BackupFactory & instance();

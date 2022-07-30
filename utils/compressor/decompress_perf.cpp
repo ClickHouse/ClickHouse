@@ -1,5 +1,5 @@
 #include <lz4.h>
-#include <string.h>
+#include <cstring>
 #include <optional>
 #include <base/types.h>
 
@@ -60,7 +60,7 @@ protected:
         compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
         own_compressed_buffer.resize(COMPRESSED_BLOCK_HEADER_SIZE);
-        compressed_in->readStrict(&own_compressed_buffer[0], COMPRESSED_BLOCK_HEADER_SIZE);
+        compressed_in->readStrict(own_compressed_buffer.data(), COMPRESSED_BLOCK_HEADER_SIZE);
 
         UInt8 method = own_compressed_buffer[0];    /// See CompressedWriteBuffer.h
 
@@ -90,7 +90,7 @@ protected:
         else
         {
             own_compressed_buffer.resize(size_compressed + (variant == LZ4_REFERENCE ? 0 : LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER));
-            compressed_buffer = &own_compressed_buffer[0];
+            compressed_buffer = own_compressed_buffer.data();
             compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
         }
 
@@ -143,7 +143,7 @@ private:
             return false;
 
         memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-        working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
+        working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
         decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
 

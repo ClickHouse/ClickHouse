@@ -1,4 +1,4 @@
-#system.role_grants {#system_tables-role_grants}
+# role_grants 
 
 Contains the role grants for users and roles. To add entries to this table, use `GRANT role TO user`.
 

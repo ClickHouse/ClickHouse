@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -113,7 +113,7 @@ template <>
 const char * FunctionPolygonsUnion<SphericalPoint>::name = "polygonsUnionSpherical";
 
 
-void registerFunctionPolygonsUnion(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonsUnion)
 {
     factory.registerFunction<FunctionPolygonsUnion<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsUnion<SphericalPoint>>();

@@ -1,6 +1,6 @@
 ---
-toc_priority: 39
-toc_title: REVOKE
+sidebar_position: 39
+sidebar_label: REVOKE
 ---
 
 # REVOKE

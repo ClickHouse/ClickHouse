@@ -256,10 +256,10 @@ private:
         return lut[toLUTIndex(v)];
     }
 
-    template <typename T, typename Divisor>
-    inline T roundDown(T x, Divisor divisor) const
+    template <typename DateOrTime, typename Divisor>
+    inline DateOrTime roundDown(DateOrTime x, Divisor divisor) const
     {
-        static_assert(std::is_integral_v<T> && std::is_integral_v<Divisor>);
+        static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         assert(divisor > 0);
 
         if (likely(offset_is_whole_number_of_hours_during_epoch))
@@ -273,7 +273,15 @@ private:
         }
 
         Time date = find(x).date;
-        return date + (x - date) / divisor * divisor;
+        Time res = date + (x - date) / divisor * divisor;
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+        {
+            if (unlikely(res < 0))
+                return 0;
+            return res;
+        }
+        else
+            return res;
     }
 
 public:
@@ -564,11 +572,16 @@ public:
     }
 
     /// NOTE: Assuming timezone offset is a multiple of 15 minutes.
-    inline Time toStartOfMinute(Time t) const { return toStartOfMinuteInterval(t, 1); }
-    inline Time toStartOfFiveMinute(Time t) const { return toStartOfMinuteInterval(t, 5); }
-    inline Time toStartOfFifteenMinutes(Time t) const { return toStartOfMinuteInterval(t, 15); }
-    inline Time toStartOfTenMinutes(Time t) const { return toStartOfMinuteInterval(t, 10); }
-    inline Time toStartOfHour(Time t) const { return roundDown(t, 3600); }
+    template <typename DateOrTime>
+    DateOrTime toStartOfMinute(DateOrTime t) const { return toStartOfMinuteInterval(t, 1); }
+    template <typename DateOrTime>
+    DateOrTime toStartOfFiveMinutes(DateOrTime t) const { return toStartOfMinuteInterval(t, 5); }
+    template <typename DateOrTime>
+    DateOrTime toStartOfFifteenMinutes(DateOrTime t) const { return toStartOfMinuteInterval(t, 15); }
+    template <typename DateOrTime>
+    DateOrTime toStartOfTenMinutes(DateOrTime t) const { return toStartOfMinuteInterval(t, 10); }
+    template <typename DateOrTime>
+    DateOrTime toStartOfHour(DateOrTime t) const { return roundDown(t, 3600); }
 
     /** Number of calendar day since the beginning of UNIX epoch (1970-01-01 is zero)
       * We use just two bytes for it. It covers the range up to 2105 and slightly more.
@@ -953,7 +966,8 @@ public:
             return lut[toLUTIndex(ExtendedDayNum(d / days * days))].date;
     }
 
-    inline Time toStartOfHourInterval(Time t, UInt64 hours) const
+    template <typename DateOrTime>
+    DateOrTime toStartOfHourInterval(DateOrTime t, UInt64 hours) const
     {
         if (hours == 1)
             return toStartOfHour(t);
@@ -993,10 +1007,19 @@ public:
             time = time / seconds * seconds;
         }
 
-        return values.date + time;
+        Time res = values.date + time;
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+        {
+            if (unlikely(res < 0))
+                return 0;
+            return res;
+        }
+        else
+            return res;
     }
 
-    inline Time toStartOfMinuteInterval(Time t, UInt64 minutes) const
+    template <typename DateOrTime>
+    DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
         UInt64 divisor = 60 * minutes;
         if (likely(offset_is_whole_number_of_minutes_during_epoch))
@@ -1007,10 +1030,19 @@ public:
         }
 
         Time date = find(t).date;
-        return date + (t - date) / divisor * divisor;
+        Time res = date + (t - date) / divisor * divisor;
+        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+        {
+            if (unlikely(res < 0))
+                return 0;
+            return res;
+        }
+        else
+            return res;
     }
 
-    inline Time toStartOfSecondInterval(Time t, UInt64 seconds) const
+    template <typename DateOrTime>
+    DateOrTime toStartOfSecondInterval(DateOrTime t, UInt64 seconds) const
     {
         if (seconds == 1)
             return t;

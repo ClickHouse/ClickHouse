@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database
+# Tags: long, no-replicated-database, no-ordinary-database
 
 # shellcheck disable=SC2015
 
@@ -17,7 +17,6 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE dst (n UInt64, type UInt8) ENGINE=Merge
 function thread_insert()
 {
     set -e
-    trap "exit 0" INT
     val=1
     while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
@@ -72,6 +71,7 @@ function thread_partition_dst_to_src()
         $CLICKHOUSE_CLIENT --multiquery --query "
         SYSTEM STOP MERGES dst;
         ALTER TABLE dst DROP PARTITION ID 'nonexistent';  -- STOP MERGES doesn't wait for started merges to finish, so we use this trick
+        SYSTEM SYNC TRANSACTION LOG;
         BEGIN TRANSACTION;
         INSERT INTO dst VALUES /* ($i, 4) */ ($i, 4);
         INSERT INTO src SELECT * FROM dst;
@@ -79,19 +79,13 @@ function thread_partition_dst_to_src()
         SET throw_on_unsupported_query_inside_transaction=0;
         SYSTEM START MERGES dst;
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=4) != (toUInt8($i/2 + 1), (select sum(number) from numbers(1, $i) where number % 2 or number=$i))) FORMAT Null;
-        $action;" || $CLICKHOUSE_CLIENT --multiquery --query "
-                          begin transaction;
-                          set transaction snapshot 3;
-                          select $i, 'src', type, n, _part from src order by type, n;
-                          select $i, 'dst', type, n, _part from dst order by type, n;
-                          rollback" ||:
+        $action;"
     done
 }
 
 function thread_select()
 {
     set -e
-    trap "exit 0" INT
     while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
@@ -103,12 +97,7 @@ function thread_select()
         SELECT _table, throwIf(arraySort(groupArrayIf(n, type=1)) != arraySort(groupArrayIf(n, type=2))) FROM merge(currentDatabase(), '') GROUP BY _table FORMAT Null;
         -- all rows are inserted in insert_thread
         SELECT type, throwIf(count(n) != max(n)), throwIf(sum(n) != max(n)*(max(n)+1)/2) FROM merge(currentDatabase(), '') WHERE type IN (1, 2) GROUP BY type ORDER BY type FORMAT Null;
-        COMMIT;" || $CLICKHOUSE_CLIENT --multiquery --query "
-                         begin transaction;
-                         set transaction snapshot 3;
-                         select $i, 'src', type, n, _part from src order by type, n;
-                         select $i, 'dst', type, n, _part from dst order by type, n;
-                         rollback" ||:
+        COMMIT;"
     done
 }
 
@@ -119,9 +108,10 @@ thread_partition_src_to_dst & PID_3=$!
 thread_partition_dst_to_src & PID_4=$!
 wait $PID_3 && wait $PID_4
 
-kill -INT $PID_1
-kill -INT $PID_2
+kill -TERM $PID_1
+kill -TERM $PID_2
 wait
+wait_for_queries_to_finish
 
 $CLICKHOUSE_CLIENT -q "SELECT type, count(n) = countDistinct(n) FROM merge(currentDatabase(), '') GROUP BY type ORDER BY type"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arraySort(groupArrayIf(n, type=1)) = arraySort(groupArrayIf(n, type=2)) FROM merge(currentDatabase(), '') GROUP BY _table ORDER BY _table"

@@ -7,7 +7,6 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -63,6 +62,7 @@ config = """<clickhouse>
         <default>
             <sleep_in_send_tables_status_ms>{sleep_in_send_tables_status_ms}</sleep_in_send_tables_status_ms>
             <sleep_in_send_data_ms>{sleep_in_send_data_ms}</sleep_in_send_data_ms>
+            <sleep_after_receiving_query_ms>{sleep_after_receiving_query_ms}</sleep_after_receiving_query_ms>
         </default>
     </profiles>
 </clickhouse>"""
@@ -88,7 +88,12 @@ def check_query(expected_replica, receive_timeout=300):
     assert query_time < 10
 
 
-def check_settings(node_name, sleep_in_send_tables_status_ms, sleep_in_send_data_ms):
+def check_settings(
+    node_name,
+    sleep_in_send_tables_status_ms,
+    sleep_in_send_data_ms,
+    sleep_after_receiving_query_ms,
+):
     attempts = 0
     while attempts < 1000:
         setting1 = NODES[node_name].http_query(
@@ -97,9 +102,14 @@ def check_settings(node_name, sleep_in_send_tables_status_ms, sleep_in_send_data
         setting2 = NODES[node_name].http_query(
             "SELECT value FROM system.settings WHERE name='sleep_in_send_data_ms'"
         )
+        setting3 = NODES[node_name].http_query(
+            "SELECT value FROM system.settings WHERE name='sleep_after_receiving_query_ms'"
+        )
+
         if (
             int(setting1) == sleep_in_send_tables_status_ms
             and int(setting2) == sleep_in_send_data_ms
+            and int(setting3) == sleep_after_receiving_query_ms
         ):
             return
         time.sleep(0.1)
@@ -121,16 +131,20 @@ def check_changing_replica_events(expected_count):
 def update_configs(
     node_1_sleep_in_send_tables_status=0,
     node_1_sleep_in_send_data=0,
+    node_1_sleep_after_receiving_query=0,
     node_2_sleep_in_send_tables_status=0,
     node_2_sleep_in_send_data=0,
+    node_2_sleep_after_receiving_query=0,
     node_3_sleep_in_send_tables_status=0,
     node_3_sleep_in_send_data=0,
+    node_3_sleep_after_receiving_query=0,
 ):
     NODES["node_1"].replace_config(
         "/etc/clickhouse-server/users.d/users1.xml",
         config.format(
             sleep_in_send_tables_status_ms=node_1_sleep_in_send_tables_status,
             sleep_in_send_data_ms=node_1_sleep_in_send_data,
+            sleep_after_receiving_query_ms=node_1_sleep_after_receiving_query,
         ),
     )
 
@@ -139,6 +153,7 @@ def update_configs(
         config.format(
             sleep_in_send_tables_status_ms=node_2_sleep_in_send_tables_status,
             sleep_in_send_data_ms=node_2_sleep_in_send_data,
+            sleep_after_receiving_query_ms=node_2_sleep_after_receiving_query,
         ),
     )
 
@@ -147,17 +162,27 @@ def update_configs(
         config.format(
             sleep_in_send_tables_status_ms=node_3_sleep_in_send_tables_status,
             sleep_in_send_data_ms=node_3_sleep_in_send_data,
+            sleep_after_receiving_query_ms=node_3_sleep_after_receiving_query,
         ),
     )
 
     check_settings(
-        "node_1", node_1_sleep_in_send_tables_status, node_1_sleep_in_send_data
+        "node_1",
+        node_1_sleep_in_send_tables_status,
+        node_1_sleep_in_send_data,
+        node_1_sleep_after_receiving_query,
     )
     check_settings(
-        "node_2", node_2_sleep_in_send_tables_status, node_2_sleep_in_send_data
+        "node_2",
+        node_2_sleep_in_send_tables_status,
+        node_2_sleep_in_send_data,
+        node_2_sleep_after_receiving_query,
     )
     check_settings(
-        "node_3", node_3_sleep_in_send_tables_status, node_3_sleep_in_send_data
+        "node_3",
+        node_3_sleep_in_send_tables_status,
+        node_3_sleep_in_send_data,
+        node_3_sleep_after_receiving_query,
     )
 
 
@@ -298,3 +323,21 @@ def test_receive_timeout2(started_cluster):
     )
     check_query(expected_replica="node_2", receive_timeout=3)
     check_changing_replica_events(3)
+
+
+def test_initial_receive_timeout(started_cluster):
+    # Check the situation when replicas don't respond after
+    # receiving query (so, no packets were send to initiator)
+    update_configs(
+        node_1_sleep_after_receiving_query=20000,
+        node_2_sleep_after_receiving_query=20000,
+        node_3_sleep_after_receiving_query=20000,
+    )
+
+    NODES["node"].restart_clickhouse()
+
+    result = NODES["node"].query_and_get_error(
+        "SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1 SETTINGS receive_timeout=3"
+    )
+
+    assert "SOCKET_TIMEOUT" in result

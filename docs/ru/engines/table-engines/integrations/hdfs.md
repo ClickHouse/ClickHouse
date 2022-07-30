@@ -1,6 +1,6 @@
 ---
-toc_priority: 6
-toc_title: HDFS
+sidebar_position: 6
+sidebar_label: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
@@ -96,7 +96,7 @@ CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS(
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-!!! warning "Warning"
+:::danger "Warning"
     Если список файлов содержит числовые интервалы с ведущими нулями, используйте конструкцию с фигурными скобочками для каждой цифры или используйте `?`.
 
 **Example**
@@ -183,7 +183,6 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 | -                                                     | -                       |
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
-|hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
 ### Ограничения {#limitations}
   * `hadoop_security_kerberos_ticket_cache_path` и `libhdfs3_conf` могут быть определены только на глобальном, а не на пользовательском уровне
@@ -196,7 +195,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 коммуникация с узлами данных не защищена SASL (`HADOOP_SECURE_DN_USER` надежный показатель такого
 подхода к безопасности). Используйте `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` для примера настроек.
 
-Если `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` или `hadoop_kerberos_kinit_command` указаны в настройках, `kinit` будет вызван. `hadoop_kerberos_keytab` и `hadoop_kerberos_principal` обязательны в этом случае. Необходимо также будет установить `kinit` и файлы конфигурации krb5.
+Если `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` или `hadoop_security_kerberos_ticket_cache_path` указаны в настройках, будет использоваться аутентификация с помощью Kerberos. `hadoop_kerberos_keytab` и `hadoop_kerberos_principal` обязательны в этом случае.
 
 ## Виртуальные столбцы {#virtual-columns}
 

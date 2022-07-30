@@ -2,7 +2,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
+#include <Common/FileSegment.h>
 #include <Common/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
@@ -37,13 +38,14 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
 
     for (const auto & [cache_base_path, cache_data] : caches)
     {
-        const auto & cache = cache_data.cache;
+        const auto & cache = cache_data->cache;
         auto file_segments = cache->getSnapshot();
 
         for (const auto & file_segment : file_segments)
         {
             res_columns[0]->insert(cache_base_path);
-            res_columns[1]->insert(cache->getPathInLocalCache(file_segment->key(), file_segment->offset()));
+            res_columns[1]->insert(
+                cache->getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->isPersistent()));
 
             const auto & range = file_segment->range();
             res_columns[2]->insert(range.left);

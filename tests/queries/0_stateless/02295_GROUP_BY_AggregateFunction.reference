@@ -1,0 +1,30 @@
+-- { echoOn }
+SELECT grp_aggreg FROM data_02295 GROUP BY a, grp_aggreg SETTINGS optimize_aggregation_in_order = 0 FORMAT JSONEachRow;
+{"grp_aggreg":"\u0002\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000"}
+{"grp_aggreg":"\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000"}
+SELECT grp_aggreg FROM data_02295 GROUP BY a, grp_aggreg SETTINGS optimize_aggregation_in_order = 1 FORMAT JSONEachRow;
+{"grp_aggreg":"\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000"}
+{"grp_aggreg":"\u0002\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000"}
+SELECT grp_aggreg FROM data_02295 GROUP BY a, grp_aggreg WITH TOTALS SETTINGS optimize_aggregation_in_order = 0 FORMAT JSONEachRow;
+{"grp_aggreg":"\u0002\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000"}
+{"grp_aggreg":"\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000"}
+SELECT grp_aggreg FROM data_02295 GROUP BY a, grp_aggreg WITH TOTALS SETTINGS optimize_aggregation_in_order = 1 FORMAT JSONEachRow;
+{"grp_aggreg":"\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000"}
+{"grp_aggreg":"\u0002\u0002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0000\u0000"}
+-- regression for incorrect positions passed to finalizeChunk()
+SELECT a, min(b), max(b) FROM data_02295 GROUP BY a ORDER BY a, count() SETTINGS optimize_aggregation_in_order = 1;
+0	0	0
+1	0	0
+SELECT a, min(b), max(b) FROM data_02295 GROUP BY a ORDER BY a, count() SETTINGS optimize_aggregation_in_order = 1, max_threads = 1;
+0	0	0
+1	0	0
+SELECT a, min(b), max(b) FROM data_02295 GROUP BY a WITH TOTALS ORDER BY a, count() SETTINGS optimize_aggregation_in_order = 1;
+0	0	0
+1	0	0
+
+0	0	0
+SELECT a, min(b), max(b) FROM data_02295 GROUP BY a WITH TOTALS ORDER BY a, count() SETTINGS optimize_aggregation_in_order = 1, max_threads = 1;
+0	0	0
+1	0	0
+
+0	0	0

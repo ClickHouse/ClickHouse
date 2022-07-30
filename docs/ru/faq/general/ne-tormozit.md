@@ -1,7 +1,6 @@
 ---
 title: "What does “не тормозит” mean?"
-toc_hidden: true
-toc_priority: 11
+sidebar_position: 11
 ---
 
 # Что значит “Не тормозит”? {#what-does-ne-tormozit-mean}

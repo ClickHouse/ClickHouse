@@ -1,10 +1,10 @@
 ---
-toc_priority: 108
+sidebar_position: 108
 ---
 
-## exponentialMovingAverage {#exponential-moving-average}
+## exponentialMovingAverage
 
-Сalculates the exponential moving average of values for the determined time. 
+Сalculates the exponential moving average of values for the determined time.
 
 **Syntax**
 
@@ -58,7 +58,7 @@ Input table:
 └──────────────┴────────────┘
 ```
 
-Query: 
+Query:
 
 ```sql
 SELECT exponentialMovingAverage(5)(temperature, timestamp);
@@ -72,7 +72,7 @@ Result:
 └───────────────────────────────────────────────────────┘
 ```
 
-Query: 
+Query:
 
 ```sql
 SELECT

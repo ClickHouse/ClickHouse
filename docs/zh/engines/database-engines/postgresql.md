@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: PostgreSQL
+sidebar_position: 35
+sidebar_label: PostgreSQL
 ---
 
 # PostgreSQL {#postgresql}

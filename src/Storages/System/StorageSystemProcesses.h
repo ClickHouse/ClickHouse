@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -12,9 +11,8 @@ class Context;
 
 /** Implements `processes` system table, which allows you to get information about the queries that are currently executing.
   */
-class StorageSystemProcesses final : public shared_ptr_helper<StorageSystemProcesses>, public IStorageSystemOneBlock<StorageSystemProcesses>
+class StorageSystemProcesses final : public IStorageSystemOneBlock<StorageSystemProcesses>
 {
-    friend struct shared_ptr_helper<StorageSystemProcesses>;
 public:
     std::string getName() const override { return "SystemProcesses"; }
 

@@ -40,7 +40,15 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     bool with_types_,
     bool is_raw_,
     const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_, std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
+    : RowInputFormatWithNamesAndTypes(
+        header_,
+        in_,
+        params_,
+        false,
+        with_names_,
+        with_types_,
+        format_settings_,
+        std::make_unique<TabSeparatedFormatReader>(in_, format_settings_, is_raw_))
 {
 }
 
@@ -80,7 +88,11 @@ String TabSeparatedFormatReader::readFieldIntoString()
 
 void TabSeparatedFormatReader::skipField()
 {
-    readFieldIntoString();
+    NullOutput out;
+    if (is_raw)
+        readStringInto(out, *in);
+    else
+        readEscapedStringInto(out, *in);
 }
 
 void TabSeparatedFormatReader::skipHeaderRow()
@@ -226,6 +238,12 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
     }
 }
 
+void TabSeparatedFormatReader::skipPrefixBeforeHeader()
+{
+    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
+        readRow();
+}
+
 void TabSeparatedRowInputFormat::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(*in);
@@ -338,7 +356,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
     {
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            size_t min_rows = 1 + int(with_names) + int(with_types);
+            size_t min_rows = 1 + static_cast<int>(with_names) + static_cast<int>(with_types);
             factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
             {
                 return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, is_raw, min_rows);
@@ -347,6 +365,8 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TSVRaw" : "TSV", factory);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TabSeparatedRaw" : "TabSeparated", factory);
     }
 
     // We can use the same segmentation engine for TSKV.

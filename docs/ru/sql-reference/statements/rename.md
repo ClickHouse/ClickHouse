@@ -1,6 +1,6 @@
 ---
-toc_priority: 48
-toc_title: RENAME
+sidebar_position: 48
+sidebar_label: RENAME
 ---
 
 # RENAME {#misc_operations-rename}
@@ -8,9 +8,9 @@ toc_title: RENAME
 Переименовывает базы данных, таблицы или словари. Несколько сущностей могут быть переименованы в одном запросе.
 Обратите внимание, что запрос `RENAME` с несколькими сущностями это неатомарная операция. Чтобы обменять имена атомарно, используйте выражение [EXCHANGE](./exchange.md).
 
-!!! note "Примечание"
+    :::note "Примечание"
     Запрос `RENAME` поддерживается только движком баз данных [Atomic](../../engines/database-engines/atomic.md).
-
+    :::
 **Синтаксис**
 
 ```sql

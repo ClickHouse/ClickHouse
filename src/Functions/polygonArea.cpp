@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -100,7 +100,7 @@ template <>
 const char * FunctionPolygonArea<SphericalPoint>::name = "polygonAreaSpherical";
 
 
-void registerFunctionPolygonArea(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonArea)
 {
     factory.registerFunction<FunctionPolygonArea<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonArea<SphericalPoint>>();

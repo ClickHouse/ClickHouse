@@ -92,6 +92,22 @@ def test_executable_function_input_python(started_cluster):
         == "Key 0\nKey 1\nKey 2\n"
     )
 
+    query = "SELECT * FROM executable('input.py', 'TabSeparated', (SELECT 'value String'), {source})"
+    assert node.query(query.format(source="(SELECT 1)")) == "Key 1\n"
+    assert (
+        node.query(query.format(source="(SELECT id FROM test_data_table)"))
+        == "Key 0\nKey 1\nKey 2\n"
+    )
+
+    node.query("CREATE FUNCTION test_function AS () -> 'value String';")
+    query = "SELECT * FROM executable('input.py', 'TabSeparated', (SELECT test_function()), {source})"
+    assert node.query(query.format(source="(SELECT 1)")) == "Key 1\n"
+    assert (
+        node.query(query.format(source="(SELECT id FROM test_data_table)"))
+        == "Key 0\nKey 1\nKey 2\n"
+    )
+    node.query("DROP FUNCTION test_function;")
+
 
 def test_executable_function_input_sum_python(started_cluster):
     skip_test_msan(node)

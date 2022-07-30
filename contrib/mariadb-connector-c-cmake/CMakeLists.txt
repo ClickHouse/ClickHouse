@@ -239,7 +239,7 @@ endif()
 set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_async.c ${CC_SOURCE_DIR}/libmariadb/ma_context.c)
 
 
-add_library(_mariadbclient STATIC ${LIBMARIADB_SOURCES})
+add_library(_mariadbclient ${LIBMARIADB_SOURCES})
 target_link_libraries(_mariadbclient ${SYSTEM_LIBS})
 
 target_include_directories(_mariadbclient PRIVATE ${CC_BINARY_DIR}/include-private)

@@ -25,6 +25,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/LightweightDeleteDescription.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 
@@ -785,7 +786,8 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
     /// Drop alias is metadata alter, in other case mutation is required.
     if (type == DROP_COLUMN)
-        return metadata.columns.hasPhysical(column_name);
+        return metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, column_name) ||
+            column_name == LightweightDeleteDescription::FILTER_COLUMN.name;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
         return false;
@@ -1024,8 +1026,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 }
 
 
-void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
+void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
+    const StorageInMemoryMetadata & metadata = table->getInMemoryMetadata();
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
@@ -1033,6 +1036,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
+
+        if (command.ttl && !table->supportsTTL())
+            throw Exception("Engine " + table->getName() + " doesn't support TTL clause", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
@@ -1070,7 +1076,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
                     continue;
             }
 
-            if (renamed_columns.count(column_name))
+            if (renamed_columns.contains(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
 
@@ -1145,7 +1151,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
+            if (all_columns.has(command.column_name) ||
+                all_columns.hasNested(command.column_name) ||
+                (command.clear && column_name == LightweightDeleteDescription::FILTER_COLUMN.name))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
@@ -1232,7 +1240,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
                 throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
                                 ErrorCodes::DUPLICATE_COLUMN};
 
-            if (modified_columns.count(column_name))
+            if (modified_columns.contains(column_name))
                 throw Exception{"Cannot rename and modify the same column " + backQuote(column_name) + " in a single ALTER query",
                                 ErrorCodes::NOT_IMPLEMENTED};
 

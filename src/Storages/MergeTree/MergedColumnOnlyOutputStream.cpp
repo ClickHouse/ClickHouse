@@ -11,6 +11,7 @@ namespace ErrorCodes
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
+    DataPartStorageBuilderPtr data_part_storage_builder_,
     const MergeTreeDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const Block & header_,
@@ -19,7 +20,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
+    : IMergedBlockOutputStream(std::move(data_part_storage_builder_), data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
@@ -33,11 +34,12 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         /* rewrite_primary_key = */false);
 
     writer = data_part->getWriter(
+        data_part_storage_builder,
         header.getNamesAndTypesList(),
         metadata_snapshot_,
         indices_to_recalc,
         default_codec,
-        std::move(writer_settings),
+        writer_settings,
         index_granularity);
 
     auto * writer_on_disk = dynamic_cast<MergeTreeDataPartWriterOnDisk *>(writer.get());
@@ -77,15 +79,11 @@ MergedColumnOnlyOutputStream::fillChecksums(
 
     auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
 
-    auto disk = new_part->volume->getDisk();
     for (const String & removed_file : removed_files)
     {
-        auto file_path = new_part->getFullRelativePath() + removed_file;
-        /// Can be called multiple times, don't need to remove file twice
-        if (disk->exists(file_path))
-            disk->removeFile(file_path);
+        data_part_storage_builder->removeFileIfExists(removed_file);
 
-        if (all_checksums.files.count(removed_file))
+        if (all_checksums.files.contains(removed_file))
             all_checksums.files.erase(removed_file);
     }
 

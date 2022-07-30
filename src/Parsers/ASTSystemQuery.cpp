@@ -181,6 +181,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         else if (!disk.empty())
             print_identifier(disk);
     }
+    else if (type == Type::SYNC_DATABASE_REPLICA)
+    {
+        print_identifier(database->as<ASTIdentifier>()->name());
+    }
     else if (type == Type::DROP_REPLICA)
     {
         print_drop_replica();
@@ -191,6 +195,11 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             << (settings.hilite ? hilite_none : "") << seconds
             << (settings.hilite ? hilite_keyword : "") << " SECOND"
             << (settings.hilite ? hilite_none : "");
+    }
+    else if (type == Type::DROP_FILESYSTEM_CACHE)
+    {
+        if (!filesystem_cache_path.empty())
+            settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path;
     }
 }
 

@@ -2,8 +2,9 @@
 
 #if USE_AWS_S3
 
-#include <base/logger_useful.h>
-#include <Common/FileCache.h>
+#include <Common/logger_useful.h>
+#include <Common/IFileCache.h>
+#include <Common/Throttler.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -20,8 +21,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3WriteBytes;
-    extern const Event RemoteFSCacheDownloadBytes;
+    extern const Event WriteBufferFromS3Bytes;
+    extern const Event CachedReadBufferCacheWriteBytes;
 }
 
 namespace DB
@@ -31,11 +32,9 @@ namespace DB
 // because custom S3 implementation may allow relaxed requirements on that.
 const int S3_WARN_MAX_PARTS = 10000;
 
-
 namespace ErrorCodes
 {
     extern const int S3_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 struct WriteBufferFromS3::UploadPartTask
@@ -56,29 +55,24 @@ struct WriteBufferFromS3::PutObjectTask
 };
 
 WriteBufferFromS3::WriteBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
     const String & bucket_,
     const String & key_,
-    size_t minimum_upload_part_size_,
-    size_t upload_part_size_multiply_factor_,
-    size_t upload_part_size_multiply_threshold_,
-    size_t max_single_part_upload_size_,
+    const S3Settings::ReadWriteSettings & s3_settings_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
     ScheduleFunc schedule_,
-    const String & blob_name_,
+    const WriteSettings & write_settings_,
     FileCachePtr cache_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
-    , object_metadata(std::move(object_metadata_))
     , client_ptr(std::move(client_ptr_))
-    , upload_part_size(minimum_upload_part_size_)
-    , upload_part_size_multiply_factor(upload_part_size_multiply_factor_)
-    , upload_part_size_multiply_threshold(upload_part_size_multiply_threshold_)
-    , max_single_part_upload_size(max_single_part_upload_size_)
+    , upload_part_size(s3_settings_.min_upload_part_size)
+    , s3_settings(s3_settings_)
+    , object_metadata(std::move(object_metadata_))
     , schedule(std::move(schedule_))
-    , blob_name(blob_name_)
+    , write_settings(write_settings_)
     , cache(cache_)
 {
     allocateBuffer();
@@ -102,11 +96,9 @@ void WriteBufferFromS3::nextImpl()
 
     if (cacheEnabled())
     {
-        if (blob_name.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty blob name");
+        auto cache_key = cache->hash(key);
 
-        auto cache_key = cache->hash(blob_name);
-        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size));
+        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size, /* is_persistent */false));
         current_download_offset += size;
 
         size_t remaining_size = size;
@@ -123,18 +115,21 @@ void WriteBufferFromS3::nextImpl()
             }
             else
             {
+                for (auto reset_segment_it = file_segment_it; reset_segment_it != file_segments.end(); ++reset_segment_it)
+                    (*reset_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 file_segments.erase(file_segment_it, file_segments.end());
                 break;
             }
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::S3WriteBytes, offset());
-
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, offset());
     last_part_size += offset();
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->add(offset());
 
     /// Data size exceeds singlepart upload threshold, need to use multipart upload.
-    if (multipart_upload_id.empty() && last_part_size > max_single_part_upload_size)
+    if (multipart_upload_id.empty() && last_part_size > s3_settings.max_single_part_upload_size)
         createMultipartUpload();
 
     if (!multipart_upload_id.empty() && last_part_size > upload_part_size)
@@ -142,6 +137,7 @@ void WriteBufferFromS3::nextImpl()
         writePart();
 
         allocateBuffer();
+        file_segments_holder.reset();
     }
 
     waitForReadyBackGroundTasks();
@@ -149,8 +145,8 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::allocateBuffer()
 {
-    if (total_parts_uploaded != 0 && total_parts_uploaded % upload_part_size_multiply_threshold == 0)
-        upload_part_size *= upload_part_size_multiply_factor;
+    if (total_parts_uploaded != 0 && total_parts_uploaded % s3_settings.upload_part_size_multiply_parts_count_threshold == 0)
+        upload_part_size *= s3_settings.upload_part_size_multiply_factor;
 
     temporary_buffer = Aws::MakeShared<Aws::StringStream>("temporary buffer");
     temporary_buffer->exceptions(std::ios::badbit);
@@ -159,6 +155,13 @@ void WriteBufferFromS3::allocateBuffer()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
+#ifndef NDEBUG
+    if (!finalized)
+    {
+        LOG_ERROR(log, "WriteBufferFromS3 is not finalized in destructor. It's a bug");
+        std::terminate();
+    }
+#else
     try
     {
         finalize();
@@ -167,6 +170,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+#endif
 }
 
 bool WriteBufferFromS3::cacheEnabled() const
@@ -294,7 +298,7 @@ void WriteBufferFromS3::writePart()
                 ++num_finished_bg_tasks;
 
                 /// Notification under mutex is important here.
-                /// Othervies, WriteBuffer could be destroyed in between
+                /// Otherwise, WriteBuffer could be destroyed in between
                 /// Releasing lock and condvar notification.
                 bg_tasks_condvar.notify_one();
             }
@@ -379,19 +383,13 @@ void WriteBufferFromS3::completeMultipartUpload()
 void WriteBufferFromS3::makeSinglepartUpload()
 {
     auto size = temporary_buffer->tellp();
-    bool with_pool = bool(schedule);
+    bool with_pool = static_cast<bool>(schedule);
 
     LOG_TRACE(log, "Making single part upload. Bucket: {}, Key: {}, Size: {}, WithPool: {}", bucket, key, size, with_pool);
 
     if (size < 0)
     {
         LOG_WARNING(log, "Skipping single part upload. Buffer is in bad state, it mean that we have tried to upload something, but got an exception.");
-        return;
-    }
-
-    if (size == 0)
-    {
-        LOG_TRACE(log, "Skipping single part upload. Buffer is empty.");
         return;
     }
 
@@ -467,8 +465,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 {
     auto outcome = client_ptr->PutObject(task.req);
-    bool with_pool = bool(schedule);
-
+    bool with_pool = static_cast<bool>(schedule);
     if (outcome.IsSuccess())
         LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
     else
@@ -488,7 +485,7 @@ void WriteBufferFromS3::finalizeCacheIfNeeded(std::optional<FileSegmentsHolder> 
             size_t size = (*file_segment_it)->finalizeWrite();
             file_segment_it = file_segments.erase(file_segment_it);
 
-            ProfileEvents::increment(ProfileEvents::RemoteFSCacheDownloadBytes, size);
+            ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
         }
         catch (...)
         {

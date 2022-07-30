@@ -1,5 +1,5 @@
 ---
-toc_title: FROM
+sidebar_label: FROM
 ---
 
 # FROM子句 {#select-from}
