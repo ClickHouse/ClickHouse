@@ -27,7 +27,7 @@ friend class ReadIndirectBufferFromRemoteFS;
 
 public:
     ReadBufferFromRemoteFSGather(
-        const PathsWithSize & blobs_to_read_,
+        const StoredObjects & blobs_to_read_,
         const ReadSettings & settings_);
 
     ~ReadBufferFromRemoteFSGather() override;
@@ -53,7 +53,7 @@ public:
 protected:
     virtual SeekableReadBufferPtr createImplementationBufferImpl(const String & path, size_t file_size) = 0;
 
-    PathsWithSize blobs_to_read;
+    StoredObjects blobs_to_read;
 
     ReadSettings settings;
 
@@ -109,7 +109,7 @@ public:
         std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & version_id_,
-        const PathsWithSize & blobs_to_read_,
+        const StoredObjects & blobs_to_read_,
         size_t max_single_read_retries_,
         const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
@@ -138,7 +138,7 @@ class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFS
 public:
     ReadBufferFromAzureBlobStorageGather(
         std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
-        const PathsWithSize & blobs_to_read_,
+        const StoredObjects & blobs_to_read_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
         const ReadSettings & settings_)
@@ -164,7 +164,7 @@ class ReadBufferFromWebServerGather final : public ReadBufferFromRemoteFSGather
 public:
     ReadBufferFromWebServerGather(
             const String & uri_,
-            const PathsWithSize & blobs_to_read_,
+            const StoredObjects & blobs_to_read_,
             ContextPtr context_,
             const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
@@ -188,7 +188,7 @@ class ReadBufferFromHDFSGather final : public ReadBufferFromRemoteFSGather
 public:
     ReadBufferFromHDFSGather(
             const Poco::Util::AbstractConfiguration & config_,
-            const PathsWithSize & blobs_to_read_,
+            const StoredObjects & blobs_to_read_,
             const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(blobs_to_read_, settings_)
         , config(config_)

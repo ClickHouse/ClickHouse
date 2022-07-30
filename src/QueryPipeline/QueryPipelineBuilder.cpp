@@ -323,7 +323,6 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     left->pipe.processors.emplace_back(transform);
 
     left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
-    // left->pipe.holder = std::move(right->pipe.holder);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     return left;
@@ -361,6 +360,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
+    const Block & output_header,
     size_t max_block_size,
     size_t max_streams,
     bool keep_left_read_in_order,
@@ -450,7 +450,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto joining = std::make_shared<JoiningTransform>(left->getHeader(), join, max_block_size, false, default_totals, finish_counter);
+        auto joining = std::make_shared<JoiningTransform>(
+            left->getHeader(), output_header, join, max_block_size, false, default_totals, finish_counter);
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         *lit = &joining->getOutputs().front();
@@ -466,7 +467,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     if (left->hasTotals())
     {
-        auto joining = std::make_shared<JoiningTransform>(left->getHeader(), join, max_block_size, true, default_totals);
+        auto joining = std::make_shared<JoiningTransform>(left->getHeader(), output_header, join, max_block_size, true, default_totals);
         connect(*left->pipe.totals_port, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
         left->pipe.totals_port = &joining->getOutputs().front();

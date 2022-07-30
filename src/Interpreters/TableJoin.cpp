@@ -363,7 +363,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), forceFullSortingMergeJoin());
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -407,18 +407,6 @@ bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTT
 bool TableJoin::oneDisjunct() const
 {
     return clauses.size() == 1;
-}
-
-bool TableJoin::allowMergeJoin() const
-{
-    bool is_any = (strictness() == ASTTableJoin::Strictness::Any);
-    bool is_all = (strictness() == ASTTableJoin::Strictness::All);
-    bool is_semi = (strictness() == ASTTableJoin::Strictness::Semi);
-
-    bool all_join = is_all && (isInner(kind()) || isLeft(kind()) || isRight(kind()) || isFull(kind()));
-    bool special_left = isLeft(kind()) && (is_any || is_semi);
-
-    return (all_join || special_left) && oneDisjunct();
 }
 
 bool TableJoin::needStreamWithNonJoinedRows() const
@@ -511,7 +499,7 @@ TableJoin::createConvertingActions(
     const ColumnsWithTypeAndName & left_sample_columns,
     const ColumnsWithTypeAndName & right_sample_columns)
 {
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), forceFullSortingMergeJoin());
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
 
     NameToNameMap left_key_column_rename;
     NameToNameMap right_key_column_rename;
@@ -835,6 +823,8 @@ bool TableJoin::allowParallelHashJoin() const
     if (dictionary_reader || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
         return false;
     if (table_join.kind != ASTTableJoin::Kind::Left && table_join.kind != ASTTableJoin::Kind::Inner)
+        return false;
+    if (table_join.strictness == ASTTableJoin::Strictness::Asof)
         return false;
     if (isSpecialStorage() || !oneDisjunct())
         return false;
