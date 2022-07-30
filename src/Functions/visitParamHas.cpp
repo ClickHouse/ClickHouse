@@ -22,7 +22,7 @@ using FunctionVisitParamHas = FunctionsStringSearch<ExtractParamImpl<NameVisitPa
 struct NameSimpleJSONHas           { static constexpr auto name = "simpleJSONHas"; };
 using FunctionSimpleJSONHas = FunctionsStringSearch<ExtractParamImpl<NameSimpleJSONHas, HasParam>>;
 
-void registerFunctionVisitParamHas(FunctionFactory & factory)
+REGISTER_FUNCTION(VisitParamHas)
 {
     factory.registerFunction<FunctionVisitParamHas>();
     factory.registerFunction<FunctionSimpleJSONHas>();

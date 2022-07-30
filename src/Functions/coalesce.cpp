@@ -174,7 +174,7 @@ private:
 
 }
 
-void registerFunctionCoalesce(FunctionFactory & factory)
+REGISTER_FUNCTION(Coalesce)
 {
     factory.registerFunction<FunctionCoalesce>(FunctionFactory::CaseInsensitive);
 }
