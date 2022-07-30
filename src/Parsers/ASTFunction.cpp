@@ -509,6 +509,25 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << ')';
                 written = true;
             }
+
+            if (!written && name == "viewIfPermitted"sv)
+            {
+                /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
+                const auto * nl_or_nothing = settings.one_line ? "" : "\n";
+                auto indent0 = settings.one_line ? "" : String(4u * frame.indent, ' ');
+                auto indent1 = settings.one_line ? "" : String(4u * (frame.indent + 1), ' ');
+                auto indent2 = settings.one_line ? "" : String(4u * (frame.indent + 2), ' ');
+                settings.ostr << (settings.hilite ? hilite_function : "") << name << "(" << (settings.hilite ? hilite_none : "") << nl_or_nothing;
+                FormatStateStacked frame_nested = frame;
+                frame_nested.need_parens = false;
+                frame_nested.indent += 2;
+                arguments->children[0]->formatImpl(settings, state, frame_nested);
+                settings.ostr << nl_or_nothing << indent1 << (settings.hilite ? hilite_keyword : "") << (settings.one_line ? " " : "")
+                              << "ELSE " << (settings.hilite ? hilite_none : "") << nl_or_nothing << indent2;
+                arguments->children[1]->formatImpl(settings, state, frame_nested);
+                settings.ostr << nl_or_nothing << indent0 << ")";
+                return;
+            }
         }
 
         if (!written && arguments->children.size() >= 2)

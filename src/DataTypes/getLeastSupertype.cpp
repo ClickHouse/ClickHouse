@@ -269,7 +269,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!all_arrays)
                 return throwOrReturn<on_error>(types, "because some of them are Array and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeArray>(getLeastSupertype<on_error>(nested_types));
+            auto nested_type = getLeastSupertype<on_error>(nested_types);
+            /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+            /// nested_type will be nullptr, we should return nullptr in this case.
+            if (!nested_type)
+                return nullptr;
+
+            return std::make_shared<DataTypeArray>(nested_type);
         }
     }
 
@@ -311,7 +317,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                common_tuple_types[elem_idx] = getLeastSupertype<on_error>(nested_types[elem_idx]);
+            {
+                auto common_type = getLeastSupertype<on_error>(nested_types[elem_idx]);
+                /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+                /// common_type will be nullptr, we should return nullptr in this case.
+                if (!common_type)
+                    return nullptr;
+                common_tuple_types[elem_idx] = common_type;
+            }
 
             return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
@@ -343,9 +356,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!all_maps)
                 return throwOrReturn<on_error>(types, "because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            return std::make_shared<DataTypeMap>(
-                getLeastSupertype<on_error>(key_types),
-                getLeastSupertype<on_error>(value_types));
+            auto keys_common_type = getLeastSupertype<on_error>(key_types);
+            auto values_common_type = getLeastSupertype<on_error>(value_types);
+            /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype for keys or values,
+            /// keys_common_type or values_common_type will be nullptr, we should return nullptr in this case.
+            if (!keys_common_type || !values_common_type)
+                return nullptr;
+
+            return std::make_shared<DataTypeMap>(keys_common_type, values_common_type);
         }
     }
 
@@ -378,7 +396,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (have_not_low_cardinality)
                 return getLeastSupertype<on_error>(nested_types);
             else
-                return std::make_shared<DataTypeLowCardinality>(getLeastSupertype<on_error>(nested_types));
+            {
+                auto nested_type = getLeastSupertype<on_error>(nested_types);
+                /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+                /// nested_type will be nullptr, we should return nullptr in this case.
+                if (!nested_type)
+                    return nullptr;
+                return std::make_shared<DataTypeLowCardinality>(nested_type);
+            }
         }
     }
 
@@ -404,7 +429,12 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (have_nullable)
         {
-            return std::make_shared<DataTypeNullable>(getLeastSupertype<on_error>(nested_types));
+            auto nested_type = getLeastSupertype<on_error>(nested_types);
+            /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
+            /// nested_type will be nullptr, we should return nullptr in this case.
+            if (!nested_type)
+                return nullptr;
+            return std::make_shared<DataTypeNullable>(nested_type);
         }
     }
 
@@ -524,7 +554,11 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             UInt32 max_scale = 0;
             for (const auto & type : types)
             {
-                UInt32 scale = getDecimalScale(*type, 0);
+                auto type_id = type->getTypeId();
+                if (type_id != TypeIndex::Decimal32 && type_id != TypeIndex::Decimal64 && type_id != TypeIndex::Decimal128)
+                    continue;
+
+                UInt32 scale = getDecimalScale(*type);
                 if (scale > max_scale)
                     max_scale = scale;
             }
