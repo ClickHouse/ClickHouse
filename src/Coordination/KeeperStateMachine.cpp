@@ -41,22 +41,22 @@ KeeperStateMachine::KeeperStateMachine(
     SnapshotsQueue & snapshots_queue_,
     const std::string & snapshots_path_,
     const CoordinationSettingsPtr & coordination_settings_,
-    const std::string & superdigest_,
-    const bool digest_enabled_)
+    const KeeperContextPtr & keeper_context_,
+    const std::string & superdigest_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(
           snapshots_path_,
           coordination_settings->snapshots_to_keep,
+          keeper_context_,
           coordination_settings->compress_snapshots_with_zstd_format,
           superdigest_,
-          coordination_settings->dead_session_check_period_ms.totalMilliseconds(),
-          digest_enabled_)
+          coordination_settings->dead_session_check_period_ms.totalMilliseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
-    , digest_enabled(digest_enabled_)
+    , keeper_context(keeper_context_)
 {
 }
 
@@ -109,7 +109,7 @@ void KeeperStateMachine::init()
 
     if (!storage)
         storage = std::make_unique<KeeperStorage>(
-            coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, digest_enabled);
+            coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
 }
 
 namespace
@@ -204,7 +204,7 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
         true /* check_acl */,
         request_for_session.digest);
 
-    if (digest_enabled && request_for_session.digest)
+    if (keeper_context->digest_enabled && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
 }
 
@@ -253,10 +253,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                     response_for_session.session_id);
             }
 
-        if (digest_enabled && request_for_session.digest)
-        {
+        if (keeper_context->digest_enabled && request_for_session.digest)
             assertDigest(*request_for_session.digest, storage->getNodesDigest(true), *request_for_session.request, true);
-        }
     }
 
     ProfileEvents::increment(ProfileEvents::KeeperCommits);
