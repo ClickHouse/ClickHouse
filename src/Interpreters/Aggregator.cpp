@@ -1004,7 +1004,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     AggregateDataPtr overflow_row) const
 {
     // During processing of row #i will also prefetch row number #(row + prefetch_indent).
-    static constexpr uint8_t prefetch_indent = 8;
+    static constexpr uint8_t prefetch_look_ahead = 8;
 
     /// Optimization for special case when there are no aggregate functions.
     if (params.aggregates_size == 0)
@@ -1018,10 +1018,10 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if constexpr (HasPrefetchMemberFunc<decltype(method.data), decltype(state.getKeyHolder(0, std::declval<Arena &>()))>)
             {
-                if (i + prefetch_indent < row_end)
+                if (i + prefetch_look_ahead < row_end)
                 {
-                    auto key_holder = state.getKeyHolder(i + prefetch_indent, *aggregates_pool);
-                    method.data.prefetch(key_holder);
+                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                    method.data.prefetch(std::move(key_holder));
                 }
             }
 
@@ -1081,10 +1081,10 @@ void NO_INLINE Aggregator::executeImplBatch(
         {
             if constexpr (HasPrefetchMemberFunc<decltype(method.data), decltype(state.getKeyHolder(0, std::declval<Arena &>()))>)
             {
-                if (i + prefetch_indent < row_end)
+                if (i + prefetch_look_ahead < row_end)
                 {
-                    auto key_holder = state.getKeyHolder(i + prefetch_indent, *aggregates_pool);
-                    method.data.prefetch(key_holder);
+                    auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                    method.data.prefetch(std::move(key_holder));
                 }
             }
 

@@ -232,7 +232,7 @@ public:
     {
         const auto & key = keyHolderGetKey(key_holder);
         const auto hash_key = hash(key);
-        size_t buck = getBucketFromHash(hash_key);
+        const auto buck = getBucketFromHash(hash_key);
         impls[buck].prefetchByHash(hash_key);
     }
 

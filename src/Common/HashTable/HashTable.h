@@ -5,7 +5,6 @@
 #include <math.h>
 
 #include <new>
-#include <type_traits>
 #include <utility>
 
 #include <boost/noncopyable.hpp>
@@ -991,6 +990,12 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
+    void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
+    {
+        const auto place_value = grower.place(hash_key);
+        __builtin_prefetch(&buf[place_value]);
+    }
+
 
 public:
     void reserve(size_t num_elements)
@@ -1032,12 +1037,6 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto hash_key = hash(key);
         prefetchByHash(hash_key);
-    }
-
-    void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
-    {
-        size_t place_value = grower.place(hash_key);
-        __builtin_prefetch(&buf[place_value]);
     }
 
     /** Insert the key.
