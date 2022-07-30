@@ -115,7 +115,7 @@ template <>
 const char * FunctionPolygonsIntersection<SphericalPoint>::name = "polygonsIntersectionSpherical";
 
 
-void registerFunctionPolygonsIntersection(FunctionFactory & factory)
+REGISTER_FUNCTION(PolygonsIntersection)
 {
     factory.registerFunction<FunctionPolygonsIntersection<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsIntersection<SphericalPoint>>();
