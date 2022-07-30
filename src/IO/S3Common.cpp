@@ -148,7 +148,7 @@ public:
     {
         String credentials_string;
         {
-            std::unique_lock<std::recursive_mutex> locker(token_mutex);
+            std::lock_guard locker(token_mutex);
 
             LOG_TRACE(logger, "Getting default credentials for EC2 instance.");
             auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
@@ -194,7 +194,7 @@ public:
         String new_token;
 
         {
-            std::unique_lock<std::recursive_mutex> locker(token_mutex);
+            std::lock_guard locker(token_mutex);
 
             Aws::StringStream ss;
             ss << endpoint << EC2_IMDS_TOKEN_RESOURCE;
@@ -617,72 +617,6 @@ public:
     }
 };
 
-class S3AuthSigner : public Aws::Client::AWSAuthV4Signer
-{
-public:
-    S3AuthSigner(
-        const Aws::Client::ClientConfiguration & client_configuration,
-        const Aws::Auth::AWSCredentials & credentials,
-        const DB::HeaderCollection & headers_,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request)
-        : Aws::Client::AWSAuthV4Signer(
-            std::make_shared<S3CredentialsProviderChain>(
-                static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration),
-                credentials,
-                use_environment_credentials,
-                use_insecure_imds_request),
-            "s3",
-            client_configuration.region,
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-            false)
-        , headers(headers_)
-    {
-    }
-
-    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, bool sign_body) const override
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, sign_body);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
-
-    bool SignRequest(Aws::Http::HttpRequest & request, const char * region, const char * service_name, bool sign_body) const override
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::SignRequest(request, region, service_name, sign_body);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
-
-    bool PresignRequest(
-        Aws::Http::HttpRequest & request,
-        const char * region,
-        long long expiration_time_sec) const override // NOLINT
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, expiration_time_sec);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
-
-    bool PresignRequest(
-        Aws::Http::HttpRequest & request,
-        const char * region,
-        const char * service_name,
-        long long expiration_time_sec) const override // NOLINT
-    {
-        auto result = Aws::Client::AWSAuthV4Signer::PresignRequest(request, region, service_name, expiration_time_sec);
-        for (const auto & header : headers)
-            request.SetHeaderValue(header.name, header.value);
-        return result;
-    }
-
-private:
-    const DB::HeaderCollection headers;
-};
-
 }
 
 
@@ -729,8 +663,6 @@ namespace S3
         PocoHTTPClientConfiguration client_configuration = cfg_;
         client_configuration.updateSchemeAndRegion();
 
-        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-
         if (!server_side_encryption_customer_key_base64.empty())
         {
             /// See S3Client::GeneratePresignedUrlWithSSEC().
@@ -747,17 +679,20 @@ namespace S3
                 Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
         }
 
-        auto auth_signer = std::make_shared<S3AuthSigner>(
-            client_configuration,
-            std::move(credentials),
-            std::move(headers),
-            use_environment_credentials,
-            use_insecure_imds_request);
+        client_configuration.extra_headers = std::move(headers);
+
+        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+        auto credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+                client_configuration,
+                std::move(credentials),
+                use_environment_credentials,
+                use_insecure_imds_request);
 
         return std::make_unique<Aws::S3::S3Client>(
-            std::move(auth_signer),
+            std::move(credentials_provider),
             std::move(client_configuration), // Client configuration.
-            is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing only if endpoint is not specified.
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing if endpoint is not specified.
         );
     }
 
@@ -765,9 +700,9 @@ namespace S3
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
-        bool enable_s3_requestrs_logging)
+        bool enable_s3_requests_logging)
     {
-        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requestrs_logging);
+        return PocoHTTPClientConfiguration(force_region, remote_host_filter, s3_max_redirects, enable_s3_requests_logging);
     }
 
     URI::URI(const Poco::URI & uri_)
@@ -795,19 +730,9 @@ namespace S3
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Host is empty in S3 URI.");
 
         /// Extract object version ID from query string.
-        {
-            version_id = "";
-            const String version_key = "versionId=";
-            const auto query_string = uri.getQuery();
-
-            auto start = query_string.rfind(version_key);
-            if (start != std::string::npos)
-            {
-                start += version_key.length();
-                auto end = query_string.find_first_of('&', start);
-                version_id = query_string.substr(start, end == std::string::npos ? std::string::npos : end - start);
-            }
-        }
+        for (const auto & [query_key, query_value] : uri.getQueryParameters())
+            if (query_key == "versionId")
+                version_id = query_value;
 
         String name;
         String endpoint_authority_from_uri;

@@ -2,6 +2,7 @@
 
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
@@ -132,6 +133,9 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr recovery_command = std::make_shared<RecoveryCommand>(keeper_dispatcher);
         factory.registerCommand(recovery_command);
 
+        FourLetterCommandPtr api_version_command = std::make_shared<ApiVersionCommand>(keeper_dispatcher);
+        factory.registerCommand(api_version_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
@@ -236,7 +240,7 @@ String MonitorCommand::run()
     print(ret, "key_arena_size", state_machine.getKeyArenaSize());
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
     print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
 #endif
@@ -461,6 +465,11 @@ String RecoveryCommand::run()
 {
     keeper_dispatcher.forceRecovery();
     return "ok";
+}
+
+String ApiVersionCommand::run()
+{
+    return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
 }
 
 }

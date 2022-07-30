@@ -1,17 +1,24 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <base/types.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+}
 
 /// Transforms the [I]LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
 inline String likePatternToRegexp(std::string_view pattern)
 {
     String res;
     res.reserve(pattern.size() * 2);
+
     const char * pos = pattern.data();
-    const char * end = pos + pattern.size();
+    const char * const end = pattern.begin() + pattern.size();
 
     if (pos < end && *pos == '%')
         ++pos;
@@ -36,13 +43,15 @@ inline String likePatternToRegexp(std::string_view pattern)
                 res += ".";
                 break;
             case '\\':
+                if (pos + 1 == end)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern");
                 /// Known escape sequences.
-                if (pos + 1 != end && (pos[1] == '%' || pos[1] == '_'))
+                if (pos[1] == '%' || pos[1] == '_')
                 {
                     res += pos[1];
                     ++pos;
                 }
-                else if (pos + 1 != end && pos[1] == '\\')
+                else if (pos[1] == '\\')
                 {
                     res += "\\\\";
                     ++pos;

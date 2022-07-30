@@ -42,7 +42,7 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void drop() override;
-    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
+    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
@@ -83,15 +83,6 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -104,9 +95,9 @@ public:
 
     Strings getDataPaths() const override;
 
-    bool hasDataToBackup() const override { return hasInnerTable(); }
-    BackupEntries backupData(ContextPtr context_, const ASTs & partitions_) override;
-    RestoreTaskPtr restoreData(ContextMutablePtr context_, const ASTs & partitions_, const BackupPtr & backup, const String & data_path_in_backup_, const StorageRestoreSettings & restore_settings_, const std::shared_ptr<IRestoreCoordination> & restore_coordination_) override;
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    bool supportsBackupPartition() const override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;

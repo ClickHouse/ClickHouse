@@ -41,7 +41,7 @@ entities = [
 
 
 def get_entity_id(entity):
-    return entity.keyword
+    return entity.keyword.replace(" ", "_")
 
 
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
