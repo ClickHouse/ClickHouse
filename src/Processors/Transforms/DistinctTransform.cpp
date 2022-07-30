@@ -33,7 +33,7 @@ void DistinctTransform::buildFilter(
     Method & method,
     const ColumnRawPtrs & columns,
     IColumn::Filter & filter,
-    size_t rows,
+    const size_t rows,
     SetVariants & variants) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
@@ -53,11 +53,21 @@ void DistinctTransform::transform(Chunk & chunk)
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     convertToFullIfSparse(chunk);
 
-    auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
+    /// Special case, - only const columns, return single row
+    if (unlikely(key_columns_pos.empty()))
+    {
+        for (auto & column : columns)
+            column = column->cut(0, 1);
+
+        chunk.setColumns(std::move(columns), 1);
+        stopReading();
+        return;
+    }
+
     /// Stop reading if we already reach the limit.
-    if (no_more_rows || (limit_hint && data.getTotalRowCount() >= limit_hint))
+    if (limit_hint && data.getTotalRowCount() >= limit_hint)
     {
         stopReading();
         return;
@@ -68,21 +78,11 @@ void DistinctTransform::transform(Chunk & chunk)
     for (auto pos : key_columns_pos)
         column_ptrs.emplace_back(columns[pos].get());
 
-    if (column_ptrs.empty())
-    {
-        /// Only constants. We need to return single row.
-        no_more_rows = true;
-        for (auto & column : columns)
-            column = column->cut(0, 1);
-
-        chunk.setColumns(std::move(columns), 1);
-        return;
-    }
-
     if (data.empty())
         data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
     const auto old_set_size = data.getTotalRowCount();
+    const auto num_rows = chunk.getNumRows();
     IColumn::Filter filter(num_rows);
 
     switch (data.type)
