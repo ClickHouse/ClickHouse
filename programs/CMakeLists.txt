@@ -195,6 +195,12 @@ else()
     message(STATUS "ClickHouse disks mode: OFF")
 endif()
 
+if (ENABLE_CLICKHOUSE_SU)
+    message(STATUS "ClickHouse su: ON")
+else()
+    message(STATUS "ClickHouse su: OFF")
+endif()
+
 configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
@@ -365,6 +371,10 @@ if (CLICKHOUSE_SPLIT_BINARY)
 
     if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-keeper-converter)
+    endif ()
+
+    if (ENABLE_CLICKHOUSE_SU)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-su)
     endif ()
 
     set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
