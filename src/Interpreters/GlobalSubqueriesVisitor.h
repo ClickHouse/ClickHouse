@@ -239,7 +239,7 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global
                 || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             data.addExternalStorage(table_elem.table_expression, true);
