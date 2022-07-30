@@ -18,7 +18,7 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-if (CLICKHOUSE_SPLIT_BINARY OR NOT ENABLE_UTILS)
+if (CLICKHOUSE_SPLIT_BINARY)
     option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
 else ()
     option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
@@ -195,6 +195,12 @@ else()
     message(STATUS "ClickHouse disks mode: OFF")
 endif()
 
+if (ENABLE_CLICKHOUSE_SU)
+    message(STATUS "ClickHouse su: ON")
+else()
+    message(STATUS "ClickHouse su: OFF")
+endif()
+
 configure_file (config_tools.h.in ${ConfigIncludePath}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
@@ -367,6 +373,10 @@ if (CLICKHOUSE_SPLIT_BINARY)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-keeper-converter)
     endif ()
 
+    if (ENABLE_CLICKHOUSE_SU)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-su)
+    endif ()
+
     set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
@@ -434,6 +444,9 @@ else ()
     endif ()
 
     set (CLICKHOUSE_BUNDLE)
+    if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+        list(APPEND CLICKHOUSE_BUNDLE self-extracting)
+    endif ()
     if (ENABLE_CLICKHOUSE_SERVER)
         add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-server" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
