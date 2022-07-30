@@ -1,5 +1,6 @@
 from time import sleep
 import pytest
+import re
 import os.path
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
@@ -11,10 +12,11 @@ main_configs = [
     "configs/remote_servers.xml",
     "configs/replicated_access_storage.xml",
     "configs/backups_disk.xml",
+    "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
 ]
 
 user_configs = [
-    "configs/allow_experimental_database_replicated.xml",
+    "configs/allow_database_types.xml",
 ]
 
 node1 = cluster.add_instance(
@@ -33,6 +35,7 @@ node2 = cluster.add_instance(
     external_dirs=["/backups/"],
     macros={"replica": "node2", "shard": "shard1"},
     with_zookeeper=True,
+    stay_alive=True,  # Necessary for the "test_stop_other_host_while_backup" test
 )
 
 
@@ -393,28 +396,30 @@ def test_replicated_database_async():
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
 
     backup_name = new_backup_name()
-    [id, _, status] = node1.query(
+    [id, status] = node1.query(
         f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} ASYNC"
     ).split("\t")
 
-    assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
+    assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
 
     assert_eq_with_retry(
         node1,
-        f"SELECT status FROM system.backups WHERE uuid='{id}'",
-        "BACKUP_COMPLETE\n",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
+        TSV([["BACKUP_CREATED", ""]]),
     )
 
     node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
 
-    [id, _, status] = node1.query(
+    [id, status] = node1.query(
         f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
     ).split("\t")
 
     assert status == "RESTORING\n" or status == "RESTORED\n"
 
     assert_eq_with_retry(
-        node1, f"SELECT status FROM system.backups WHERE uuid='{id}'", "RESTORED\n"
+        node1,
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
+        TSV([["RESTORED", ""]]),
     )
 
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
@@ -457,8 +462,8 @@ def test_async_backups_to_same_destination(interface, on_cluster):
     for i in range(len(nodes)):
         assert_eq_with_retry(
             nodes[i],
-            f"SELECT count() FROM system.backups WHERE uuid='{ids[i]}' AND status != 'BACKUP_COMPLETE' AND status != 'FAILED_TO_BACKUP'",
-            "0\n",
+            f"SELECT status FROM system.backups WHERE id='{ids[i]}' AND status == 'CREATING_BACKUP'",
+            "",
         )
 
     num_completed_backups = sum(
@@ -466,7 +471,7 @@ def test_async_backups_to_same_destination(interface, on_cluster):
             int(
                 nodes[i]
                 .query(
-                    f"SELECT count() FROM system.backups WHERE uuid='{ids[i]}' AND status == 'BACKUP_COMPLETE'"
+                    f"SELECT count() FROM system.backups WHERE id='{ids[i]}' AND status == 'BACKUP_CREATED'"
                 )
                 .strip()
             )
@@ -474,7 +479,16 @@ def test_async_backups_to_same_destination(interface, on_cluster):
         ]
     )
 
+    if num_completed_backups != 1:
+        for i in range(len(nodes)):
+            print(
+                nodes[i].query(
+                    f"SELECT status, error FROM system.backups WHERE id='{ids[i]}'"
+                )
+            )
+
     assert num_completed_backups == 1
+
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
     node1.query(f"RESTORE TABLE tbl FROM {backup_name}")
     assert node1.query("SELECT * FROM tbl") == "1\n"
@@ -749,8 +763,8 @@ def test_mutation():
     node1.query("INSERT INTO tbl SELECT number, toString(number) FROM numbers(10, 5)")
 
     node1.query("ALTER TABLE tbl UPDATE x=x+1 WHERE 1")
-    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(1) WHERE 1")
-    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(2) WHERE 1")
+    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
+    node1.query("ALTER TABLE tbl UPDATE x=x+1+sleep(3) WHERE 1")
 
     backup_name = new_backup_name()
     node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
@@ -763,3 +777,65 @@ def test_mutation():
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
 
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+
+
+def test_get_error_from_other_host():
+    node1.query("CREATE TABLE tbl (`x` UInt8) ENGINE = MergeTree ORDER BY x")
+    node1.query("INSERT INTO tbl VALUES (3)")
+
+    backup_name = new_backup_name()
+    expected_error = "Got error from node2.*Table default.tbl was not found"
+    assert re.search(
+        expected_error,
+        node1.query_and_get_error(
+            f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+        ),
+    )
+
+
+@pytest.mark.parametrize("kill", [False, True])
+def test_stop_other_host_during_backup(kill):
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+
+    node1.query("INSERT INTO tbl VALUES (3)")
+    node2.query("INSERT INTO tbl VALUES (5)")
+
+    backup_name = new_backup_name()
+
+    id = node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC"
+    ).split("\t")[0]
+
+    # If kill=False the pending backup must be completed
+    # If kill=True the pending backup might be completed or failed
+    node2.stop_clickhouse(kill=kill)
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'CREATING_BACKUP'",
+        "",
+        retry_count=100,
+    )
+
+    status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
+
+    if kill:
+        assert status in ["BACKUP_CREATED", "BACKUP_FAILED"]
+    else:
+        assert status == "BACKUP_CREATED"
+
+    node2.start_clickhouse()
+
+    if status == "BACKUP_CREATED":
+        node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+        node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
+        assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
+    elif status == "BACKUP_FAILED":
+        assert not os.path.exists(
+            os.path.join(get_path_to_backup(backup_name), ".backup")
+        )
