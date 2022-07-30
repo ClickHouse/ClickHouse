@@ -56,6 +56,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
     format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
     format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
+    format_settings.avro.null_as_default = settings.input_format_avro_null_as_default;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
@@ -66,6 +67,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.csv.input_format_use_best_effort_in_schema_inference = settings.input_format_csv_use_best_effort_in_schema_inference;
+    format_settings.csv.skip_first_lines = settings.input_format_csv_skip_first_lines;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
@@ -99,6 +101,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
+    format_settings.parquet.output_string_as_string = settings.output_format_parquet_string_as_string;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -107,6 +110,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
+    format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
     format_settings.regexp.regexp = settings.format_regexp;
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
@@ -122,6 +126,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.input_format_enum_as_number = settings.input_format_tsv_enum_as_number;
     format_settings.tsv.null_representation = settings.format_tsv_null_representation;
     format_settings.tsv.input_format_use_best_effort_in_schema_inference = settings.input_format_tsv_use_best_effort_in_schema_inference;
+    format_settings.tsv.skip_first_lines = settings.input_format_tsv_skip_first_lines;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
@@ -132,19 +137,22 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
     format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
+    format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
+    format_settings.arrow.case_insensitive_column_matching = settings.input_format_arrow_case_insensitive_column_matching;
+    format_settings.arrow.output_string_as_string = settings.output_format_arrow_string_as_string;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_orc_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
-    format_settings.arrow.case_insensitive_column_matching = settings.input_format_arrow_case_insensitive_column_matching;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_orc_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.orc.case_insensitive_column_matching = settings.input_format_orc_case_insensitive_column_matching;
+    format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
+    format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
@@ -152,6 +160,11 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
+    format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
+    format_settings.sql_insert.include_column_names = settings.output_format_sql_insert_include_column_names;
+    format_settings.sql_insert.table_name = settings.output_format_sql_insert_table_name;
+    format_settings.sql_insert.use_replace = settings.output_format_sql_insert_use_replace;
+    format_settings.sql_insert.quote_names = settings.output_format_sql_insert_quote_names;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -489,13 +502,12 @@ String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_
 String FormatFactory::getFormatFromFileDescriptor(int fd)
 {
 #ifdef OS_LINUX
-    char buf[32] = {'\0'};
-    snprintf(buf, sizeof(buf), "/proc/self/fd/%d", fd);
+    std::string proc_path = fmt::format("/proc/self/fd/{}", fd);
     char file_path[PATH_MAX] = {'\0'};
-    if (readlink(buf, file_path, sizeof(file_path) - 1) != -1)
+    if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
         return getFormatFromFileName(file_path, false);
     return "";
-#elif defined(__APPLE__)
+#elif defined(OS_DARWIN)
     char file_path[PATH_MAX] = {'\0'};
     if (fcntl(fd, F_GETPATH, file_path) != -1)
         return getFormatFromFileName(file_path, false);
@@ -538,19 +550,19 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
 }
 
 
-void FormatFactory::markFormatAsColumnOriented(const String & name)
+void FormatFactory::markFormatSupportsSubsetOfColumns(const String & name)
 {
-    auto & target = dict[name].is_column_oriented;
+    auto & target = dict[name].supports_subset_of_columns;
     if (target)
-        throw Exception("FormatFactory: Format " + name + " is already marked as column oriented", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("FormatFactory: Format " + name + " is already marked as supporting subset of columns", ErrorCodes::LOGICAL_ERROR);
     target = true;
 }
 
 
-bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
+bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) const
 {
     const auto & target = getCreators(name);
-    return target.is_column_oriented;
+    return target.supports_subset_of_columns;
 }
 
 bool FormatFactory::isInputFormat(const String & name) const
@@ -565,21 +577,28 @@ bool FormatFactory::isOutputFormat(const String & name) const
     return it != dict.end() && it->second.output_creator;
 }
 
-bool FormatFactory::checkIfFormatHasSchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);
     return bool(target.schema_reader_creator);
 }
 
-bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);
     return bool(target.external_schema_reader_creator);
 }
 
-bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name)
+bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name) const
 {
     return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
+}
+
+void FormatFactory::checkFormatName(const String & name) const
+{
+    auto it = dict.find(name);
+    if (it == dict.end())
+        throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
 
 FormatFactory & FormatFactory::instance()

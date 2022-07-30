@@ -16,6 +16,10 @@ UInt32 getSupportedArchs()
         result |= static_cast<UInt32>(TargetArch::AVX2);
     if (Cpu::CpuFlagsCache::have_AVX512F)
         result |= static_cast<UInt32>(TargetArch::AVX512F);
+    if (Cpu::CpuFlagsCache::have_AVX512BW)
+        result |= static_cast<UInt32>(TargetArch::AVX512BW);
+    if (Cpu::CpuFlagsCache::have_AVX512VBMI)
+        result |= static_cast<UInt32>(TargetArch::AVX512VBMI);
     return result;
 }
 
@@ -34,6 +38,8 @@ String toString(TargetArch arch)
         case TargetArch::AVX:     return "avx";
         case TargetArch::AVX2:    return "avx2";
         case TargetArch::AVX512F: return "avx512f";
+        case TargetArch::AVX512BW: return "avx512bw";
+        case TargetArch::AVX512VBMI: return "avx512vbmi";
     }
 
     __builtin_unreachable();

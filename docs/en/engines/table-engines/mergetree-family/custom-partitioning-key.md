@@ -3,10 +3,10 @@ sidebar_position: 30
 sidebar_label: Custom Partitioning Key
 ---
 
-# Custom Partitioning Key {#custom-partitioning-key}
+# Custom Partitioning Key
 
-:::warning   
-In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression). 
+:::warning
+In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression).
 
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
 :::
@@ -43,7 +43,7 @@ By default, the floating-point partition key is not supported. To use it enable 
 
 When inserting new data to a table, this data is stored as a separate part (chunk) sorted by the primary key. In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
 
-:::info    
+:::info
 A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn’t make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 :::
 

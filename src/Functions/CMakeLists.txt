@@ -13,6 +13,7 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
+        ch_contrib::wyhash
         ch_contrib::cityhash
         ch_contrib::farmhash
         clickhouse_dictionaries
@@ -22,6 +23,7 @@ target_link_libraries(clickhouse_functions
         dbms
         ch_contrib::metrohash
         ch_contrib::murmurhash
+        ch_contrib::hashidsxx
 
     PRIVATE
         ch_contrib::zlib
@@ -33,25 +35,8 @@ if (TARGET OpenSSL::Crypto)
     target_link_libraries(clickhouse_functions PUBLIC OpenSSL::Crypto)
 endif()
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
-    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
-    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-    set (STRIP_DSF_DEFAULT ON)
-else()
-    set (STRIP_DSF_DEFAULT OFF)
-endif()
-
-
-#  Provides faster linking and lower binary size.
-#  Tradeoff is the inability to debug some source files with e.g. gdb
-#  (empty stack frames and no local variables)."
-option(STRIP_DEBUG_SYMBOLS_FUNCTIONS "Do not generate debugger info for ClickHouse functions" ${STRIP_DSF_DEFAULT})
-
-if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
-    message(INFO "Not generating debugger info for ClickHouse functions")
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions PRIVATE "-g0")
-else()
-    message(STATUS "Generating debugger info for ClickHouse functions")
 endif()
 
 if (TARGET ch_contrib::icu)
@@ -84,8 +69,8 @@ if (TARGET ch_contrib::h3)
     target_link_libraries (clickhouse_functions PRIVATE ch_contrib::h3)
 endif()
 
-if (TARGET ch_contrib::hyperscan)
-    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::hyperscan)
+if (TARGET ch_contrib::vectorscan)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::vectorscan)
 endif()
 
 if (TARGET ch_contrib::simdjson)

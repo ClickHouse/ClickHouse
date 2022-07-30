@@ -47,7 +47,6 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 {
     try
     {
-        disk = data_part->volume->getDisk();
         for (const NameAndTypePair & column : columns)
         {
             auto column_from_part = getColumnFromPart(column);
@@ -68,13 +67,16 @@ size_t MergeTreeReaderWide::readRows(
     size_t read_rows = 0;
     try
     {
-        size_t num_columns = columns.size();
+        size_t num_columns = res_columns.size();
         checkNumberOfColumns(num_columns);
+
+        if (num_columns == 0)
+            return max_rows_to_read;
 
         std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         std::unordered_set<std::string> prefetched_streams;
-        if (disk->isRemote() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
+        if (data_part->data_part_storage->isStoredOnRemoteDisk() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
         {
             /// Request reading of data in advance,
             /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
@@ -147,7 +149,7 @@ size_t MergeTreeReaderWide::readRows(
             storage.reportBrokenPart(data_part);
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part->getFullPath() + " "
+        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + " "
                      "from mark " + toString(from_mark) + " "
                      "with max_rows_to_read = " + toString(max_rows_to_read) + ")");
         throw;
@@ -183,7 +185,7 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
         bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
+            data_part->data_part_storage, stream_name, DATA_FILE_EXTENSION,
             data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
@@ -221,7 +223,7 @@ static ReadBuffer * getStream(
     else if (seek_to_mark)
         stream.seekToMark(from_mark);
 
-    return stream.data_buffer;
+    return stream.getDataBuffer();
 }
 
 void MergeTreeReaderWide::deserializePrefix(

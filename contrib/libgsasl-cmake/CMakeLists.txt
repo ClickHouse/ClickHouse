@@ -1,7 +1,7 @@
 option(ENABLE_GSASL_LIBRARY "Enable gsasl library" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_GSASL_LIBRARY)
-    message(STATUS "Not using gsasl library")
+    message(STATUS "Not using gsasl")
     return()
 endif()
 
@@ -111,6 +111,10 @@ target_compile_definitions(_gsasl PRIVATE HAVE_CONFIG_H=1)
 if (TARGET ch_contrib::krb5)
     target_link_libraries(_gsasl PUBLIC ch_contrib::krb5)
     target_compile_definitions(_gsasl PRIVATE HAVE_GSSAPI_H=1 USE_GSSAPI=1)
+endif()
+
+if (TARGET OpenSSL::SSL)
+    target_link_libraries(_gsasl PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
 
 add_library(ch_contrib::gsasl ALIAS _gsasl)

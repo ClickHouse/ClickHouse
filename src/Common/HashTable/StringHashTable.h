@@ -150,10 +150,10 @@ public:
 };
 
 template <size_t initial_size_degree = 8>
-struct StringHashTableGrower : public HashTableGrower<initial_size_degree>
+struct StringHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
 {
     // Smooth growing for string maps
-    void increaseSize() { this->size_degree += 1; }
+    void increaseSize() { this->increaseSizeDegree(1); }
 };
 
 template <typename Mapped>
@@ -169,7 +169,7 @@ struct StringHashTableLookupResult
     auto & operator*() const { return *this; }
     auto * operator->() { return this; }
     auto * operator->() const { return this; }
-    operator bool() const { return mapped_ptr; } /// NOLINT
+    explicit operator bool() const { return mapped_ptr; }
     friend bool operator==(const StringHashTableLookupResult & a, const std::nullptr_t &) { return !a.mapped_ptr; }
     friend bool operator==(const std::nullptr_t &, const StringHashTableLookupResult & b) { return !b.mapped_ptr; }
     friend bool operator!=(const StringHashTableLookupResult & a, const std::nullptr_t &) { return a.mapped_ptr; }
