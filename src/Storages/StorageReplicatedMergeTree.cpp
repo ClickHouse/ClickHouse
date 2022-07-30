@@ -1584,8 +1584,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;    /// NOTE Deletion from `virtual_parts` is not done, but it is only necessary for merge.
     }
 
-    // bool do_fetch = false;
-
     switch (entry.type)
     {
         case LogEntry::ATTACH_PART:
@@ -1593,7 +1591,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             [[fallthrough]];
         case LogEntry::GET_PART:
             return executeFetch(entry);
-            // do_fetch = true;
         case LogEntry::MERGE_PARTS:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
@@ -1609,8 +1606,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
     }
-
-    // return true;
 }
 
 
@@ -6018,6 +6013,11 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
         getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, block_number);
     }
     return CancellationCode::CancelSent;
+}
+
+bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
+{
+    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
