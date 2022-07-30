@@ -1731,8 +1731,18 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
             if (!entry.actual_new_part_name.empty())
                 LOG_DEBUG(log, "Will fetch part {} instead of {}", entry.actual_new_part_name, entry.new_part_name);
 
-            if (!fetchPart(part_name, metadata_snapshot, fs::path(zookeeper_path) / "replicas" / replica, false, entry.quorum))
+            String source_replica_path = fs::path(zookeeper_path) / "replicas" / replica;
+            if (!fetchPart(part_name,
+                metadata_snapshot,
+                source_replica_path,
+                /* to_detached= */ false,
+                entry.quorum,
+                /* zookeeper_ */ nullptr,
+                /* try_fetch_shared= */ true,
+                entry.znode_name))
+            {
                 return false;
+            }
         }
         catch (Exception & e)
         {
@@ -1815,7 +1825,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     LOG_TRACE(log, "Executing DROP_RANGE {}", entry.new_part_name);
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
+    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry, /* fetch_entry_znode= */ {});
     part_check_thread.cancelRemovedPartsCheck(drop_range_info);
 
     /// Delete the parts contained in the range to be deleted.
@@ -1884,7 +1894,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     if (replace)
     {
         getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
-        queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
+        queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry, /* fetch_entry_znode= */ {});
         part_check_thread.cancelRemovedPartsCheck(drop_range);
     }
     else
@@ -3431,7 +3441,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     ///       so GET_PART all_1_42_5 (and all source parts) is useless. The only thing we can do is to fetch all_1_42_5_63.
     ///    2. If all_1_42_5_63 is lost, then replication may stuck waiting for all_1_42_5_63 to appear,
     ///       because we may have some covered parts (more precisely, parts with the same min and max blocks)
-    queue.removePartProducingOpsInRange(zookeeper, broken_part_info, {});
+    queue.removePartProducingOpsInRange(zookeeper, broken_part_info, /* covering_entry= */ {}, /* fetch_entry_znode= */ {});
 
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
@@ -3831,8 +3841,15 @@ bool StorageReplicatedMergeTree::partIsLastQuorumPart(const MergeTreePartInfo & 
 }
 
 
-bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const StorageMetadataPtr & metadata_snapshot,
-    const String & source_replica_path, bool to_detached, size_t quorum, zkutil::ZooKeeper::Ptr zookeeper_, bool try_fetch_shared)
+bool StorageReplicatedMergeTree::fetchPart(
+    const String & part_name,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & source_replica_path,
+    bool to_detached,
+    size_t quorum,
+    zkutil::ZooKeeper::Ptr zookeeper_,
+    bool try_fetch_shared,
+    String entry_znode)
 {
     auto zookeeper = zookeeper_ ? zookeeper_ : getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
@@ -4030,6 +4047,17 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
             }
+
+            /// It is possible that fetched parts may cover other parts (see
+            /// findReplicaHavingCoveringPart()), and if those covered parts
+            /// cannot be executed right now (due to MERGE_PARTS that covers
+            /// them is in progress), replica delay will be increased until
+            /// those entries will be executed (if covered operations
+            /// finishes) in other words until MERGE_PARTS is in progress,
+            /// while this can take awhile.
+            ///
+            /// So let's just remove them from the queue.
+            queue.removePartProducingOpsInRange(zookeeper, part->info, /* covering_entry= */ {}, entry_znode);
 
             write_part_log({});
         }

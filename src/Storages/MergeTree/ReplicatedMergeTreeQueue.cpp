@@ -1015,7 +1015,8 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     zkutil::ZooKeeperPtr zookeeper,
     const MergeTreePartInfo & part_info,
-    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry)
+    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
+    const String & fetch_entry_znode)
 {
     /// TODO is it possible to simplify it?
     Queue to_wait;
@@ -1029,10 +1030,17 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     [[maybe_unused]] bool called_from_alter_query_directly = covering_entry && covering_entry->replace_range_entry
         && covering_entry->replace_range_entry->columns_version < 0;
     [[maybe_unused]] bool called_for_broken_part = !covering_entry;
-    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part);
+    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part || !fetch_entry_znode.empty());
 
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
+        /// Skipping currently processing entry
+        if (!fetch_entry_znode.empty() && (*it)->znode_name == fetch_entry_znode)
+        {
+            ++it;
+            continue;
+        }
+
         auto type = (*it)->type;
         bool is_simple_producing_op = type == LogEntry::GET_PART ||
                                       type == LogEntry::ATTACH_PART ||
