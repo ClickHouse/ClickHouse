@@ -117,7 +117,7 @@ public:
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            return getLeastSupertype({type_x, type_arr_to_nested});
+            return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
         }
         else
         {
@@ -140,7 +140,7 @@ public:
             if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                return getLeastSupertype({type_arr_to_nested, type_default});
+                return getLeastSupertype(DataTypes{type_arr_to_nested, type_default});
             }
 
             /// TODO More checks.

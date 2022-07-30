@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stddef.h>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <atomic>
@@ -72,7 +72,7 @@ namespace CurrentMetrics
         }
 
     public:
-        Increment(Metric metric, Value amount_ = 1)
+        explicit Increment(Metric metric, Value amount_ = 1)
             : Increment(&values[metric], amount_) {}
 
         ~Increment()
@@ -81,12 +81,12 @@ namespace CurrentMetrics
                 what->fetch_sub(amount, std::memory_order_relaxed);
         }
 
-        Increment(Increment && old)
+        Increment(Increment && old) noexcept
         {
             *this = std::move(old);
         }
 
-        Increment & operator= (Increment && old)
+        Increment & operator=(Increment && old) noexcept
         {
             what = old.what;
             amount = old.amount;

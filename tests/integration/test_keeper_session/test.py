@@ -5,21 +5,24 @@ import socket
 import struct
 
 from kazoo.client import KazooClient
+
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/keeper_config.xml'], stay_alive=True)
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/keeper_config.xml"], stay_alive=True
+)
 
-bool_struct = struct.Struct('B')
-int_struct = struct.Struct('!i')
-int_int_struct = struct.Struct('!ii')
-int_int_long_struct = struct.Struct('!iiq')
+bool_struct = struct.Struct("B")
+int_struct = struct.Struct("!i")
+int_int_struct = struct.Struct("!ii")
+int_int_long_struct = struct.Struct("!iiq")
 
-int_long_int_long_struct = struct.Struct('!iqiq')
-long_struct = struct.Struct('!q')
-multiheader_struct = struct.Struct('!iBi')
-reply_header_struct = struct.Struct('!iqi')
-stat_struct = struct.Struct('!qqqqiiiqiiq')
+int_long_int_long_struct = struct.Struct("!iqiq")
+long_struct = struct.Struct("!q")
+multiheader_struct = struct.Struct("!iBi")
+reply_header_struct = struct.Struct("!iqi")
+stat_struct = struct.Struct("!qqqqiiiqiiq")
 
 
 @pytest.fixture(scope="module")
@@ -63,7 +66,9 @@ def wait_nodes():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
     _fake_zk_instance.start()
     return _fake_zk_instance
 
@@ -96,7 +101,7 @@ def read_buffer(bytes, offset):
     else:
         index = offset
         offset += length
-        return bytes[index:index + length], offset
+        return bytes[index : index + length], offset
 
 
 def handshake(node_name=node1.name, session_timeout=1000, session_id=0):
@@ -105,14 +110,18 @@ def handshake(node_name=node1.name, session_timeout=1000, session_id=0):
         client = get_keeper_socket(node_name)
         protocol_version = 0
         last_zxid_seen = 0
-        session_passwd = b'\x00' * 16
+        session_passwd = b"\x00" * 16
         read_only = 0
 
         # Handshake serialize and deserialize code is from 'kazoo.protocol.serialization'.
 
         # serialize handshake
         req = bytearray()
-        req.extend(int_long_int_long_struct.pack(protocol_version, last_zxid_seen, session_timeout, session_id))
+        req.extend(
+            int_long_int_long_struct.pack(
+                protocol_version, last_zxid_seen, session_timeout, session_id
+            )
+        )
         req.extend(write_buffer(session_passwd))
         req.extend([1 if read_only else 0])
         # add header
@@ -127,7 +136,9 @@ def handshake(node_name=node1.name, session_timeout=1000, session_id=0):
         print("handshake response - len:", data.hex(), len(data))
         # ignore header
         offset = 4
-        proto_version, negotiated_timeout, session_id = int_int_long_struct.unpack_from(data, offset)
+        proto_version, negotiated_timeout, session_id = int_int_long_struct.unpack_from(
+            data, offset
+        )
         offset += int_int_long_struct.size
         password, offset = read_buffer(data, offset)
         try:
@@ -153,4 +164,4 @@ def test_session_timeout(started_cluster):
     assert negotiated_timeout == 8000
 
     negotiated_timeout, _ = handshake(node1.name, session_timeout=20000, session_id=0)
-    assert negotiated_timeout == 10000 
+    assert negotiated_timeout == 10000

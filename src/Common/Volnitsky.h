@@ -9,7 +9,6 @@
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <base/StringRef.h>
 #include <base/unaligned.h>
 
 /** Search for a substring in a string by Volnitsky's algorithm
@@ -60,7 +59,7 @@ namespace VolnitskyTraits
     static inline Ngram toNGram(const UInt8 * const pos) { return unalignedLoad<Ngram>(pos); }
 
     template <typename Callback>
-    static inline void putNGramASCIICaseInsensitive(const UInt8 * pos, int offset, Callback && putNGramBase)
+    static inline bool putNGramASCIICaseInsensitive(const UInt8 * pos, int offset, Callback && putNGramBase)
     {
         struct Chars
         {
@@ -107,10 +106,12 @@ namespace VolnitskyTraits
         else
             /// 1 combination: 01
             putNGramBase(n, offset);
+
+        return true;
     }
 
     template <typename Callback>
-    static inline void putNGramUTF8CaseInsensitive(
+    static inline bool putNGramUTF8CaseInsensitive(
         const UInt8 * pos, int offset, const UInt8 * begin, size_t size, Callback && putNGramBase)
     {
         const UInt8 * end = begin + size;
@@ -131,7 +132,7 @@ namespace VolnitskyTraits
 
         if (isascii(chars.c0) && isascii(chars.c1))
         {
-            putNGramASCIICaseInsensitive(pos, offset, putNGramBase);
+            return putNGramASCIICaseInsensitive(pos, offset, putNGramBase);
         }
         else
         {
@@ -153,7 +154,7 @@ namespace VolnitskyTraits
             if (UTF8::isContinuationOctet(chars.c1))
             {
                 /// ngram is inside a sequence
-                auto seq_pos = pos;
+                const auto * seq_pos = pos;
                 UTF8::syncBackward(seq_pos, begin);
 
                 auto u32 = UTF8::convertUTF8ToCodePoint(seq_pos, end - seq_pos);
@@ -177,21 +178,25 @@ namespace VolnitskyTraits
                         /// where is the given ngram in respect to the start of UTF-8 sequence?
                         size_t seq_ngram_offset = pos - seq_pos;
 
-                        Seq seq;
+                        Seq seq_l;
+                        size_t length_l = UTF8::convertCodePointToUTF8(l_u32, seq_l, sizeof(seq_l));
 
-                        /// put ngram for lowercase
-                        size_t length_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(l_u32, seq, sizeof(seq));
-                        assert(length_l >= 2);
-                        chars.c0 = seq[seq_ngram_offset];
-                        chars.c1 = seq[seq_ngram_offset + 1];
+                        Seq seq_r;
+                        size_t length_r = UTF8::convertCodePointToUTF8(u_u32, seq_r, sizeof(seq_r));
+
+                        if (length_l != length_r)
+                            return false;
+
+                        assert(length_l >= 2 && length_r >= 2);
+
+                        chars.c0 = seq_l[seq_ngram_offset];
+                        chars.c1 = seq_l[seq_ngram_offset + 1];
                         putNGramBase(n, offset);
 
-                        /// put ngram for uppercase
-                        size_t length_r [[maybe_unused]] = UTF8::convertCodePointToUTF8(u_u32, seq, sizeof(seq));
-                        assert(length_r >= 2);
-                        chars.c0 = seq[seq_ngram_offset]; //-V519
-                        chars.c1 = seq[seq_ngram_offset + 1]; //-V519
+                        chars.c0 = seq_r[seq_ngram_offset]; //-V519
+                        chars.c1 = seq_r[seq_ngram_offset + 1]; //-V519
                         putNGramBase(n, offset);
+
                     }
                 }
             }
@@ -199,7 +204,7 @@ namespace VolnitskyTraits
             {
                 /// ngram is on the boundary of two sequences
                 /// first sequence may start before u_pos if it is not ASCII
-                auto first_seq_pos = pos;
+                const auto * first_seq_pos = pos;
                 UTF8::syncBackward(first_seq_pos, begin);
                 /// where is the given ngram in respect to the start of first UTF-8 sequence?
                 size_t seq_ngram_offset = pos - first_seq_pos;
@@ -215,7 +220,7 @@ namespace VolnitskyTraits
                 }
 
                 /// second sequence always start immediately after u_pos
-                auto second_seq_pos = pos + 1;
+                const auto * second_seq_pos = pos + 1;
 
                 auto second_u32 = UTF8::convertUTF8ToCodePoint(second_seq_pos, end - second_seq_pos);
                 int second_l_u32 = 0;
@@ -235,40 +240,47 @@ namespace VolnitskyTraits
                 else if (first_l_u32 == first_u_u32)
                 {
                     /// first symbol is case-independent
-                    Seq seq;
+                    Seq seq_l;
+                    size_t size_l = UTF8::convertCodePointToUTF8(second_l_u32, seq_l, sizeof(seq_l));
 
-                    /// put ngram for lowercase
-                    size_t size_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(second_l_u32, seq, sizeof(seq));
-                    assert(size_l >= 1);
-                    chars.c1 = seq[0];
+                    Seq seq_u;
+                    size_t size_u = UTF8::convertCodePointToUTF8(second_u_u32, seq_u, sizeof(seq_u));
+
+                    if (size_l != size_u)
+                        return false;
+
+                    assert(size_l >= 1 && size_u >= 1);
+                    chars.c1 = seq_l[0];
                     putNGramBase(n, offset);
 
                     /// put ngram from uppercase, if it is different
-                    size_t size_u [[maybe_unused]] = UTF8::convertCodePointToUTF8(second_u_u32, seq, sizeof(seq));
-                    assert(size_u >= 1);
-                    if (chars.c1 != seq[0])
+                    if (chars.c1 != seq_u[0])
                     {
-                        chars.c1 = seq[0];
+                        chars.c1 = seq_u[0];
                         putNGramBase(n, offset);
                     }
                 }
                 else if (second_l_u32 == second_u_u32)
                 {
                     /// second symbol is case-independent
-                    Seq seq;
 
-                    /// put ngram for lowercase
-                    size_t size_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(first_l_u32, seq, sizeof(seq));
-                    assert(size_l > seq_ngram_offset);
-                    chars.c0 = seq[seq_ngram_offset];
+                    Seq seq_l;
+                    size_t size_l = UTF8::convertCodePointToUTF8(first_l_u32, seq_l, sizeof(seq_l));
+                    Seq seq_u;
+                    size_t size_u = UTF8::convertCodePointToUTF8(first_u_u32, seq_u, sizeof(seq_u));
+
+                    if (size_l != size_u)
+                        return false;
+
+                    assert(size_l > seq_ngram_offset && size_u > seq_ngram_offset);
+
+                    chars.c0 = seq_l[seq_ngram_offset];
                     putNGramBase(n, offset);
 
                     /// put ngram for uppercase, if it is different
-                    size_t size_u [[maybe_unused]] = UTF8::convertCodePointToUTF8(first_u_u32, seq, sizeof(seq));
-                    assert(size_u > seq_ngram_offset);
-                    if (chars.c0 != seq[seq_ngram_offset])
+                    if (chars.c0 != seq_u[seq_ngram_offset])
                     {
-                        chars.c0 = seq[seq_ngram_offset];
+                        chars.c0 = seq_u[seq_ngram_offset];
                         putNGramBase(n, offset);
                     }
                 }
@@ -279,10 +291,12 @@ namespace VolnitskyTraits
                     Seq second_l_seq;
                     Seq second_u_seq;
 
-                    size_t size_first_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(first_l_u32, first_l_seq, sizeof(first_l_seq));
-                    size_t size_first_u [[maybe_unused]] = UTF8::convertCodePointToUTF8(first_u_u32, first_u_seq, sizeof(first_u_seq));
-                    size_t size_second_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(second_l_u32, second_l_seq, sizeof(second_l_seq));
-                    size_t size_second_u [[maybe_unused]] = UTF8::convertCodePointToUTF8(second_u_u32, second_u_seq, sizeof(second_u_seq));
+                    size_t size_first_l = UTF8::convertCodePointToUTF8(first_l_u32, first_l_seq, sizeof(first_l_seq));
+                    size_t size_first_u = UTF8::convertCodePointToUTF8(first_u_u32, first_u_seq, sizeof(first_u_seq));
+                    size_t size_second_l = UTF8::convertCodePointToUTF8(second_l_u32, second_l_seq, sizeof(second_l_seq));
+                    size_t size_second_u = UTF8::convertCodePointToUTF8(second_u_u32, second_u_seq, sizeof(second_u_seq));
+                    if (size_first_l != size_first_u || size_second_l != size_second_u)
+                        return false;
 
                     assert(size_first_l > seq_ngram_offset);
                     assert(size_first_u > seq_ngram_offset);
@@ -325,17 +339,25 @@ namespace VolnitskyTraits
                 }
             }
         }
+        return true;
     }
 
     template <bool CaseSensitive, bool ASCII, typename Callback>
-    static inline void putNGram(const UInt8 * pos, int offset, [[maybe_unused]] const UInt8 * begin, size_t size, Callback && putNGramBase)
+    static inline bool putNGram(const UInt8 * pos, int offset, [[maybe_unused]] const UInt8 * begin, size_t size, Callback && putNGramBase)
     {
         if constexpr (CaseSensitive)
+        {
             putNGramBase(toNGram(pos), offset);
+            return true;
+        }
         else if constexpr (ASCII)
-            putNGramASCIICaseInsensitive(pos, offset, std::forward<Callback>(putNGramBase));
+        {
+            return putNGramASCIICaseInsensitive(pos, offset, std::forward<Callback>(putNGramBase));
+        }
         else
-            putNGramUTF8CaseInsensitive(pos, offset, begin, size, std::forward<Callback>(putNGramBase));
+        {
+            return putNGramUTF8CaseInsensitive(pos, offset, begin, size, std::forward<Callback>(putNGramBase));
+        }
     }
 }
 
@@ -381,7 +403,20 @@ public:
         /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
         /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
-            VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, i + 1, needle, needle_size, callback);
+        {
+            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, i + 1, needle, needle_size, callback);
+
+            /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
+              * are represented by different number of bytes or code points.
+              * So, use fallback if error occurred.
+              */
+            if (!ok)
+            {
+                fallback_searcher.force_fallback = true;
+                hash = nullptr;
+                return;
+            }
+        }
     }
 
 
@@ -391,7 +426,7 @@ public:
         if (needle_size == 0)
             return haystack;
 
-        const auto haystack_end = haystack + haystack_size;
+        const auto * haystack_end = haystack + haystack_size;
 
         if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
             return fallback_searcher.search(haystack, haystack_end);
@@ -405,7 +440,7 @@ public:
                  cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
             {
                 /// When found - compare bytewise, using the offset from the hash table.
-                const auto res = pos - (hash[cell_num] - 1);
+                const auto * res = pos - (hash[cell_num] - 1);
 
                 /// pointer in the code is always padded array so we can use pagesafe semantics
                 if (fallback_searcher.compare(haystack, haystack_end, res))
@@ -440,7 +475,7 @@ class MultiVolnitskyBase
 {
 private:
     /// needles and their offsets
-    const std::vector<StringRef> & needles;
+    const std::vector<std::string_view> & needles;
 
 
     /// fallback searchers
@@ -466,7 +501,7 @@ private:
     static constexpr size_t small_limit = VolnitskyTraits::hash_size / 8;
 
 public:
-    MultiVolnitskyBase(const std::vector<StringRef> & needles_) : needles{needles_}, step{0}, last{0}
+    explicit MultiVolnitskyBase(const std::vector<std::string_view> & needles_) : needles{needles_}, step{0}, last{0}
     {
         fallback_searchers.reserve(needles.size());
         hash = std::unique_ptr<OffsetId[]>(new OffsetId[VolnitskyTraits::hash_size]);   /// No zero initialization, it will be done later.
@@ -499,8 +534,8 @@ public:
 
         for (; last < size; ++last)
         {
-            const char * cur_needle_data = needles[last].data;
-            const size_t cur_needle_size = needles[last].size;
+            const char * cur_needle_data = needles[last].data();
+            const size_t cur_needle_size = needles[last].size();
 
             /// save the indices of fallback searchers
             if (VolnitskyTraits::isFallbackNeedle(cur_needle_size))
@@ -557,7 +592,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size() <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             return true;
                     }
                 }
@@ -589,7 +624,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size() <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             answer = std::min(answer, ind);
                     }
                 }
@@ -627,7 +662,7 @@ public:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
+                        if (res + needles[ind].size() <= haystack_end && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             answer = std::min<UInt64>(answer, res - haystack);
                     }
                 }
@@ -663,7 +698,7 @@ public:
                         const auto * res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
                         if (answer[ind] == 0
-                            && res + needles[ind].size <= haystack_end
+                            && res + needles[ind].size() <= haystack_end
                             && fallback_searchers[ind].compare(haystack, haystack_end, res))
                             answer[ind] = count_chars(haystack, res);
                     }

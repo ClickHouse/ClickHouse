@@ -23,6 +23,7 @@ class IMergeTreeDataPartWriter : private boost::noncopyable
 public:
     IMergeTreeDataPartWriter(
         const MergeTreeData::DataPartPtr & data_part_,
+        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeWriterSettings & settings_,
@@ -32,7 +33,9 @@ public:
 
     virtual void write(const Block & block, const IColumn::Permutation * permutation) = 0;
 
-    virtual void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) = 0;
+    virtual void fillChecksums(IMergeTreeDataPart::Checksums & checksums) = 0;
+
+    virtual void finish(bool sync) = 0;
 
     Columns releaseIndexColumns();
     const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
@@ -40,6 +43,7 @@ public:
 protected:
 
     const MergeTreeData::DataPartPtr data_part;
+    DataPartStorageBuilderPtr data_part_storage_builder;
     const MergeTreeData & storage;
     const StorageMetadataPtr metadata_snapshot;
     const NamesAndTypesList columns_list;

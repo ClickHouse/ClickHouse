@@ -6,9 +6,11 @@
 #include <Common/Arena.h>
 #include <Common/LRUCache.h>
 #include <Common/assert_cast.h>
+#include "Columns/IColumn.h"
 #include <base/unaligned.h>
 
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
@@ -44,7 +46,7 @@ struct HashMethodOneNumber
         vec = key_columns[0]->getRawData().data;
     }
 
-    HashMethodOneNumber(const IColumn * column)
+    explicit HashMethodOneNumber(const IColumn * column)
     {
         vec = column->getRawData().data;
     }
@@ -83,8 +85,11 @@ struct HashMethodString
 
     HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
-        const IColumn & column = *key_columns[0];
-        const ColumnString & column_string = assert_cast<const ColumnString &>(column);
+        const IColumn * column = key_columns[0];
+        if (isColumnConst(*column))
+            column = &assert_cast<const ColumnConst &>(*column).getDataColumn();
+
+        const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
         offsets = column_string.getOffsets().data();
         chars = column_string.getChars().data();
     }
@@ -206,7 +211,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         NotFound = 2,
     };
 
-    static constexpr bool has_mapped = !std::is_same<Mapped, void>::value;
+    static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using EmplaceResult = columns_hashing_impl::EmplaceResultImpl<Mapped>;
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
@@ -233,7 +238,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     static const ColumnLowCardinality & getLowCardinalityColumn(const IColumn * column)
     {
-        auto low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
+        const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
         if (!low_cardinality_column)
             throw Exception("Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
                             "Excepted LowCardinality, got " + column->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -244,7 +249,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context)
         : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
     {
-        auto column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
+        const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
         if (!context)
             throw Exception("Cache wasn't created for HashMethodSingleLowCardinalityColumn",
@@ -262,7 +267,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
         }
 
-        auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
+        const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
         key_columns = {dict};
         bool is_shared_dict = column->isSharedDictionary();
@@ -387,47 +392,52 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
-    ALWAYS_INLINE FindResult findFromRow(Data & data, size_t row_, Arena & pool)
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row_, Arena & pool)
     {
         size_t row = getIndexAt(row_);
 
         if (is_nullable && row == 0)
         {
             if constexpr (has_mapped)
-                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData());
+                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData(), 0);
             else
-                return FindResult(data.hasNullKeyData());
+                return FindResult(data.hasNullKeyData(), 0);
         }
 
         if (visit_cache[row] != VisitValue::Empty)
         {
             if constexpr (has_mapped)
-                return FindResult(&mapped_cache[row], visit_cache[row] == VisitValue::Found);
+                return FindResult(&mapped_cache[row], visit_cache[row] == VisitValue::Found, 0);
             else
-                return FindResult(visit_cache[row] == VisitValue::Found);
+                return FindResult(visit_cache[row] == VisitValue::Found, 0);
         }
 
         auto key_holder = getKeyHolder(row_, pool);
 
-        typename Data::iterator it;
+        typename Data::LookupResult it;
         if (saved_hash)
-            it = data.find(*key_holder, saved_hash[row]);
+            it = data.find(keyHolderGetKey(key_holder), saved_hash[row]);
         else
-            it = data.find(*key_holder);
+            it = data.find(keyHolderGetKey(key_holder));
 
-        bool found = it != data.end();
+        bool found = it;
         visit_cache[row] = found ? VisitValue::Found : VisitValue::NotFound;
 
         if constexpr (has_mapped)
         {
             if (found)
-                mapped_cache[row] = it->second;
+                mapped_cache[row] = it->getMapped();
         }
 
+        size_t offset = 0;
+
+        if constexpr (FindResult::has_offset)
+            offset = found ? data.offsetInternal(it) : 0;
+
         if constexpr (has_mapped)
-            return FindResult(&mapped_cache[row], found);
+            return FindResult(&mapped_cache[row], found, offset);
         else
-            return FindResult(found);
+            return FindResult(found, offset);
     }
 
     template <typename Data>
@@ -499,7 +509,7 @@ struct HashMethodKeysFixed
     }
 
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
-        : Base(key_columns), key_sizes(std::move(key_sizes_)), keys_size(key_columns.size())
+        : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
         {
@@ -508,7 +518,7 @@ struct HashMethodKeysFixed
             low_cardinality_keys.position_sizes.resize(key_columns.size());
             for (size_t i = 0; i < key_columns.size(); ++i)
             {
-                if (auto * low_cardinality_col = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
+                if (const auto * low_cardinality_col = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
                 {
                     low_cardinality_keys.nested_columns[i] = low_cardinality_col->getDictionary().getNestedColumn().get();
                     low_cardinality_keys.positions[i] = &low_cardinality_col->getIndexes();

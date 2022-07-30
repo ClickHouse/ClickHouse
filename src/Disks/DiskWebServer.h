@@ -1,9 +1,12 @@
 #pragma once
 
-#include <Disks/IDiskRemote.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Core/UUID.h>
 #include <set>
+
+#include <Interpreters/Context_fwd.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB
@@ -20,7 +23,7 @@ namespace ErrorCodes
  *       <disks>
  *           <web>
  *               <type>web</type>
- *               <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
+ *               <endpoint>https://clickhouse-datasets.s3.amazonaws.com/disk-with-static-files-tests/test-hits/</endpoint>
  *           </web>
  *       </disks>
  *       <policies>
@@ -38,7 +41,7 @@ namespace ErrorCodes
  *
  * To get files for upload run:
  * clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>
- * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`)
+ * (--metadata-path can be found in query: `select data_paths from system.tables where name='<table_name>';`) /// NOLINT
  *
  * When loading files by <endpoint> they must be loaded into <endpoint>/store/ path, but config must conrain only <endpoint>.
  *
@@ -77,7 +80,6 @@ public:
     UInt64 getTotalSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     UInt64 getAvailableSpace() const final override { return std::numeric_limits<UInt64>::max(); }
-
     UInt64 getUnreservedSpace() const final override { return std::numeric_limits<UInt64>::max(); }
 
     /// Read-only part
@@ -88,19 +90,21 @@ public:
 
     size_t getFileSize(const String & path) const override;
 
-    void listFiles(const String & /* path */, std::vector<String> & /* file_names */) override { }
+    void listFiles(const String & /* path */, std::vector<String> & /* file_names */) const override { }
 
     void setReadOnly(const String & /* path */) override {}
 
     bool isDirectory(const String & path) const override;
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & /* path */) override;
+    DirectoryIteratorPtr iterateDirectory(const String & /* path */) const override;
 
-    Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp{}; }
+    Poco::Timestamp getLastModified(const String &) const override { return Poco::Timestamp{}; }
+
+    time_t getLastChanged(const String &) const override { return {}; }
 
     /// Write and modification part
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode) override
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
@@ -140,7 +144,12 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
 
-    void removeSharedRecursive(const String &, bool) override
+    void removeSharedFileIfExists(const String &, bool) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
+    }
+
+    void removeSharedRecursive(const String &, bool, const NameSet &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
@@ -164,6 +173,10 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is read-only", getName());
     }
+
+    StoredObjects getStorageObjects(const String &) const override { return {}; }
+
+    void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &) override {}
 
     /// Create part
 

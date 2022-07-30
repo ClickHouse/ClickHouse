@@ -1,6 +1,6 @@
 ---
-toc_priority: 43
-toc_title: "Манипуляции с ограничениями"
+sidebar_position: 43
+sidebar_label: "Манипуляции с ограничениями"
 ---
 
 # Манипуляции с ограничениями (constraints) {#manipuliatsii-s-ogranicheniiami-constraints}

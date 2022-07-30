@@ -7,6 +7,8 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -27,11 +29,11 @@
 #include <Poco/Timestamp.h>
 #include <base/sleep.h>
 #include <base/getFQDNOrHostName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Interpreters/ZooKeeperLog.h>
 
@@ -47,6 +49,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
     extern const int NOT_A_LEADER;
+    extern const int TABLE_IS_READ_ONLY;
     extern const int KEEPER_EXCEPTION;
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -179,7 +182,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     {
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
-        /// Otherwise, that node will be ignored by DDLQueryStatusInputStream.
+        /// Otherwise, that node will be ignored by DDLQueryStatusSource.
         out_reason = "Incorrect task format";
         write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException().serializeText(), out_reason);
         return {};
@@ -221,7 +224,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
 
 static void filterAndSortQueueNodes(Strings & all_nodes)
 {
-    all_nodes.erase(std::remove_if(all_nodes.begin(), all_nodes.end(), [] (const String & s) { return !startsWith(s, "query-"); }), all_nodes.end());
+    std::erase_if(all_nodes, [] (const String & s) { return !startsWith(s, "query-"); });
     ::sort(all_nodes.begin(), all_nodes.end());
 }
 
@@ -286,7 +289,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
     size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
-    /// The following message is too verbose, but it can be useful too debug mysterious test failures in CI
+    /// The following message is too verbose, but it can be useful to debug mysterious test failures in CI
     LOG_TRACE(log, "scheduleTasks: initialized={}, size_before_filtering={}, queue_size={}, "
                    "entries={}..{}, "
                    "first_failed_task_name={}, current_tasks_size={}, "
@@ -350,6 +353,12 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             bool maybe_concurrently_deleting = task && !zookeeper->exists(fs::path(task->entry_path) / "active");
             return task && !maybe_concurrently_deleting && !maybe_currently_processing;
         }
+        else if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
+        {
+            /// If connection was lost during queue loading
+            /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
+            return false;
+        }
         else
         {
             /// Return true if entry should not be scheduled.
@@ -365,7 +374,11 @@ void DDLWorker::scheduleTasks(bool reinitialized)
 
         String reason;
         auto task = initAndCheckTask(entry_name, reason, zookeeper);
-        if (!task)
+        if (task)
+        {
+            queue_fully_loaded_after_initialization_debug_helper = true;
+        }
+        else
         {
             LOG_DEBUG(log, "Will not execute task {}: {}", entry_name, reason);
             updateMaxDDLEntryID(entry_name);
@@ -449,6 +462,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
         /// and consider query as executed with status "failed" and return true in other cases.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
+                                 e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
@@ -535,15 +549,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         {
             /// Connection has been lost and now we are retrying,
             /// but our previous ephemeral node still exists.
-            zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
-            String dummy;
-            if (zookeeper->tryGet(active_node_path, dummy, nullptr, eph_node_disappeared))
-            {
-                constexpr int timeout_ms = 60 * 1000;
-                if (!eph_node_disappeared->tryWait(timeout_ms))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Ephemeral node {} still exists, "
-                                    "probably it's owned by someone else", active_node_path);
-            }
+            zookeeper->waitForEphemeralToDisappearIfAny(active_node_path);
         }
 
         zookeeper->create(active_node_path, {}, zkutil::CreateMode::Ephemeral);
@@ -622,8 +628,6 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         task.was_executed = true;
     }
 
-    updateMaxDDLEntryID(task.entry_name);
-
     /// Step 3: Create node in finished/ status dir and write execution status.
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
     /// NOTE: If ZooKeeper connection is lost here, we will try again to write query status.
@@ -640,6 +644,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     active_node->setAlreadyRemoved();
 
     task.completely_processed = true;
+    updateMaxDDLEntryID(task.entry_name);
 }
 
 
@@ -649,7 +654,11 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
     if (auto * query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
         return false;
 
-    if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
+    if (!ast_ddl->as<ASTAlterQuery>() &&
+        !ast_ddl->as<ASTOptimizeQuery>() &&
+        !ast_ddl->as<ASTDropQuery>() &&
+        !ast_ddl->as<ASTCreateIndexQuery>() &&
+        !ast_ddl->as<ASTDropIndexQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
@@ -704,6 +713,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     if (zookeeper->exists(is_executed_path, nullptr, event))
     {
         LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
+        if (auto op = task.getOpToUpdateLogPointer())
+            task.ops.push_back(op);
         return true;
     }
 
@@ -748,6 +759,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             {
                 LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, executed_by);
                 executed_by_other_leader = true;
+                if (auto op = task.getOpToUpdateLogPointer())
+                    task.ops.push_back(op);
                 break;
             }
 
@@ -775,6 +788,8 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         {
             LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
             executed_by_other_leader = true;
+            if (auto op = task.getOpToUpdateLogPointer())
+                task.ops.push_back(op);
             break;
         }
         else
@@ -866,7 +881,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
 
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
-            zookeeper->tryRemoveChildrenRecursive(node_path, "finished");
+            zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, "finished");
 
             /// And then we remove node_path and node_path/finished in a single transaction
             Coordination::Requests ops;

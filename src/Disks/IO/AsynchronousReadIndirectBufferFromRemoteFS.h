@@ -5,6 +5,7 @@
 #include <IO/AsynchronousReader.h>
 #include <utility>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -44,9 +45,13 @@ public:
 
     void prefetch() override;
 
-    void setReadUntilPosition(size_t position) override;
+    void setReadUntilPosition(size_t position) override; /// [..., position).
 
     void setReadUntilEnd() override;
+
+    String getInfoForLog() override;
+
+    size_t getFileSize() override;
 
 private:
     bool nextImpl() override;
@@ -55,7 +60,7 @@ private:
 
     bool hasPendingDataToRead();
 
-    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
     AsynchronousReaderPtr reader;
 
@@ -75,7 +80,7 @@ private:
 
     std::optional<size_t> read_until_position;
 
-    bool must_read_until_position;
+    Poco::Logger * log;
 };
 
 }

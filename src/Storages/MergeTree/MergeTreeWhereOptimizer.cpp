@@ -123,14 +123,14 @@ static const ASTFunction * getAsTuple(const ASTPtr & node)
     if (const auto * func = node->as<ASTFunction>(); func && func->name == "tuple")
         return func;
     return {};
-};
+}
 
 static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
 {
     if (const auto * value_tuple = node->as<ASTLiteral>())
         return value_tuple && value_tuple->value.tryGet<Tuple>(tuple);
     return false;
-};
+}
 
 bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
 {
@@ -314,7 +314,7 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
     UInt64 size = 0;
 
     for (const auto & identifier : identifiers)
-        if (column_sizes.count(identifier))
+        if (column_sizes.contains(identifier))
             size += column_sizes.at(identifier);
 
     return size;
@@ -345,7 +345,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        if (!KeyCondition::atom_map.count(func->name))
+        if (!KeyCondition::atom_map.contains(func->name))
             return false;
 
         const auto & args = func->arguments->children;
@@ -367,7 +367,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 
 bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
 {
-    return sorting_key_names.count(column_name);
+    return sorting_key_names.contains(column_name);
 }
 
 
@@ -383,7 +383,7 @@ bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers) const
 {
     for (const auto & identifier : identifiers)
-        if (table_columns.count(identifier) == 0)
+        if (!table_columns.contains(identifier))
             return false;
 
     return true;
@@ -399,6 +399,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
             return true;
 
         /// disallow GLOBAL IN, GLOBAL NOT IN
+        /// TODO why?
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
             return true;
@@ -410,8 +411,8 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
-        if (array_joined_names.count(*opt_name) ||
-            array_joined_names.count(Nested::extractTableName(*opt_name)) ||
+        if (array_joined_names.contains(*opt_name) ||
+            array_joined_names.contains(Nested::extractTableName(*opt_name)) ||
             (is_final && !isSortingKey(*opt_name)))
             return true;
     }

@@ -9,6 +9,10 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+    add_subdirectory (self-extracting-executable)
+endif ()
+
 # Utils used in package
 add_subdirectory (config-processor)
 add_subdirectory (report)
@@ -26,7 +30,6 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (zookeeper-adjust-block-numbers-to-parts)
     add_subdirectory (wikistat-loader)
     add_subdirectory (check-marks)
-    add_subdirectory (convert-month-partitioned-parts)
     add_subdirectory (checksum-for-compressed-block)
     add_subdirectory (db-generator)
     add_subdirectory (wal-dump)

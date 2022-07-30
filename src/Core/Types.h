@@ -87,6 +87,7 @@ enum class TypeIndex
     AggregateFunction,
     LowCardinality,
     Map,
+    Object,
 };
 #if !defined(__clang__)
 #pragma GCC diagnostic pop

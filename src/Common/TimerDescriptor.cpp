@@ -6,6 +6,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -27,7 +29,7 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
         throwFromErrno("Cannot set O_NONBLOCK for timer_fd", ErrorCodes::CANNOT_FCNTL);
 }
 
-TimerDescriptor::TimerDescriptor(TimerDescriptor && other) : timer_fd(other.timer_fd)
+TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(other.timer_fd)
 {
     other.timer_fd = -1;
 }
@@ -70,6 +72,8 @@ void TimerDescriptor::drain() const
 
             if (errno != EINTR)
                 throwFromErrno("Cannot drain timer_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+            else
+                LOG_TEST(&Poco::Logger::get("TimerDescriptor"), "EINTR");
         }
     }
 }

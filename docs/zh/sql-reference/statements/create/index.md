@@ -1,7 +1,6 @@
 ---
-toc_folder_title: CREATE
-toc_priority: 34
-toc_title: Overview
+sidebar_label: CREATE
+sidebar_position: 34
 ---
 
 # CREATE语法 {#create-queries}

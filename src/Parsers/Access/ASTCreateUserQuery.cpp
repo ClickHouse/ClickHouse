@@ -34,46 +34,63 @@ namespace
         }
 
         String auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
-        String by_keyword = "BY";
-        std::optional<String> by_value;
+        String value_prefix;
+        std::optional<String> value;
+        std::optional<String> salt;
+        const boost::container::flat_set<String> * values = nullptr;
 
-        if (
-            show_password ||
+        if (show_password ||
             auth_type == AuthenticationType::LDAP ||
-            auth_type == AuthenticationType::KERBEROS
-        )
+            auth_type == AuthenticationType::KERBEROS ||
+            auth_type == AuthenticationType::SSL_CERTIFICATE)
         {
             switch (auth_type)
             {
                 case AuthenticationType::PLAINTEXT_PASSWORD:
                 {
-                    by_value = auth_data.getPassword();
+                    value_prefix = "BY";
+                    value = auth_data.getPassword();
                     break;
                 }
                 case AuthenticationType::SHA256_PASSWORD:
                 {
                     auth_type_name = "sha256_hash";
-                    by_value = auth_data.getPasswordHashHex();
+                    value_prefix = "BY";
+                    value = auth_data.getPasswordHashHex();
+                    if (!auth_data.getSalt().empty())
+                    {
+                        salt = auth_data.getSalt();
+                    }
                     break;
                 }
                 case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 {
                     auth_type_name = "double_sha1_hash";
-                    by_value = auth_data.getPasswordHashHex();
+                    value_prefix = "BY";
+                    value = auth_data.getPasswordHashHex();
                     break;
                 }
                 case AuthenticationType::LDAP:
                 {
-                    by_keyword = "SERVER";
-                    by_value = auth_data.getLDAPServerName();
+                    value_prefix = "SERVER";
+                    value = auth_data.getLDAPServerName();
                     break;
                 }
                 case AuthenticationType::KERBEROS:
                 {
-                    by_keyword = "REALM";
                     const auto & realm = auth_data.getKerberosRealm();
                     if (!realm.empty())
-                        by_value = realm;
+                    {
+                        value_prefix = "REALM";
+                        value = realm;
+                    }
+                    break;
+                }
+
+                case AuthenticationType::SSL_CERTIFICATE:
+                {
+                    value_prefix = "CN";
+                    values = &auth_data.getSSLCertificateCommonNames();
                     break;
                 }
 
@@ -86,10 +103,28 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << auth_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
 
-        if (by_value)
+        if (!value_prefix.empty())
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << by_keyword << " "
-                          << (settings.hilite ? IAST::hilite_none : "") << quoteString(*by_value);
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << value_prefix
+                          << (settings.hilite ? IAST::hilite_none : "");
+        }
+
+        if (value)
+        {
+            settings.ostr << " " << quoteString(*value);
+            if (salt)
+                settings.ostr << " SALT " << quoteString(*salt);
+        }
+        else if (values)
+        {
+            settings.ostr << " ";
+            bool need_comma = false;
+            for (const auto & item : *values)
+            {
+                if (std::exchange(need_comma, true))
+                    settings.ostr << ", ";
+                settings.ostr << quoteString(item);
+            }
         }
     }
 
@@ -255,8 +290,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     formatOnCluster(format);
 
-    if (!new_name.empty())
-        formatRenameTo(new_name, format);
+    if (new_name)
+        formatRenameTo(*new_name, format);
 
     if (auth_data)
         formatAuthenticationData(*auth_data, show_password, format);

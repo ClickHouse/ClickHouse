@@ -5,6 +5,9 @@
 #include <Formats/FormatFactory.h>
 #include <Common/assert_cast.h>
 
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,6 +22,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
 
+#include <Formats/MsgPackExtensionTypes.h>
+
 namespace DB
 {
 
@@ -27,8 +32,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_)
-    : IRowOutputFormat(header_, out_, params_), packer(out_) {}
+MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, params_), packer(out_), format_settings(format_settings_) {}
 
 void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num)
 {
@@ -93,16 +98,16 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         }
         case TypeIndex::String:
         {
-            const StringRef & string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-            packer.pack_bin(string.size);
-            packer.pack_bin_body(string.data, string.size);
+            const std::string_view & string = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+            packer.pack_bin(string.size());
+            packer.pack_bin_body(string.data(), string.size());
             return;
         }
         case TypeIndex::FixedString:
         {
-            const StringRef & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
-            packer.pack_bin(string.size);
-            packer.pack_bin_body(string.data, string.size);
+            const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
+            packer.pack_bin(string.size());
+            packer.pack_bin_body(string.data(), string.size());
             return;
         }
         case TypeIndex::Array:
@@ -164,6 +169,42 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             serializeField(*dict_column, dict_type, index);
             return;
         }
+        case TypeIndex::UUID:
+        {
+            const auto & uuid_column = assert_cast<const ColumnUUID &>(column);
+            switch (format_settings.msgpack.output_uuid_representation)
+            {
+                case FormatSettings::MsgPackUUIDRepresentation::BIN:
+                {
+                    WriteBufferFromOwnString buf;
+                    writeBinary(uuid_column.getElement(row_num), buf);
+                    std::string_view uuid_bin = buf.stringView();
+                    packer.pack_bin(uuid_bin.size());
+                    packer.pack_bin_body(uuid_bin.data(), uuid_bin.size());
+                    return;
+                }
+                case FormatSettings::MsgPackUUIDRepresentation::STR:
+                {
+                    WriteBufferFromOwnString buf;
+                    writeText(uuid_column.getElement(row_num), buf);
+                    std::string_view uuid_text = buf.stringView();
+                    packer.pack_str(uuid_text.size());
+                    packer.pack_bin_body(uuid_text.data(), uuid_text.size());
+                    return;
+                }
+                case FormatSettings::MsgPackUUIDRepresentation::EXT:
+                {
+                    WriteBufferFromOwnString buf;
+                    UUID value = uuid_column.getElement(row_num);
+                    writeBinaryBigEndian(value.toUnderType().items[0], buf);
+                    writeBinaryBigEndian(value.toUnderType().items[1], buf);
+                    std::string_view uuid_ext = buf.stringView();
+                    packer.pack_ext(sizeof(UUID), int8_t(MsgPackExtensionTypes::UUIDType));
+                    packer.pack_ext_body(uuid_ext.data(), uuid_ext.size());
+                    return;
+                }
+            }
+        }
         default:
             break;
     }
@@ -172,8 +213,8 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
 
 void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    size_t num_columns = columns.size();
-    for (size_t i = 0; i < num_columns; ++i)
+    size_t columns_size = columns.size();
+    for (size_t i = 0; i < columns_size; ++i)
     {
         serializeField(*columns[i], types[i], row_num);
     }
@@ -186,9 +227,9 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
-            const FormatSettings &)
+            const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params);
+        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("MsgPack");
 }

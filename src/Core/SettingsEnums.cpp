@@ -26,15 +26,19 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
 
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
     {{"",    JoinStrictness::Unspecified},
-     {"ALL", JoinStrictness::ALL},
-     {"ANY", JoinStrictness::ANY}})
+     {"ALL", JoinStrictness::All},
+     {"ANY", JoinStrictness::Any}})
 
 
-IMPLEMENT_SETTING_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
-    {{"auto",                 JoinAlgorithm::AUTO},
+IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
+    {{"default",              JoinAlgorithm::DEFAULT},
+     {"auto",                 JoinAlgorithm::AUTO},
      {"hash",                 JoinAlgorithm::HASH},
      {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
-     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE}})
+     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
+     {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
+     {"direct",               JoinAlgorithm::DIRECT},
+     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -64,7 +68,8 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
-     {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort}})
+     {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
+     {"best_effort_us", FormatSettings::DateTimeInputFormat::BestEffortUS}})
 
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -93,9 +98,21 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUME
     {{"Ordinary", DefaultDatabaseEngine::Ordinary},
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
 
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS,
+    {{"None", DefaultTableEngine::None},
+     {"Log", DefaultTableEngine::Log},
+     {"StripeLog", DefaultTableEngine::StripeLog},
+     {"MergeTree", DefaultTableEngine::MergeTree},
+     {"ReplacingMergeTree", DefaultTableEngine::ReplacingMergeTree},
+     {"ReplicatedMergeTree", DefaultTableEngine::ReplicatedMergeTree},
+     {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
+     {"Memory", DefaultTableEngine::Memory}})
+
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
-     {"datetime64", MySQLDataTypesSupport::DATETIME64}})
+     {"datetime64", MySQLDataTypesSupport::DATETIME64},
+     {"date2Date32", MySQLDataTypesSupport::DATE2DATE32},
+     {"date2String", MySQLDataTypesSupport::DATE2STRING}})
 
 IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
     {{"",         UnionMode::Unspecified},
@@ -117,6 +134,11 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"async",          TransactionsWaitCSNMode::ASYNC},
+     {"wait",           TransactionsWaitCSNMode::WAIT},
+     {"wait_unknown",   TransactionsWaitCSNMode::WAIT_UNKNOWN}})
+
 IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
     {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
      {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
@@ -130,4 +152,11 @@ IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
      {"JSON", FormatSettings::EscapingRule::JSON},
      {"XML", FormatSettings::EscapingRule::XML},
      {"Raw", FormatSettings::EscapingRule::Raw}})
+
+IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
+                       {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
+                        {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
+                        {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
+
+
 }

@@ -36,18 +36,17 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        std::move(data_part_),
-        std::move(columns_),
+        data_part_,
+        columns_,
         metadata_snapshot_,
         uncompressed_cache_,
-        std::move(mark_cache_),
-        std::move(mark_ranges_),
-        std::move(settings_),
-        std::move(avg_value_size_hints_))
+        mark_cache_,
+        mark_ranges_,
+        settings_,
+        avg_value_size_hints_)
 {
     try
     {
-        disk = data_part->volume->getDisk();
         for (const NameAndTypePair & column : columns)
         {
             auto column_from_part = getColumnFromPart(column);
@@ -56,7 +55,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
         throw;
     }
 }
@@ -68,13 +67,16 @@ size_t MergeTreeReaderWide::readRows(
     size_t read_rows = 0;
     try
     {
-        size_t num_columns = columns.size();
+        size_t num_columns = res_columns.size();
         checkNumberOfColumns(num_columns);
+
+        if (num_columns == 0)
+            return max_rows_to_read;
 
         std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         std::unordered_set<std::string> prefetched_streams;
-        if (disk->isRemote() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
+        if (data_part->data_part_storage->isStoredOnRemoteDisk() ? settings.read_settings.remote_fs_prefetch : settings.read_settings.local_fs_prefetch)
         {
             /// Request reading of data in advance,
             /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
@@ -144,17 +146,17 @@ size_t MergeTreeReaderWide::readRows(
     catch (Exception & e)
     {
         if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            storage.reportBrokenPart(data_part->name);
+            storage.reportBrokenPart(data_part);
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + data_part->getFullPath() + " "
+        e.addMessage("(while reading from part " + data_part->data_part_storage->getFullPath() + " "
                      "from mark " + toString(from_mark) + " "
                      "with max_rows_to_read = " + toString(max_rows_to_read) + ")");
         throw;
     }
     catch (...)
     {
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
 
         throw;
     }
@@ -169,10 +171,10 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
     {
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
-        if (streams.count(stream_name))
+        if (streams.contains(stream_name))
             return;
 
-        bool data_file_exists = data_part->checksums.files.count(stream_name + DATA_FILE_EXTENSION);
+        bool data_file_exists = data_part->checksums.files.contains(stream_name + DATA_FILE_EXTENSION);
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -180,12 +182,14 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
         if (!data_file_exists)
             return;
 
+        bool is_lc_dict = substream_path.size() > 1 && substream_path[substream_path.size() - 2].type == ISerialization::Substream::Type::DictionaryKeys;
+
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
+            data_part->data_part_storage, stream_name, DATA_FILE_EXTENSION,
             data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
-            profile_callback, clock_type));
+            profile_callback, clock_type, is_lc_dict));
     };
 
     data_part->getSerialization(name_and_type)->enumerateStreams(callback);
@@ -202,7 +206,7 @@ static ReadBuffer * getStream(
     ISerialization::SubstreamsCache & cache)
 {
     /// If substream have already been read.
-    if (cache.count(ISerialization::getSubcolumnNameForStream(substream_path)))
+    if (cache.contains(ISerialization::getSubcolumnNameForStream(substream_path)))
         return nullptr;
 
     String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
@@ -212,14 +216,14 @@ static ReadBuffer * getStream(
         return nullptr;
 
     MergeTreeReaderStream & stream = *it->second;
-    stream.adjustForRange(MarkRange(seek_to_start ? 0 : from_mark, current_task_last_mark));
+    stream.adjustRightMark(current_task_last_mark);
 
     if (seek_to_start)
         stream.seekToStart();
     else if (seek_to_mark)
         stream.seekToMark(from_mark);
 
-    return stream.data_buffer;
+    return stream.getDataBuffer();
 }
 
 void MergeTreeReaderWide::deserializePrefix(
@@ -229,7 +233,7 @@ void MergeTreeReaderWide::deserializePrefix(
     ISerialization::SubstreamsCache & cache)
 {
     const auto & name = name_and_type.name;
-    if (deserialize_binary_bulk_state_map.count(name) == 0)
+    if (!deserialize_binary_bulk_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
@@ -255,7 +259,7 @@ void MergeTreeReaderWide::prefetch(
     {
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
-        if (!prefetched_streams.count(stream_name))
+        if (!prefetched_streams.contains(stream_name))
         {
             bool seek_to_mark = !continue_reading;
             if (ReadBuffer * buf = getStream(false, substream_path, streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))

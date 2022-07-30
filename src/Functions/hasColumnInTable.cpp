@@ -150,7 +150,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    return DataTypeUInt8().createColumnConst(input_rows_count, Field{UInt64(has_column)});
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field{static_cast<UInt64>(has_column)});
 }
 
 }

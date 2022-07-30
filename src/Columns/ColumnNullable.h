@@ -6,6 +6,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
+#include "config_core.h"
+
+
 class Collator;
 
 namespace DB
@@ -41,7 +44,8 @@ public:
         return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
     }
 
-    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
+    template <typename ... Args>
+    requires (IsMutableColumns<Args ...>::value)
     static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
 
     const char * getFamilyName() const override { return "Nullable"; }
@@ -93,17 +97,30 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isComparatorCompilable() const override;
+
+    llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const override;
+
+#endif
+
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const override;
     bool hasEqualValues() const override;
-    void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
-    void updatePermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
-    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
-    void updatePermutationWithCollation(
-        const Collator & collator, bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_range) const override;
+    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res) const override;
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
+    void getPermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res) const override;
+    void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
+    void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
@@ -133,22 +150,22 @@ public:
 
     bool structureEquals(const IColumn & rhs) const override
     {
-        if (auto rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
+        if (const auto * rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
             return nested_column->structureEquals(*rhs_nullable->nested_column);
         return false;
     }
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
-        return null_map->getRatioOfDefaultRows(sample_ratio);
+        return getRatioOfDefaultRowsImpl<ColumnNullable>(sample_ratio);
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        null_map->getIndicesOfNonDefaultRows(indices, from, limit);
+        getIndicesOfNonDefaultRowsImpl<ColumnNullable>(indices, from, limit);
     }
 
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
+    ColumnPtr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
     bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }
@@ -182,7 +199,9 @@ public:
     /// columns.
     void applyNullMap(const ColumnNullable & other);
     void applyNullMap(const ColumnUInt8 & map);
+    void applyNullMap(const NullMap & map);
     void applyNegatedNullMap(const ColumnUInt8 & map);
+    void applyNegatedNullMap(const NullMap & map);
 
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
@@ -192,16 +211,18 @@ private:
     WrappedPtr null_map;
 
     template <bool negative>
-    void applyNullMapImpl(const ColumnUInt8 & map);
+    void applyNullMapImpl(const NullMap & map);
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
 
-    void getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+    void getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int null_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
 
-    void updatePermutationImpl(
-        bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator = nullptr) const;
+    void updatePermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                            size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator = nullptr) const;
 };
 
 ColumnPtr makeNullable(const ColumnPtr & column);
+ColumnPtr makeNullableSafe(const ColumnPtr & column);
 
 }

@@ -12,12 +12,14 @@ dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
 dpkg -i package_folder/clickhouse-client_*.deb
-dpkg -i package_folder/clickhouse-test_*.deb
+
+ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-./setup_minio.sh
+./setup_minio.sh stateless
+./setup_hdfs_minicluster.sh
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -39,15 +41,18 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
+    mkdir -p /var/run/clickhouse-server
     # simpliest way to forward env variables to server
-    sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
+    sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
 else
     sudo clickhouse start
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-
+    mkdir -p /var/run/clickhouse-server1
+    sudo chown clickhouse:clickhouse /var/run/clickhouse-server1
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
+    --pid-file /var/run/clickhouse-server1/clickhouse-server.pid \
     -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
     --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
@@ -55,7 +60,10 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
     --macros.replica r2   # It doesn't work :(
 
+    mkdir -p /var/run/clickhouse-server2
+    sudo chown clickhouse:clickhouse /var/run/clickhouse-server2
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server2/config.xml --daemon \
+    --pid-file /var/run/clickhouse-server2/clickhouse-server.pid \
     -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
     --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
@@ -85,6 +93,10 @@ function run_tests()
         # everything in parallel except DatabaseReplicated. See below.
     fi
 
+    if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--s3-storage')
+    fi
+
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
         ADDITIONAL_OPTIONS+=('--jobs')
@@ -101,6 +113,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
         ADDITIONAL_OPTIONS+=('--run-by-hash-total')
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
+    fi
+
+    if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
     fi
 
     set +e
@@ -124,15 +140,38 @@ ls -la /
 
 clickhouse-client -q "system flush logs" ||:
 
+# Stop server so we can safely read data with clickhouse-local.
+# Why do we read data with clickhouse-local?
+# Because it's the simplest way to read it when server has crashed.
+sudo clickhouse stop ||:
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    sudo clickhouse stop --pid-path /var/run/clickhouse-server1 ||:
+    sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
+fi
+
 grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
-clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
-clickhouse-client -q "select * from system.query_thread_log format TSVWithNamesAndTypes" | pigz > /test_output/query-thread-log.tsv.gz &
+
+# Compress tables.
+#
+# NOTE:
+# - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
+#   directly
+# - even though ci auto-compress some files (but not *.tsv) it does this only
+#   for files >64MB, we want this files to be compressed explicitly
+for table in query_log zookeeper_log trace_log transactions_info_log
+do
+    clickhouse-local --path /var/lib/clickhouse/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.tsv.gz ||:
+    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+        clickhouse-local --path /var/lib/clickhouse1/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.1.tsv.gz ||:
+        clickhouse-local --path /var/lib/clickhouse2/ -q "select * from system.$table format TSVWithNamesAndTypes" | pigz > /test_output/$table.2.tsv.gz ||:
+    fi
+done
 
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real
 do
-    clickhouse-client -q "
+    clickhouse-local --path /var/lib/clickhouse/ -q "
             select
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples
@@ -142,10 +181,9 @@ do
             order by samples desc
             settings allow_introspection_functions = 1
             format TabSeparated" \
-        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
+        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" ||:
 done
 
-wait ||:
 
 # Compressed (FIXME: remove once only github actions will be left)
 rm /var/log/clickhouse-server/clickhouse-server.log
@@ -155,14 +193,6 @@ if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
 fi
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
-
-# Replace the engine with Ordinary to avoid extra symlinks stuff in artifacts.
-# (so that clickhouse-local --path can read it w/o extra care).
-sed -i -e "s/ATTACH DATABASE _ UUID '[^']*'/ATTACH DATABASE system/" -e "s/Atomic/Ordinary/" /var/lib/clickhouse/metadata/system.sql
-for table in text_log query_log zookeeper_log trace_log; do
-    sed -i "s/ATTACH TABLE _ UUID '[^']*'/ATTACH TABLE $table/" /var/lib/clickhouse/metadata/system/${table}.sql
-    tar -chf /test_output/${table}_dump.tar /var/lib/clickhouse/metadata/system.sql /var/lib/clickhouse/metadata/system/${table}.sql /var/lib/clickhouse/data/system/${table} ||:
-done
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
@@ -174,8 +204,6 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     rm /var/log/clickhouse-server/clickhouse-server2.log
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
-    tar -chf /test_output/zookeeper_log_dump1.tar /var/lib/clickhouse1/data/system/zookeeper_log ||:
-    tar -chf /test_output/zookeeper_log_dump2.tar /var/lib/clickhouse2/data/system/zookeeper_log ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:
     tar -chf /test_output/coordination2.tar /var/lib/clickhouse2/coordination ||:
 fi

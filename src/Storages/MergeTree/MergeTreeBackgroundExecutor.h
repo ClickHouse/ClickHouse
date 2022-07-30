@@ -2,7 +2,6 @@
 
 #include <deque>
 #include <functional>
-#include <atomic>
 #include <mutex>
 #include <future>
 #include <condition_variable>
@@ -10,12 +9,14 @@
 #include <iostream>
 
 #include <boost/circular_buffer.hpp>
+#include <boost/noncopyable.hpp>
 
-#include <base/shared_ptr_helper.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
+#include <base/defines.h>
 #include <Storages/MergeTree/IExecutableTask.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -50,7 +51,8 @@ struct TaskRuntimeData
 
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
-    std::atomic_bool is_currently_deleting{false};
+    /// Guarded by MergeTreeBackgroundExecutor<>::mutex
+    bool is_currently_deleting{false};
     /// Actually autoreset=false is needed only for unit test
     /// where multiple threads could remove tasks corresponding to the same storage
     /// This scenario in not possible in reality.
@@ -128,7 +130,7 @@ private:
 };
 
 /**
- *  Executor for a background MergeTree related operations such as merges, mutations, fetches an so on.
+ *  Executor for a background MergeTree related operations such as merges, mutations, fetches and so on.
  *  It can execute only successors of ExecutableTask interface.
  *  Which is a self-written coroutine. It suspends, when returns true from executeStep() method.
  *
@@ -156,10 +158,9 @@ private:
  *  So, when a Storage want to shutdown, it must wait until all its background operaions are finished.
  */
 template <class Queue>
-class MergeTreeBackgroundExecutor final : public shared_ptr_helper<MergeTreeBackgroundExecutor<Queue>>
+class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
-
     MergeTreeBackgroundExecutor(
         String name_,
         size_t threads_count_,
@@ -189,27 +190,35 @@ public:
         wait();
     }
 
+    /// Handler for hot-reloading
+    /// Supports only increasing the number of threads and tasks, because
+    /// implementing tasks eviction will definitely be too error-prone and buggy.
+    void increaseThreadsAndMaxTasksCount(size_t new_threads_count, size_t new_max_tasks_count);
+    size_t getMaxTasksCount() const;
+
     bool trySchedule(ExecutableTaskPtr task);
     void removeTasksCorrespondingToStorage(StorageID id);
     void wait();
 
 private:
-
     String name;
-    size_t threads_count{0};
-    size_t max_tasks_count{0};
+    size_t threads_count TSA_GUARDED_BY(mutex) = 0;
+    size_t max_tasks_count TSA_GUARDED_BY(mutex) = 0;
     CurrentMetrics::Metric metric;
 
     void routine(TaskRuntimeDataPtr item);
-    void threadFunction();
+
+    /// libc++ does not provide TSA support for std::unique_lock -> TSA_NO_THREAD_SAFETY_ANALYSIS
+    void threadFunction() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Initially it will be empty
-    Queue pending{};
-    boost::circular_buffer<TaskRuntimeDataPtr> active{0};
-    std::mutex mutex;
-    std::condition_variable has_tasks;
-    std::atomic_bool shutdown{false};
+    Queue pending TSA_GUARDED_BY(mutex);
+    boost::circular_buffer<TaskRuntimeDataPtr> active TSA_GUARDED_BY(mutex);
+    mutable std::mutex mutex;
+    std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
+    bool shutdown TSA_GUARDED_BY(mutex) = false;
     ThreadPool pool;
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeBackgroundExecutor");
 };
 
 extern template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;

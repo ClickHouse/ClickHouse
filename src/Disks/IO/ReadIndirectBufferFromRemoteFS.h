@@ -2,7 +2,6 @@
 
 #include <Common/config.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Disks/IDiskRemote.h>
 #include <utility>
 
 
@@ -27,10 +26,18 @@ public:
 
     String getFileName() const override;
 
+    void setReadUntilPosition(size_t position) override;
+
+    void setReadUntilEnd() override;
+
+    size_t getFileSize() override;
+
 private:
     bool nextImpl() override;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
+
+    size_t file_offset_of_buffer_end = 0;
 };
 
 }

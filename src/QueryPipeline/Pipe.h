@@ -14,6 +14,8 @@ struct StreamLocalLimits;
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
+class ReadProgressCallback;
+
 using OutputPortRawPtrs = std::vector<OutputPort *>;
 
 /// Pipe is a set of processors which represents the part of pipeline.
@@ -96,29 +98,10 @@ public:
 
     /// Get processors from Pipe. Use it with cautious, it is easy to loss totals and extremes ports.
     static Processors detachProcessors(Pipe pipe) { return std::move(pipe.processors); }
-    /// Get processors from Pipe w/o destroying pipe (used for EXPLAIN to keep QueryPlan).
+    /// Get processors from Pipe without destroying pipe (used for EXPLAIN to keep QueryPlan).
     const Processors & getProcessors() const { return processors; }
 
-    /// Specify quotas and limits for every ISourceWithProgress.
-    void setLimits(const StreamLocalLimits & limits);
-    void setLeafLimits(const SizeLimits & leaf_limits);
-    void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
-
-    /// Do not allow to change the table while the processors of pipe are alive.
-    void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
-    /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
-    void addInterpreterContext(std::shared_ptr<const Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
-    void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
-    /// For queries with nested interpreters (i.e. StorageDistributed)
-    void addQueryPlan(std::unique_ptr<QueryPlan> plan);
-
-    PipelineResourcesHolder detachResources();
-
 private:
-    /// Destruction order: processors, header, locks, temporary storages, local contexts
-    PipelineResourcesHolder holder;
-
     /// Header is common for all output below.
     Block header;
     Processors processors;
@@ -141,7 +124,6 @@ private:
     bool isCompleted() const { return !empty() && output_ports.empty(); }
     static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
-    void setOutputFormat(ProcessorPtr output);
 
     friend class QueryPipelineBuilder;
     friend class QueryPipeline;

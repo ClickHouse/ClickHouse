@@ -4,7 +4,7 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
 
-on: # yamllint disable-line rule:truthy
+on:  # yamllint disable-line rule:truthy
   pull_request:
     types:
       - synchronize
@@ -13,6 +13,7 @@ on: # yamllint disable-line rule:truthy
     branches:
       - master
     paths-ignore:
+      - 'docker/docs/**'
       - 'docs/**'
       - 'website/**'
 ##########################################################################################
@@ -111,13 +112,19 @@ jobs:
   StyleCheck:
     needs: DockerHubPush
     runs-on: [self-hosted, style-checker]
+    if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{ runner.temp }}/style_check
+          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+          RCSK
           EOF
       - name: Download changed images
+        # even if artifact does not exist, e.g. on `do not test` label or failed Docker job
+        continue-on-error: true
         uses: actions/download-artifact@v2
         with:
           name: changed_images
@@ -134,8 +141,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FastTest:
     needs: DockerHubPush
@@ -150,50 +159,29 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Fast Test
-        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE"
+          mkdir "$GITHUB_WORKSPACE"
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ env.TEMP_PATH }}
+      - name: Fast Test
+        run: |
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
           cd "$REPO_COPY/tests/ci" && python3 fast_test_check.py
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  PVSCheck:
-    needs: [DockerHubPush, FastTest]
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/pvs_check
-          REPO_COPY=${{runner.temp}}/pvs_check/ClickHouse
-          EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-      - name: PVS Check
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 pvs_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
-          sudo rm -fr "$TEMP_PATH"
   CompatibilityCheck:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
@@ -223,8 +211,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   SplitBuildSmokeTest:
     needs: [BuilderDebSplitted]
@@ -255,14 +245,16 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
   BuilderDebRelease:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -272,7 +264,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_release
           EOF
       - name: Download changed images
@@ -286,73 +277,31 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
+          fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  BuilderPerformance:
-    needs: [DockerHubPush, FastTest]
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/build_check
-          IMAGES_PATH=${{runner.temp}}/images_path
-          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
-          BUILD_NAME=performance
-          EOF
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ env.IMAGES_PATH }}
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
-      - name: Build
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
-      - name: Upload build URLs to artifacts
-        if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v2
-        with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
-          sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinRelease:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -362,7 +311,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_release
           EOF
       - name: Download changed images
@@ -375,29 +323,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAarch64:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -407,7 +356,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_aarch64
           EOF
       - name: Download changed images
@@ -415,31 +363,37 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/images_path
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
+          fetch-depth: 0  # for performance artifact
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -449,7 +403,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_asan
           EOF
       - name: Download changed images
@@ -462,29 +415,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebUBsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -494,7 +448,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_ubsan
           EOF
       - name: Download changed images
@@ -507,29 +460,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebTsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -539,7 +493,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_tsan
           EOF
       - name: Download changed images
@@ -552,29 +505,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebMsan:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -584,7 +538,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_msan
           EOF
       - name: Download changed images
@@ -597,29 +550,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebDebug:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -629,7 +583,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=package_debug
           EOF
       - name: Download changed images
@@ -642,32 +595,33 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderDebSplitted:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -677,7 +631,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_splitted
           EOF
       - name: Download changed images
@@ -690,29 +643,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  BuilderBinTidy:
-    needs: [DockerHubPush, FastTest]
+  BuilderBinClangTidy:
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -722,7 +676,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_tidy
           EOF
       - name: Download changed images
@@ -735,29 +688,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwin:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -767,7 +721,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_darwin
           EOF
       - name: Download changed images
@@ -780,29 +733,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinAarch64:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -812,7 +766,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_aarch64
           EOF
       - name: Download changed images
@@ -825,29 +778,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinFreeBSD:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -857,7 +811,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_freebsd
           EOF
       - name: Download changed images
@@ -870,29 +823,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwinAarch64:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -902,7 +856,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_darwin_aarch64
           EOF
       - name: Download changed images
@@ -915,29 +868,30 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinPPC64:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush, FastTest, StyleCheck]
     runs-on: [self-hosted, builder]
     steps:
       - name: Set envs
@@ -947,7 +901,6 @@ jobs:
           IMAGES_PATH=${{runner.temp}}/images_path
           REPO_COPY=${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH=${{runner.temp}}/../ccaches
-          CHECK_NAME=ClickHouse build check (actions)
           BUILD_NAME=binary_ppc64le
           EOF
       - name: Download changed images
@@ -960,49 +913,81 @@ jobs:
           sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
+          git -C "$GITHUB_WORKSPACE" submodule sync --recursive
+          git -C "$GITHUB_WORKSPACE" submodule update --depth=1 --recursive --init --jobs=10
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$CHECK_NAME" "$BUILD_NAME"
+          cd "$REPO_COPY/tests/ci" && python3 build_check.py "$BUILD_NAME"
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ env.BUILD_NAME }}
-          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
+          name: ${{ env.BUILD_URLS }}
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
+############################################################################################
+##################################### Docker images  #######################################
+############################################################################################
+  DockerServerImages:
+    needs:
+      - BuilderDebRelease
+      - BuilderDebAarch64
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
+      - name: Check docker clickhouse/clickhouse-server building
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 docker_server.py --release-type head --no-push
+          python3 docker_server.py --release-type head --no-push --no-ubuntu \
+            --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
   BuilderReport:
     needs:
-      - BuilderDebRelease
-      - BuilderDebAarch64
       - BuilderBinRelease
+      - BuilderDebAarch64
       - BuilderDebAsan
+      - BuilderDebDebug
+      - BuilderDebMsan
+      - BuilderDebRelease
       - BuilderDebTsan
       - BuilderDebUBsan
-      - BuilderDebMsan
-      - BuilderDebDebug
     runs-on: [self-hosted, style-checker]
     if: ${{ success() || failure() }}
     steps:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/report_check
+          CHECK_NAME=ClickHouse build check
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=ClickHouse build check (actions)
+          TEMP_PATH=${{runner.temp}}/report_check
+          NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1017,23 +1002,29 @@ jobs:
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+          cat > "$NEEDS_DATA_PATH" << 'EOF'
+          ${{ toJSON(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   BuilderSpecialReport:
     needs:
-      - BuilderDebSplitted
-      - BuilderBinTidy
-      - BuilderBinDarwin
       - BuilderBinAarch64
-      - BuilderBinFreeBSD
+      - BuilderBinDarwin
       - BuilderBinDarwinAarch64
+      - BuilderBinFreeBSD
+      # - BuilderBinGCC
       - BuilderBinPPC64
+      - BuilderBinClangTidy
+      - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
     if: ${{ success() || failure() }}
     steps:
@@ -1042,7 +1033,8 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/report_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=ClickHouse special build check (actions)
+          CHECK_NAME=ClickHouse special build check
+          NEEDS_DATA_PATH=${{runner.temp}}/needs.json
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1057,13 +1049,18 @@ jobs:
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
+          cat > "$NEEDS_DATA_PATH" << 'EOF'
+          ${{ toJSON(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 build_report_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ########################### FUNCTIONAl STATELESS TESTS #######################################
@@ -1077,7 +1074,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, actions)
+          CHECK_NAME=Stateless tests (release)
           REPO_COPY=${{runner.temp}}/stateless_release/ClickHouse
           KILL_TIMEOUT=10800
           EOF
@@ -1100,8 +1097,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestReleaseDatabaseReplicated0:
     needs: [BuilderDebRelease]
@@ -1112,7 +1111,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_database_replicated
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, DatabaseReplicated, actions)
+          CHECK_NAME=Stateless tests (release, DatabaseReplicated)
           REPO_COPY=${{runner.temp}}/stateless_database_replicated/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1137,8 +1136,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestReleaseDatabaseReplicated1:
     needs: [BuilderDebRelease]
@@ -1149,7 +1150,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_database_replicated
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, DatabaseReplicated, actions)
+          CHECK_NAME=Stateless tests (release, DatabaseReplicated)
           REPO_COPY=${{runner.temp}}/stateless_database_replicated/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1174,8 +1175,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestReleaseWideParts:
     needs: [BuilderDebRelease]
@@ -1186,7 +1189,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_wide_parts
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (release, wide parts enabled, actions)
+          CHECK_NAME=Stateless tests (release, wide parts enabled)
           REPO_COPY=${{runner.temp}}/stateless_wide_parts/ClickHouse
           KILL_TIMEOUT=10800
           EOF
@@ -1209,8 +1212,47 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+  FunctionalStatelessTestReleaseS3:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_s3_storage
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (release, s3 storage)
+          REPO_COPY=${{runner.temp}}/stateless_s3_storage/ClickHouse
+          KILL_TIMEOUT=10800
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestAarch64:
     needs: [BuilderDebAarch64]
@@ -1221,7 +1263,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (aarch64, actions)
+          CHECK_NAME=Stateless tests (aarch64)
           REPO_COPY=${{runner.temp}}/stateless_release/ClickHouse
           KILL_TIMEOUT=10800
           EOF
@@ -1244,8 +1286,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestAsan0:
     needs: [BuilderDebAsan]
@@ -1256,7 +1300,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (address, actions)
+          CHECK_NAME=Stateless tests (address)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1281,8 +1325,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestAsan1:
     needs: [BuilderDebAsan]
@@ -1293,7 +1339,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (address, actions)
+          CHECK_NAME=Stateless tests (address)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1318,8 +1364,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestTsan0:
     needs: [BuilderDebTsan]
@@ -1330,7 +1378,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread, actions)
+          CHECK_NAME=Stateless tests (thread)
           REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1355,8 +1403,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestTsan1:
     needs: [BuilderDebTsan]
@@ -1367,7 +1417,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread, actions)
+          CHECK_NAME=Stateless tests (thread)
           REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1392,8 +1442,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestTsan2:
     needs: [BuilderDebTsan]
@@ -1404,7 +1456,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread, actions)
+          CHECK_NAME=Stateless tests (thread)
           REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=2
@@ -1429,8 +1481,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestUBsan:
     needs: [BuilderDebUBsan]
@@ -1441,7 +1495,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_ubsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (ubsan, actions)
+          CHECK_NAME=Stateless tests (ubsan)
           REPO_COPY=${{runner.temp}}/stateless_ubsan/ClickHouse
           KILL_TIMEOUT=10800
           EOF
@@ -1464,8 +1518,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestMsan0:
     needs: [BuilderDebMsan]
@@ -1476,7 +1532,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_memory
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (memory, actions)
+          CHECK_NAME=Stateless tests (memory)
           REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1501,8 +1557,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestMsan1:
     needs: [BuilderDebMsan]
@@ -1513,7 +1571,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_memory
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (memory, actions)
+          CHECK_NAME=Stateless tests (memory)
           REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1538,8 +1596,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestMsan2:
     needs: [BuilderDebMsan]
@@ -1550,7 +1610,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_memory
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (memory, actions)
+          CHECK_NAME=Stateless tests (memory)
           REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=2
@@ -1575,8 +1635,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestDebug0:
     needs: [BuilderDebDebug]
@@ -1587,7 +1649,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (debug, actions)
+          CHECK_NAME=Stateless tests (debug)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1612,8 +1674,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestDebug1:
     needs: [BuilderDebDebug]
@@ -1624,7 +1688,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (debug, actions)
+          CHECK_NAME=Stateless tests (debug)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1649,8 +1713,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestDebug2:
     needs: [BuilderDebDebug]
@@ -1661,7 +1727,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (debug, actions)
+          CHECK_NAME=Stateless tests (debug)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=2
@@ -1686,8 +1752,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatelessTestFlakyCheck:
     needs: [BuilderDebAsan]
@@ -1698,7 +1766,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_flaky_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests flaky check (address, actions)
+          CHECK_NAME=Stateless tests flaky check (address)
           REPO_COPY=${{runner.temp}}/stateless_flaky_asan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1721,8 +1789,57 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+  TestsBugfixCheck:
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/tests_bugfix_check
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=tests bugfix validate check
+          KILL_TIMEOUT=3600
+          REPO_COPY=${{runner.temp}}/tests_bugfix_check/ClickHouse
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Bugfix test
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+
+          TEMP_PATH="${TEMP_PATH}/integration" \
+            REPORTS_PATH="${REPORTS_PATH}/integration" \
+            python3 integration_test_check.py "Integration $CHECK_NAME" \
+              --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
+
+          TEMP_PATH="${TEMP_PATH}/stateless" \
+            REPORTS_PATH="${REPORTS_PATH}/stateless" \
+            python3 functional_test_check.py "Stateless $CHECK_NAME" "$KILL_TIMEOUT" \
+              --validate-bugfix --post-commit-status=file || echo 'ignore exit code'
+
+          python3 bugfix_validate_check.py "${TEMP_PATH}/stateless/post_commit_status.tsv" "${TEMP_PATH}/integration/post_commit_status.tsv"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
@@ -1736,7 +1853,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (release, actions)
+          CHECK_NAME=Stateful tests (release)
           REPO_COPY=${{runner.temp}}/stateful_release/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1759,8 +1876,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestAarch64:
     needs: [BuilderDebAarch64]
@@ -1771,7 +1890,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (aarch64, actions)
+          CHECK_NAME=Stateful tests (aarch64)
           REPO_COPY=${{runner.temp}}/stateful_release/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1794,8 +1913,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestAsan:
     needs: [BuilderDebAsan]
@@ -1806,7 +1927,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (address, actions)
+          CHECK_NAME=Stateful tests (address)
           REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1829,8 +1950,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestTsan:
     needs: [BuilderDebTsan]
@@ -1841,7 +1964,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (thread, actions)
+          CHECK_NAME=Stateful tests (thread)
           REPO_COPY=${{runner.temp}}/stateful_tsan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1864,8 +1987,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestMsan:
     needs: [BuilderDebMsan]
@@ -1876,7 +2001,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_msan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (memory, actions)
+          CHECK_NAME=Stateful tests (memory)
           REPO_COPY=${{runner.temp}}/stateful_msan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1899,8 +2024,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestUBsan:
     needs: [BuilderDebUBsan]
@@ -1911,7 +2038,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_ubsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (ubsan, actions)
+          CHECK_NAME=Stateful tests (ubsan)
           REPO_COPY=${{runner.temp}}/stateful_ubsan/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1934,8 +2061,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FunctionalStatefulTestDebug:
     needs: [BuilderDebDebug]
@@ -1946,7 +2075,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateful_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateful tests (debug, actions)
+          CHECK_NAME=Stateful tests (debug)
           REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -1969,8 +2098,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ######################################### STRESS TESTS #######################################
@@ -1984,7 +2115,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_thread
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (address, actions)
+          CHECK_NAME=Stress test (address)
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
           EOF
       - name: Download json reports
@@ -2006,8 +2137,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   StressTestTsan:
     needs: [BuilderDebTsan]
@@ -2022,7 +2155,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_thread
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (thread, actions)
+          CHECK_NAME=Stress test (thread)
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
           EOF
       - name: Download json reports
@@ -2044,8 +2177,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   StressTestMsan:
     needs: [BuilderDebMsan]
@@ -2056,7 +2191,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_memory
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (memory, actions)
+          CHECK_NAME=Stress test (memory)
           REPO_COPY=${{runner.temp}}/stress_memory/ClickHouse
           EOF
       - name: Download json reports
@@ -2078,8 +2213,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   StressTestUBsan:
     needs: [BuilderDebUBsan]
@@ -2090,7 +2227,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_undefined
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (undefined, actions)
+          CHECK_NAME=Stress test (undefined)
           REPO_COPY=${{runner.temp}}/stress_undefined/ClickHouse
           EOF
       - name: Download json reports
@@ -2112,8 +2249,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   StressTestDebug:
     needs: [BuilderDebDebug]
@@ -2124,7 +2263,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (debug, actions)
+          CHECK_NAME=Stress test (debug)
           REPO_COPY=${{runner.temp}}/stress_debug/ClickHouse
           EOF
       - name: Download json reports
@@ -2146,8 +2285,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ##################################### AST FUZZERS ############################################
@@ -2161,7 +2302,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (ASan, actions)
+          CHECK_NAME=AST fuzzer (ASan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_asan/ClickHouse
           EOF
       - name: Download json reports
@@ -2183,8 +2324,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   ASTFuzzerTestTsan:
     needs: [BuilderDebTsan]
@@ -2195,7 +2338,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (TSan, actions)
+          CHECK_NAME=AST fuzzer (TSan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_tsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2217,8 +2360,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   ASTFuzzerTestUBSan:
     needs: [BuilderDebUBsan]
@@ -2229,7 +2374,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_ubsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (UBSan, actions)
+          CHECK_NAME=AST fuzzer (UBSan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_ubsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2251,8 +2396,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   ASTFuzzerTestMSan:
     needs: [BuilderDebMsan]
@@ -2263,7 +2410,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_msan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (MSan, actions)
+          CHECK_NAME=AST fuzzer (MSan)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_msan/ClickHouse
           EOF
       - name: Download json reports
@@ -2285,8 +2432,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   ASTFuzzerTestDebug:
     needs: [BuilderDebDebug]
@@ -2297,7 +2446,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/ast_fuzzer_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=AST fuzzer (debug, actions)
+          CHECK_NAME=AST fuzzer (debug)
           REPO_COPY=${{runner.temp}}/ast_fuzzer_debug/ClickHouse
           EOF
       - name: Download json reports
@@ -2319,8 +2468,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
@@ -2334,7 +2485,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan, actions)
+          CHECK_NAME=Integration tests (asan)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=3
@@ -2358,8 +2509,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsAsan1:
     needs: [BuilderDebAsan]
@@ -2370,7 +2523,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan, actions)
+          CHECK_NAME=Integration tests (asan)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=3
@@ -2394,8 +2547,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsAsan2:
     needs: [BuilderDebAsan]
@@ -2406,7 +2561,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (asan, actions)
+          CHECK_NAME=Integration tests (asan)
           REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
           RUN_BY_HASH_NUM=2
           RUN_BY_HASH_TOTAL=3
@@ -2430,8 +2585,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan0:
     needs: [BuilderDebTsan]
@@ -2442,7 +2599,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (thread, actions)
+          CHECK_NAME=Integration tests (thread)
           REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=4
@@ -2466,8 +2623,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan1:
     needs: [BuilderDebTsan]
@@ -2478,7 +2637,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (thread, actions)
+          CHECK_NAME=Integration tests (thread)
           REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=4
@@ -2502,8 +2661,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan2:
     needs: [BuilderDebTsan]
@@ -2514,7 +2675,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (thread, actions)
+          CHECK_NAME=Integration tests (thread)
           REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
           RUN_BY_HASH_NUM=2
           RUN_BY_HASH_TOTAL=4
@@ -2538,8 +2699,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsTsan3:
     needs: [BuilderDebTsan]
@@ -2550,7 +2713,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (thread, actions)
+          CHECK_NAME=Integration tests (thread)
           REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
           RUN_BY_HASH_NUM=3
           RUN_BY_HASH_TOTAL=4
@@ -2574,8 +2737,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsRelease0:
     needs: [BuilderDebRelease]
@@ -2586,7 +2751,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (release, actions)
+          CHECK_NAME=Integration tests (release)
           REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=2
@@ -2610,8 +2775,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsRelease1:
     needs: [BuilderDebRelease]
@@ -2622,7 +2789,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests (release, actions)
+          CHECK_NAME=Integration tests (release)
           REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=2
@@ -2646,8 +2813,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   IntegrationTestsFlakyCheck:
     needs: [BuilderDebAsan]
@@ -2658,7 +2827,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/integration_tests_asan_flaky_check
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Integration tests flaky check (asan, actions)
+          CHECK_NAME=Integration tests flaky check (asan)
           REPO_COPY=${{runner.temp}}/integration_tests_asan_flaky_check/ClickHouse
           EOF
       - name: Download json reports
@@ -2680,8 +2849,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 #############################################################################################
 #################################### UNIT TESTS #############################################
@@ -2695,7 +2866,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (asan, actions)
+          CHECK_NAME=Unit tests (asan)
           REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
           EOF
       - name: Download json reports
@@ -2717,8 +2888,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   UnitTestsReleaseClang:
     needs: [BuilderBinRelease]
@@ -2729,7 +2902,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_asan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (release-clang, actions)
+          CHECK_NAME=Unit tests (release-clang)
           REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
           EOF
       - name: Download json reports
@@ -2751,8 +2924,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   UnitTestsTsan:
     needs: [BuilderDebTsan]
@@ -2763,7 +2938,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (tsan, actions)
+          CHECK_NAME=Unit tests (tsan)
           REPO_COPY=${{runner.temp}}/unit_tests_tsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2785,8 +2960,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   UnitTestsMsan:
     needs: [BuilderDebMsan]
@@ -2797,7 +2974,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_msan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (msan, actions)
+          CHECK_NAME=Unit tests (msan)
           REPO_COPY=${{runner.temp}}/unit_tests_msan/ClickHouse
           EOF
       - name: Download json reports
@@ -2819,8 +2996,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   UnitTestsUBsan:
     needs: [BuilderDebUBsan]
@@ -2831,7 +3010,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/unit_tests_ubsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Unit tests (ubsan, actions)
+          CHECK_NAME=Unit tests (ubsan)
           REPO_COPY=${{runner.temp}}/unit_tests_ubsan/ClickHouse
           EOF
       - name: Download json reports
@@ -2853,14 +3032,16 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 #############################################################################################
 #################################### PERFORMANCE TESTS ######################################
 #############################################################################################
-  PerformanceComparison0:
-    needs: [BuilderPerformance]
+  PerformanceComparisonX86-0:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
@@ -2868,7 +3049,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=0
           RUN_BY_HASH_TOTAL=4
@@ -2892,11 +3073,13 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison1:
-    needs: [BuilderPerformance]
+  PerformanceComparisonX86-1:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
@@ -2904,7 +3087,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=1
           RUN_BY_HASH_TOTAL=4
@@ -2928,11 +3111,13 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison2:
-    needs: [BuilderPerformance]
+  PerformanceComparisonX86-2:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
@@ -2940,7 +3125,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=2
           RUN_BY_HASH_TOTAL=4
@@ -2964,11 +3149,13 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparison3:
-    needs: [BuilderPerformance]
+  PerformanceComparisonX86-3:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Set envs
@@ -2976,7 +3163,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/performance_comparison
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Performance Comparison (actions)
+          CHECK_NAME=Performance Comparison
           REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM=3
           RUN_BY_HASH_TOTAL=4
@@ -3000,13 +3187,175 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
+  PerformanceComparisonAarch-0:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison Aarch64
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=4
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+  PerformanceComparisonAarch-1:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison Aarch64
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=4
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+  PerformanceComparisonAarch-2:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison Aarch64
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=4
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+  PerformanceComparisonAarch-3:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison Aarch64
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=3
+          RUN_BY_HASH_TOTAL=4
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr "$TEMP_PATH"
+#############################################################################################
+###################################### JEPSEN TESTS #########################################
+#############################################################################################
+  Jepsen:
+    needs: [BuilderBinRelease]
+    uses: ./.github/workflows/jepsen.yml
+
   FinishCheck:
     needs:
       - StyleCheck
       - DockerHubPush
+      - DockerServerImages
       - CheckLabels
       - BuilderReport
       - FastTest
@@ -3034,6 +3383,7 @@ jobs:
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
       - FunctionalStatefulTestUBsan
+      - FunctionalStatelessTestReleaseS3
       - StressTestDebug
       - StressTestAsan
       - StressTestTsan
@@ -3053,11 +3403,14 @@ jobs:
       - IntegrationTestsTsan1
       - IntegrationTestsTsan2
       - IntegrationTestsTsan3
-      - PerformanceComparison0
-      - PerformanceComparison1
-      - PerformanceComparison2
-      - PerformanceComparison3
-      - PVSCheck
+      - PerformanceComparisonX86-0
+      - PerformanceComparisonX86-1
+      - PerformanceComparisonX86-2
+      - PerformanceComparisonX86-3
+      - PerformanceComparisonAarch-0
+      - PerformanceComparisonAarch-1
+      - PerformanceComparisonAarch-2
+      - PerformanceComparisonAarch-3
       - UnitTestsAsan
       - UnitTestsTsan
       - UnitTestsMsan
@@ -3066,6 +3419,7 @@ jobs:
       - SplitBuildSmokeTest
       - CompatibilityCheck
       - IntegrationTestsFlakyCheck
+      - Jepsen
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository

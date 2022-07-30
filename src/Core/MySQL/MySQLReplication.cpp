@@ -142,8 +142,7 @@ namespace MySQLReplication
         out << "XID: " << this->xid << '\n';
     }
 
-    /// https://dev.mysql.com/doc/internals/en/table-map-event.html
-    void TableMapEvent::parseImpl(ReadBuffer & payload)
+    void TableMapEventHeader::parse(ReadBuffer & payload)
     {
         payload.readStrict(reinterpret_cast<char *>(&table_id), 6);
         payload.readStrict(reinterpret_cast<char *>(&flags), 2);
@@ -157,7 +156,11 @@ namespace MySQLReplication
         table.resize(table_len);
         payload.readStrict(reinterpret_cast<char *>(table.data()), table_len);
         payload.ignore(1);
+    }
 
+    /// https://dev.mysql.com/doc/internals/en/table-map-event.html
+    void TableMapEvent::parseImpl(ReadBuffer & payload)
+    {
         column_count = readLengthEncodedNumber(payload);
         for (auto i = 0U; i < column_count; ++i)
         {
@@ -165,7 +168,6 @@ namespace MySQLReplication
             payload.readStrict(reinterpret_cast<char *>(&v), 1);
             column_type.emplace_back(v);
         }
-
         String meta;
         readLengthEncodedString(meta, payload);
         parseMeta(meta);
@@ -219,7 +221,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_BLOB:
                 case MYSQL_TYPE_GEOMETRY:
                 {
-                    column_meta.emplace_back(UInt16(meta[pos]));
+                    column_meta.emplace_back(static_cast<UInt16>(meta[pos]));
                     pos += 1;
                     break;
                 }
@@ -227,9 +229,9 @@ namespace MySQLReplication
                 case MYSQL_TYPE_STRING:
                 {
                     /// Big-Endian
-                    auto b0 = UInt16(meta[pos] << 8);
-                    auto b1 = UInt8(meta[pos + 1]);
-                    column_meta.emplace_back(UInt16(b0 + b1));
+                    auto b0 = static_cast<UInt16>(meta[pos] << 8);
+                    auto b1 = static_cast<UInt8>(meta[pos + 1]);
+                    column_meta.emplace_back(static_cast<UInt16>(b0 + b1));
                     pos += 2;
                     break;
                 }
@@ -237,9 +239,9 @@ namespace MySQLReplication
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
                     /// Little-Endian
-                    auto b0 = UInt8(meta[pos]);
-                    auto b1 = UInt16(meta[pos + 1] << 8);
-                    column_meta.emplace_back(UInt16(b0 + b1));
+                    auto b0 = static_cast<UInt8>(meta[pos]);
+                    auto b1 = static_cast<UInt16>(meta[pos + 1] << 8);
+                    column_meta.emplace_back(static_cast<UInt16>(b0 + b1));
                     pos += 2;
                     break;
                 }
@@ -429,7 +431,7 @@ namespace MySQLReplication
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                        const DayNum date_day_number(DateLUT::instance().makeDayNum(
+                        const ExtendedDayNum date_day_number(DateLUT::instance().makeDayNum(
                             static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f)).toUnderType());
 
                         row.push_back(Field(date_day_number.toUnderType()));
@@ -541,7 +543,7 @@ namespace MySQLReplication
                         );
 
                         if (!meta)
-                            row.push_back(Field{UInt32(date_time)});
+                            row.push_back(Field{static_cast<UInt32>(date_time)});
                         else
                         {
                             DB::DecimalUtils::DecimalComponents<DateTime64> components{
@@ -601,7 +603,7 @@ namespace MySQLReplication
                                 throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 
                             if ((*payload.position() & 0x80) == 0)
-                                mask = UInt32(-1);
+                                mask = static_cast<UInt32>(-1);
 
                             *payload.position() ^= 0x80;
 
@@ -957,10 +959,20 @@ namespace MySQLReplication
             }
             case TABLE_MAP_EVENT:
             {
-                event = std::make_shared<TableMapEvent>(std::move(event_header));
-                event->parseEvent(event_payload);
-                auto table_map = std::static_pointer_cast<TableMapEvent>(event);
-                table_maps[table_map->table_id] = table_map;
+                TableMapEventHeader map_event_header;
+                map_event_header.parse(event_payload);
+                if (doReplicate(map_event_header.schema, map_event_header.table))
+                {
+                    event = std::make_shared<TableMapEvent>(std::move(event_header), map_event_header);
+                    event->parseEvent(event_payload);
+                    auto table_map = std::static_pointer_cast<TableMapEvent>(event);
+                    table_maps[table_map->table_id] = table_map;
+                }
+                else
+                {
+                    event = std::make_shared<DryRunEvent>(std::move(event_header));
+                    event->parseEvent(event_payload);
+                }
                 break;
             }
             case WRITE_ROWS_EVENT_V1:
@@ -1030,8 +1042,21 @@ namespace MySQLReplication
             // Special "dummy event"
             return false;
         }
-        auto table_map = table_maps.at(table_id);
-        return table_map->schema == replicate_do_db;
+        if (table_maps.contains(table_id))
+        {
+            auto table_map = table_maps.at(table_id);
+            return (table_map->schema == replicate_do_db) && (replicate_tables.empty() || replicate_tables.contains(table_map->table));
+        }
+        return false;
+    }
+
+    bool MySQLFlavor::doReplicate(const String & db, const String & table_name)
+    {
+        if (replicate_do_db.empty())
+            return false;
+        if (replicate_do_db != db)
+            return false;
+        return replicate_tables.empty() || table_name.empty() || replicate_tables.contains(table_name);
     }
 }
 

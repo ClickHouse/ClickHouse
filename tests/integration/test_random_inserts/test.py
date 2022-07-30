@@ -11,12 +11,18 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1',
-                             main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
-                             with_zookeeper=True, macros={"layer": 0, "shard": 0, "replica": 1})
-node2 = cluster.add_instance('node2',
-                             main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
-                             with_zookeeper=True, macros={"layer": 0, "shard": 0, "replica": 2})
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
+    with_zookeeper=True,
+    macros={"layer": 0, "shard": 0, "replica": 1},
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/conf.d/merge_tree.xml", "configs/conf.d/remote_servers.xml"],
+    with_zookeeper=True,
+    macros={"layer": 0, "shard": 0, "replica": 2},
+)
 nodes = [node1, node2]
 
 
@@ -35,9 +41,11 @@ def test_random_inserts(started_cluster):
     # Duration of the test, reduce it if don't want to wait
     DURATION_SECONDS = 10  # * 60
 
-    node1.query("""
+    node1.query(
+        """
         CREATE TABLE simple ON CLUSTER test_cluster (date Date, i UInt32, s String)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}', date, i, 8192)""")
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY i"""
+    )
 
     with PartitionManager() as pm_random_drops:
         for sacrifice in nodes:
@@ -52,21 +60,38 @@ def test_random_inserts(started_cluster):
         bash_script = os.path.join(os.path.dirname(__file__), "test.sh")
         inserters = []
         for node in nodes:
-            cmd = ['/bin/bash', bash_script, node.ip_address, str(min_timestamp), str(max_timestamp),
-                   str(cluster.get_client_cmd())]
-            inserters.append(CommandRequest(cmd, timeout=DURATION_SECONDS * 2, stdin=''))
+            cmd = [
+                "/bin/bash",
+                bash_script,
+                node.ip_address,
+                str(min_timestamp),
+                str(max_timestamp),
+                str(cluster.get_client_cmd()),
+            ]
+            inserters.append(
+                CommandRequest(cmd, timeout=DURATION_SECONDS * 2, stdin="")
+            )
             print(node.name, node.ip_address)
 
         for inserter in inserters:
             inserter.get_answer()
 
-    answer = "{}\t{}\t{}\t{}\n".format(num_timestamps, num_timestamps, min_timestamp, max_timestamp)
+    answer = "{}\t{}\t{}\t{}\n".format(
+        num_timestamps, num_timestamps, min_timestamp, max_timestamp
+    )
 
     for node in nodes:
-        res = node.query_with_retry("SELECT count(), uniqExact(i), min(i), max(i) FROM simple",
-                                    check_callback=lambda res: TSV(res) == TSV(answer))
-        assert TSV(res) == TSV(answer), node.name + " : " + node.query(
-            "SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1")
+        res = node.query_with_retry(
+            "SELECT count(), uniqExact(i), min(i), max(i) FROM simple",
+            check_callback=lambda res: TSV(res) == TSV(answer),
+        )
+        assert TSV(res) == TSV(answer), (
+            node.name
+            + " : "
+            + node.query(
+                "SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1"
+            )
+        )
 
     node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")
 
@@ -84,14 +109,16 @@ class Runner:
         self.stop_ev.wait(random.random())
 
         year = 2000
-        month = '01'
+        month = "01"
         day = str(thread_num + 1).zfill(2)
         x = 1
         while not self.stop_ev.is_set():
             payload = """
 {year}-{month}-{day}	{x1}
 {year}-{month}-{day}	{x2}
-""".format(year=year, month=month, day=day, x1=x, x2=(x + 1)).strip()
+""".format(
+                year=year, month=month, day=day, x1=x, x2=(x + 1)
+            ).strip()
 
             try:
                 random.choice(nodes).query("INSERT INTO repl_test FORMAT TSV", payload)
@@ -106,7 +133,7 @@ class Runner:
                 self.mtx.release()
 
             except Exception as e:
-                print('Exception:', e)
+                print("Exception:", e)
 
             x += 2
             self.stop_ev.wait(0.1 + random.random() / 10)
@@ -120,7 +147,8 @@ def test_insert_multithreaded(started_cluster):
 
     for node in nodes:
         node.query(
-            "CREATE TABLE repl_test(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/repl_test', '{replica}') ORDER BY x PARTITION BY toYYYYMM(d)")
+            "CREATE TABLE repl_test(d Date, x UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/repl_test', '{replica}') ORDER BY x PARTITION BY toYYYYMM(d)"
+        )
 
     runner = Runner()
 
@@ -145,7 +173,11 @@ def test_insert_multithreaded(started_cluster):
         time.sleep(0.5)
 
         def get_delay(node):
-            return int(node.query("SELECT absolute_delay FROM system.replicas WHERE table = 'repl_test'").rstrip())
+            return int(
+                node.query(
+                    "SELECT absolute_delay FROM system.replicas WHERE table = 'repl_test'"
+                ).rstrip()
+            )
 
         if all([get_delay(n) == 0 for n in nodes]):
             all_replicated = True

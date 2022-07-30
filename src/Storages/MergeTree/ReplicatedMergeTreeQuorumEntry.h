@@ -23,8 +23,8 @@ struct ReplicatedMergeTreeQuorumEntry
     size_t required_number_of_replicas{};
     std::set<String> replicas;
 
-    ReplicatedMergeTreeQuorumEntry() {}
-    ReplicatedMergeTreeQuorumEntry(const String & str)
+    ReplicatedMergeTreeQuorumEntry() = default;
+    explicit ReplicatedMergeTreeQuorumEntry(const String & str)
     {
         fromString(str);
     }

@@ -65,7 +65,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// map(..., Nothing) -> Map(..., Nothing)
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -518,6 +521,130 @@ public:
     }
 };
 
+class FunctionMapUpdate : public IFunction
+{
+public:
+    static constexpr auto name = "mapUpdate";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapUpdate>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        const DataTypeMap * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+        const DataTypeMap * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());
+
+        if (!left || !right)
+            throw Exception{"The two arguments for function " + getName() + " must be both Map type",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        if (!left->getKeyType()->equals(*right->getKeyType()) || !left->getValueType()->equals(*right->getValueType()))
+            throw Exception{"The Key And Value type of Map for function " + getName() + " must be the same",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeMap>(left->getKeyType(), left->getValueType());
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const ColumnMap * col_map_left = typeid_cast<const ColumnMap *>(arguments[0].column.get());
+        const auto * col_const_map_left = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
+        bool col_const_map_left_flag = false;
+        if (col_const_map_left)
+        {
+            col_const_map_left_flag = true;
+            col_map_left = typeid_cast<const ColumnMap *>(&col_const_map_left->getDataColumn());
+        }
+        if (!col_map_left)
+            return nullptr;
+
+        const ColumnMap * col_map_right = typeid_cast<const ColumnMap *>(arguments[1].column.get());
+        const auto * col_const_map_right = checkAndGetColumnConst<ColumnMap>(arguments[1].column.get());
+        bool col_const_map_right_flag = false;
+        if (col_const_map_right)
+        {
+            col_const_map_right_flag = true;
+            col_map_right = typeid_cast<const ColumnMap *>(&col_const_map_right->getDataColumn());
+        }
+        if (!col_map_right)
+            return nullptr;
+
+        const auto & nested_column_left = col_map_left->getNestedColumn();
+        const auto & keys_data_left = col_map_left->getNestedData().getColumn(0);
+        const auto & values_data_left = col_map_left->getNestedData().getColumn(1);
+        const auto & offsets_left = nested_column_left.getOffsets();
+
+        const auto & nested_column_right = col_map_right->getNestedColumn();
+        const auto & keys_data_right = col_map_right->getNestedData().getColumn(0);
+        const auto & values_data_right = col_map_right->getNestedData().getColumn(1);
+        const auto & offsets_right = nested_column_right.getOffsets();
+
+        const auto & result_type_map = static_cast<const DataTypeMap &>(*result_type);
+        const DataTypePtr & key_type = result_type_map.getKeyType();
+        const DataTypePtr & value_type = result_type_map.getValueType();
+        MutableColumnPtr keys_data = key_type->createColumn();
+        MutableColumnPtr values_data = value_type->createColumn();
+        MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
+
+        IColumn::Offset current_offset = 0;
+        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
+        {
+            size_t left_it_begin = col_const_map_left_flag ? 0 : offsets_left[row_idx - 1];
+            size_t left_it_end = col_const_map_left_flag ? offsets_left.size() : offsets_left[row_idx];
+            size_t right_it_begin = col_const_map_right_flag ? 0 : offsets_right[row_idx - 1];
+            size_t right_it_end = col_const_map_right_flag ? offsets_right.size() : offsets_right[row_idx];
+
+            for (size_t i = left_it_begin; i < left_it_end; ++i)
+            {
+                bool matched = false;
+                auto key = keys_data_left.getDataAt(i);
+                for (size_t j = right_it_begin; j < right_it_end; ++j)
+                {
+                    if (keys_data_right.getDataAt(j).toString() == key.toString())
+                    {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched)
+                {
+                    keys_data->insertFrom(keys_data_left, i);
+                    values_data->insertFrom(values_data_left, i);
+                    ++current_offset;
+                }
+            }
+
+            for (size_t j = right_it_begin; j < right_it_end; ++j)
+            {
+                keys_data->insertFrom(keys_data_right, j);
+                values_data->insertFrom(values_data_right, j);
+                ++current_offset;
+            }
+
+            offsets->insert(current_offset);
+        }
+
+        auto nested_column = ColumnArray::create(
+            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
+            std::move(offsets));
+
+        return ColumnMap::create(nested_column);
+    }
+};
+
 }
 
 void registerFunctionsMap(FunctionFactory & factory)
@@ -528,6 +655,7 @@ void registerFunctionsMap(FunctionFactory & factory)
     factory.registerFunction<FunctionMapValues>();
     factory.registerFunction<FunctionMapContainsKeyLike>();
     factory.registerFunction<FunctionExtractKeyLike>();
+    factory.registerFunction<FunctionMapUpdate>();
 }
 
 }

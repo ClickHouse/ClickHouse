@@ -1,6 +1,6 @@
 ---
-toc_priority: 40
-toc_title: Join
+sidebar_position: 40
+sidebar_label: Join
 ---
 
 # Join {#join}

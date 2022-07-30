@@ -9,7 +9,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Poco/Event.h>
 
 
@@ -196,7 +196,19 @@ private:
     size_t segmentator_ticket_number{0};
     size_t reader_ticket_number{0};
 
+    /// Mutex for internal synchronization between threads
     std::mutex mutex;
+
+    /// finishAndWait can be called concurrently from
+    /// multiple threads. Atomic flag is not enough
+    /// because if finishAndWait called before destructor it can check the flag
+    /// and destroy object immediately.
+    std::mutex finish_and_wait_mutex;
+    /// We don't use parsing_finished flag because it can be setup from multiple
+    /// place in code. For example in case of bad data. It doesn't mean that we
+    /// don't need to finishAndWait our class.
+    bool finish_and_wait_called = false;
+
     std::condition_variable reader_condvar;
     std::condition_variable segmentator_condvar;
 
@@ -227,7 +239,7 @@ private:
 
     struct ProcessingUnit
     {
-        explicit ProcessingUnit()
+        ProcessingUnit()
             : status(ProcessingUnitStatus::READY_TO_INSERT)
         {
         }
@@ -263,10 +275,21 @@ private:
 
     void finishAndWait()
     {
+        /// Defending concurrent segmentator thread join
+        std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);
+
+        /// We shouldn't execute this logic twice
+        if (finish_and_wait_called)
+            return;
+
+        finish_and_wait_called = true;
+
+        /// Signal background threads to finish
         parsing_finished = true;
 
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            /// Additionally notify condvars
+            std::lock_guard<std::mutex> lock(mutex);
             segmentator_condvar.notify_all();
             reader_condvar.notify_all();
         }

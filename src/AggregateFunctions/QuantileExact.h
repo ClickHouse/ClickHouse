@@ -262,9 +262,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
     {
         if (!array.empty())
         {
-            // sort inputs in ascending order
-            ::sort(array.begin(), array.end());
-
+            size_t n = 0;
             // if level is 0.5 then compute the "low" median of the sorted array
             // by the method of rounding.
             if (level == 0.5)
@@ -272,11 +270,11 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                 auto s = array.size();
                 if (s % 2 == 1)
                 {
-                    return array[static_cast<size_t>(floor(s / 2))];
+                    n = static_cast<size_t>(floor(s / 2));
                 }
                 else
                 {
-                    return array[static_cast<size_t>((floor(s / 2)) - 1)];
+                    n = static_cast<size_t>((floor(s / 2)) - 1);
                 }
             }
             else
@@ -284,9 +282,10 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                 // else quantile is the nth index of the sorted array obtained by multiplying
                 // level and size of array. Example if level = 0.1 and size of array is 10,
                 // then return array[1].
-                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                return array[n];
+                n = level < 1 ? level * array.size() : (array.size() - 1);
             }
+            ::nth_element(array.begin(), array.begin() + n, array.end());
+            return array[n];
         }
         return std::numeric_limits<Value>::quiet_NaN();
     }
@@ -295,12 +294,11 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
     {
         if (!array.empty())
         {
-            // sort inputs in ascending order
-            ::sort(array.begin(), array.end());
+            size_t prev_n = 0;
             for (size_t i = 0; i < size; ++i)
             {
                 auto level = levels[indices[i]];
-
+                size_t n = 0;
                 // if level is 0.5 then compute the "low" median of the sorted array
                 // by the method of rounding.
                 if (level == 0.5)
@@ -308,20 +306,22 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                     auto s = array.size();
                     if (s % 2 == 1)
                     {
-                        result[indices[i]] = array[static_cast<size_t>(floor(s / 2))];
+                        n = static_cast<size_t>(floor(s / 2));
                     }
                     else
                     {
-                        result[indices[i]] = array[static_cast<size_t>(floor((s / 2) - 1))];
+                        n = static_cast<size_t>(floor((s / 2) - 1));
                     }
                 }
                 else
                 {
                     // else quantile is the nth index of the sorted array obtained by multiplying
                     // level and size of array. Example if level = 0.1 and size of array is 10.
-                    size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                    result[indices[i]] = array[n];
+                    n = level < 1 ? level * array.size() : (array.size() - 1);
                 }
+                ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+                result[indices[i]] = array[n];
+                prev_n = n;
             }
         }
         else
@@ -344,23 +344,22 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
     {
         if (!array.empty())
         {
-            // sort inputs in ascending order
-            ::sort(array.begin(), array.end());
-
+            size_t n = 0;
             // if level is 0.5 then compute the "high" median of the sorted array
             // by the method of rounding.
             if (level == 0.5)
             {
                 auto s = array.size();
-                return array[static_cast<size_t>(floor(s / 2))];
+                n = static_cast<size_t>(floor(s / 2));
             }
             else
             {
                 // else quantile is the nth index of the sorted array obtained by multiplying
                 // level and size of array. Example if level = 0.1 and size of array is 10.
-                size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                return array[n];
+                n = level < 1 ? level * array.size() : (array.size() - 1);
             }
+            ::nth_element(array.begin(), array.begin() + n, array.end());
+            return array[n];
         }
         return std::numeric_limits<Value>::quiet_NaN();
     }
@@ -369,26 +368,27 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
     {
         if (!array.empty())
         {
-            // sort inputs in ascending order
-            ::sort(array.begin(), array.end());
+            size_t prev_n = 0;
             for (size_t i = 0; i < size; ++i)
             {
                 auto level = levels[indices[i]];
-
+                size_t n = 0;
                 // if level is 0.5 then compute the "high" median of the sorted array
                 // by the method of rounding.
                 if (level == 0.5)
                 {
                     auto s = array.size();
-                    result[indices[i]] = array[static_cast<size_t>(floor(s / 2))];
+                    n = static_cast<size_t>(floor(s / 2));
                 }
                 else
                 {
                     // else quantile is the nth index of the sorted array obtained by multiplying
                     // level and size of array. Example if level = 0.1 and size of array is 10.
-                    size_t n = level < 1 ? level * array.size() : (array.size() - 1);
-                    result[indices[i]] = array[n];
+                    n = level < 1 ? level * array.size() : (array.size() - 1);
                 }
+                ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+                result[indices[i]] = array[n];
+                prev_n = n;
             }
         }
         else

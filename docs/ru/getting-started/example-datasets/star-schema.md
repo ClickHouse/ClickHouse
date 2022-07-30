@@ -1,6 +1,6 @@
 ---
-toc_priority: 16
-toc_title: Star Schema Benchmark
+sidebar_position: 16
+sidebar_label: Star Schema Benchmark
 ---
 
 # Star Schema Benchmark {#star-schema-benchmark}
@@ -15,16 +15,15 @@ $ make
 
 Генерация данных:
 
-!!! warning "Внимание"
+:::warning "Внимание"
     -s 100 – dbgen генерирует 600 миллионов строк (67 ГБ)
 -s 1000 – dbgen генерирует 6 миллиардов строк (занимает много времени)
+:::
 
 ``` bash
 $ ./dbgen -s 1000 -T c
 $ ./dbgen -s 1000 -T l
 $ ./dbgen -s 1000 -T p
-$ ./dbgen -s 1000 -T s
-$ ./dbgen -s 1000 -T d
 ```
 
 Создание таблиц в Кликхауз:
@@ -105,11 +104,10 @@ $ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
 
 ``` sql
 SET max_memory_usage = 20000000000;
+
 CREATE TABLE lineorder_flat
-ENGINE = MergeTree
-PARTITION BY toYear(LO_ORDERDATE)
-ORDER BY (LO_ORDERDATE, LO_ORDERKEY) AS
-SELECT
+ENGINE = MergeTree ORDER BY (LO_ORDERDATE, LO_ORDERKEY)
+AS SELECT
     l.LO_ORDERKEY AS LO_ORDERKEY,
     l.LO_LINENUMBER AS LO_LINENUMBER,
     l.LO_CUSTKEY AS LO_CUSTKEY,

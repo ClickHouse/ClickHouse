@@ -24,7 +24,7 @@ struct FunctionDetectTonalityImpl
         UInt64 count_words = 0;
 
         String word;
-        /// Select all Russian words from the string
+        /// Select all words from the string
         for (size_t ind = 0; ind < str_len; ++ind)
         {
             /// Split words by whitespaces and punctuation signs
@@ -36,7 +36,7 @@ struct FunctionDetectTonalityImpl
                 word.push_back(str[ind]);
                 ++ind;
             }
-            /// Try to find a russian word in the tonality dictionary
+            /// Try to find a word in the tonality dictionary
             const auto * it = emotional_dict.find(word);
             if (it != emotional_dict.end())
             {

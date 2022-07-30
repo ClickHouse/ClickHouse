@@ -103,7 +103,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
 void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard lock(rwlock);
 
     if (!data.empty())
         return;
@@ -165,7 +165,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
 
 bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
-    std::unique_lock lock(rwlock);
+    std::lock_guard<std::shared_mutex> lock(rwlock);
 
     if (data.empty())
         throw Exception("Method Set::setHeader must be called before Set::insertFromBlock", ErrorCodes::LOGICAL_ERROR);
@@ -430,8 +430,8 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     SortDescription sort_description;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        block_to_sort.insert({ ordered_set[i], nullptr, "_" + toString(i) });
-        sort_description.emplace_back(i, 1, 1);
+        block_to_sort.insert({ordered_set[i], nullptr, ordered_set[i]->getName()});
+        sort_description.emplace_back(ordered_set[i]->getName(), 1, 1);
     }
 
     sortBlock(block_to_sort, sort_description);
@@ -445,7 +445,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
@@ -468,7 +468,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
-            data_types[indexes_mapping[i].key_index]);
+            data_types[indexes_mapping[i].key_index],
+            single_point);
 
         if (!new_range)
             return {true, true};

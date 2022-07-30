@@ -20,17 +20,15 @@ for ((i = 0; i < 3; i++)) do
     echo ${formats[i]}
 
     ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE nested_table"
-    cat $CUR_DIR/data_orc_arrow_parquet_nested/nested_table.${format_files[i]} | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nested_table FORMAT ${formats[i]} SETTINGS input_format_${format_files[i]}_import_nested = 1"
+    cat $CUR_DIR/data_orc_arrow_parquet_nested/nested_table.${format_files[i]} | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nested_table SETTINGS input_format_${format_files[i]}_import_nested = 1 FORMAT ${formats[i]}"
 
     ${CLICKHOUSE_CLIENT} --query="SELECT * FROM nested_table"
 
 
     ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE nested_nested_table"
-    cat $CUR_DIR/data_orc_arrow_parquet_nested/nested_nested_table.${format_files[i]} | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nested_nested_table FORMAT ${formats[i]} SETTINGS input_format_${format_files[i]}_import_nested = 1"
-    
+    cat $CUR_DIR/data_orc_arrow_parquet_nested/nested_nested_table.${format_files[i]} | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nested_nested_table SETTINGS input_format_${format_files[i]}_import_nested = 1 FORMAT ${formats[i]}"
+
     ${CLICKHOUSE_CLIENT} --query="SELECT * FROM nested_nested_table"
-
-
 done
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE nested_table"

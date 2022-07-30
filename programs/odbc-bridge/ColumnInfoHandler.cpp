@@ -12,12 +12,12 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/NumberParser.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
-#include "ODBCConnectionFactory.h"
+#include "ODBCPooledConnectionFactory.h"
 
 #include <sql.h>
 #include <sqlext.h>
@@ -77,7 +77,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             *response.send() << message << std::endl;
-        LOG_WARNING(log, message);
+        LOG_WARNING(log, fmt::runtime(message));
     };
 
     if (!params.has("table"))
@@ -105,7 +105,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
 
-        auto connection_holder = ODBCConnectionFactory::instance().get(
+        auto connection_holder = ODBCPooledConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
                 getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 

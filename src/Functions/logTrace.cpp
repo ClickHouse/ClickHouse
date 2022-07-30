@@ -6,7 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -48,7 +48,7 @@ namespace
                     "First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             static auto * log = &Poco::Logger::get("FunctionLogTrace");
-            LOG_TRACE(log, message);
+            LOG_TRACE(log, fmt::runtime(message));
 
             return DataTypeUInt8().createColumnConst(input_rows_count, 0);
         }

@@ -4,23 +4,13 @@ import argparse
 import logging
 import os
 import re
-from typing import Tuple
+from collections import namedtuple
+from typing import Dict, List, Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
-
-
-# Py 3.8 removeprefix and removesuffix
-def removeprefix(string: str, prefix: str):
-    if string.startswith(prefix):
-        return string[len(prefix) :]  # noqa: ignore E203, false positive
-    return string
-
-
-def removesuffix(string: str, suffix: str):
-    if string.endswith(suffix):
-        return string[: -len(suffix)]
-    return string
+from env_helper import RUNNER_TEMP, S3_BUILDS_BUCKET
+from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
 # Necessary ENV variables
@@ -31,100 +21,154 @@ def getenv(name: str, default: str = None):
     raise KeyError(f"Necessary {name} environment is not set")
 
 
-TEMP_PATH = getenv("TEMP_PATH", ".")
+TEMP_PATH = os.path.join(RUNNER_TEMP, "push_to_artifactory")
 # One of the following ENVs is necessary
 JFROG_API_KEY = getenv("JFROG_API_KEY", "")
 JFROG_TOKEN = getenv("JFROG_TOKEN", "")
 
+CheckDesc = namedtuple("CheckDesc", ("check_name", "deb_arch", "rpm_arch"))
+
 
 class Packages:
-    rpm_arch = dict(all="noarch", amd64="x86_64")
+    checks = (
+        CheckDesc("package_release", "amd64", "x86_64"),
+        CheckDesc("package_aarch64", "arm64", "aarch64"),
+    )
     packages = (
-        ("clickhouse-client", "all"),
-        ("clickhouse-common-static", "amd64"),
-        ("clickhouse-common-static-dbg", "amd64"),
-        ("clickhouse-server", "all"),
-        ("clickhouse-test", "all"),
+        "clickhouse-client",
+        "clickhouse-common-static",
+        "clickhouse-common-static-dbg",
+        "clickhouse-server",
     )
 
     def __init__(self, version: str):
-        self.deb = tuple(
-            "_".join((name, version, arch + ".deb")) for name, arch in self.packages
-        )
+        # Dicts of name: s3_path_suffix
+        self.deb = {}  # type: Dict[str, str]
+        self.rpm = {}  # type: Dict[str, str]
+        self.tgz = {}  # type: Dict[str, str]
+        for check in self.checks:
+            for name in self.packages:
+                deb = f"{name}_{version}_{check.deb_arch}.deb"
+                self.deb[deb] = f"{check.check_name}/{deb}"
 
-        rev = "2"
-        self.rpm = tuple(
-            "-".join((name, version, rev + "." + self.rpm_arch[arch] + ".rpm"))
-            for name, arch in self.packages
-        )
+                rpm = f"{name}-{version}.{check.rpm_arch}.rpm"
+                self.rpm[rpm] = f"{check.check_name}/{rpm}"
 
-        self.tgz = tuple("{}-{}.tgz".format(name, version) for name, _ in self.packages)
+                tgz = f"{name}-{version}-{check.deb_arch}.tgz"
+                self.tgz[tgz] = f"{check.check_name}/{tgz}"
 
     def arch(self, deb_pkg: str) -> str:
         if deb_pkg not in self.deb:
-            raise ValueError("{} not in {}".format(deb_pkg, self.deb))
+            raise ValueError(f"{deb_pkg} not in {self.deb}")
         return removesuffix(deb_pkg, ".deb").split("_")[-1]
+
+    def replace_with_fallback(self, name: str):
+        if name.endswith(".deb"):
+            suffix = self.deb.pop(name)
+            self.deb[self.fallback_to_all(name)] = self.fallback_to_all(suffix)
+        elif name.endswith(".rpm"):
+            suffix = self.rpm.pop(name)
+            self.rpm[self.fallback_to_all(name)] = self.fallback_to_all(suffix)
+        elif name.endswith(".tgz"):
+            suffix = self.tgz.pop(name)
+            self.tgz[self.fallback_to_all(name)] = self.fallback_to_all(suffix)
+        else:
+            raise KeyError(f"unknown package type for {name}")
 
     @staticmethod
     def path(package_file: str) -> str:
         return os.path.join(TEMP_PATH, package_file)
+
+    @staticmethod
+    def fallback_to_all(url_or_name: str):
+        """Until July 2022 we had clickhouse-server and clickhouse-client with
+        arch 'all'"""
+        # deb
+        if url_or_name.endswith("amd64.deb") or url_or_name.endswith("arm64.deb"):
+            return f"{url_or_name[:-9]}all.deb"
+        # rpm
+        if url_or_name.endswith("x86_64.rpm") or url_or_name.endswith("aarch64.rpm"):
+            new = removesuffix(removesuffix(url_or_name, "x86_64.rpm"), "aarch64.rpm")
+            return f"{new}noarch.rpm"
+        # tgz
+        if url_or_name.endswith("-amd64.tgz") or url_or_name.endswith("-arm64.tgz"):
+            return f"{url_or_name[:-10]}.tgz"
+        return url_or_name
 
 
 class S3:
     template = (
         "https://s3.amazonaws.com/"
         # "clickhouse-builds/"
-        "{bucket_name}/"
+        f"{S3_BUILDS_BUCKET}/"
         # "33333/" or "21.11/" from --release, if pull request is omitted
         "{pr}/"
         # "2bef313f75e4cacc6ea2ef2133e8849ecf0385ec/"
         "{commit}/"
-        # "package_release/"
-        "{check_name}/"
-        # "clickhouse-common-static_21.11.5.0_amd64.deb"
-        "{package}"
+        # "package_release/clickhouse-common-static_21.11.5.0_amd64.deb"
+        "{s3_path_suffix}"
     )
 
     def __init__(
         self,
-        bucket_name: str,
         pr: int,
         commit: str,
-        check_name: str,
         version: str,
         force_download: bool,
     ):
         self._common = dict(
-            bucket_name=bucket_name,
             pr=pr,
             commit=commit,
-            check_name=check_name,
         )
         self.force_download = force_download
         self.packages = Packages(version)
 
-    def download_package(self, package_file: str):
-        if not self.force_download and os.path.exists(Packages.path(package_file)):
+    def download_package(self, package_file: str, s3_path_suffix: str):
+        path = Packages.path(package_file)
+        fallback_path = Packages.fallback_to_all(path)
+        if not self.force_download and (
+            os.path.exists(path) or os.path.exists(fallback_path)
+        ):
+            if os.path.exists(fallback_path):
+                self.packages.replace_with_fallback(package_file)
+
             return
-        url = self.template.format_map({**self._common, "package": package_file})
-        dowload_build_with_progress(url, Packages.path(package_file))
+        url = self.template.format_map(
+            {**self._common, "s3_path_suffix": s3_path_suffix}
+        )
+        try:
+            dowload_build_with_progress(url, path)
+        except Exception as e:
+            if "Cannot download dataset from" in e.args[0]:
+                new_url = Packages.fallback_to_all(url)
+                logging.warning(
+                    "Fallback downloading %s for old release", fallback_path
+                )
+                dowload_build_with_progress(new_url, fallback_path)
+                self.packages.replace_with_fallback(package_file)
 
     def download_deb(self):
-        for package_file in self.packages.deb:
-            self.download_package(package_file)
+        # Copy to have a way to pop/add fallback packages
+        packages = self.packages.deb.copy()
+        for package_file, s3_path_suffix in packages.items():
+            self.download_package(package_file, s3_path_suffix)
 
     def download_rpm(self):
-        for package_file in self.packages.rpm:
-            self.download_package(package_file)
+        # Copy to have a way to pop/add fallback packages
+        packages = self.packages.rpm.copy()
+        for package_file, s3_path_suffix in packages.items():
+            self.download_package(package_file, s3_path_suffix)
 
     def download_tgz(self):
-        for package_file in self.packages.tgz:
-            self.download_package(package_file)
+        # Copy to have a way to pop/add fallback packages
+        packages = self.packages.tgz.copy()
+        for package_file, s3_path_suffix in packages.items():
+            self.download_package(package_file, s3_path_suffix)
 
 
 class Release:
     def __init__(self, name: str):
-        r = re.compile(r"^v\d{2}[.]\d+[.]\d+[.]\d+-(testing|prestable|stable|lts)$")
+        r = re.compile(TAG_REGEXP)
         # Automatically remove refs/tags/ if full refname passed here
         name = removeprefix(name, "refs/tags/")
         if not r.match(name):
@@ -212,15 +256,6 @@ class Artifactory:
         return self.__path_helper("_tgz", package_file)
 
 
-def commit(name: str):
-    r = re.compile(r"^([0-9]|[a-f]){40}$")
-    if not r.match(name):
-        raise argparse.ArgumentTypeError(
-            "commit hash should contain exactly 40 hex characters"
-        )
-    return name
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -246,17 +281,6 @@ def parse_args() -> argparse.Namespace:
         "--commit", required=True, type=commit, help="commit hash for S3 bucket"
     )
     parser.add_argument(
-        "--bucket-name",
-        default="clickhouse-builds",
-        help="AWS S3 bucket name",
-    )
-    parser.add_argument(
-        "--check-name",
-        default="package_release",
-        help="check name, a part of bucket path, "
-        "will be converted to lower case with spaces->underscore",
-    )
-    parser.add_argument(
         "--all", action="store_true", help="implies all deb, rpm and tgz"
     )
     parser.add_argument(
@@ -275,15 +299,21 @@ def parse_args() -> argparse.Namespace:
         default="https://clickhousedb.jfrog.io/artifactory",
         help="SaaS Artifactory url",
     )
+    parser.add_argument("--artifactory", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "-n",
         "--no-artifactory",
-        action="store_true",
+        action="store_false",
+        dest="artifactory",
+        default=argparse.SUPPRESS,
         help="do not push packages to artifactory",
     )
+    parser.add_argument("--force-download", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-force-download",
-        action="store_true",
+        action="store_false",
+        dest="force_download",
+        default=argparse.SUPPRESS,
         help="do not download packages again if they exist already",
     )
 
@@ -292,51 +322,51 @@ def parse_args() -> argparse.Namespace:
         args.deb = args.rpm = args.tgz = True
     if not (args.deb or args.rpm or args.tgz):
         parser.error("at least one of --deb, --rpm or --tgz should be specified")
-    args.check_name = args.check_name.lower().replace(" ", "_")
     if args.pull_request == 0:
         args.pull_request = ".".join(args.release.version_parts[:2])
     return args
 
 
-def process_deb(s3: S3, art_client: Artifactory):
+def process_deb(s3: S3, art_clients: List[Artifactory]):
     s3.download_deb()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_deb(s3.packages)
 
 
-def process_rpm(s3: S3, art_client: Artifactory):
+def process_rpm(s3: S3, art_clients: List[Artifactory]):
     s3.download_rpm()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_rpm(s3.packages)
 
 
-def process_tgz(s3: S3, art_client: Artifactory):
+def process_tgz(s3: S3, art_clients: List[Artifactory]):
     s3.download_tgz()
-    if art_client is not None:
+    for art_client in art_clients:
         art_client.deploy_tgz(s3.packages)
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args = parse_args()
+    os.makedirs(TEMP_PATH, exist_ok=True)
     s3 = S3(
-        args.bucket_name,
         args.pull_request,
         args.commit,
-        args.check_name,
         args.release.version,
-        not args.no_force_download,
+        args.force_download,
     )
-    art_client = None
-    if not args.no_artifactory:
-        art_client = Artifactory(args.artifactory_url, args.release.type)
+    art_clients = []
+    if args.artifactory:
+        art_clients.append(Artifactory(args.artifactory_url, args.release.type))
+        if args.release.type == "lts":
+            art_clients.append(Artifactory(args.artifactory_url, "stable"))
 
     if args.deb:
-        process_deb(s3, art_client)
+        process_deb(s3, art_clients)
     if args.rpm:
-        process_rpm(s3, art_client)
+        process_rpm(s3, art_clients)
     if args.tgz:
-        process_tgz(s3, art_client)
+        process_tgz(s3, art_clients)
 
 
 if __name__ == "__main__":

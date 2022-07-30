@@ -1,4 +1,4 @@
-# system.settings {#system-tables-system-settings}
+# settings
 
 Contains information about session settings for current user.
 

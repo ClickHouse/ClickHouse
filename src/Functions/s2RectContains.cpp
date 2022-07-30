@@ -14,11 +14,12 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
+
 }
 
 namespace
@@ -62,9 +63,39 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_lo = arguments[0].column.get();
-        const auto * col_hi = arguments[1].column.get();
-        const auto * col_point = arguments[2].column.get();
+        auto non_const_arguments = arguments;
+        for (auto & argument : non_const_arguments)
+            argument.column = argument.column->convertToFullColumnIfConst();
+
+        const auto * col_lo = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!col_lo)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[0].type->getName(),
+                1,
+                getName());
+        const auto & data_low = col_lo->getData();
+
+        const auto * col_hi = checkAndGetColumn<ColumnUInt64>(non_const_arguments[1].column.get());
+        if (!col_hi)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[1].type->getName(),
+                2,
+                getName());
+        const auto & data_hi = col_hi->getData();
+
+        const auto * col_point = checkAndGetColumn<ColumnUInt64>(non_const_arguments[2].column.get());
+        if (!col_point)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[2].type->getName(),
+                3,
+                getName());
+        const auto & data_point = col_point->getData();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
@@ -72,9 +103,9 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const auto lo = S2CellId(col_lo->getUInt(row));
-            const auto hi = S2CellId(col_hi->getUInt(row));
-            const auto point = S2CellId(col_point->getUInt(row));
+            const auto lo = S2CellId(data_low[row]);
+            const auto hi = S2CellId(data_hi[row]);
+            const auto point = S2CellId(data_point[row]);
 
             if (!lo.is_valid() || !hi.is_valid())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Rectangle is not valid");

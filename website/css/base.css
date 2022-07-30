@@ -193,3 +193,11 @@ a.btn-outline-yellow {
 .height-20 {
     height: 20px;
 }
+
+ol.default{
+	margin-top: 10px;
+}
+
+ol.default li{
+	margin-bottom: 10px;
+}

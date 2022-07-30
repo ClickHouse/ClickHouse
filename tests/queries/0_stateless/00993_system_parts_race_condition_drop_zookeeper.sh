@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel
+# Tags: race, zookeeper, no-parallel, no-backward-compatibility-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -107,4 +107,5 @@ check_replication_consistency "alter_table_" "count(), sum(a), sum(b), round(sum
 for i in {0..9}; do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i" 2>&1 | grep "was not completely removed from ZooKeeper" &
 done
+
 wait

@@ -1,13 +1,15 @@
 ---
-toc_priority: 17
-toc_title: Command-Line Client
+sidebar_position: 17
+sidebar_label: Command-Line Client
 ---
 
-# Command-line Client {#command-line-client}
+# Command-line Client
+
+## clickhouse-client
 
 ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
 
-[Install](../getting-started/index.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
+[Install](../getting-started/install.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -115,7 +117,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--user, -u` – The username. Default value: default.
 -   `--password` – The password. Default value: empty string.
 -   `--query, -q` – The query to process when using non-interactive mode. You must specify either `query` or `queries-file` option.
--   `--queries-file, -qf` – file path with queries to execute. You must specify either `query` or `queries-file` option.
+-   `--queries-file` – file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 -   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 -   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
@@ -124,7 +126,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
--   `--secure` – If specified, will connect to server over secure connection.
+-   `--secure` – If specified, will connect to server over secure connection (TLS). You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-openssl).
 -   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 -   `--hardware-utilization` — Print hardware utilization information in progress bar.
@@ -148,7 +150,12 @@ Example of a config file:
 <config>
     <user>username</user>
     <password>password</password>
-    <secure>False</secure>
+    <secure>true</secure>
+    <openSSL>
+      <client>
+        <caConfig>/etc/ssl/cert.pem</caConfig>
+      </client>
+    </openSSL>
 </config>
 ```
 
@@ -178,4 +185,3 @@ If the configuration above is applied, the ID of a query is shown in the followi
 ``` text
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
-

@@ -23,8 +23,8 @@ class ObjectHolder
     CassT * ptr = nullptr;
 public:
     template<typename... Args>
-    ObjectHolder(Args &&... args) : ptr(Ctor(std::forward<Args>(args)...)) {}
-    ObjectHolder(CassT * ptr_) : ptr(ptr_) {}
+    ObjectHolder(Args &&... args) : ptr(Ctor(std::forward<Args>(args)...)) {} /// NOLINT
+    ObjectHolder(CassT * ptr_) : ptr(ptr_) {} /// NOLINT
 
     ObjectHolder(const ObjectHolder &) = delete;
     ObjectHolder & operator = (const ObjectHolder &) = delete;
@@ -46,8 +46,8 @@ public:
     }
 
     /// For implicit conversion when passing object to driver library functions
-    operator CassT * () { return ptr; }
-    operator const CassT * () const { return ptr; }
+    operator CassT * () { return ptr; } /// NOLINT
+    operator const CassT * () const { return ptr; } /// NOLINT
 };
 
 }

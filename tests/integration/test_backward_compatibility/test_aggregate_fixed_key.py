@@ -2,10 +2,16 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, name="aggregate_fixed_key")
-node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server', tag='21.3', with_installed_binary=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True)
-node3 = cluster.add_instance('node3', with_zookeeper=True)
+cluster = ClickHouseCluster(__file__)
+node1 = cluster.add_instance(
+    "node1",
+    with_zookeeper=True,
+    image="yandex/clickhouse-server",
+    tag="21.3",
+    with_installed_binary=True,
+)
+node2 = cluster.add_instance("node2", with_zookeeper=True)
+node3 = cluster.add_instance("node3", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -38,8 +44,9 @@ def test_two_level_merge(start_cluster):
 
     # covers only the keys64 method
     for node in start_cluster.instances.values():
-        print(node.query(
-            """
+        print(
+            node.query(
+                """
             SELECT
                 throwIf(uniqExact(date) != count(), 'group by is borked')
             FROM (
@@ -58,4 +65,5 @@ def test_two_level_merge(start_cluster):
                 max_threads = 2,
                 prefer_localhost_replica = 0
             """
-        ))
+            )
+        )

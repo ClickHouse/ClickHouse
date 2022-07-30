@@ -31,7 +31,7 @@ public:
 
     static ClientFactory & instance();
 
-    std::shared_ptr<Aws::S3::S3Client> create(
+    std::unique_ptr<Aws::S3::S3Client> create(
         const PocoHTTPClientConfiguration & cfg,
         bool is_virtual_hosted_style,
         const String & access_key_id,
@@ -44,13 +44,14 @@ public:
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects);
+        unsigned int s3_max_redirects,
+        bool enable_s3_requests_logging);
 
 private:
     ClientFactory();
 
-private:
     Aws::SDKOptions aws_options;
+    std::atomic<bool> s3_requests_logging_enabled;
 };
 
 /**
@@ -67,6 +68,7 @@ struct URI
     String endpoint;
     String bucket;
     String key;
+    String version_id;
     String storage_name;
 
     bool is_virtual_hosted_style;
@@ -75,6 +77,8 @@ struct URI
 
     static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
+
+size_t getObjectSize(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id = {}, bool throw_on_error = true);
 
 }
 

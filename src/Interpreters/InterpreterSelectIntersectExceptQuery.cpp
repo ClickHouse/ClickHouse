@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -51,6 +52,14 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
     const ASTPtr & query_ptr_,
     ContextPtr context_,
     const SelectQueryOptions & options_)
+    :InterpreterSelectIntersectExceptQuery(query_ptr_, Context::createCopy(context_), options_)
+{
+}
+
+InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
+    const ASTPtr & query_ptr_,
+    ContextMutablePtr context_,
+    const SelectQueryOptions & options_)
     : IInterpreterUnionOrSelectQuery(query_ptr_->clone(), context_, options_)
 {
     ASTSelectIntersectExceptQuery * ast = query_ptr->as<ASTSelectIntersectExceptQuery>();
@@ -68,7 +77,10 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
     nested_interpreters.resize(num_children);
 
     for (size_t i = 0; i < num_children; ++i)
+    {
         nested_interpreters[i] = buildCurrentChildInterpreter(children.at(i));
+        uses_view_source |= nested_interpreters[i]->usesViewSource();
+    }
 
     Blocks headers(num_children);
     for (size_t query_num = 0; query_num < num_children; ++query_num)
@@ -94,6 +106,11 @@ InterpreterSelectIntersectExceptQuery::buildCurrentChildInterpreter(const ASTPtr
 
 void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_plan)
 {
+    auto local_limits = getStorageLimits(*context, options);
+    storage_limits.emplace_back(local_limits);
+    for (auto & interpreter : nested_interpreters)
+        interpreter->addStorageLimits(storage_limits);
+
     size_t num_plans = nested_interpreters.size();
     std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
     DataStreams data_streams(num_plans);
@@ -120,6 +137,9 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     auto max_threads = context->getSettingsRef().max_threads;
     auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, max_threads);
     query_plan.unitePlans(std::move(step), std::move(plans));
+
+    addAdditionalPostFilter(query_plan);
+    query_plan.addInterpreterContext(context);
 }
 
 BlockIO InterpreterSelectIntersectExceptQuery::execute()
@@ -129,14 +149,13 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline = query_plan.buildQueryPipeline(
+    auto builder = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
-    pipeline->addInterpreterContext(context);
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(
-    QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
+    setQuota(res.pipeline);
 
     return res;
 }

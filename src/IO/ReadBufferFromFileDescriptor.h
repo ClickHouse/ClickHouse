@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <unistd.h>
 
@@ -27,7 +27,7 @@ protected:
     std::string getFileName() const override;
 
 public:
-    ReadBufferFromFileDescriptor(
+    explicit ReadBufferFromFileDescriptor(
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
@@ -49,15 +49,19 @@ public:
         return file_offset_of_buffer_end - (working_buffer.end() - pos);
     }
 
+    Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
+
     /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
     off_t seek(off_t off, int whence) override;
 
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
 
-    off_t size();
+    size_t getFileSize() override;
 
     void setProgressCallback(ContextPtr context);
+
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
@@ -70,7 +74,7 @@ private:
 class ReadBufferFromFileDescriptorPRead : public ReadBufferFromFileDescriptor
 {
 public:
-    ReadBufferFromFileDescriptorPRead(
+    explicit ReadBufferFromFileDescriptorPRead(
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,

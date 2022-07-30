@@ -3,25 +3,29 @@ import argparse
 import json
 import logging
 import os
+import platform
 import shutil
 import subprocess
 import time
-from typing import List, Optional, Set, Tuple, Union
+import sys
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
-from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
-from s3_helper import S3Helper
-from pr_info import PRInfo
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
-from upload_result_helper import upload_results
-from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from commit_status_helper import post_commit_status
+from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from pr_info import PRInfo
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from upload_result_helper import upload_results
 
-NAME = "Push to Dockerhub (actions)"
+NAME = "Push to Dockerhub"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
+
+ImagesDict = Dict[str, dict]
 
 
 class DockerImage:
@@ -29,18 +33,24 @@ class DockerImage:
         self,
         path: str,
         repo: str,
+        only_amd64: bool,
         parent: Optional["DockerImage"] = None,
         gh_repo_path: str = GITHUB_WORKSPACE,
     ):
         self.path = path
         self.full_path = os.path.join(gh_repo_path, path)
         self.repo = repo
+        self.only_amd64 = only_amd64
         self.parent = parent
         self.built = False
 
     def __eq__(self, other) -> bool:  # type: ignore
         """Is used to check if DockerImage is in a set or not"""
-        return self.path == other.path and self.repo == self.repo
+        return (
+            self.path == other.path
+            and self.repo == self.repo
+            and self.only_amd64 == other.only_amd64
+        )
 
     def __lt__(self, other) -> bool:
         if not isinstance(other, DockerImage):
@@ -65,9 +75,8 @@ class DockerImage:
         return f"DockerImage(path={self.path},repo={self.repo},parent={self.parent})"
 
 
-def get_changed_docker_images(
-    pr_info: PRInfo, repo_path: str, image_file_path: str
-) -> Set[DockerImage]:
+def get_images_dict(repo_path: str, image_file_path: str) -> ImagesDict:
+    """Return images suppose to build on the current architecture host"""
     images_dict = {}
     path_to_images_file = os.path.join(repo_path, image_file_path)
     if os.path.exists(path_to_images_file):
@@ -77,6 +86,13 @@ def get_changed_docker_images(
         logging.info(
             "Image file %s doesnt exists in repo %s", image_file_path, repo_path
         )
+
+    return images_dict
+
+
+def get_changed_docker_images(
+    pr_info: PRInfo, images_dict: ImagesDict
+) -> Set[DockerImage]:
 
     if not images_dict:
         return set()
@@ -96,6 +112,7 @@ def get_changed_docker_images(
         for f in files_changed:
             if f.startswith(dockerfile_dir):
                 name = image_description["name"]
+                only_amd64 = image_description.get("only_amd64", False)
                 logging.info(
                     "Found changed file '%s' which affects "
                     "docker image '%s' with path '%s'",
@@ -103,7 +120,7 @@ def get_changed_docker_images(
                     name,
                     dockerfile_dir,
                 )
-                changed_images.append(DockerImage(dockerfile_dir, name))
+                changed_images.append(DockerImage(dockerfile_dir, name, only_amd64))
                 break
 
     # The order is important: dependents should go later than bases, so that
@@ -118,9 +135,9 @@ def get_changed_docker_images(
                 dependent,
                 image,
             )
-            changed_images.append(
-                DockerImage(dependent, images_dict[dependent]["name"], image)
-            )
+            name = images_dict[dependent]["name"]
+            only_amd64 = images_dict[dependent].get("only_amd64", False)
+            changed_images.append(DockerImage(dependent, name, only_amd64, image))
         index += 1
         if index > 5 * len(images_dict):
             # Sanity check to prevent infinite loop.
@@ -161,12 +178,44 @@ def gen_versions(
     return versions, result_version
 
 
-def build_and_push_one_image(
+def build_and_push_dummy_image(
     image: DockerImage,
     version_string: str,
     push: bool,
+) -> Tuple[bool, str]:
+    dummy_source = "ubuntu:20.04"
+    logging.info("Building docker image %s as %s", image.repo, dummy_source)
+    build_log = os.path.join(
+        TEMP_PATH, f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}"
+    )
+    with open(build_log, "wb") as bl:
+        cmd = (
+            f"docker pull {dummy_source}; "
+            f"docker tag {dummy_source} {image.repo}:{version_string}; "
+        )
+        if push:
+            cmd += f"docker push {image.repo}:{version_string}"
+
+        logging.info("Docker command to run: %s", cmd)
+        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
+            retcode = proc.wait()
+
+        if retcode != 0:
+            return False, build_log
+
+    logging.info("Processing of %s successfully finished", image.repo)
+    return True, build_log
+
+
+def build_and_push_one_image(
+    image: DockerImage,
+    version_string: str,
+    additional_cache: str,
+    push: bool,
     child: bool,
 ) -> Tuple[bool, str]:
+    if image.only_amd64 and platform.machine() not in ["amd64", "x86_64"]:
+        return build_and_push_dummy_image(image, version_string, push)
     logging.info(
         "Building docker image %s with version %s from path %s",
         image.repo,
@@ -184,13 +233,26 @@ def build_and_push_one_image(
     if child:
         from_tag_arg = f"--build-arg FROM_TAG={version_string} "
 
+    cache_from = (
+        f"--cache-from type=registry,ref={image.repo}:{version_string} "
+        f"--cache-from type=registry,ref={image.repo}:latest"
+    )
+    if additional_cache:
+        cache_from = (
+            f"{cache_from} "
+            f"--cache-from type=registry,ref={image.repo}:{additional_cache}"
+        )
+
     with open(build_log, "wb") as bl:
         cmd = (
             "docker buildx build --builder default "
+            f"--label build-url={GITHUB_RUN_URL} "
             f"{from_tag_arg}"
-            f"--build-arg BUILDKIT_INLINE_CACHE=1 "
+            # A hack to invalidate cache, grep for it in docker/ dir
+            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             f"--tag {image.repo}:{version_string} "
-            f"--cache-from type=registry,ref={image.repo}:{version_string} "
+            f"{cache_from} "
+            f"--cache-to type=inline,mode=max "
             f"{push_arg}"
             f"--progress plain {image.full_path}"
         )
@@ -208,6 +270,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
+    additional_cache,
     push: bool,
     child: bool,
 ) -> List[Tuple[str, str, str]]:
@@ -215,7 +278,9 @@ def process_single_image(
     result = []
     for ver in versions:
         for i in range(5):
-            success, build_log = build_and_push_one_image(image, ver, push, child)
+            success, build_log = build_and_push_one_image(
+                image, ver, additional_cache, push, child
+            )
             if success:
                 result.append((image.repo + ":" + ver, build_log, "OK"))
                 break
@@ -232,17 +297,23 @@ def process_single_image(
 
 
 def process_image_with_parents(
-    image: DockerImage, versions: List[str], push: bool, child: bool = False
+    image: DockerImage,
+    versions: List[str],
+    additional_cache: str,
+    push: bool,
+    child: bool = False,
 ) -> List[Tuple[str, str, str]]:
     result = []  # type: List[Tuple[str,str,str]]
     if image.built:
         return result
 
     if image.parent is not None:
-        result += process_image_with_parents(image.parent, versions, push, False)
+        result += process_image_with_parents(
+            image.parent, versions, additional_cache, push, False
+        )
         child = True
 
-    result += process_single_image(image, versions, push, child)
+    result += process_single_image(image, versions, additional_cache, push, child)
     return result
 
 
@@ -291,20 +362,31 @@ def parse_args() -> argparse.Namespace:
         help="docker hub repository prefix",
     )
     parser.add_argument(
+        "--all",
+        action="store_true",
+        help="rebuild all images",
+    )
+    parser.add_argument(
         "--image-path",
         type=str,
-        action="append",
+        nargs="*",
         help="list of image paths to build instead of using pr_info + diff URL, "
         "e.g. 'docker/packager/binary'",
     )
+    parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-reports",
-        action="store_true",
+        action="store_false",
+        dest="reports",
+        default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
+    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-push-images",
-        action="store_true",
+        action="store_false",
+        dest="push",
+        default=argparse.SUPPRESS,
         help="don't push images to docker hub",
     )
 
@@ -323,8 +405,7 @@ def main():
     else:
         changed_json = os.path.join(TEMP_PATH, "changed_images.json")
 
-    push = not args.no_push_images
-    if push:
+    if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'robotclickhouse' --password-stdin",
             input=get_parameter_from_ssm("dockerhub_robot_password"),
@@ -336,24 +417,35 @@ def main():
         shutil.rmtree(TEMP_PATH)
     os.makedirs(TEMP_PATH)
 
-    if args.image_path:
-        pr_info = PRInfo()
+    images_dict = get_images_dict(GITHUB_WORKSPACE, "docker/images.json")
+
+    pr_info = PRInfo()
+    if args.all:
+        pr_info.changed_files = set(images_dict.keys())
+    elif args.image_path:
         pr_info.changed_files = set(i for i in args.image_path)
     else:
-        pr_info = PRInfo(need_changed_files=True)
+        try:
+            pr_info.fetch_changed_files()
+        except TypeError:
+            # If the event does not contain diff, nothing will be built
+            pass
 
-    changed_images = get_changed_docker_images(
-        pr_info, GITHUB_WORKSPACE, "docker/images.json"
-    )
-    logging.info("Has changed images %s", ", ".join([im.path for im in changed_images]))
+    changed_images = get_changed_docker_images(pr_info, images_dict)
+    if changed_images:
+        logging.info(
+            "Has changed images: %s", ", ".join([im.path for im in changed_images])
+        )
 
     image_versions, result_version = gen_versions(pr_info, args.suffix)
 
     result_images = {}
     images_processing_result = []
     for image in changed_images:
+        # If we are in backport PR, then pr_info.release_pr is defined
+        # We use it as tag to reduce rebuilding time
         images_processing_result += process_image_with_parents(
-            image, image_versions, push
+            image, image_versions, pr_info.release_pr, args.push
         )
         result_images[image.repo] = result_version
 
@@ -382,7 +474,7 @@ def main():
     print(f"::notice ::Report url: {url}")
     print(f'::set-output name=url_output::"{url}"')
 
-    if args.no_reports:
+    if not args.reports:
         return
 
     gh = Github(get_best_robot_token())
@@ -398,7 +490,10 @@ def main():
         NAME,
     )
     ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+
+    if status == "error":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

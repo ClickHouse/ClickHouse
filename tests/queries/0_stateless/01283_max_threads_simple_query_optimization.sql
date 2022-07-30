@@ -1,5 +1,8 @@
 DROP TABLE IF EXISTS data_01283;
 
+set remote_filesystem_read_method = 'read';
+set local_filesystem_read_method = 'pread';
+
 CREATE TABLE data_01283 engine=MergeTree()
 ORDER BY key
 PARTITION BY key
@@ -11,7 +14,6 @@ SET log_queries=0;
 SYSTEM FLUSH LOGS;
 
 -- 1 for PullingAsyncPipelineExecutor::pull
--- 1 for AsynchronousBlockInputStream
 SELECT
     throwIf(count() != 1, 'no query was logged'),
     throwIf(length(thread_ids) != 2, 'too many threads used')

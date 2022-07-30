@@ -1,6 +1,6 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
@@ -9,7 +9,6 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -132,6 +131,7 @@ namespace
 
     struct DistributedHeader
     {
+        UInt64 revision = 0;
         Settings insert_settings;
         std::string insert_query;
         ClientInfo client_info;
@@ -166,9 +166,8 @@ namespace
             /// Read the parts of the header.
             ReadBufferFromString header_buf(header_data);
 
-            UInt64 initiator_revision;
-            readVarUInt(initiator_revision, header_buf);
-            if (DBMS_TCP_PROTOCOL_VERSION < initiator_revision)
+            readVarUInt(distributed_header.revision, header_buf);
+            if (DBMS_TCP_PROTOCOL_VERSION < distributed_header.revision)
             {
                 LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
             }
@@ -177,7 +176,7 @@ namespace
             distributed_header.insert_settings.read(header_buf);
 
             if (header_buf.hasPendingData())
-                distributed_header.client_info.read(header_buf, initiator_revision);
+                distributed_header.client_info.read(header_buf, distributed_header.revision);
 
             if (header_buf.hasPendingData())
             {
@@ -188,10 +187,12 @@ namespace
 
             if (header_buf.hasPendingData())
             {
-                NativeReader header_block_in(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                NativeReader header_block_in(header_buf, distributed_header.revision);
                 distributed_header.block_header = header_block_in.read();
                 if (!distributed_header.block_header)
-                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read header from the {} batch", in.getFileName());
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read header from the {} batch. Data was written with protocol version {}, current version: {}",
+                            in.getFileName(), distributed_header.revision, DBMS_TCP_PROTOCOL_VERSION);
             }
 
             /// Add handling new data here, for example:
@@ -217,7 +218,7 @@ namespace
         return distributed_header;
     }
 
-    /// remote_error argument is used to decide whether some errors should be
+    /// 'remote_error' argument is used to decide whether some errors should be
     /// ignored or not, in particular:
     ///
     /// - ATTEMPT_TO_READ_AFTER_EOF should not be ignored
@@ -264,10 +265,10 @@ namespace
         return nullptr;
     }
 
-    void writeAndConvert(RemoteInserter & remote, ReadBufferFromFile & in)
+    void writeAndConvert(RemoteInserter & remote, const DistributedHeader & distributed_header, ReadBufferFromFile & in)
     {
         CompressedReadBuffer decompressing_in(in);
-        NativeReader block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+        NativeReader block_in(decompressing_in, distributed_header.revision);
 
         while (Block block = block_in.read())
         {
@@ -297,14 +298,14 @@ namespace
         }
 
         /// This is old format, that does not have header for the block in the file header,
-        /// applying ConvertingBlockInputStream in this case is not a big overhead.
+        /// applying ConvertingTransform in this case is not a big overhead.
         ///
         /// Anyway we can get header only from the first block, which contain all rows anyway.
         if (!distributed_header.block_header)
         {
             LOG_TRACE(log, "Processing batch {} with old format (no header)", in.getFileName());
 
-            writeAndConvert(remote, in);
+            writeAndConvert(remote, distributed_header, in);
             return;
         }
 
@@ -314,14 +315,20 @@ namespace
                 "Structure does not match (remote: {}, local: {}), implicit conversion will be done",
                 remote.getHeader().dumpStructure(), distributed_header.block_header.dumpStructure());
 
-            writeAndConvert(remote, in);
+            writeAndConvert(remote, distributed_header, in);
             return;
         }
 
         /// If connection does not use compression, we have to uncompress the data.
         if (!compression_expected)
         {
-            writeAndConvert(remote, in);
+            writeAndConvert(remote, distributed_header, in);
+            return;
+        }
+
+        if (distributed_header.revision != remote.getServerRevision())
+        {
+            writeAndConvert(remote, distributed_header, in);
             return;
         }
 
@@ -332,7 +339,7 @@ namespace
 
     uint64_t doubleToUInt64(double d)
     {
-        if (d >= double(std::numeric_limits<uint64_t>::max()))
+        if (d >= static_cast<double>(std::numeric_limits<uint64_t>::max()))
             return std::numeric_limits<uint64_t>::max();
         return static_cast<uint64_t>(d);
     }
@@ -391,7 +398,7 @@ void StorageDistributedDirectoryMonitor::flushAllData()
     {
         processFiles(files);
 
-        /// Update counters
+        /// Update counters.
         getFiles();
     }
 }
@@ -467,7 +474,7 @@ void StorageDistributedDirectoryMonitor::run()
             break;
     }
 
-    /// Update counters
+    /// Update counters.
     getFiles();
 
     if (!quit && do_sleep)
@@ -483,8 +490,8 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         const auto & shards_info = cluster->getShardsInfo();
         const auto & shards_addresses = cluster->getShardsAddresses();
 
-        /// check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1)
+        /// Check new format shard{shard_index}_replica{replica_index}
+        /// (shard_index and replica_index starts from 1).
         if (address.shard_index != 0)
         {
             if (!address.replica_index)
@@ -503,7 +510,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             return shard_info.per_replica_pools[address.replica_index - 1];
         }
 
-        /// existing connections pool have a higher priority
+        /// Existing connections pool have a higher priority.
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {
             const Cluster::Addresses & replicas_addresses = shards_addresses[shard_index];
@@ -897,7 +904,7 @@ private:
     }
 };
 
-class DirectoryMonitorSource : public SourceWithProgress
+class DirectoryMonitorSource : public ISource
 {
 public:
 
@@ -915,10 +922,10 @@ public:
         {
             in = std::make_unique<ReadBufferFromFile>(file_name);
             decompressing_in = std::make_unique<CompressedReadBuffer>(*in);
-            block_in = std::make_unique<NativeReader>(*decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
             log = &Poco::Logger::get("DirectoryMonitorSource");
 
-            readDistributedHeader(*in, log);
+            auto distributed_header = readDistributedHeader(*in, log);
+            block_in = std::make_unique<NativeReader>(*decompressing_in, distributed_header.revision);
 
             first_block = block_in->read();
         }
@@ -932,7 +939,7 @@ public:
     }
 
     explicit DirectoryMonitorSource(Data data_)
-        : SourceWithProgress(data_.first_block.cloneEmpty())
+        : ISource(data_.first_block.cloneEmpty())
         , data(std::move(data_))
     {
     }
@@ -1013,7 +1020,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         UInt64 file_idx = file.first;
         const String & file_path = file.second;
 
-        if (file_indices_to_skip.count(file_idx))
+        if (file_indices_to_skip.contains(file_idx))
             continue;
 
         size_t total_rows = 0;
@@ -1040,7 +1047,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                 CompressedReadBuffer decompressing_in(in);
-                NativeReader block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+                NativeReader block_in(decompressing_in, distributed_header.revision);
 
                 while (Block block = block_in.read())
                 {
@@ -1144,7 +1151,7 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e)
 {
-    /// mark file as broken if necessary
+    /// Mark file as broken if necessary.
     if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
     {
         markAsBroken(file_path);

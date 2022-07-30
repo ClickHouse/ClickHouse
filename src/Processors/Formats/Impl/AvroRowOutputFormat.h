@@ -9,9 +9,9 @@
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
-#include <avro/DataFile.hh>
-#include <avro/Schema.hh>
-#include <avro/ValidSchema.hh>
+#include <DataFile.hh>
+#include <Schema.hh>
+#include <ValidSchema.hh>
 
 
 namespace DB
@@ -43,7 +43,7 @@ private:
     std::unique_ptr<AvroSerializerTraits> traits;
 };
 
-class AvroRowOutputFormat : public IRowOutputFormat
+class AvroRowOutputFormat final : public IRowOutputFormat
 {
 public:
     AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_);

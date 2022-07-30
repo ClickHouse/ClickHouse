@@ -10,8 +10,8 @@
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 
-#include <base/logger_useful.h>
-#include <base/scope_guard_safe.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <base/sort.h>
 #include <iomanip>
 #include <filesystem>
@@ -77,10 +77,10 @@ void DatabaseLazy::createTable(
 void DatabaseLazy::dropTable(
     ContextPtr local_context,
     const String & table_name,
-    bool no_delay)
+    bool sync)
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
-    DatabaseOnDisk::dropTable(local_context, table_name, no_delay);
+    DatabaseOnDisk::dropTable(local_context, table_name, sync);
 }
 
 void DatabaseLazy::renameTable(
@@ -158,6 +158,7 @@ DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const Filt
 
 bool DatabaseLazy::empty() const
 {
+    std::lock_guard lock(mutex);
     return tables_cache.empty();
 }
 

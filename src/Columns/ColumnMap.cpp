@@ -207,14 +207,16 @@ bool ColumnMap::hasEqualValues() const
     return hasEqualValuesImpl<ColumnMap>();
 }
 
-void ColumnMap::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnMap::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                            size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
-    nested->getPermutation(reverse, limit, nan_direction_hint, res);
+    nested->getPermutation(direction, stability, limit, nan_direction_hint, res);
 }
 
-void ColumnMap::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
+void ColumnMap::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
-    nested->updatePermutation(reverse, limit, nan_direction_hint, res, equal_range);
+    nested->updatePermutation(direction, stability, limit, nan_direction_hint, res, equal_ranges);
 }
 
 void ColumnMap::gather(ColumnGathererStream & gatherer)
@@ -225,6 +227,11 @@ void ColumnMap::gather(ColumnGathererStream & gatherer)
 void ColumnMap::reserve(size_t n)
 {
     nested->reserve(n);
+}
+
+void ColumnMap::ensureOwnership()
+{
+    nested->ensureOwnership();
 }
 
 size_t ColumnMap::byteSize() const

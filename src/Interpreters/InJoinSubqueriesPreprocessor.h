@@ -43,7 +43,7 @@ public:
         /// These methods could be overridden for the need of the unit test.
         virtual bool hasAtLeastTwoShards(const IStorage & table) const;
         virtual std::pair<std::string, std::string> getRemoteDatabaseAndTableName(const IStorage & table) const;
-        virtual ~CheckShardsAndTables() {}
+        virtual ~CheckShardsAndTables() = default;
     };
 
     InJoinSubqueriesPreprocessor(

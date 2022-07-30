@@ -24,7 +24,7 @@ namespace ErrorCodes
  * https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake
  * https://ws-dl.blogspot.com/2019/08/2019-08-03-tweetedat-finding-tweet.html
 */
-static constexpr long snowflake_epoch = 1288834974657L;
+static constexpr size_t snowflake_epoch = 1288834974657L;
 static constexpr int time_shift = 22;
 
 class FunctionDateTimeToSnowflake : public IFunction
@@ -33,7 +33,7 @@ private:
     const char * name;
 
 public:
-    FunctionDateTimeToSnowflake(const char * name_) : name(name_) { }
+    explicit FunctionDateTimeToSnowflake(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -74,7 +74,7 @@ private:
     const char * name;
 
 public:
-    FunctionSnowflakeToDateTime(const char * name_) : name(name_) { }
+    explicit FunctionSnowflakeToDateTime(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -84,7 +84,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 1 || arguments.size() > 2)
+        if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
         if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))
@@ -122,7 +122,7 @@ private:
     const char * name;
 
 public:
-    FunctionDateTime64ToSnowflake(const char * name_) : name(name_) { }
+    explicit FunctionDateTime64ToSnowflake(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -163,7 +163,7 @@ private:
     const char * name;
 
 public:
-    FunctionSnowflakeToDateTime64(const char * name_) : name(name_) { }
+    explicit FunctionSnowflakeToDateTime64(const char * name_) : name(name_) { }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -173,7 +173,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 1 || arguments.size() > 2)
+        if (arguments.empty() || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
         if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))

@@ -5,6 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeDateTime64.h>
 
 
 namespace DB
@@ -13,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DECIMAL_OVERFLOW;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Implements Decimal(P, S), where P is precision, S is scale.
@@ -58,30 +60,36 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
     return typeid_cast<const DataTypeDecimal<T> *>(&data_type);
 }
 
-inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value = std::numeric_limits<UInt32>::max())
+inline UInt32 getDecimalScale(const IDataType & data_type)
 {
-    if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getScale();
-    if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal64>(data_type))
         return decimal_type->getScale();
-    if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal128>(data_type))
         return decimal_type->getScale();
-    if (auto * decimal_type = checkDecimal<Decimal256>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal256>(data_type))
         return decimal_type->getScale();
-    return default_value;
+    if (const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
+        return date_time_type->getScale();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal scale from type {}", data_type.getName());
 }
 
 inline UInt32 getDecimalPrecision(const IDataType & data_type)
 {
-    if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getPrecision();
-    if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal64>(data_type))
         return decimal_type->getPrecision();
-    if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal128>(data_type))
         return decimal_type->getPrecision();
-    if (auto * decimal_type = checkDecimal<Decimal256>(data_type))
+    if (const auto * decimal_type = checkDecimal<Decimal256>(data_type))
         return decimal_type->getPrecision();
-    return 0;
+    if (const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
+        return date_time_type->getPrecision();
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get decimal precision from type {}", data_type.getName());
 }
 
 template <typename T>
@@ -91,8 +99,8 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>, ReturnType>
-convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
+requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
@@ -136,8 +144,8 @@ convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>, typename ToDataType::FieldType>
-convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to)
+requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+inline typename ToDataType::FieldType convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to)
 {
     using ToFieldType = typename ToDataType::FieldType;
     ToFieldType result;
@@ -148,15 +156,15 @@ convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_fro
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>, bool>
-tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
+requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+inline bool tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
 {
     return convertDecimalsImpl<FromDataType, ToDataType, bool>(value, scale_from, scale_to, result);
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>, ReturnType>
-convertFromDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
+requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+inline ReturnType convertFromDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
@@ -165,8 +173,8 @@ convertFromDecimalImpl(const typename FromDataType::FieldType & value, UInt32 sc
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>, typename ToDataType::FieldType>
-convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
+requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+inline typename ToDataType::FieldType convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
 
@@ -176,15 +184,15 @@ convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>, bool>
-tryConvertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
+requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType::FieldType>)
+inline bool tryConvertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     return convertFromDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);
 }
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
-inline std::enable_if_t<is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, ReturnType>
-convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
+requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
+inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
@@ -230,8 +238,8 @@ convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scal
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, typename ToDataType::FieldType>
-convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
+requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
+inline typename ToDataType::FieldType convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
     convertToDecimalImpl<FromDataType, ToDataType, void>(value, scale, result);
@@ -239,8 +247,8 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 }
 
 template <typename FromDataType, typename ToDataType>
-inline std::enable_if_t<is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>, bool>
-tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
+requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
+inline bool tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
 {
     return convertToDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);
 }

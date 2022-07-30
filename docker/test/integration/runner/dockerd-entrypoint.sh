@@ -28,8 +28,11 @@ done
 set -e
 
 # cleanup for retry run if volume is not recreated
-docker kill "$(docker ps -aq)" || true
-docker rm "$(docker ps -aq)" || true
+# shellcheck disable=SC2046
+{
+    docker ps -aq | xargs -r docker kill || true
+    docker ps -aq | xargs -r docker rm || true
+}
 
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
@@ -45,6 +48,7 @@ export DOCKER_MYSQL_JS_CLIENT_TAG=${DOCKER_MYSQL_JS_CLIENT_TAG:=latest}
 export DOCKER_MYSQL_PHP_CLIENT_TAG=${DOCKER_MYSQL_PHP_CLIENT_TAG:=latest}
 export DOCKER_POSTGRESQL_JAVA_CLIENT_TAG=${DOCKER_POSTGRESQL_JAVA_CLIENT_TAG:=latest}
 export DOCKER_KERBEROS_KDC_TAG=${DOCKER_KERBEROS_KDC_TAG:=latest}
+export DOCKER_KERBERIZED_HADOOP_TAG=${DOCKER_KERBERIZED_HADOOP_TAG:=latest}
 
 cd /ClickHouse/tests/integration
 exec "$@"

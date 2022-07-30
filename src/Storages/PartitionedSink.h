@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/HashTable/HashMap.h>
+#include <Common/Arena.h>
+#include <absl/container/flat_hash_map.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Context_fwd.h>
@@ -19,6 +22,8 @@ public:
 
     void consume(Chunk chunk) override;
 
+    void onException() override;
+
     void onFinish() override;
 
     virtual SinkPtr createSinkForPartition(const String & partition_id) = 0;
@@ -34,9 +39,13 @@ private:
     ExpressionActionsPtr partition_by_expr;
     String partition_by_column_name;
 
-    std::unordered_map<String, SinkPtr> sinks;
+    absl::flat_hash_map<StringRef, SinkPtr> partition_id_to_sink;
+    HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;
+    IColumn::Selector chunk_row_index_to_partition_index;
+    Arena partition_keys_arena;
 
-    SinkPtr getSinkForPartition(const String & partition_id);
+    SinkPtr getSinkForPartitionKey(StringRef partition_key);
+
 };
 
 }

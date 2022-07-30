@@ -1,5 +1,11 @@
 #pragma once
 
+#include <base/StringRef.h>
+#include <Common/logger_useful.h>
+
+#include <string_view>
+#include <unordered_map>
+
 #include <Common/Arena.h>
 #include <Common/getResource.h>
 #include <Common/HashTable/HashMap.h>
@@ -10,11 +16,6 @@
 #include <IO/readFloatText.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 
-#include <base/StringRef.h>
-#include <base/logger_useful.h>
-
-#include <string_view>
-#include <unordered_map>
 
 namespace DB
 {
@@ -34,7 +35,6 @@ namespace ErrorCodes
 
 class FrequencyHolder
 {
-
 public:
     struct Language
     {
@@ -52,6 +52,7 @@ public:
 public:
     using Map = HashMap<StringRef, Float64>;
     using Container = std::vector<Language>;
+
     using EncodingMap = HashMap<UInt16, Float64>;
     using EncodingContainer = std::vector<Encoding>;
 
@@ -59,6 +60,30 @@ public:
     {
         static FrequencyHolder instance;
         return instance;
+    }
+
+    const Map & getEmotionalDict() const
+    {
+        return emotional_dict;
+    }
+
+    const EncodingContainer & getEncodingsFrequency() const
+    {
+        return encodings_freq;
+    }
+
+    const Container & getProgrammingFrequency() const
+    {
+        return programming_freq;
+    }
+
+private:
+
+    FrequencyHolder()
+    {
+        loadEmotionalDict();
+        loadEncodingsFrequency();
+        loadProgrammingFrequency();
     }
 
     void loadEncodingsFrequency()
@@ -119,7 +144,6 @@ public:
         LOG_TRACE(log, "Charset frequencies was added, charsets count: {}", encodings_freq.size());
     }
 
-
     void loadEmotionalDict()
     {
         Poco::Logger * log = &Poco::Logger::get("EmotionalDict");
@@ -157,7 +181,6 @@ public:
         }
         LOG_TRACE(log, "Emotional dictionary was added. Word count: {}", std::to_string(count));
     }
-
 
     void loadProgrammingFrequency()
     {
@@ -211,42 +234,10 @@ public:
         LOG_TRACE(log, "Programming languages frequencies was added");
     }
 
-    const Map & getEmotionalDict()
-    {
-        std::lock_guard lock(mutex);
-        if (emotional_dict.empty())
-            loadEmotionalDict();
-
-        return emotional_dict;
-    }
-
-
-    const EncodingContainer & getEncodingsFrequency()
-    {
-        std::lock_guard lock(mutex);
-        if (encodings_freq.empty())
-            loadEncodingsFrequency();
-
-        return encodings_freq;
-    }
-
-    const Container & getProgrammingFrequency()
-    {
-        std::lock_guard lock(mutex);
-        if (programming_freq.empty())
-            loadProgrammingFrequency();
-
-        return programming_freq;
-    }
-
-
-private:
     Arena string_pool;
 
     Map emotional_dict;
     Container programming_freq;
     EncodingContainer encodings_freq;
-
-    std::mutex mutex;
 };
 }

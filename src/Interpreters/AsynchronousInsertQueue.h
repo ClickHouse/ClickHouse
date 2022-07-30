@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Common/RWLock.h>
 #include <Common/ThreadPool.h>
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
@@ -138,10 +137,10 @@ private:
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
 
 public:
-    Queue getQueue() const
+    auto getQueueLocked() const
     {
         std::shared_lock lock(rwlock);
-        return queue;
+        return std::make_pair(std::ref(queue), std::move(lock));
     }
 };
 

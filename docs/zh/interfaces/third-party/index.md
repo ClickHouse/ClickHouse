@@ -1,6 +1,6 @@
 ---
-toc_folder_title: 第三方工具
-toc_priority: 24
+sidebar_label: 第三方工具
+sidebar_position: 24
 ---
 
 # 第三方工具 {#third-party-interfaces}

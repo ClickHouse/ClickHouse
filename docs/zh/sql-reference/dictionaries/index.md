@@ -1,9 +1,6 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_folder_title: "\u5B57\u5178"
-toc_priority: 35
-toc_title: "\u5BFC\u8A00"
+sidebar_position: 35
+sidebar_label: 字典
 ---
 
 # 字典 {#dictionaries}

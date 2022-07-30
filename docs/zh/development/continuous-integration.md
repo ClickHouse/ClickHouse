@@ -42,17 +42,11 @@ git push
 使用`utils/check-style/check-style`二进制文件执行一些简单的基于正则表达式的代码样式检查(注意, 它可以在本地运行).
 如果失败, 按照[代码样式指南](./style.md)修复样式错误.
 
+使用 [black](https://github.com/psf/black/) 檢查 python 代碼.
+
 ### 报告详情 {#report-details}
 -  [状态页示例](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check.html)
 -  `docs_output.txt`记录了查结果错误(无效表格等), 空白页表示没有错误. [成功结果案例](https://clickhouse-test-reports.s3.yandex.net/12550/659c78c7abb56141723af6a81bfae39335aa8cb2/style_check/output.txt)
-
-### PVS 检查 {#pvs-check}
-使用静态分析工具[PVS-studio](https://www.viva64.com/en/pvs-studio/)检查代码. 查看报告以查看确切的错误.如果可以则修复它们, 如果不行, 可以向ClickHouse的维护人员寻求帮忙.
-
-### 报告详情 {#report-details}
--  [状态页示例](https://clickhouse-test-reports.s3.yandex.net/12550/67d716b5cc3987801996c31a67b31bf141bc3486/pvs_check.html)
--  `test_run.txt.out.log`包含构建和分析日志文件.它只包含解析或未找到的错误.
--  `HTML report`包含分析结果.有关说明请访问PVS的[官方网站](https://www.viva64.com/en/m/0036/#ID14E9A2B2CD)
 
 ## 快速测试 {#fast-test}
 通常情况下这是PR运行的第一个检查.它构建ClickHouse以及大多数无状态运行测试, 其中省略了一些.如果失败，在修复之前不会开始进一步的检查. 查看报告以了解哪些测试失败, 然后按照[此处](./tests.md#functional-test-locally)描述的在本地重现失败.
@@ -92,13 +86,10 @@ git push
 - **Build log**: 链接到构建和文件复制日志, 当构建失败时很有用.
 - **Build time**.
 - **Artifacts**: 构建结果文件 (`XXX`是服务器版本, 比如`20.8.1.4344`).
-    - `clickhouse-client_XXX_all.deb`
+    - `clickhouse-client_XXX_amd64.deb`
     -` clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
     - `clickhouse-common-staticXXX_amd64.deb`
-    - `clickhouse-server_XXX_all.deb`
-    - `clickhouse-test_XXX_all.deb`
-    - `clickhouse_XXX_amd64.buildinfo`
-    - `clickhouse_XXX_amd64.changes`
+    - `clickhouse-server_XXX_amd64.deb`
     - `clickhouse`: Main built binary.
     - `clickhouse-odbc-bridge`
     - `unit_tests_dbms`: 带有 ClickHouse 单元测试的 GoogleTest 二进制文件.
@@ -144,12 +135,3 @@ git push
 
 ## 性能测试 {#performance-tests}
 测量查询性能的变化. 这是最长的检查, 只需不到 6 小时即可运行.性能测试报告在[此处](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report)有详细描述.
-
-## 质量保证 {#qa}
-什么是状态页面上的任务(专用网络)项目?
-
-它是 Yandex 内部工作系统的链接. Yandex 员工可以看到检查的开始时间及其更详细的状态.
-
-运行测试的地方
-
-Yandex 内部基础设施的某个地方.

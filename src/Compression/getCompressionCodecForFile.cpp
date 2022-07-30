@@ -4,7 +4,8 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Common/PODArray.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
 
 namespace DB
 {
@@ -12,9 +13,9 @@ namespace DB
 
 using Checksum = CityHash_v1_0_2::uint128;
 
-CompressionCodecPtr getCompressionCodecForFile(const DiskPtr & disk, const String & relative_path)
+CompressionCodecPtr getCompressionCodecForFile(const DataPartStoragePtr & data_part_storage, const String & relative_path)
 {
-    auto read_buffer = disk->readFile(relative_path);
+    auto read_buffer = data_part_storage->readFile(relative_path, {}, std::nullopt, std::nullopt);
     read_buffer->ignore(sizeof(Checksum));
 
     UInt8 header_size = ICompressionCodec::getHeaderSize();

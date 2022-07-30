@@ -16,9 +16,11 @@ mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
 ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/disks.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/secure_ports.xml $DEST_SERVER_PATH/config.d/
@@ -31,14 +33,20 @@ ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/c
 ln -sf $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/metadata_cache.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/CORS.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/logger.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/logger_test.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
+
 ln -sf $SRC_PATH/users.d/log_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/access_management.xml $DEST_SERVER_PATH/users.d/
@@ -78,6 +86,19 @@ fi
 if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/database_ordinary.xml $DEST_SERVER_PATH/users.d/
 fi
+
+if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+    # Too verbose logging in S3 tests
+    rm -f $DEST_SERVER_PATH/config.d/logger_test.xml
+    ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
+fi
+
+if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
+    ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
+fi
+
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/database_replicated.xml $DEST_SERVER_PATH/config.d/

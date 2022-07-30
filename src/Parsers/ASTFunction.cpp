@@ -89,6 +89,24 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
+void ASTFunction::finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (!is_window_function)
+        return;
+
+    settings.ostr << " OVER ";
+    if (!window_name.empty())
+    {
+        settings.ostr << backQuoteIfNeed(window_name);
+    }
+    else
+    {
+        settings.ostr << "(";
+        window_definition->formatImpl(settings, state, frame);
+        settings.ostr << ")";
+    }
+}
+
 /** Get the text that identifies this element. */
 String ASTFunction::getID(char delim) const
 {
@@ -166,7 +184,7 @@ ASTPtr ASTFunction::toLiteral() const
   * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
   * With highlighting we make it clearly obvious.
   *
-  * Another case is regexp match. Suppose the user types match(URL, 'www.yandex.ru'). It often means that the user is unaware that . is a metacharacter.
+  * Another case is regexp match. Suppose the user types match(URL, 'www.clickhouse.com'). It often means that the user is unaware that . is a metacharacter.
   */
 static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const IAST::FormatSettings & settings, const char * metacharacters)
 {
@@ -491,6 +509,25 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << ')';
                 written = true;
             }
+
+            if (!written && name == "viewIfPermitted"sv)
+            {
+                /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
+                const auto * nl_or_nothing = settings.one_line ? "" : "\n";
+                auto indent0 = settings.one_line ? "" : String(4u * frame.indent, ' ');
+                auto indent1 = settings.one_line ? "" : String(4u * (frame.indent + 1), ' ');
+                auto indent2 = settings.one_line ? "" : String(4u * (frame.indent + 2), ' ');
+                settings.ostr << (settings.hilite ? hilite_function : "") << name << "(" << (settings.hilite ? hilite_none : "") << nl_or_nothing;
+                FormatStateStacked frame_nested = frame;
+                frame_nested.need_parens = false;
+                frame_nested.indent += 2;
+                arguments->children[0]->formatImpl(settings, state, frame_nested);
+                settings.ostr << nl_or_nothing << indent1 << (settings.hilite ? hilite_keyword : "") << (settings.one_line ? " " : "")
+                              << "ELSE " << (settings.hilite ? hilite_none : "") << nl_or_nothing << indent2;
+                arguments->children[1]->formatImpl(settings, state, frame_nested);
+                settings.ostr << nl_or_nothing << indent0 << ")";
+                return;
+            }
         }
 
         if (!written && arguments->children.size() >= 2)
@@ -563,7 +600,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     if (written)
     {
-        return;
+        return finishFormatWithWindow(settings, state, frame);
     }
 
     settings.ostr << (settings.hilite ? hilite_function : "") << name;
@@ -603,22 +640,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (!is_window_function)
-    {
-        return;
-    }
-
-    settings.ostr << " OVER ";
-    if (!window_name.empty())
-    {
-        settings.ostr << backQuoteIfNeed(window_name);
-    }
-    else
-    {
-        settings.ostr << "(";
-        window_definition->formatImpl(settings, state, frame);
-        settings.ostr << ")";
-    }
+    return finishFormatWithWindow(settings, state, frame);
 }
 
 String getFunctionName(const IAST * ast)

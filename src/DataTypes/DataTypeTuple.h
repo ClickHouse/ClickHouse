@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <optional>
 
 
 namespace DB
@@ -22,14 +23,11 @@ private:
     DataTypes elems;
     Strings names;
     bool have_explicit_names;
-    bool serialize_names = true;
 public:
     static constexpr bool is_parametric = true;
 
-    DataTypeTuple(const DataTypes & elems);
-    DataTypeTuple(const DataTypes & elems, const Strings & names, bool serialize_names_ = true);
-
-    static bool canBeCreatedWithNames(const Strings & names);
+    explicit DataTypeTuple(const DataTypes & elems);
+    DataTypeTuple(const DataTypes & elems, const Strings & names);
 
     TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string doGetName() const override;
@@ -63,10 +61,10 @@ public:
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
+    std::optional<size_t> tryGetPositionByName(const String & name) const;
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
-    bool serializeNames() const { return serialize_names; }
 };
 
 }

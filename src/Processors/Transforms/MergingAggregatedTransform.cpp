@@ -1,5 +1,6 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
 
 namespace DB
 {
@@ -34,21 +35,30 @@ void MergingAggregatedTransform::consume(Chunk chunk)
     if (!info)
         throw Exception("Chunk info was not set for chunk in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
-    const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
-    if (!agg_info)
+    if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
+    {
+        /** If the remote servers used a two-level aggregation method,
+        *  then blocks will contain information about the number of the bucket.
+        * Then the calculations can be parallelized by buckets.
+        * We decompose the blocks to the bucket numbers indicated in them.
+        */
+
+        auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+        block.info.is_overflows = agg_info->is_overflows;
+        block.info.bucket_num = agg_info->bucket_num;
+
+        bucket_to_blocks[agg_info->bucket_num].emplace_back(std::move(block));
+    }
+    else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+    {
+        auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+        block.info.is_overflows = false;
+        block.info.bucket_num = -1;
+
+        bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
+    }
+    else
         throw Exception("Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
-
-    /** If the remote servers used a two-level aggregation method,
-      *  then blocks will contain information about the number of the bucket.
-      * Then the calculations can be parallelized by buckets.
-      * We decompose the blocks to the bucket numbers indicated in them.
-      */
-
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    block.info.is_overflows = agg_info->is_overflows;
-    block.info.bucket_num = agg_info->bucket_num;
-
-    bucket_to_blocks[agg_info->bucket_num].emplace_back(std::move(block));
 }
 
 Chunk MergingAggregatedTransform::generate()

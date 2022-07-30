@@ -6,8 +6,8 @@
 
 namespace DB
 {
-
 class ASTCreateRowPolicyQuery;
+class AccessRightsElements;
 struct RowPolicy;
 
 class InterpreterCreateRowPolicyQuery : public IInterpreter, WithMutableContext
@@ -20,6 +20,8 @@ public:
     static void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query);
 
 private:
+    AccessRightsElements getRequiredAccess() const;
+
     ASTPtr query_ptr;
 };
 

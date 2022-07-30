@@ -133,7 +133,12 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        if (settings.allow_experimental_parallel_reading_from_replicas)
+        bool parallel_reading_from_replicas = settings.max_parallel_replicas > 1
+            && settings.allow_experimental_parallel_reading_from_replicas
+            /// To avoid trying to coordinate with clickhouse-benchmark,
+            /// since it uses the same code.
+            && client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY;
+        if (parallel_reading_from_replicas)
         {
             client_info.collaborate_with_initiator = true;
             client_info.count_participating_replicas = replica_info.all_replicas_count;
@@ -156,14 +161,14 @@ void MultiplexedConnections::sendQuery(
                 modified_settings.parallel_replica_offset = i;
 
             replica_states[i].connection->sendQuery(timeouts, query, query_id,
-                stage, &modified_settings, &client_info, with_pending_data);
+                                                    stage, &modified_settings, &client_info, with_pending_data, {});
         }
     }
     else
     {
         /// Use single replica.
         replica_states[0].connection->sendQuery(timeouts, query, query_id,
-                stage, &modified_settings, &client_info, with_pending_data);
+                                                stage, &modified_settings, &client_info, with_pending_data, {});
     }
 
     sent_query = true;

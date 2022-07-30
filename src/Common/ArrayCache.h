@@ -188,7 +188,7 @@ private:
                 DB::throwFromErrno(fmt::format("Allocator: Cannot munmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_MUNMAP);
         }
 
-        Chunk(Chunk && other) : ptr(other.ptr), size(other.size)
+        Chunk(Chunk && other) noexcept : ptr(other.ptr), size(other.size)
         {
             other.ptr = nullptr;
         }
@@ -261,7 +261,7 @@ private:
     /// Represents pending insertion attempt.
     struct InsertToken
     {
-        InsertToken(ArrayCache & cache_) : cache(cache_) {}
+        explicit InsertToken(ArrayCache & cache_) : cache(cache_) {}
 
         std::mutex mutex;
         bool cleaned_up = false; /// Protected by the token mutex
@@ -514,8 +514,6 @@ private:
             return allocateFromFreeRegion(*free_region, size);
         }
 
-//        std::cerr << "Requested size: " << size << "\n";
-
         /// Evict something from cache and continue.
         while (true)
         {
@@ -535,7 +533,7 @@ private:
 
 
 public:
-    ArrayCache(size_t max_total_size_) : max_total_size(max_total_size_)
+    explicit ArrayCache(size_t max_total_size_) : max_total_size(max_total_size_)
     {
     }
 

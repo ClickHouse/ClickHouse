@@ -30,6 +30,7 @@ class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
 struct ParsedTablesMetadata;
 struct QualifiedTableName;
+class IRestoreCoordination;
 
 namespace ErrorCodes
 {
@@ -51,8 +52,8 @@ public:
     /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
-    IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
-    IDatabaseTablesIterator(String && database_name_) : database_name(std::move(database_name_)) { }
+    explicit IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
+    explicit IDatabaseTablesIterator(String && database_name_) : database_name(std::move(database_name_)) { }
 
     virtual ~IDatabaseTablesIterator() = default;
 
@@ -61,7 +62,7 @@ public:
     const String & databaseName() const { assert(!database_name.empty()); return database_name; }
 
 protected:
-    const String database_name;
+    String database_name;
 };
 
 /// Copies list of tables and iterates through such snapshot.
@@ -72,7 +73,7 @@ private:
     Tables::iterator it;
 
 protected:
-    DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other)
+    DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other) noexcept
     : IDatabaseTablesIterator(std::move(other.database_name))
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
@@ -118,7 +119,7 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
     IDatabase() = delete;
-    IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
+    explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -129,7 +130,7 @@ public:
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(
+    virtual void loadStoredObjects( /// NOLINT
         ContextMutablePtr /*context*/,
         bool /*force_restore*/,
         bool /*force_attach*/ = false,
@@ -146,7 +147,7 @@ public:
     {
     }
 
-    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/)
+    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
@@ -158,11 +159,18 @@ public:
 
     virtual void startupTables(ThreadPool & /*thread_pool*/, bool /*force_restore*/, bool /*force_attach*/) {}
 
-    /// Check the existence of the table.
+    /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
+
+    /// Check the existence of the table in any state (in active / detached / detached permanently state).
+    /// Throws exception when table exists.
+    virtual void checkMetadataFilenameAvailability(const String & /*table_name*/) const {}
+
 
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
+
+    StoragePtr getTable(const String & name, ContextPtr context) const;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -170,7 +178,7 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) const = 0;
+    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) const = 0; /// NOLINT
 
     /// Is the database empty.
     virtual bool empty() const = 0;
@@ -186,10 +194,10 @@ public:
     }
 
     /// Delete the table from the database, drop table and delete the metadata.
-    virtual void dropTable(
+    virtual void dropTable( /// NOLINT
         ContextPtr /*context*/,
         const String & /*name*/,
-        [[maybe_unused]] bool no_delay = false)
+        [[maybe_unused]] bool sync = false)
     {
         throw Exception("There is no DROP TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -197,7 +205,7 @@ public:
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
     /// Note: ATTACH TABLE statement actually uses createTable method.
-    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
+    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {}) /// NOLINT
     {
         throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -284,12 +292,6 @@ public:
         throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /// Whether the contained tables should be written to a backup.
-    virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(ContextPtr context) const
-    {
-        return getTablesIterator(context); /// By default we backup each table.
-    }
-
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
 
@@ -330,6 +332,12 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
     }
 
+    /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.
+    virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const;
+
+    /// Creates a table restored from backup.
+    virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
+
     virtual ~IDatabase() = default;
 
 protected:
@@ -341,8 +349,8 @@ protected:
     }
 
     mutable std::mutex mutex;
-    String database_name;
-    String comment;
+    String database_name TSA_GUARDED_BY(mutex);
+    String comment TSA_GUARDED_BY(mutex);
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

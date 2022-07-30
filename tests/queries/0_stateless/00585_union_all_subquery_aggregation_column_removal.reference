@@ -1,23 +1,23 @@
 {"total":"1","domain":"baidu.com"}
 {"total":"2","domain":"facebook.com"}
 {"total":"1","domain":"google.com"}
-{"total":"2","domain":"yandex.ru"}
+{"total":"2","domain":"meta.ua"}
 {"total":"1","domain":"baidu.com"}
 {"total":"2","domain":"facebook.com"}
 {"total":"1","domain":"google.com"}
-{"total":"2","domain":"yandex.ru"}
+{"total":"2","domain":"meta.ua"}
 1	baidu.com
 2	facebook.com
 1	google.com
-2	yandex.ru
+2	meta.ua
 1	baidu.com
 2	facebook.com
 1	google.com
-2	yandex.ru
+2	meta.ua
 1	baidu.com
 1	google.com
 2	facebook.com
-2	yandex.ru
+2	meta.ua
 1
 1
 2
@@ -25,4 +25,4 @@
 baidu.com
 google.com
 facebook.com
-yandex.ru
+meta.ua

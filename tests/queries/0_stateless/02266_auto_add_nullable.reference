@@ -1,0 +1,6 @@
+val0	Nullable(Int8)	DEFAULT	NULL			
+val1	Nullable(Int8)	DEFAULT	NULL			
+val2	Nullable(UInt8)	DEFAULT	NULL			
+val3	Nullable(String)	DEFAULT	NULL			
+val4	LowCardinality(Nullable(Int8))	DEFAULT	NULL			
+val5	LowCardinality(Nullable(Int8))	DEFAULT	NULL			

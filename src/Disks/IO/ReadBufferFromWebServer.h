@@ -19,7 +19,8 @@ class ReadBufferFromWebServer : public SeekableReadBuffer
 {
 public:
     explicit ReadBufferFromWebServer(
-        const String & url_, ContextPtr context_,
+        const String & url_,
+        ContextPtr context_,
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0);
@@ -29,6 +30,8 @@ public:
     off_t seek(off_t off, int whence) override;
 
     off_t getPosition() override;
+
+    size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
 private:
     std::unique_ptr<ReadBuffer> initialize();

@@ -22,7 +22,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include <string.h>
+#include <cstring>
 
 /// For the expansion of gtest macros.
 #if defined(__clang__)
@@ -316,7 +316,7 @@ CodecTestSequence operator+(CodecTestSequence && left, const CodecTestSequence &
 
 std::vector<CodecTestSequence> operator+(const std::vector<CodecTestSequence> & left, const std::vector<CodecTestSequence> & right)
 {
-    std::vector<CodecTestSequence> result(std::move(left));
+    std::vector<CodecTestSequence> result(left);
     std::move(std::begin(right), std::end(right), std::back_inserter(result));
 
     return result;
@@ -790,7 +790,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     }
 
     return sequences;
-};
+}
 
 // helper macro to produce human-friendly sequence name from generator
 #define G(generator) generator, #generator

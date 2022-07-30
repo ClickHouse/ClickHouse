@@ -1,6 +1,6 @@
 ---
-toc_priority: 52
-toc_title: "Системные таблицы"
+sidebar_position: 52
+sidebar_label: "Системные таблицы"
 ---
 
 # Системные таблицы {#system-tables}

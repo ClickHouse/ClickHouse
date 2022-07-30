@@ -14,7 +14,7 @@ struct BlockIO
     BlockIO() = default;
     BlockIO(BlockIO &&) = default;
 
-    BlockIO & operator= (BlockIO && rhs);
+    BlockIO & operator= (BlockIO && rhs) noexcept;
     ~BlockIO();
 
     BlockIO(const BlockIO &) = delete;
@@ -40,11 +40,16 @@ struct BlockIO
         pipeline.reset();
     }
 
-    void onException() const
+    void onException()
     {
         if (exception_callback)
             exception_callback();
+
+        pipeline.reset();
     }
+
+    /// Set is_all_data_sent in system.processes for this query.
+    void setAllDataSent() const;
 
 private:
     void reset();

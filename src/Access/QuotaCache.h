@@ -19,7 +19,7 @@ struct RolesOrUsersSet;
 class QuotaCache
 {
 public:
-    QuotaCache(const AccessControl & access_control_);
+    explicit QuotaCache(const AccessControl & access_control_);
     ~QuotaCache();
 
     std::shared_ptr<const EnabledQuota> getEnabledQuota(

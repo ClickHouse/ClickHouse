@@ -10,7 +10,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ExecutingGraph::ExecutingGraph(Processors & processors_) : processors(processors_)
+ExecutingGraph::ExecutingGraph(Processors & processors_, bool profile_processors_)
+    : processors(processors_)
+    , profile_processors(profile_processors_)
 {
     uint64_t num_processors = processors.size();
     nodes.reserve(num_processors);
@@ -32,12 +34,12 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
 {
     auto it = processors_map.find(to);
     if (it == processors_map.end())
-    {
-        String msg = "Processor " + to->getName() + " was found as " + (edge.backward ? "input" : "output")
-                     + " for processor " + from->getName() + ", but not found in list of processors.";
-
-        throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Processor {} was found as {} for processor {}, but not found in list of processors",
+            to->getName(),
+            edge.backward ? "input" : "output",
+            from->getName());
 
     edge.to = it->second;
     auto & added_edge = edges.emplace_back(std::move(edge));
@@ -125,9 +127,8 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
     while (nodes.size() < num_processors)
     {
         auto * processor = processors[nodes.size()].get();
-        if (processors_map.count(processor))
-            throw Exception("Processor " + processor->getName() + " was already added to pipeline.",
-                            ErrorCodes::LOGICAL_ERROR);
+        if (processors_map.contains(processor))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
 
         processors_map[processor] = nodes.size();
         nodes.emplace_back(std::make_unique<Node>(processor, nodes.size()));
@@ -263,7 +264,33 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
 
                 try
                 {
-                    node.last_processor_status = node.processor->prepare(node.updated_input_ports, node.updated_output_ports);
+                    auto & processor = *node.processor;
+                    IProcessor::Status last_status = node.last_processor_status;
+                    IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
+                    node.last_processor_status = status;
+
+                    if (profile_processors)
+                    {
+                        /// NeedData
+                        if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
+                        {
+                            processor.input_wait_watch.restart();
+                        }
+                        else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
+                        {
+                            processor.input_wait_elapsed_us += processor.input_wait_watch.elapsedMicroseconds();
+                        }
+
+                        /// PortFull
+                        if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
+                        {
+                            processor.output_wait_watch.restart();
+                        }
+                        else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
+                        {
+                            processor.output_wait_elapsed_us += processor.output_wait_watch.elapsedMicroseconds();
+                        }
+                    }
                 }
                 catch (...)
                 {

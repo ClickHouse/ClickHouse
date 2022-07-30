@@ -7,13 +7,16 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/GetPriorityForLoadBalancing.h>
+#include <Common/thread_local_rng.h>
 #include <unistd.h>
+#include <random>
 
 
 namespace ProfileEvents
@@ -37,6 +40,25 @@ namespace zkutil
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
 
+struct ShuffleHost
+{
+    String host;
+    Int64 priority = 0;
+    UInt32 random = 0;
+
+    void randomize()
+    {
+        random = thread_local_rng();
+    }
+
+    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
+    {
+        return std::forward_as_tuple(lhs.priority, lhs.random)
+               < std::forward_as_tuple(rhs.priority, rhs.random);
+    }
+};
+
+using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -53,19 +75,21 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     /// hosts_string -- comma separated [secure://]host:port list
-    ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
+    explicit ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
               const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
-    ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
+    explicit ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
               const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
     /** Config of the form:
         <zookeeper>
@@ -91,6 +115,8 @@ public:
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
+    std::vector<ShuffleHost> shuffleHosts() const;
+
     /// Creates a new session with the same parameters. This method can be used for reconnecting
     /// after the session has expired.
     /// This object remains unchanged, and the new session is returned.
@@ -100,6 +126,8 @@ public:
 
     /// Returns true, if the session has expired.
     bool expired();
+
+    DB::KeeperApiVersion getApiVersion();
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -158,21 +186,25 @@ public:
 
     Strings getChildren(const std::string & path,
                         Coordination::Stat * stat = nullptr,
-                        const EventPtr & watch = nullptr);
+                        const EventPtr & watch = nullptr,
+                        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Strings getChildrenWatch(const std::string & path,
                              Coordination::Stat * stat,
-                             Coordination::WatchCallback watch_callback);
+                             Coordination::WatchCallback watch_callback,
+                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist.
     Coordination::Error tryGetChildren(const std::string & path, Strings & res,
                            Coordination::Stat * stat = nullptr,
-                           const EventPtr & watch = nullptr);
+                           const EventPtr & watch = nullptr,
+                           Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Coordination::Error tryGetChildrenWatch(const std::string & path, Strings & res,
                                 Coordination::Stat * stat,
-                                Coordination::WatchCallback watch_callback);
+                                Coordination::WatchCallback watch_callback,
+                                Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
@@ -182,6 +214,10 @@ public:
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
     /// Throws nothing (even session expired errors)
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
+
+    std::string sync(const std::string & path);
+
+    Coordination::Error trySync(const std::string & path, std::string & returned_path);
 
     Int64 getClientID();
 
@@ -199,7 +235,10 @@ public:
     /// If keep_child_node is not empty, this method will not remove path/keep_child_node (but will remove its subtree).
     /// It can be useful to keep some child node as a flag which indicates that path is currently removing.
     void removeChildrenRecursive(const std::string & path, const String & keep_child_node = {});
-    void tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node = {});
+    /// If probably_flat is true, this method will optimistically try to remove children non-recursive
+    /// and will fall back to recursive removal if it gets ZNOTEMPTY for some child.
+    /// Returns true if no kind of fallback happened.
+    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, const String & keep_child_node = {});
 
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
@@ -210,6 +249,10 @@ public:
     /// If condition is specified, it is used to return early (when condition returns false)
     /// The function returns true if waited and false if waiting was interrupted by condition.
     bool waitForDisappear(const std::string & path, const WaitCondition & condition = {});
+
+    /// Wait for the ephemeral node created in previous session to disappear.
+    /// Throws LOGICAL_ERROR if node still exists after 2x session_timeout.
+    void waitForEphemeralToDisappearIfAny(const std::string & path);
 
     /// Async interface (a small subset of operations is implemented).
     ///
@@ -242,9 +285,15 @@ public:
     FutureExists asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
 
     using FutureGetChildren = std::future<Coordination::ListResponse>;
-    FutureGetChildren asyncGetChildren(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureGetChildren asyncGetChildren(
+        const std::string & path,
+        Coordination::WatchCallback watch_callback = {},
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureGetChildren asyncTryGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback = {});
+    FutureGetChildren asyncTryGetChildrenNoThrow(
+        const std::string & path,
+        Coordination::WatchCallback watch_callback = {},
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
@@ -260,6 +309,11 @@ public:
     FutureMulti asyncMulti(const Coordination::Requests & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+
+    using FutureSync = std::future<Coordination::SyncResponse>;
+    FutureSync asyncSync(const std::string & path);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    FutureSync asyncTrySyncNoThrow(const std::string & path);
 
     /// Very specific methods introduced without following general style. Implements
     /// some custom throw/no throw logic on future.get().
@@ -284,7 +338,7 @@ private:
     friend class EphemeralNodeHolder;
 
     void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
-              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
+              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, const GetPriorityForLoadBalancing & get_priority_load_balancing_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -293,9 +347,14 @@ private:
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
     Coordination::Error setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
     Coordination::Error getChildrenImpl(
-        const std::string & path, Strings & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+        const std::string & path,
+        Strings & res,
+        Coordination::Stat * stat,
+        Coordination::WatchCallback watch_callback,
+        Coordination::ListRequestType list_request_type);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
+    Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
@@ -310,6 +369,8 @@ private:
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
+
+    GetPriorityForLoadBalancing get_priority_load_balancing;
 
     AtomicStopwatch session_uptime;
 };
@@ -385,5 +446,7 @@ String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with
 String extractZooKeeperName(const String & path);
 
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
+
+String getSequentialNodeName(const String & prefix, UInt64 number);
 
 }

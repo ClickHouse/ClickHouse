@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,13 +17,17 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Storages/Kafka/KafkaBlockOutputStream.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/Kafka/KafkaSink.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -36,8 +41,28 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <base/getFQDNOrHostName.h>
-#include <base/logger_useful.h>
+
+
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+#if USE_KRB5
+#include <Access/KerberosInit.h>
+#endif // USE_KRB5
+
+namespace CurrentMetrics
+{
+    extern const Metric KafkaLibrdkafkaThreads;
+    extern const Metric KafkaBackgroundReads;
+    extern const Metric KafkaConsumersInUse;
+    extern const Metric KafkaWrites;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KafkaDirectReads;
+    extern const Event KafkaBackgroundReads;
+    extern const Event KafkaWrites;
+}
 
 
 namespace DB
@@ -57,6 +82,7 @@ struct StorageKafkaInterceptors
     static rd_kafka_resp_err_t rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_thread_type_t thread_type, const char *, void * ctx)
     {
         StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+        CurrentMetrics::add(CurrentMetrics::KafkaLibrdkafkaThreads, 1);
 
         const auto & storage_id = self->getStorageID();
         const auto & table = storage_id.getTableName();
@@ -88,6 +114,7 @@ struct StorageKafkaInterceptors
     static rd_kafka_resp_err_t rdKafkaOnThreadExit(rd_kafka_t *, rd_kafka_thread_type_t, const char *, void * ctx)
     {
         StorageKafka * self = reinterpret_cast<StorageKafka *>(ctx);
+        CurrentMetrics::sub(CurrentMetrics::KafkaLibrdkafkaThreads, 1);
 
         std::lock_guard lock(self->thread_statuses_mutex);
         const auto it = std::find_if(self->thread_statuses.begin(), self->thread_statuses.end(), [](const auto & thread_status_ptr)
@@ -262,7 +289,7 @@ String StorageKafka::getDefaultClientId(const StorageID & table_id_)
 
 Pipe StorageKafka::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /* query_info */,
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -278,6 +305,8 @@ Pipe StorageKafka::read(
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
 
+    ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
+
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -290,7 +319,7 @@ Pipe StorageKafka::read(
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        pipes.emplace_back(std::make_shared<KafkaSource>(*this, metadata_snapshot, modified_context, column_names, log, 1, kafka_settings->kafka_commit_on_select));
+        pipes.emplace_back(std::make_shared<KafkaSource>(*this, storage_snapshot, modified_context, column_names, log, 1, kafka_settings->kafka_commit_on_select));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -302,6 +331,9 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaWrites};
+    ProfileEvents::increment(ProfileEvents::KafkaWrites);
 
     if (topics.size() > 1)
         throw Exception("Can't write to Kafka table with multiple topics!", ErrorCodes::NOT_IMPLEMENTED);
@@ -357,6 +389,7 @@ void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
     std::lock_guard lock(mutex);
     buffers.push_back(buffer);
     semaphore.set();
+    CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
 }
 
 
@@ -381,6 +414,7 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
     std::lock_guard lock(mutex);
     auto buffer = buffers.back();
     buffers.pop_back();
+    CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
     return buffer;
 }
 
@@ -388,7 +422,6 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 {
     cppkafka::Configuration conf;
     conf.set("metadata.broker.list", brokers);
-    conf.set("group.id", group);
     conf.set("client.id", client_id);
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
@@ -404,7 +437,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
 }
 
 
-ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
+ConsumerBufferPtr StorageKafka::createReadBuffer(size_t consumer_number)
 {
     cppkafka::Configuration conf;
 
@@ -485,6 +518,33 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
     auto config_prefix = getConfigPrefix();
     if (config.has(config_prefix))
         loadFromConfig(conf, config, config_prefix);
+
+    #if USE_KRB5
+    if (conf.has_property("sasl.kerberos.kinit.cmd"))
+        LOG_WARNING(log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
+
+    conf.set("sasl.kerberos.kinit.cmd","");
+    conf.set("sasl.kerberos.min.time.before.relogin","0");
+
+    if (conf.has_property("sasl.kerberos.keytab") && conf.has_property("sasl.kerberos.principal"))
+    {
+        String keytab = conf.get("sasl.kerberos.keytab");
+        String principal = conf.get("sasl.kerberos.principal");
+        LOG_DEBUG(log, "Running KerberosInit");
+        try
+        {
+            kerberosInit(keytab,principal);
+        }
+        catch (const Exception & e)
+        {
+            LOG_ERROR(log, "KerberosInit failure: {}", getExceptionMessage(e, false));
+        }
+        LOG_DEBUG(log, "Finished KerberosInit");
+    }
+    #else // USE_KRB5
+    if (conf.has_property("sasl.kerberos.keytab") || conf.has_property("sasl.kerberos.principal"))
+        LOG_WARNING(log, "Kerberos-related parameters are ignored because ClickHouse was built without support of krb5 library.");
+    #endif // USE_KRB5
 
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)
@@ -613,7 +673,11 @@ bool StorageKafka::streamToViews()
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
+    ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
+
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -639,19 +703,18 @@ bool StorageKafka::streamToViews()
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto source = std::make_shared<KafkaSource>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        auto source = std::make_shared<KafkaSource>(*this, storage_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
 
-        limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
-                                                 ? kafka_settings->kafka_flush_interval_ms
-                                                 : getContext()->getSettingsRef().stream_flush_interval_ms;
+        Poco::Timespan max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
+                                          ? kafka_settings->kafka_flush_interval_ms
+                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-        limits.timeout_overflow_mode = OverflowMode::BREAK;
-        source->setLimits(limits);
+        source->setTimeLimit(max_execution_time);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -659,9 +722,14 @@ bool StorageKafka::streamToViews()
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
 
-    size_t rows = 0;
+    std::atomic_size_t rows = 0;
     {
         block_io.pipeline.complete(std::move(pipe));
+
+        // we need to read all consumers in parallel (sequential read may lead to situation
+        // when some of consumers are not used, and will break some Kafka consumer invariants)
+        block_io.pipeline.setNumThreads(stream_count);
+
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -777,11 +845,16 @@ void registerStorageKafka(StorageFactory & factory)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         auto num_consumers = kafka_settings->kafka_num_consumers.value;
-        auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
+        auto max_consumers = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
 
-        if (num_consumers > physical_cpu_cores)
+        if (num_consumers > max_consumers)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be bigger than {}", physical_cpu_cores);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The number of consumers can not be bigger than {}. "
+                            "A single consumer can read any number of partitions. Extra consumers are relatively expensive, "
+                            "and using a lot of them can lead to high memory and CPU usage. To achieve better performance "
+                            "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
+                            "and ensure you have enough threads in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
+                            "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance", max_consumers);
         }
         else if (num_consumers < 1)
         {
@@ -798,7 +871,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
+        return std::make_shared<StorageKafka>(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
@@ -807,15 +880,14 @@ void registerStorageKafka(StorageFactory & factory)
 NamesAndTypesList StorageKafka::getVirtuals() const
 {
     auto result = NamesAndTypesList{
-        {"_topic", std::make_shared<DataTypeString>()},
+        {"_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_key", std::make_shared<DataTypeString>()},
         {"_offset", std::make_shared<DataTypeUInt64>()},
         {"_partition", std::make_shared<DataTypeUInt64>()},
         {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
         {"_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3))},
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
-    };
+        {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}};
     if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
     {
         result.push_back({"_raw_message", std::make_shared<DataTypeString>()});

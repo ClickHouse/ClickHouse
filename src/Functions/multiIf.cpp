@@ -117,7 +117,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName arguments = std::move(args);
+        ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
@@ -265,6 +265,8 @@ private:
         int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
         if (last_short_circuit_argument_index < 0)
             return;
+
+        executeColumnIfNeeded(arguments[0]);
 
         /// Let's denote x_i' = maskedExecute(x_i, mask).
         /// multiIf(x_0, y_0, x_1, y_1, x_2, y_2, ..., x_{n-1}, y_{n-1}, y_n)

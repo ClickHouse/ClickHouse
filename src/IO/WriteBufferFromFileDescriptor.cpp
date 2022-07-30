@@ -1,5 +1,5 @@
 #include <unistd.h>
-#include <errno.h>
+#include <cerrno>
 #include <cassert>
 #include <sys/stat.h>
 
@@ -132,7 +132,6 @@ off_t WriteBufferFromFileDescriptor::seek(off_t offset, int whence) // NOLINT
                                ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
     return res;
 }
-
 
 void WriteBufferFromFileDescriptor::truncate(off_t length) // NOLINT
 {

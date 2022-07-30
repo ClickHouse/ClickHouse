@@ -16,6 +16,13 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Common/LocalDateTime.h>
+#include <Common/logger_useful.h>
+#include "readInvalidateQuery.h"
 
 
 namespace DB
@@ -34,7 +41,7 @@ static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password",
     "db", "database", "table", "schema",
     "update_field", "invalidate_query", "priority",
-    "update_tag", "dont_check_update_time",
+    "update_lag", "dont_check_update_time",
     "query", "where", "name" /* name_collection */, "socket",
     "share_connection", "fail_on_connection_loss", "close_connection",
     "ssl_ca", "ssl_cert", "ssl_key",
@@ -118,15 +125,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
 
 #if USE_MYSQL
-#    include <Columns/ColumnString.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <IO/WriteBufferFromString.h>
-#    include <IO/WriteHelpers.h>
-#    include <Common/LocalDateTime.h>
-#    include <base/logger_useful.h>
-#    include "readInvalidateQuery.h"
-#    include <mysqlxx/Exception.h>
-#    include <Core/Settings.h>
 
 namespace DB
 {
@@ -182,39 +180,39 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-Pipe MySQLDictionarySource::loadFromQuery(const String & query)
+QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
 {
-    return Pipe(std::make_shared<MySQLWithFailoverSource>(
+    return QueryPipeline(std::make_shared<MySQLWithFailoverSource>(
             pool, query, sample_block, settings));
 }
 
-Pipe MySQLDictionarySource::loadAll()
+QueryPipeline MySQLDictionarySource::loadAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
 
-    LOG_TRACE(log, load_all_query);
+    LOG_TRACE(log, fmt::runtime(load_all_query));
     return loadFromQuery(load_all_query);
 }
 
-Pipe MySQLDictionarySource::loadUpdatedAll()
+QueryPipeline MySQLDictionarySource::loadUpdatedAll()
 {
     auto connection = pool->get();
     last_modification = getLastModification(connection, false);
 
     std::string load_update_query = getUpdateFieldAndDate();
-    LOG_TRACE(log, load_update_query);
+    LOG_TRACE(log, fmt::runtime(load_update_query));
     return loadFromQuery(load_update_query);
 }
 
-Pipe MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
     return loadFromQuery(query);
 }
 
-Pipe MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
@@ -289,7 +287,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
     {
         auto query = connection->query("SHOW TABLE STATUS LIKE " + quoteForLike(configuration.table));
 
-        LOG_TRACE(log, query.str());
+        LOG_TRACE(log, fmt::runtime(query.str()));
 
         auto result = query.use();
 

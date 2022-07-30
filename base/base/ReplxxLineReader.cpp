@@ -25,13 +25,6 @@ void trim(String & s)
     s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
-/// Check if string ends with given character after skipping whitespaces.
-bool ends_with(const std::string_view & s, const std::string_view & p)
-{
-    auto ss = std::string_view(s.data(), s.rend() - std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }));
-    return ss.ends_with(p);
-}
-
 std::string getEditor()
 {
     const char * editor = std::getenv("EDITOR");
@@ -52,14 +45,16 @@ std::string replxx_now_ms_str()
     time_t t = ms.count() / 1000;
     tm broken;
     if (!localtime_r(&t, &broken))
-    {
-        return std::string();
-    }
+        return {};
 
     static int const BUFF_SIZE(32);
     char str[BUFF_SIZE];
-    strftime(str, BUFF_SIZE, "%Y-%m-%d %H:%M:%S.", &broken);
-    snprintf(str + sizeof("YYYY-mm-dd HH:MM:SS"), 5, "%03d", static_cast<int>(ms.count() % 1000));
+    if (strftime(str, BUFF_SIZE, "%Y-%m-%d %H:%M:%S.", &broken) <= 0)
+        return {};
+
+    if (snprintf(str + sizeof("YYYY-mm-dd HH:MM:SS"), 5, "%03d", static_cast<int>(ms.count() % 1000)) <= 0)
+        return {};
+
     return str;
 }
 
@@ -132,6 +127,12 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 
 }
 
+static bool replxx_last_is_delimiter = false;
+void ReplxxLineReader::setLastIsDelimiter(bool flag)
+{
+    replxx_last_is_delimiter = flag;
+}
+
 ReplxxLineReader::ReplxxLineReader(
     Suggest & suggest,
     const String & history_file_path_,
@@ -185,6 +186,7 @@ ReplxxLineReader::ReplxxLineReader(
     rx.set_completion_callback(callback);
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
+    rx.set_ignore_case(true);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
@@ -196,21 +198,11 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto commit_action = [this](char32_t code)
     {
-        std::string_view str = rx.get_state().text();
-
-        /// Always commit line when we see extender at the end. It will start a new prompt.
-        for (const auto * extender : extenders)
-            if (ends_with(str, extender))
-                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
-
-        /// If we see an delimiter at the end, commit right away.
-        for (const auto * delimiter : delimiters)
-            if (ends_with(str, delimiter))
-                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
-
         /// If we allow multiline and there is already something in the input, start a newline.
-        if (multiline && !input.empty())
+        /// NOTE: Lexer is only available if we use highlighter.
+        if (highlighter && multiline && !replxx_last_is_delimiter)
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
     /// bind C-j to ENTER action.
@@ -388,4 +380,4 @@ void ReplxxLineReader::enableBracketedPaste()
 {
     bracketed_paste_enabled = true;
     rx.enable_bracketed_paste();
-};
+}

@@ -42,6 +42,7 @@ public:
     bool end_map_key();
     bool start_map_value();
     bool end_map_value();
+    bool visit_ext(const char * value, uint32_t size);
 
     /// This function will be called if error occurs in parsing
     [[noreturn]] void parse_error(size_t parsed_offset, size_t error_offset);

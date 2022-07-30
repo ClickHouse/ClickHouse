@@ -15,10 +15,19 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Common/checkStackSize.h>
 #include <Storages/ColumnsDescription.h>
+#include <DataTypes/NestedUtils.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 
 namespace DB
 {
+
+namespace ErrorCode
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -36,7 +45,7 @@ void addDefaultRequiredExpressionsRecursively(
     if (is_column_in_query)
         convert_null_to_default = null_as_default && block.findByName(required_column_name)->type->isNullable() && !required_column_type->isNullable();
 
-    if ((is_column_in_query && !convert_null_to_default) || added_columns.count(required_column_name))
+    if ((is_column_in_query && !convert_null_to_default) || added_columns.contains(required_column_name))
         return;
 
     auto column_default = columns.getDefault(required_column_name);
@@ -134,7 +143,6 @@ ActionsDAGPtr createExpressions(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
-    const NamesAndTypesList & required_columns,
     ContextPtr context)
 {
     if (!expr_list)
@@ -145,12 +153,6 @@ ActionsDAGPtr createExpressions(
     auto dag = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
     auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
     dag = ActionsDAG::merge(std::move(*dag), std::move(*actions));
-
-    if (save_unneeded_columns)
-    {
-        dag->removeUnusedActions(required_columns.getNames());
-        dag->addMaterializingOutputActions();
-    }
 
     return dag;
 }
@@ -163,7 +165,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     if (conversion_expr_list->children.empty())
         return;
 
-    if (auto dag = createExpressions(block, conversion_expr_list, true, required_columns, context))
+    if (auto dag = createExpressions(block, conversion_expr_list, true, context))
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
         expression->execute(block);
@@ -182,7 +184,100 @@ ActionsDAGPtr evaluateMissingDefaults(
         return nullptr;
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    return createExpressions(header, expr_list, save_unneeded_columns, required_columns, context);
+    return createExpressions(header, expr_list, save_unneeded_columns, context);
+}
+
+static bool arrayHasNoElementsRead(const IColumn & column)
+{
+    const auto * column_array = typeid_cast<const ColumnArray *>(&column);
+
+    if (!column_array)
+        return false;
+
+    size_t size = column_array->size();
+    if (!size)
+        return false;
+
+    size_t data_size = column_array->getData().size();
+    if (data_size)
+        return false;
+
+    size_t last_offset = column_array->getOffsets()[size - 1];
+    return last_offset != 0;
+}
+
+void fillMissingColumns(
+    Columns & res_columns,
+    size_t num_rows,
+    const NamesAndTypesList & requested_columns,
+    StorageMetadataPtr metadata_snapshot)
+{
+    size_t num_columns = requested_columns.size();
+    if (num_columns != res_columns.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid number of columns passed to fillMissingColumns. Expected {}, got {}",
+            num_columns, res_columns.size());
+
+    /// For a missing column of a nested data structure we must create not a column of empty
+    /// arrays, but a column of arrays of correct length.
+
+    /// First, collect offset columns for all arrays in the block.
+
+    std::unordered_map<String, ColumnPtr> offset_columns;
+    auto requested_column = requested_columns.begin();
+    for (size_t i = 0; i < num_columns; ++i, ++requested_column)
+    {
+        if (res_columns[i] == nullptr)
+            continue;
+
+        if (const auto * array = typeid_cast<const ColumnArray *>(res_columns[i].get()))
+        {
+            String offsets_name = Nested::extractTableName(requested_column->name);
+            auto & offsets_column = offset_columns[offsets_name];
+
+            /// If for some reason multiple offsets columns are present for the same nested data structure,
+            /// choose the one that is not empty.
+            if (!offsets_column || offsets_column->empty())
+                offsets_column = array->getOffsetsPtr();
+        }
+    }
+
+    /// insert default values only for columns without default expressions
+    requested_column = requested_columns.begin();
+    for (size_t i = 0; i < num_columns; ++i, ++requested_column)
+    {
+        const auto & [name, type] = *requested_column;
+
+        if (res_columns[i] && arrayHasNoElementsRead(*res_columns[i]))
+            res_columns[i] = nullptr;
+
+        if (res_columns[i] == nullptr)
+        {
+            if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(name))
+                continue;
+
+            String offsets_name = Nested::extractTableName(name);
+            auto offset_it = offset_columns.find(offsets_name);
+            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+            if (offset_it != offset_columns.end() && array_type)
+            {
+                const auto & nested_type = array_type->getNestedType();
+                ColumnPtr offsets_column = offset_it->second;
+                size_t nested_rows = typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
+
+                ColumnPtr nested_column =
+                    nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
+
+                res_columns[i] = ColumnArray::create(nested_column, offsets_column);
+            }
+            else
+            {
+                /// We must turn a constant column into a full column because the interpreter could infer
+                /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+                res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+            }
+        }
+    }
 }
 
 }

@@ -3,18 +3,14 @@
         <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
     </settings>
 
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
-
-    <query>SELECT detectLanguage(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT detectLanguageMixed(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT detectLanguage(SearchPhrase) FROM hits_100m_single LIMIT 10000000 FORMAT Null</query>
+    <query>SELECT detectLanguageMixed(SearchPhrase) FROM hits_100m_single LIMIT 10000000 FORMAT Null</query>
     <query>SELECT detectTonality(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
 
     <!-- Input is not really correct for these functions,
     but at least it gives us some idea about their performance -->
-    <query>SELECT detectProgrammingLanguage(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT detectLanguageUnknown(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT detectCharset(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT detectProgrammingLanguage(SearchPhrase) FROM hits_100m_single LIMIT 10000000 FORMAT Null</query>
+    <query>SELECT detectLanguageUnknown(SearchPhrase) FROM hits_100m_single LIMIT 500000 FORMAT Null</query>
+    <query>SELECT detectCharset(SearchPhrase) FROM hits_100m_single LIMIT 500000 FORMAT Null</query>
 
 </test>

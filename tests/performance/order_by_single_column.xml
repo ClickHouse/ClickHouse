@@ -1,15 +1,4 @@
 <test>
-    <tags>
-        <tag>sorting</tag>
-        <tag>comparison</tag>
-    </tags>
-
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
-
-
-
     <query>SELECT URL as col FROM hits_100m_single ORDER BY col LIMIT 1000,1</query>
     <query>SELECT SearchPhrase as col FROM hits_100m_single ORDER BY col LIMIT 10000,1</query>
     <query>SELECT SearchPhrase as col FROM hits_100m_single WHERE notEmpty(col) ORDER BY col LIMIT 10000,1</query>
@@ -17,5 +6,4 @@
     <query>SELECT MobilePhoneModel as col FROM hits_100m_single WHERE notEmpty(col) ORDER BY col LIMIT 500000,1</query>
     <query>SELECT PageCharset as col FROM hits_100m_single ORDER BY col LIMIT 10000,1</query>
     <query>SELECT Title as col FROM hits_100m_single ORDER BY col LIMIT 1000,1</query>
-
 </test>

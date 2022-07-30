@@ -12,7 +12,7 @@ class WriteBuffer;
 
 /** A stream for outputting data in the VALUES format (as in the INSERT request).
   */
-class ValuesRowOutputFormat : public IRowOutputFormat
+class ValuesRowOutputFormat final : public IRowOutputFormat
 {
 public:
     ValuesRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);

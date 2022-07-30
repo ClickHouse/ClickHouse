@@ -4,7 +4,6 @@
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
-#include <system_error>
 
 #include <boost/program_options.hpp>
 
@@ -15,50 +14,35 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 
 using namespace DB;
 
 static SharedContextHolder shared_context = Context::createShared();
 
-std::vector<StringRef> loadMetrics(const std::string & metrics_file)
+auto loadMetrics(const std::string & metrics_file)
 {
-    std::vector<StringRef> metrics;
+    std::vector<std::string> metrics;
+    ReadBufferFromFile in(metrics_file);
+    String line;
 
-    FILE * stream;
-    char * line = nullptr;
-    size_t len = 0;
-    ssize_t nread;
-
-    stream = fopen(metrics_file.c_str(), "r");
-    if (stream == nullptr)
+    while (!in.eof())
     {
-        throw std::runtime_error(strerror(errno));
-    }
-
-    while ((nread = getline(&line, &len, stream)) != -1)
-    {
-        size_t l = strlen(line);
-        if (l > 0)
+        readEscapedStringUntilEOL(line, in);
+        if (!in.eof())
         {
-            if (line[l - 1] == '\n')
-            {
-                line[l - 1] = '\0';
-                l--;
-            }
-            if (l > 0)
-            {
-                metrics.push_back(StringRef(strdup(line), l));
-            }
+            ++in.position();
+        }
+        if (!line.empty() && line.back() == '\n')
+        {
+            line.pop_back();
+        }
+        if (!line.empty())
+        {
+            metrics.emplace_back(line);
         }
     }
-    free(line);
-    if (ferror(stream))
-    {
-        fclose(stream);
-        throw std::runtime_error(strerror(errno));
-    }
-
-    fclose(stream);
 
     return metrics;
 }
@@ -80,7 +64,7 @@ void bench(const std::string & config_path, const std::string & metrics_file, si
     Graphite::Params params;
     setGraphitePatternsFromConfig(context, "graphite_rollup", params);
 
-    std::vector<StringRef> metrics = loadMetrics(metrics_file);
+    auto metrics = loadMetrics(metrics_file);
 
     std::vector<double> durations(metrics.size());
     size_t j, i;
@@ -99,15 +83,14 @@ void bench(const std::string & config_path, const std::string & metrics_file, si
 
             if (j == 0 && verbose)
             {
-                std::cout << metrics[i].data << ": rule with regexp '" << rule.second->regexp_str << "' found\n";
+                std::cout << metrics[i] << ": rule with regexp '" << rule.second->regexp_str << "' found\n";
             }
         }
     }
 
     for (i = 0; i < metrics.size(); i++)
     {
-        std::cout << metrics[i].data << " " << durations[i] / n << " ns\n";
-        free(const_cast<void *>(static_cast<const void *>(metrics[i].data)));
+        std::cout << metrics[i] << " " << durations[i] / n << " ns\n";
     }
 }
 

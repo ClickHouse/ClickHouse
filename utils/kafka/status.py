@@ -8,18 +8,34 @@ import argparse
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Kafka client to get groups and topics status')
-    parser.add_argument('--server', type=str, metavar='HOST', default='localhost',
-        help='Kafka bootstrap-server address')
-    parser.add_argument('--port', type=int, metavar='PORT', default=9092,
-        help='Kafka bootstrap-server port')
-    parser.add_argument('--client', type=str, default='ch-kafka-python',
-        help='custom client id for this producer')
+    parser = argparse.ArgumentParser(
+        description="Kafka client to get groups and topics status"
+    )
+    parser.add_argument(
+        "--server",
+        type=str,
+        metavar="HOST",
+        default="localhost",
+        help="Kafka bootstrap-server address",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        metavar="PORT",
+        default=9092,
+        help="Kafka bootstrap-server port",
+    )
+    parser.add_argument(
+        "--client",
+        type=str,
+        default="ch-kafka-python",
+        help="custom client id for this producer",
+    )
 
     args = parser.parse_args()
     config = {
-        'bootstrap_servers': f'{args.server}:{args.port}',
-        'client_id': args.client,
+        "bootstrap_servers": f"{args.server}:{args.port}",
+        "client_id": args.client,
     }
 
     client = kafka.KafkaAdminClient(**config)
@@ -28,10 +44,13 @@ def main():
 
     topics = cluster.topics()
     for topic in topics:
-        print(f'Topic "{topic}":', end='')
+        print(f'Topic "{topic}":', end="")
         for partition in cluster.partitions_for_topic(topic):
             tp = kafka.TopicPartition(topic, partition)
-            print(f' {partition} (begin: {consumer.beginning_offsets([tp])[tp]}, end: {consumer.end_offsets([tp])[tp]})', end='')
+            print(
+                f" {partition} (begin: {consumer.beginning_offsets([tp])[tp]}, end: {consumer.end_offsets([tp])[tp]})",
+                end="",
+            )
         print()
 
     groups = client.list_consumer_groups()
@@ -41,7 +60,9 @@ def main():
         consumer = kafka.KafkaConsumer(**config, group_id=group[0])
         offsets = client.list_consumer_group_offsets(group[0])
         for topic, offset in offsets.items():
-            print(f'\t{topic.topic}[{topic.partition}]: {consumer.beginning_offsets([topic])[topic]}, {offset.offset}, {consumer.end_offsets([topic])[topic]}')
+            print(
+                f"\t{topic.topic}[{topic.partition}]: {consumer.beginning_offsets([topic])[topic]}, {offset.offset}, {consumer.end_offsets([topic])[topic]}"
+            )
         consumer.close()
 
     client.close()

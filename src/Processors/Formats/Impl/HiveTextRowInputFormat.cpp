@@ -10,16 +10,21 @@ namespace ErrorCodes
 }
 
 
-static FormatSettings updateFormatSettings(const FormatSettings & settings)
+static FormatSettings updateFormatSettings(const FormatSettings & settings, const Block & header)
 {
     FormatSettings updated = settings;
+    updated.skip_unknown_fields = true;
+    updated.with_names_use_header = true;
+    updated.date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
     updated.csv.delimiter = updated.hive_text.fields_delimiter;
+    if (settings.hive_text.input_field_names.empty())
+        updated.hive_text.input_field_names = header.getNames();
     return updated;
 }
 
 HiveTextRowInputFormat::HiveTextRowInputFormat(
     const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_)
-    : HiveTextRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, updateFormatSettings(format_settings_))
+    : HiveTextRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, updateFormatSettings(format_settings_, header_))
 {
 }
 
@@ -56,5 +61,15 @@ void registerInputFormatHiveText(FormatFactory & factory)
             return std::make_shared<HiveTextRowInputFormat>(sample, buf, params, settings);
         });
 }
+
+void registerFileSegmentationEngineHiveText(FormatFactory & factory)
+{
+    factory.registerFileSegmentationEngine(
+        "HiveText",
+        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size) -> std::pair<bool, size_t> {
+            return fileSegmentationEngineCSVImpl(in, memory, min_chunk_size, 0);
+        });
+}
+
 }
 #endif

@@ -11,15 +11,15 @@ namespace ErrorCodes
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     MergeTreeData::DataPartPtr data_part_,
     Names columns_to_read_,
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns_to_read_, storage_.getVirtuals(), storage_.getStorageID()))
+    : ISource(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
-    , metadata_snapshot(metadata_snapshot_)
+    , storage_snapshot(storage_snapshot_)
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
@@ -41,11 +41,15 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(storage, metadata_snapshot, data_part, columns_to_read);
+    injectRequiredColumns(storage, storage_snapshot, data_part, /*with_subcolumns=*/ false, columns_to_read);
+
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        columns_for_reader = metadata_snapshot->getColumns().getByNames(ColumnsDescription::AllPhysical, columns_to_read, false);
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withExtendedObjects()
+            .withSystemColumns();
+        columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else
     {
@@ -63,9 +67,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         .save_marks_in_cache = false
     };
 
-    reader = data_part->getReader(columns_for_reader, metadata_snapshot,
+    reader = data_part->getReader(columns_for_reader, storage_snapshot->metadata,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
-        /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
+        /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings, {}, {});
 }
 
 Chunk MergeTreeSequentialSource::generate()
@@ -80,8 +84,7 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        /// TODO: pass stream size instead of zero?
-        size_t rows_read = reader->readRows(current_mark, 0, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, data_part->getMarksCount(), continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {
@@ -126,7 +129,7 @@ catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
     if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
     throw;
 }
 

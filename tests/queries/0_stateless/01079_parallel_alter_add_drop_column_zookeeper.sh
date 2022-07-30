@@ -80,7 +80,6 @@ timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 
-
 wait
 
 echo "Finishing alters"

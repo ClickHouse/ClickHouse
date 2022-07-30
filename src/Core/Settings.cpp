@@ -1,10 +1,11 @@
 #include "Settings.h"
 
+#include <Core/SettingsChangesHistory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
-#include <string.h>
+#include <cstring>
 #include <boost/program_options/options_description.hpp>
 
 namespace DB
@@ -85,14 +86,32 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
 {
     for (const auto & field : all())
     {
-        const std::string_view name = field.getName();
-        auto on_program_option
-            = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
-        options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            name.data(),
-            boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
-            field.getDescription())));
+        addProgramOption(options, field);
     }
+}
+
+void Settings::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
+{
+    for (const auto & field : all())
+    {
+        addProgramOptionAsMultitoken(options, field);
+    }
+}
+
+void Settings::addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field)
+{
+    const std::string_view name = field.getName();
+    auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+        name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
+}
+
+void Settings::addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field)
+{
+    const std::string_view name = field.getName();
+    auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+        name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
 void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
@@ -104,7 +123,7 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
     for (auto setting : settings.all())
     {
         const auto & name = setting.getName();
-        if (config.has(name))
+        if (config.has(name) && !setting.isObsolete())
         {
             throw Exception(fmt::format("A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
@@ -125,6 +144,53 @@ std::vector<String> Settings::getAllRegisteredNames() const
         all_settings.push_back(setting_field.getName());
     }
     return all_settings;
+}
+
+void Settings::set(std::string_view name, const Field & value)
+{
+    BaseSettings::set(name, value);
+
+    if (name == "compatibility")
+        applyCompatibilitySetting();
+    /// If we change setting that was changed by compatibility setting before
+    /// we should remove it from settings_changed_by_compatibility_setting,
+    /// otherwise the next time we will change compatibility setting
+    /// this setting will be changed too (and we don't want it).
+    else if (settings_changed_by_compatibility_setting.contains(name))
+        settings_changed_by_compatibility_setting.erase(name);
+}
+
+void Settings::applyCompatibilitySetting()
+{
+    /// First, revert all changes applied by previous compatibility setting
+    for (const auto & setting_name : settings_changed_by_compatibility_setting)
+        resetToDefault(setting_name);
+
+    settings_changed_by_compatibility_setting.clear();
+    String compatibility = getString("compatibility");
+    /// If setting value is empty, we don't need to change settings
+    if (compatibility.empty())
+        return;
+
+    ClickHouseVersion version(compatibility);
+    /// Iterate through ClickHouse version in descending order and apply reversed
+    /// changes for each version that is higher that version from compatibility setting
+    for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
+    {
+        if (version >= it->first)
+            break;
+
+        /// Apply reversed changes from this version.
+        for (const auto & change : it->second)
+        {
+            /// If this setting was changed manually, we don't change it
+            if (isChanged(change.name) && !settings_changed_by_compatibility_setting.contains(change.name))
+                continue;
+
+            BaseSettings::set(change.name, change.previous_value);
+            settings_changed_by_compatibility_setting.insert(change.name);
+        }
+    }
 }
 
 IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)

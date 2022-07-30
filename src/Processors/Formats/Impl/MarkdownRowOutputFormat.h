@@ -9,7 +9,7 @@ namespace DB
 
 class ReadBuffer;
 
-class MarkdownRowOutputFormat : public IRowOutputFormat
+class MarkdownRowOutputFormat final : public IRowOutputFormat
 {
 public:
     MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);

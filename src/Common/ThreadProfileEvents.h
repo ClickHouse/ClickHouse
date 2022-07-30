@@ -5,10 +5,10 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 #include <linux/taskstats.h>
 #else
 struct taskstats {};
@@ -66,7 +66,7 @@ struct RUsageCounters
     static RUsageCounters current()
     {
         ::rusage rusage {};
-#if !defined(__APPLE__)
+#if !defined(OS_DARWIN)
 #if defined(OS_SUNOS)
         ::getrusage(RUSAGE_LWP, &rusage);
 #else
@@ -102,7 +102,7 @@ private:
     }
 };
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 struct PerfEventInfo
 {
@@ -171,13 +171,23 @@ extern PerfEventsCounters current_thread_counters;
 
 #endif
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
 
 class TasksStatsCounters
 {
 public:
+    enum class MetricsProvider
+    {
+        None,
+        Procfs,
+        Netlink,
+    };
+
+    static const char * metricsProviderString(MetricsProvider provider);
     static bool checkIfAvailable();
-    static std::unique_ptr<TasksStatsCounters> create(const UInt64 tid);
+    static MetricsProvider findBestAvailableProvider();
+
+    static std::unique_ptr<TasksStatsCounters> create(UInt64 tid);
 
     void reset();
     void updateCounters(ProfileEvents::Counters & profile_events);
@@ -186,17 +196,8 @@ private:
     ::taskstats stats;  //-V730_NOINIT
     std::function<::taskstats()> stats_getter;
 
-    enum class MetricsProvider
-    {
-        None,
-        Procfs,
-        Netlink
-    };
+    explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);
 
-private:
-    explicit TasksStatsCounters(const UInt64 tid, const MetricsProvider provider);
-
-    static MetricsProvider findBestAvailableProvider();
     static void incrementProfileEvents(const ::taskstats & prev, const ::taskstats & curr, ProfileEvents::Counters & profile_events);
 };
 

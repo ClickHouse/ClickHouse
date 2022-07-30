@@ -18,7 +18,7 @@ class MergeTreeSelectProcessor : public MergeTreeBaseSelectProcessor
 public:
     MergeTreeSelectProcessor(
         const MergeTreeData & storage,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,

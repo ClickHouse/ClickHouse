@@ -1,6 +1,6 @@
 ---
-toc_priority: 35
-toc_title: PostgreSQL
+sidebar_position: 35
+sidebar_label: PostgreSQL
 ---
 
 # PostgreSQL {#postgresql}
@@ -24,6 +24,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 -   `database` — 远程数据库名次
 -   `user` — PostgreSQL用户名称
 -   `password` — PostgreSQL用户密码
+-   `schema` - PostgreSQL 模式
 -   `use_table_cache` —  定义数据库表结构是否已缓存或不进行。可选的。默认值： `0`.
 
 ## 支持的数据类型 {#data_types-support}

@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "\u793A\u4F8B\u6570\u636E\u96C6"
-toc_priority: 12
-toc_title: "\u5BFC\u8A00"
+sidebar_label: 示例数据集
+sidebar_position: 12
 ---
 
 # 示例数据集 {#example-datasets}

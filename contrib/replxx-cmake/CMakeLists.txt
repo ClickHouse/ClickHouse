@@ -1,10 +1,3 @@
-option (ENABLE_REPLXX "Enable replxx support" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_REPLXX)
-    message (STATUS "Not using replxx")
-    return()
-endif()
-
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/replxx")
 
 set(SRCS
@@ -22,9 +15,4 @@ set(SRCS
 
 add_library (_replxx ${SRCS})
 target_include_directories(_replxx SYSTEM PUBLIC "${LIBRARY_DIR}/include")
-
-if (COMPILER_CLANG)
-    target_compile_options(_replxx PRIVATE -Wno-documentation)
-endif ()
-
 add_library(ch_contrib::replxx ALIAS _replxx)

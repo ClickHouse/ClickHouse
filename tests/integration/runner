@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-#-*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import subprocess
 import os
 import getpass
@@ -9,17 +9,27 @@ import logging
 import signal
 import subprocess
 import sys
+import string
+import random
+
+
+def random_str(length=6):
+    alphabet = string.ascii_lowercase + string.digits
+    return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
+
 
 CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../"))
 CURRENT_WORK_DIR = os.getcwd()
-CONTAINER_NAME = "clickhouse_integration_tests"
+VOLUME_NAME = "clickhouse_integration_tests"
+CONTAINER_NAME = f"{VOLUME_NAME}_{random_str()}"
 
 CONFIG_DIR_IN_REPO = "programs/server"
-INTERGATION_DIR_IN_REPO = "tests/integration"
+INTEGRATION_DIR_IN_REPO = "tests/integration"
 SRC_DIR_IN_REPO = "src"
 
 DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
+
 
 def check_args_and_update_paths(args):
     if args.clickhouse_root:
@@ -28,34 +38,54 @@ def check_args_and_update_paths(args):
         else:
             CLICKHOUSE_ROOT = args.clickhouse_root
     else:
-        logging.info("ClickHouse root is not set. Will use %s" % (DEFAULT_CLICKHOUSE_ROOT))
+        logging.info(
+            "ClickHouse root is not set. Will use %s" % (DEFAULT_CLICKHOUSE_ROOT)
+        )
         CLICKHOUSE_ROOT = DEFAULT_CLICKHOUSE_ROOT
 
     if not os.path.isabs(args.binary):
         args.binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.binary))
 
     if not args.odbc_bridge_binary:
-        args.odbc_bridge_binary = os.path.join(os.path.dirname(args.binary), 'clickhouse-odbc-bridge')
+        args.odbc_bridge_binary = os.path.join(
+            os.path.dirname(args.binary), "clickhouse-odbc-bridge"
+        )
     elif not os.path.isabs(args.odbc_bridge_binary):
-        args.odbc_bridge_binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.odbc_bridge_binary))
+        args.odbc_bridge_binary = os.path.abspath(
+            os.path.join(CURRENT_WORK_DIR, args.odbc_bridge_binary)
+        )
 
     if not args.library_bridge_binary:
-        args.library_bridge_binary = os.path.join(os.path.dirname(args.binary), 'clickhouse-library-bridge')
+        args.library_bridge_binary = os.path.join(
+            os.path.dirname(args.binary), "clickhouse-library-bridge"
+        )
     elif not os.path.isabs(args.library_bridge_binary):
-        args.library_bridge_binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.library_bridge_binary))
+        args.library_bridge_binary = os.path.abspath(
+            os.path.join(CURRENT_WORK_DIR, args.library_bridge_binary)
+        )
 
     if args.base_configs_dir:
         if not os.path.isabs(args.base_configs_dir):
-            args.base_configs_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.base_configs_dir))
+            args.base_configs_dir = os.path.abspath(
+                os.path.join(CURRENT_WORK_DIR, args.base_configs_dir)
+            )
     else:
-        args.base_configs_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, CONFIG_DIR_IN_REPO))
-        logging.info("Base configs dir is not set. Will use %s" % (args.base_configs_dir))
+        args.base_configs_dir = os.path.abspath(
+            os.path.join(CLICKHOUSE_ROOT, CONFIG_DIR_IN_REPO)
+        )
+        logging.info(
+            "Base configs dir is not set. Will use %s" % (args.base_configs_dir)
+        )
 
     if args.cases_dir:
         if not os.path.isabs(args.cases_dir):
-            args.cases_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.cases_dir))
+            args.cases_dir = os.path.abspath(
+                os.path.join(CURRENT_WORK_DIR, args.cases_dir)
+            )
     else:
-        args.cases_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, INTERGATION_DIR_IN_REPO))
+        args.cases_dir = os.path.abspath(
+            os.path.join(CLICKHOUSE_ROOT, INTEGRATION_DIR_IN_REPO)
+        )
         logging.info("Cases dir is not set. Will use %s" % (args.cases_dir))
 
     if args.src_dir:
@@ -65,25 +95,53 @@ def check_args_and_update_paths(args):
         args.src_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, SRC_DIR_IN_REPO))
         logging.info("src dir is not set. Will use %s" % (args.src_dir))
 
-    logging.info("base_configs_dir: {}, binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
+    logging.info(
+        "base_configs_dir: {}, binary: {}, cases_dir: {} ".format(
+            args.base_configs_dir, args.binary, args.cases_dir
+        )
+    )
 
-    for path in [args.binary, args.odbc_bridge_binary, args.library_bridge_binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
+    for path in [
+        args.binary,
+        args.odbc_bridge_binary,
+        args.library_bridge_binary,
+        args.base_configs_dir,
+        args.cases_dir,
+        CLICKHOUSE_ROOT,
+    ]:
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exist".format(path))
 
     if args.dockerd_volume:
         if not os.path.isabs(args.dockerd_volume):
-            args.src_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.dockerd_volume))
+            args.src_dir = os.path.abspath(
+                os.path.join(CURRENT_WORK_DIR, args.dockerd_volume)
+            )
 
-    if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))):
-        raise Exception("No configs.xml or configs.yaml in {}".format(args.base_configs_dir))
+    if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (
+        not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))
+    ):
+        raise Exception(
+            "No config.xml or config.yaml in {}".format(args.base_configs_dir)
+        )
 
-    if (not os.path.exists(os.path.join(args.base_configs_dir, "users.xml"))) and (not os.path.exists(os.path.join(args.base_configs_dir, "users.yaml"))):
-        raise Exception("No users.xml or users.yaml in {}".format(args.base_configs_dir))
+    if (not os.path.exists(os.path.join(args.base_configs_dir, "users.xml"))) and (
+        not os.path.exists(os.path.join(args.base_configs_dir, "users.yaml"))
+    ):
+        raise Exception(
+            "No users.xml or users.yaml in {}".format(args.base_configs_dir)
+        )
+
 
 def docker_kill_handler_handler(signum, frame):
-    subprocess.check_call('docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(name=CONTAINER_NAME), shell=True)
+    subprocess.check_call(
+        'docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(
+            name=CONTAINER_NAME
+        ),
+        shell=True,
+    )
     raise KeyboardInterrupt("Killed by Ctrl+C")
+
 
 signal.signal(signal.SIGINT, docker_kill_handler_handler)
 
@@ -100,109 +158,132 @@ signal.signal(signal.SIGINT, docker_kill_handler_handler)
 # 2) path of runner script is used to determine paths for trivial case, when we run it from repository
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)')
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)",
+    )
     parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
 
     parser.add_argument(
         "--binary",
-        default=os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", os.environ.get("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", "/usr/bin/clickhouse")),
-        help="Path to clickhouse binary. For example /usr/bin/clickhouse")
+        default=os.environ.get(
+            "CLICKHOUSE_TESTS_SERVER_BIN_PATH",
+            os.environ.get("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", "/usr/bin/clickhouse"),
+        ),
+        help="Path to clickhouse binary. For example /usr/bin/clickhouse",
+    )
 
     parser.add_argument(
         "--odbc-bridge-binary",
         default=os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH", ""),
-        help="Path to clickhouse-odbc-bridge binary. Defaults to clickhouse-odbc-bridge in the same dir as clickhouse.")
+        help="Path to clickhouse-odbc-bridge binary. Defaults to clickhouse-odbc-bridge in the same dir as clickhouse.",
+    )
 
     parser.add_argument(
         "--library-bridge-binary",
         default=os.environ.get("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH", ""),
-        help="Path to clickhouse-library-bridge binary. Defaults to clickhouse-library-bridge in the same dir as clickhouse.")
+        help="Path to clickhouse-library-bridge binary. Defaults to clickhouse-library-bridge in the same dir as clickhouse.",
+    )
 
     parser.add_argument(
         "--base-configs-dir",
         default=os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR"),
-        help="Path to clickhouse base configs directory with config.xml/users.xml")
+        help="Path to clickhouse base configs directory with config.xml/users.xml",
+    )
 
     parser.add_argument(
         "--cases-dir",
         default=os.environ.get("CLICKHOUSE_TESTS_INTEGRATION_PATH"),
-        help="Path to integration tests cases and configs directory. For example tests/integration in repository")
+        help="Path to integration tests cases and configs directory. For example tests/integration in repository",
+    )
 
     parser.add_argument(
         "--src-dir",
         default=os.environ.get("CLICKHOUSE_SRC_DIR"),
-        help="Path to the 'src' directory in repository. Used to provide schemas (e.g. *.proto) for some tests when those schemas are located in the 'src' directory")
+        help="Path to the 'src' directory in repository. Used to provide schemas (e.g. *.proto) for some tests when those schemas are located in the 'src' directory",
+    )
 
     parser.add_argument(
         "--clickhouse-root",
-        help="Path to repository root folder. Used to take configuration from repository default paths.")
+        help="Path to repository root folder. Used to take configuration from repository default paths.",
+    )
 
     parser.add_argument(
         "--command",
-        default='',
-        help="Set it to run some other command in container (for example bash)")
+        default="",
+        help="Set it to run some other command in container (for example bash)",
+    )
 
     parser.add_argument(
         "--disable-net-host",
-        action='store_true',
+        action="store_true",
         default=False,
-        help="Don't use net host in parent docker container")
+        help="Don't use net host in parent docker container",
+    )
 
     parser.add_argument(
         "--network",
-        help="Set network driver for runnner container (defaults to `host`)")
+        help="Set network driver for runnner container (defaults to `host`)",
+    )
 
     parser.add_argument(
         "--docker-image-version",
         default="latest",
-        help="Version of docker image which runner will use to run tests")
+        help="Version of docker image which runner will use to run tests",
+    )
 
     parser.add_argument(
         "--docker-compose-images-tags",
         action="append",
-        help="Set non-default tags for images used in docker compose recipes(yandex/my_container:my_tag)")
+        help="Set non-default tags for images used in docker compose recipes(yandex/my_container:my_tag)",
+    )
 
     parser.add_argument(
-        "-n", "--parallel",
-        action="store",
-        dest="parallel",
-        help="Parallelism")
+        "-n", "--parallel", action="store", dest="parallel", help="Parallelism"
+    )
 
     parser.add_argument(
-        "-t", "--tests_list",
+        "-t",
+        "--tests_list",
         action="store",
-        nargs='+',
+        nargs="+",
         default=[],
         dest="tests_list",
-        help="List of tests to run")
+        help="List of tests to run",
+    )
 
     parser.add_argument(
-        "-k", "--keyword_expression",
+        "-k",
+        "--keyword_expression",
         action="store",
         dest="keyword_expression",
-        help="pytest keyword expression")
+        help="pytest keyword expression",
+    )
 
     parser.add_argument(
         "--tmpfs",
-        action='store_true',
+        action="store_true",
         default=False,
         dest="tmpfs",
-        help="Use tmpfs for dockerd files")
+        help="Use tmpfs for dockerd files",
+    )
 
     parser.add_argument(
         "--cleanup-containers",
-        action='store_true',
+        action="store_true",
         default=False,
         dest="cleanup_containers",
-        help="Remove all running containers on test session start")
+        help="Remove all running containers on test session start",
+    )
 
     parser.add_argument(
         "--dockerd-volume-dir",
-        action='store',
+        action="store",
         dest="dockerd_volume",
-        help="Bind volume to this dir to use for dockerd files")
+        help="Bind volume to this dir to use for dockerd files",
+    )
 
-    parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
+    parser.add_argument("pytest_args", nargs="*", help="args for pytest command")
 
     args = parser.parse_args()
 
@@ -238,6 +319,8 @@ if __name__ == "__main__":
                 env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
             elif image == "clickhouse/integration-test":
                 env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
+            elif image == "clickhouse/kerberized-hadoop":
+                env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
             elif image == "clickhouse/kerberos-kdc":
                 env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
             else:
@@ -251,13 +334,30 @@ if __name__ == "__main__":
     if args.tmpfs:
         dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
     elif args.dockerd_volume:
-        dockerd_internal_volume = "--mount type=bind,source={},target=/var/lib/docker".format(args.dockerd_volume)
+        dockerd_internal_volume = (
+            "--mount type=bind,source={},target=/var/lib/docker".format(
+                args.dockerd_volume
+            )
+        )
     else:
         try:
-            subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
+            subprocess.check_call(
+                f"docker volume create {VOLUME_NAME}_volume", shell=True
+            )
         except Exception as ex:
             print("Volume creationg failed, probably it already exists, exception", ex)
-        dockerd_internal_volume = "--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
+        # TODO: this part cleans out stale volumes produced by container name
+        # randomizer, we should remove it after Sep 2022
+        try:
+            subprocess.check_call(
+                "docker volume rm $(docker volume ls -q | "
+                f"grep '{VOLUME_NAME}_.*_volume')",
+                shell=True,
+            )
+        except Exception as ex:
+            print("Probably, some stale volumes still there, just continue:", ex)
+        # TODO END
+        dockerd_internal_volume = f"--volume={VOLUME_NAME}_volume:/var/lib/docker"
 
     # If enabled we kill and remove containers before pytest session run.
     env_cleanup = ""
@@ -273,11 +373,11 @@ if __name__ == "__main__":
         os.remove(old_log_path)
 
     if args.keyword_expression:
-        args.pytest_args += ['-k', args.keyword_expression]
+        args.pytest_args += ["-k", args.keyword_expression]
 
     cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
-        --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
+        --volume={library_bridge_bin}:/clickhouse-library-bridge \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
         --volume=/run:/run/host:ro \
@@ -295,20 +395,23 @@ if __name__ == "__main__":
         env_tags=env_tags,
         env_cleanup=env_cleanup,
         parallel=parallel_args,
-        opts=' '.join(args.pytest_args).replace('\'', '\\\''),
-        tests_list=' '.join(args.tests_list),
+        opts=" ".join(args.pytest_args).replace("'", "\\'"),
+        tests_list=" ".join(args.tests_list),
         dockerd_internal_volume=dockerd_internal_volume,
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
-        command=args.command
+        command=args.command,
     )
 
-    try:
-        print("Trying to kill container", CONTAINER_NAME, "if it's already running")
-        subprocess.check_call(f'docker kill $(docker ps -a -q --filter name={CONTAINER_NAME} --format="{{{{.ID}}}}")', shell=True)
-        print("Container killed")
-    except:
-        print("Nothing to kill")
+    containers = subprocess.check_output(
+        f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
+        shell=True,
+        universal_newlines=True,
+    ).splitlines()
+    if containers:
+        print(f"Trying to kill containers name={CONTAINER_NAME} ids={containers}")
+        subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
+        print(f"Containers {containers} killed")
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)

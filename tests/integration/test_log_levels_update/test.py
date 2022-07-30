@@ -3,15 +3,15 @@ import re
 
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, name="log_quries_probability")
-node = cluster.add_instance('node', with_zookeeper=False)
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance("node", with_zookeeper=False)
 
-config = '''<clickhouse>
+config = """<clickhouse>
     <logger>
         <level>information</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
     </logger>
-</clickhouse>'''
+</clickhouse>"""
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +25,10 @@ def start_cluster():
 
 
 def get_log(node):
-    return node.exec_in_container(["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"])
+    return node.exec_in_container(
+        ["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"]
+    )
+
 
 def test_log_levels_update(start_cluster):
     # Make sure that there are enough log messages for the test
@@ -37,14 +40,13 @@ def test_log_levels_update(start_cluster):
 
     node.replace_config("/etc/clickhouse-server/config.d/log.xml", config)
     node.query("SYSTEM RELOAD CONFIG;")
-    node.exec_in_container(["bash", "-c", "> /var/log/clickhouse-server/clickhouse-server.log"])
-    
+    node.exec_in_container(
+        ["bash", "-c", "> /var/log/clickhouse-server/clickhouse-server.log"]
+    )
+
     for i in range(5):
         node.query("SELECT 1")
 
     log = get_log(node)
     assert len(log) > 0
     assert not re.search("(<Trace>|<Debug>)", log)
-    
-
-

@@ -6,6 +6,7 @@
 #cmakedefine01 USE_MYSQL
 #cmakedefine01 USE_RDKAFKA
 #cmakedefine01 USE_AMQPCPP
+#cmakedefine01 USE_NATSIO
 #cmakedefine01 USE_EMBEDDED_COMPILER
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_LDAP
@@ -15,6 +16,8 @@
 #cmakedefine01 USE_NURAFT
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_KRB5
+#cmakedefine01 USE_SIMDJSON
+#cmakedefine01 USE_RAPIDJSON
 #cmakedefine01 USE_FILELOG
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_REPLXX

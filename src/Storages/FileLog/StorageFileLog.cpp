@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromFile.h>
@@ -8,17 +9,15 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSource.h>
-#include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <base/logger_useful.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -52,6 +51,7 @@ StorageFileLog::StorageFileLog(
     ContextPtr context_,
     const ColumnsDescription & columns_,
     const String & path_,
+    const String & metadata_base_path_,
     const String & format_name_,
     std::unique_ptr<FileLogSettings> settings,
     const String & comment,
@@ -60,6 +60,7 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_settings(std::move(settings))
     , path(path_)
+    , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(&Poco::Logger::get("StorageFileLog (" + table_id_.table_name + ")"))
     , milliseconds_to_wait(filelog_settings->poll_directory_watch_events_backoff_init.totalMilliseconds())
@@ -93,17 +94,24 @@ StorageFileLog::StorageFileLog(
 
 void StorageFileLog::loadMetaFiles(bool attach)
 {
-    const auto & storage = getStorageID();
-    root_meta_path
-        = std::filesystem::path(getContext()->getPath()) / ".filelog_storage_metadata" / storage.getDatabaseName() / storage.getTableName();
-
     /// Attach table
     if (attach)
     {
-        /// Meta file may lost, log and create directory
-        if (!std::filesystem::exists(root_meta_path))
+        const auto & storage = getStorageID();
+
+        auto metadata_path_exist = std::filesystem::exists(metadata_base_path);
+        auto previous_path = std::filesystem::path(getContext()->getPath()) / ".filelog_storage_metadata" / storage.getDatabaseName() / storage.getTableName();
+
+        /// For compatibility with the previous path version.
+        if (std::filesystem::exists(previous_path) && !metadata_path_exist)
         {
-            /// Create root_meta_path directory when store meta data
+            std::filesystem::copy(previous_path, metadata_base_path, std::filesystem::copy_options::recursive);
+            std::filesystem::remove_all(previous_path);
+        }
+        /// Meta file may lost, log and create directory
+        else if (!metadata_path_exist)
+        {
+            /// Create metadata_base_path directory when store meta data
             LOG_ERROR(log, "Metadata files of table {} are lost.", getStorageID().getTableName());
         }
         /// Load all meta info to file_infos;
@@ -112,14 +120,14 @@ void StorageFileLog::loadMetaFiles(bool attach)
     /// Create table, just create meta data directory
     else
     {
-        if (std::filesystem::exists(root_meta_path))
+        if (std::filesystem::exists(metadata_base_path))
         {
             throw Exception(
                 ErrorCodes::TABLE_METADATA_ALREADY_EXISTS,
                 "Metadata files already exist by path: {}, remove them manually if it is intended",
-                root_meta_path);
+                metadata_base_path);
         }
-        /// We do not create the root_meta_path directory at creation time, create it at the moment of serializing
+        /// We do not create the metadata_base_path directory at creation time, create it at the moment of serializing
         /// meta files, such that can avoid unnecessarily create this directory if create table failed.
     }
 }
@@ -210,9 +218,9 @@ void StorageFileLog::loadFiles()
 
 void StorageFileLog::serialize() const
 {
-    if (!std::filesystem::exists(root_meta_path))
+    if (!std::filesystem::exists(metadata_base_path))
     {
-        std::filesystem::create_directories(root_meta_path);
+        std::filesystem::create_directories(metadata_base_path);
     }
     for (const auto & [inode, meta] : file_infos.meta_by_inode)
     {
@@ -234,9 +242,9 @@ void StorageFileLog::serialize() const
 
 void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 {
-    if (!std::filesystem::exists(root_meta_path))
+    if (!std::filesystem::exists(metadata_base_path))
     {
-        std::filesystem::create_directories(root_meta_path);
+        std::filesystem::create_directories(metadata_base_path);
     }
     auto full_name = getFullMetaPath(file_meta.file_name);
     if (!std::filesystem::exists(full_name))
@@ -255,11 +263,11 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 
 void StorageFileLog::deserialize()
 {
-    if (!std::filesystem::exists(root_meta_path))
+    if (!std::filesystem::exists(metadata_base_path))
         return;
     /// In case of single file (not a watched directory),
     /// iterated directory always has one file inside.
-    for (const auto & dir_entry : std::filesystem::directory_iterator{root_meta_path})
+    for (const auto & dir_entry : std::filesystem::directory_iterator{metadata_base_path})
     {
         if (!dir_entry.is_regular_file())
         {
@@ -267,7 +275,7 @@ void StorageFileLog::deserialize()
                 ErrorCodes::BAD_FILE_TYPE,
                 "The file {} under {} is not a regular file when deserializing meta files",
                 dir_entry.path().c_str(),
-                root_meta_path);
+                metadata_base_path);
         }
 
         ReadBufferFromFile in(dir_entry.path().c_str());
@@ -303,7 +311,7 @@ UInt64 StorageFileLog::getInode(const String & file_name)
 
 Pipe StorageFileLog::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /* query_info */,
     ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
@@ -345,7 +353,7 @@ Pipe StorageFileLog::read(
     {
         pipes.emplace_back(std::make_shared<FileLogSource>(
             *this,
-            metadata_snapshot,
+            storage_snapshot,
             modified_context,
             column_names,
             getMaxBlockSize(),
@@ -371,8 +379,8 @@ void StorageFileLog::drop()
 {
     try
     {
-        if (std::filesystem::exists(root_meta_path))
-            std::filesystem::remove_all(root_meta_path);
+        if (std::filesystem::exists(metadata_base_path))
+            std::filesystem::remove_all(metadata_base_path);
     }
     catch (...)
     {
@@ -667,7 +675,9 @@ bool StorageFileLog::streamToViews()
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+
     auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
     auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads.value, file_infos.file_names.size());
     /// No files to parse
@@ -695,7 +705,7 @@ bool StorageFileLog::streamToViews()
     {
         pipes.emplace_back(std::make_shared<FileLogSource>(
             *this,
-            metadata_snapshot,
+            storage_snapshot,
             new_context,
             block_io.pipeline.getHeader().getNames(),
             getPollMaxBatchSize(),
@@ -708,9 +718,10 @@ bool StorageFileLog::streamToViews()
 
     assertBlocksHaveEqualStructure(input.getHeader(), block_io.pipeline.getHeader(), "StorageFileLog streamToViews");
 
-    size_t rows = 0;
+    std::atomic<size_t> rows = 0;
     {
         block_io.pipeline.complete(std::move(input));
+        block_io.pipeline.setNumThreads(max_streams_number);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -750,7 +761,7 @@ void registerStorageFileLog(StorageFactory & factory)
 
         if (!num_threads) /// Default
         {
-            num_threads = std::max(unsigned(1), physical_cpu_cores / 4);
+            num_threads = std::max(1U, physical_cpu_cores / 4);
             filelog_settings->set("max_threads", num_threads);
         }
         else if (num_threads > physical_cpu_cores)
@@ -792,14 +803,15 @@ void registerStorageFileLog(StorageFactory & factory)
         auto path_ast = evaluateConstantExpressionAsLiteral(engine_args[0], args.getContext());
         auto format_ast = evaluateConstantExpressionAsLiteral(engine_args[1], args.getContext());
 
-        auto path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
-        auto format = format_ast->as<ASTLiteral &>().value.safeGet<String>();
+        auto path = checkAndGetLiteralArgument<String>(path_ast, "path");
+        auto format = checkAndGetLiteralArgument<String>(format_ast, "format");
 
-        return StorageFileLog::create(
+        return std::make_shared<StorageFileLog>(
             args.table_id,
             args.getContext(),
             args.columns,
             path,
+            args.relative_data_path,
             format,
             std::move(filelog_settings),
             args.comment,
@@ -816,6 +828,9 @@ void registerStorageFileLog(StorageFactory & factory)
 
 bool StorageFileLog::updateFileInfos()
 {
+    if (file_infos.file_names.empty())
+        return false;
+
     if (!directory_watch)
     {
         /// For table just watch one file, we can not use directory monitor to watch it
@@ -966,7 +981,9 @@ bool StorageFileLog::updateFileInfos()
 
 NamesAndTypesList StorageFileLog::getVirtuals() const
 {
-    return NamesAndTypesList{{"_filename", std::make_shared<DataTypeString>()}, {"_offset", std::make_shared<DataTypeUInt64>()}};
+    return NamesAndTypesList{
+        {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_offset", std::make_shared<DataTypeUInt64>()}};
 }
 
 Names StorageFileLog::getVirtualColumnNames()

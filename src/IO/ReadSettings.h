@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <string>
 #include <Core/Defines.h>
+#include <Common/FileCache_fwd.h>
+#include <Common/Throttler_fwd.h>
 
 namespace DB
 {
@@ -56,7 +58,7 @@ struct ReadSettings
     /// Method to use reading from local filesystem.
     LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
     /// Method to use reading from remote filesystem.
-    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::read;
+    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::threadpool;
 
     size_t local_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
@@ -76,18 +78,25 @@ struct ReadSettings
 
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
+    bool enable_filesystem_cache = true;
+    size_t filesystem_cache_max_wait_sec = 1;
+    bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+    bool enable_filesystem_cache_log = false;
+
+    size_t max_query_cache_size = (128UL * 1024 * 1024 * 1024);
+    bool skip_download_if_exceeds_query_cache = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
+
+    FileCachePtr remote_fs_cache;
+
+    /// Bandwidth throttler to use during reading
+    ThrottlerPtr remote_throttler;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
-
-    /// Set to true for MergeTree tables to make sure
-    /// that last position (offset in compressed file) is always passed.
-    /// (Otherwise asynchronous reading from remote fs is not efficient).
-    /// If reading is done without final position set, throw logical_error.
-    bool must_read_until_position = false;
+    bool http_skip_not_found_url_for_globs = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {

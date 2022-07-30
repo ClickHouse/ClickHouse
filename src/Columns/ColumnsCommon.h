@@ -8,6 +8,9 @@
 #if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
 #include <immintrin.h>
 #endif
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#    include <arm_neon.h>
+#endif
 
 /// Common helper methods for implementation of different columns.
 
@@ -44,6 +47,22 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16))) << 32) & 0xffff00000000)
         | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48) & 0xffff000000000000);
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+    const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
+    const auto * src = reinterpret_cast<const unsigned char *>(bytes64);
+    const uint8x16_t p0 = vceqzq_u8(vld1q_u8(src));
+    const uint8x16_t p1 = vceqzq_u8(vld1q_u8(src + 16));
+    const uint8x16_t p2 = vceqzq_u8(vld1q_u8(src + 32));
+    const uint8x16_t p3 = vceqzq_u8(vld1q_u8(src + 48));
+    uint8x16_t t0 = vandq_u8(p0, bitmask);
+    uint8x16_t t1 = vandq_u8(p1, bitmask);
+    uint8x16_t t2 = vandq_u8(p2, bitmask);
+    uint8x16_t t3 = vandq_u8(p3, bitmask);
+    uint8x16_t sum0 = vpaddq_u8(t0, t1);
+    uint8x16_t sum1 = vpaddq_u8(t2, t3);
+    sum0 = vpaddq_u8(sum0, sum1);
+    sum0 = vpaddq_u8(sum0, sum0);
+    UInt64 res = vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
 #else
     UInt64 res = 0;
     for (size_t i = 0; i < 64; ++i)
@@ -53,17 +72,17 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 }
 
 /// Counts how many bytes of `filt` are greater than zero.
-size_t countBytesInFilter(const UInt8 * filt, size_t sz);
+size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end);
 size_t countBytesInFilter(const IColumn::Filter & filt);
-size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map);
+size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end);
 
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.
 std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector);
 
 /// Returns true, if the memory contains only zeros.
-bool memoryIsZero(const void * data, size_t size);
-bool memoryIsByte(const void * data, size_t size, uint8_t byte);
+bool memoryIsZero(const void * data, size_t start, size_t end);
+bool memoryIsByte(const void * data, size_t start, size_t end, uint8_t byte);
 
 /// The general implementation of `filter` function for ColumnArray and ColumnString.
 template <typename T>
@@ -96,13 +115,13 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
             "Size of indexes ({}) is less than required ({})", indexes.size(), limit);
 
-    if (auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
+    if (const auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
         return column.template indexImpl<UInt8>(*data_uint8, limit);
-    else if (auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
+    else if (const auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
         return column.template indexImpl<UInt16>(*data_uint16, limit);
-    else if (auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
+    else if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
         return column.template indexImpl<UInt32>(*data_uint32, limit);
-    else if (auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
+    else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
     else
         throw Exception("Indexes column for IColumn::select must be ColumnUInt, got " + indexes.getName(),
@@ -118,6 +137,7 @@ ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, 
     return column.indexImpl(perm, limit);
 }
 
+/// NOLINTNEXTLINE
 #define INSTANTIATE_INDEX_IMPL(Column) \
     template ColumnPtr Column::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \

@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
@@ -142,10 +142,11 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 {
     const char * begin = entry.query.data();
     const char * end = begin + entry.query.size();
+    const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end);
+    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, context->getSettingsRef().max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -223,7 +224,10 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
-    query = query_on_cluster->getRewrittenASTWithoutOnCluster(address_in_cluster.default_database);
+    WithoutOnClusterASTRewriteParams params;
+    params.default_database = address_in_cluster.default_database;
+    params.host_id = address_in_cluster.toString();
+    query = query_on_cluster->getRewrittenASTWithoutOnCluster(params);
     query_on_cluster = nullptr;
 }
 
@@ -259,13 +263,17 @@ bool DDLTask::tryFindHostInCluster()
                          * */
                         is_circular_replicated = true;
                         auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
-                        if (!query_with_table || !query_with_table->database)
+
+                        /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
+                        if (query_with_table)
                         {
-                            throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                            "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+                            if (!query_with_table->database)
+                                throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+                                                "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
+
+                            if (default_database == query_with_table->getDatabase())
+                                return true;
                         }
-                        if (default_database == query_with_table->getDatabase())
-                            return true;
                     }
                 }
                 found_exact_match = true;
@@ -375,7 +383,7 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
     }
 
-    txn->addOp(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+    txn->addOp(getOpToUpdateLogPointer());
 
     for (auto & op : ops)
         txn->addOp(std::move(op));
@@ -384,14 +392,14 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     return query_context;
 }
 
+Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
+{
+    return zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
+}
+
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 {
-    /// Sequential counter in ZooKeeper is Int32.
-    assert(log_entry_number < std::numeric_limits<Int32>::max());
-    constexpr size_t seq_node_digits = 10;
-    String number = toString(log_entry_number);
-    String name = "query-" + String(seq_node_digits - number.size(), '0') + number;
-    return name;
+    return zkutil::getSequentialNodeName("query-", log_entry_number);
 }
 
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)

@@ -150,26 +150,26 @@ public:
 };
 
 template <size_t initial_size_degree = 8>
-struct StringHashTableGrower : public HashTableGrower<initial_size_degree>
+struct StringHashTableGrower : public HashTableGrowerWithPrecalculation<initial_size_degree>
 {
     // Smooth growing for string maps
-    void increaseSize() { this->size_degree += 1; }
+    void increaseSize() { this->increaseSizeDegree(1); }
 };
 
 template <typename Mapped>
 struct StringHashTableLookupResult
 {
     Mapped * mapped_ptr;
-    StringHashTableLookupResult() {}
-    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {}
-    StringHashTableLookupResult(std::nullptr_t) {}
-    const VoidKey getKey() const { return {}; }
+    StringHashTableLookupResult() {} /// NOLINT
+    StringHashTableLookupResult(Mapped * mapped_ptr_) : mapped_ptr(mapped_ptr_) {} /// NOLINT
+    StringHashTableLookupResult(std::nullptr_t) {} /// NOLINT
+    const VoidKey getKey() const { return {}; } /// NOLINT
     auto & getMapped() { return *mapped_ptr; }
     auto & operator*() { return *this; }
     auto & operator*() const { return *this; }
     auto * operator->() { return this; }
     auto * operator->() const { return this; }
-    operator bool() const { return mapped_ptr; }
+    explicit operator bool() const { return mapped_ptr; }
     friend bool operator==(const StringHashTableLookupResult & a, const std::nullptr_t &) { return !a.mapped_ptr; }
     friend bool operator==(const std::nullptr_t &, const StringHashTableLookupResult & b) { return !b.mapped_ptr; }
     friend bool operator!=(const StringHashTableLookupResult & a, const std::nullptr_t &) { return a.mapped_ptr; }
@@ -214,7 +214,7 @@ public:
 
     StringHashTable() = default;
 
-    StringHashTable(size_t reserve_for_num_elements)
+    explicit StringHashTable(size_t reserve_for_num_elements)
         : m1{reserve_for_num_elements / 4}
         , m2{reserve_for_num_elements / 4}
         , m3{reserve_for_num_elements / 4}
@@ -222,7 +222,7 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs)
+    StringHashTable(StringHashTable && rhs) noexcept
         : m1(std::move(rhs.m1))
         , m2(std::move(rhs.m2))
         , m3(std::move(rhs.m3))
@@ -232,7 +232,6 @@ public:
 
     ~StringHashTable() = default;
 
-public:
     // Dispatch is written in a way that maximizes the performance:
     // 1. Always memcpy 8 times bytes
     // 2. Use switch case extension to generate fast dispatching table

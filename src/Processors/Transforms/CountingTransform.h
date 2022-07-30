@@ -2,6 +2,7 @@
 
 #include <IO/Progress.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <Access/EnabledQuota.h>
 
 
 namespace DB
@@ -14,8 +15,12 @@ class ThreadStatus;
 class CountingTransform final : public ExceptionKeepingTransform
 {
 public:
-    explicit CountingTransform(const Block & header, ThreadStatus * thread_status_ = nullptr)
-        : ExceptionKeepingTransform(header, header), thread_status(thread_status_) {}
+    explicit CountingTransform(
+        const Block & header,
+        ThreadStatus * thread_status_ = nullptr,
+        std::shared_ptr<const EnabledQuota> quota_ = nullptr)
+        : ExceptionKeepingTransform(header, header)
+        , thread_status(thread_status_), quota(std::move(quota_)) {}
 
     String getName() const override { return "CountingTransform"; }
 
@@ -47,6 +52,9 @@ protected:
     ProgressCallback progress_callback;
     QueryStatus * process_elem = nullptr;
     ThreadStatus * thread_status = nullptr;
+
+    /// Quota is used to limit amount of written bytes.
+    std::shared_ptr<const EnabledQuota> quota;
     Chunk cur_chunk;
 };
 

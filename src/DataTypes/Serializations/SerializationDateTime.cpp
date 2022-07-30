@@ -27,6 +27,9 @@ inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings & setti
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
             return;
+        case FormatSettings::DateTimeInputFormat::BestEffortUS:
+            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
+            return;
     }
 }
 

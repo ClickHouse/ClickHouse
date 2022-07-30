@@ -74,8 +74,12 @@ namespace
         if (https)
         {
 #if USE_SSL
-            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
-            session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
+            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
+            auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
+            if (resolve_host)
+                https_session->setResolvedHost(DNSResolver::instance().resolveHost(host).toString());
+
+            session = std::move(https_session);
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
@@ -208,7 +212,7 @@ namespace
             size_t max_connections_per_endpoint,
             bool resolve_host = true)
         {
-            std::unique_lock lock(mutex);
+            std::lock_guard lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);

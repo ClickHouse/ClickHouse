@@ -5,7 +5,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/copyData.h>
 
 #include <Common/Stopwatch.h>

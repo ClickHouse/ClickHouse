@@ -14,9 +14,9 @@ namespace ErrorCodes
 class SerializationNothing : public SimpleTextSerialization
 {
 private:
-    [[noreturn]] void throwNoSerialization() const
+    [[noreturn]] static void throwNoSerialization()
     {
-        throw Exception("Serialization is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Serialization is not implemented for type Nothing", ErrorCodes::NOT_IMPLEMENTED);
     }
 public:
     void serializeBinary(const Field &, WriteBuffer &) const override                       { throwNoSerialization(); }

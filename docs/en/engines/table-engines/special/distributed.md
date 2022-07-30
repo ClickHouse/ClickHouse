@@ -1,9 +1,9 @@
 ---
-toc_priority: 33
-toc_title: Distributed
+sidebar_position: 10
+sidebar_label: Distributed
 ---
 
-# Distributed Table Engine {#distributed}
+# Distributed Table Engine
 
 Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any.
@@ -27,56 +27,84 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-**Distributed Parameters**
+### Distributed Parameters
 
--   `cluster` - the cluster name in the server’s config file
+#### cluster
 
--   `database` - the name of a remote database
+`cluster` - the cluster name in the server’s config file
 
--   `table` - the name of a remote table
+#### database
 
--   `sharding_key` - (optionally) sharding key
+`database` - the name of a remote database
 
--   `policy_name` - (optionally) policy name, it will be used to store temporary files for async send
+#### table
+
+`table` - the name of a remote table
+
+#### sharding_key
+
+`sharding_key` - (optionally) sharding key
+
+#### policy_name
+
+`policy_name` - (optionally) policy name, it will be used to store temporary files for async send
 
 **See Also**
 
  - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
  - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
-**Distributed Settings**
+### Distributed Settings
 
-- `fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
+#### fsync_after_insert
 
-- `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
+`fsync_after_insert` - do the `fsync` for the file data after asynchronous insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
 
-- `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for async INSERT, an exception will be thrown. 0 - do not throw. Default 0.
+#### fsync_directories
 
-- `bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for async INSERT, the query will be delayed. 0 - do not delay. Default 0.
+`fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to asynchronous inserts on Distributed table (after insert, after sending the data to shard, etc).
 
-- `max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for async send. Default 60.
+#### bytes_to_throw_insert
 
-- `monitor_batch_inserts` - same as [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)
+`bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for async INSERT, an exception will be thrown. 0 - do not throw. Default 0.
 
-- `monitor_split_batch_on_failure` - same as [distributed_directory_monitor_split_batch_on_failure](../../../operations/settings/settings.md#distributed_directory_monitor_split_batch_on_failure)
+#### bytes_to_delay_insert
 
-- `monitor_sleep_time_ms` - same as [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)
+`bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for async INSERT, the query will be delayed. 0 - do not delay. Default 0.
 
-- `monitor_max_sleep_time_ms` - same as [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)
+#### max_delay_to_insert
 
-!!! note "Note"
+`max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for async send. Default 60.
 
-    **Durability settings** (`fsync_...`):
+#### monitor_batch_inserts
 
-    - Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
-    - May significantly decrease the inserts' performance
-    - Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
+`monitor_batch_inserts` - same as [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)
 
-    For **Insert limit settings** (`..._insert`) see also:
+#### monitor_split_batch_on_failure
 
-    - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
-    - [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
-    - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
+`monitor_split_batch_on_failure` - same as [distributed_directory_monitor_split_batch_on_failure](../../../operations/settings/settings.md#distributed_directory_monitor_split_batch_on_failure)
+
+#### monitor_sleep_time_ms
+
+`monitor_sleep_time_ms` - same as [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)
+
+#### monitor_max_sleep_time_ms
+
+`monitor_max_sleep_time_ms` - same as [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)
+
+:::note
+**Durability settings** (`fsync_...`):
+
+- Affect only asynchronous INSERTs (i.e. `insert_distributed_sync=false`) when data first stored on the initiator node disk and later asynchronously send to shards.
+- May significantly decrease the inserts' performance
+- Affect writing the data stored inside Distributed table folder into the **node which accepted your insert**. If you need to have guarantees of writing data to underlying MergeTree tables - see durability settings (`...fsync...`) in `system.merge_tree_settings`
+
+For **Insert limit settings** (`..._insert`) see also:
+
+- [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
+- [prefer_localhost_replica](../../../operations/settings/settings.md#settings-prefer-localhost-replica) setting
+- `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
+:::
 
 **Example**
 
@@ -197,7 +225,7 @@ A simple remainder from the division is a limited solution for sharding and isn�
 You should be concerned about the sharding scheme in the following cases:
 
 -   Queries are used that require joining data (`IN` or `JOIN`) by a specific key. If data is sharded by this key, you can use local `IN` or `JOIN` instead of `GLOBAL IN` or `GLOBAL JOIN`, which is much more efficient.
--   A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, as we’ve done in Yandex.Metrica, you can set up bi-level sharding: divide the entire cluster into “layers”, where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
+-   A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, you can set up bi-level sharding: divide the entire cluster into “layers”, where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
 
 Data is written asynchronously. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms) and [distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting.
 
@@ -209,12 +237,17 @@ When querying a `Distributed` table, `SELECT` queries are sent to all shards and
 
 When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas).
 
+To learn more about how distibuted `in` and `global in` queries are processed, refer to [this](../../../sql-reference/operators/in.md#select-distributed-subqueries) documentation.
+
 ## Virtual Columns {#virtual-columns}
 
--   `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
+#### _shard_num
 
-!!! note "Note"
-    Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
+`_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
+
+:::note
+Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
+:::
 
 **See Also**
 
@@ -223,3 +256,4 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 -   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) and [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) functions
 
 
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/distributed/) <!--hide-->

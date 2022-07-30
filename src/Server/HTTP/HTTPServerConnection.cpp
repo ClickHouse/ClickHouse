@@ -22,12 +22,12 @@ void HTTPServerConnection::run()
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
-    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests())
+    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests() && session.connected())
     {
         try
         {
-            std::unique_lock<std::mutex> lock(mutex);
-            if (!stopped && tcp_server.isOpen())
+            std::lock_guard lock(mutex);
+            if (!stopped && tcp_server.isOpen() && session.connected())
             {
                 HTTPServerResponse response(session);
                 HTTPServerRequest request(context, response, session);
@@ -36,7 +36,7 @@ void HTTPServerConnection::run()
 
                 if (request.isSecure())
                 {
-                    size_t hsts_max_age = context->getSettings().hsts_max_age.value;
+                    size_t hsts_max_age = context->getSettingsRef().hsts_max_age.value;
 
                     if (hsts_max_age > 0)
                         response.add("Strict-Transport-Security", "max-age=" + std::to_string(hsts_max_age));

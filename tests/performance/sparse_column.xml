@@ -25,7 +25,7 @@
     <create_query>
         CREATE TABLE test_sparse_{ratio} (id UInt64, u8 UInt8, u64 UInt64, str String)
         ENGINE = MergeTree ORDER BY id
-        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.8
     </create_query>
 
     <create_query>SYSTEM STOP MERGES test_{serialization}_{ratio}</create_query>
@@ -53,6 +53,11 @@
 
     <query>SELECT sum(u64) FROM test_{serialization}_{ratio} GROUP BY id % 11 FORMAT Null</query>
     <query>SELECT uniq(str) FROM test_{serialization}_{ratio} GROUP BY id % 11 FORMAT Null</query>
+    <query>SELECT sum(u64) FROM test_{serialization}_{ratio} FORMAT Null</query>
+    <query>SELECT uniq(str) FROM test_{serialization}_{ratio} FORMAT Null</query>
 
-    <!-- <drop_query>DROP TABLE IF EXISTS test_{serialization}_{ratio}</drop_query> -->
+    <query>SELECT count() FROM test_{serialization}_{ratio} WHERE u64 > 0</query>
+    <query>SELECT count() FROM test_{serialization}_{ratio} WHERE notEmpty(str)</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_{serialization}_{ratio}</drop_query>
 </test>

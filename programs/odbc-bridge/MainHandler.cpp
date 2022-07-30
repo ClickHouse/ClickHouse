@@ -17,7 +17,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Common/config.h>
 
@@ -46,7 +46,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
     response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
         *response.send() << message << std::endl;
-    LOG_WARNING(log, message);
+    LOG_WARNING(log, fmt::runtime(message));
 }
 
 
@@ -102,7 +102,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     catch (const Exception & ex)
     {
         processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
-        LOG_ERROR(log, ex.getStackTraceString());
+        LOG_ERROR(log, fmt::runtime(ex.getStackTraceString()));
         return;
     }
 
@@ -110,9 +110,12 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
-        auto connection_handler = ODBCConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string),
-                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        nanodbc::ConnectionHolderPtr connection_handler;
+        if (getContext()->getSettingsRef().odbc_bridge_use_connection_pooling)
+            connection_handler = ODBCPooledConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+        else
+            connection_handler = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
 
         if (mode == "write")
         {

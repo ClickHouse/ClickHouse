@@ -16,6 +16,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
+#include <Common/OvercommitTracker.h>
 
 #include <condition_variable>
 #include <list>
@@ -60,6 +61,7 @@ struct QueryStatusInfo
     Int64 peak_memory_usage;
     ClientInfo client_info;
     bool is_cancelled;
+    bool is_all_data_sent;
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
@@ -76,6 +78,7 @@ protected:
     friend class ThreadStatus;
     friend class CurrentThread;
     friend class ProcessListEntry;
+    friend struct ::GlobalOvercommitTracker;
 
     String query;
     ClientInfo client_info;
@@ -99,6 +102,10 @@ protected:
 
     std::atomic<bool> is_killed { false };
 
+    /// All data to the client already had been sent.
+    /// Including EndOfStream or Exception.
+    std::atomic<bool> is_all_data_sent { false };
+
     void setUserProcessList(ProcessListForUser * user_process_list_);
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
     const ProcessListForUser * getUserProcessList() const { return user_process_list; }
@@ -121,6 +128,10 @@ protected:
 
     IAST::QueryKind query_kind;
 
+    /// This field is unused in this class, but it
+    /// increments/decrements metric in constructor/destructor.
+    CurrentMetrics::Increment num_queries_increment;
+
 public:
 
     QueryStatus(
@@ -128,6 +139,7 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
+        ThreadGroupStatusPtr && thread_group_,
         IAST::QueryKind query_kind_
         );
 
@@ -149,6 +161,18 @@ public:
     }
 
     ThrottlerPtr getUserNetworkThrottler();
+
+    MemoryTracker * getMemoryTracker() const
+    {
+        if (!thread_group)
+            return nullptr;
+        return &thread_group->memory_tracker;
+    }
+
+    IAST::QueryKind getQueryKind() const
+    {
+        return query_kind;
+    }
 
     bool updateProgressIn(const Progress & value)
     {
@@ -174,6 +198,9 @@ public:
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
+
+    bool isAllDataSent() const { return is_all_data_sent; }
+    void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
     void addPipelineExecutor(PipelineExecutor * e);
@@ -202,7 +229,7 @@ struct ProcessListForUserInfo
 /// Data about queries for one user.
 struct ProcessListForUser
 {
-    ProcessListForUser();
+    explicit ProcessListForUser(ProcessList * global_process_list);
 
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
     using QueryToElement = std::unordered_map<String, QueryStatus *>;
@@ -211,6 +238,8 @@ struct ProcessListForUser
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
+
+    UserOvercommitTracker user_overcommit_tracker;
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
@@ -275,6 +304,8 @@ public:
 
 protected:
     friend class ProcessListEntry;
+    friend struct ::UserOvercommitTracker;
+    friend struct ::GlobalOvercommitTracker;
 
     mutable std::mutex mutex;
     mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.

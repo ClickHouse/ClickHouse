@@ -660,7 +660,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
-};
+}
 
 bool MergeTreeIndexFullText::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
@@ -710,9 +710,14 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_data_type);
             data_type = WhichDataType(array_type.getNestedType());
         }
+        else if (data_type.isLowCarnality())
+        {
+            const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index_data_type);
+            data_type = WhichDataType(low_cardinality.getDictionaryType());
+        }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception("Bloom filter index can be used only with `String`, `FixedString` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("Bloom filter index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
     }
 
     if (index.type == NgramTokenExtractor::getName())

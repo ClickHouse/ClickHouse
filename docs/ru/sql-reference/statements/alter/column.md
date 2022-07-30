@@ -1,6 +1,6 @@
 ---
-toc_priority: 37
-toc_title: "Манипуляции со столбцами"
+sidebar_position: 37
+sidebar_label: "Манипуляции со столбцами"
 ---
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}
@@ -75,8 +75,9 @@ DROP COLUMN [IF EXISTS] name
 
 Запрос удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
 
-!!! warning "Предупреждение"
+:::warning "Предупреждение"
     Вы не можете удалить столбец, используемый в [материализованном представлениии](../../../sql-reference/statements/create/view.md#materialized). В противном случае будет ошибка.
+:::
 
 Пример:
 
@@ -197,12 +198,13 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 ## MATERIALIZE COLUMN {#materialize-column}
 
-Материализует столбец таблицы в кусках, в которых отсутствуют значения. Используется, если необходимо создать новый столбец со сложным материализованным выражением или выражением для заполнения по умолчанию (`DEFAULT`), потому как вычисление такого столбца прямо во время выполнения запроса `SELECT` оказывается ощутимо затратным. Чтобы совершить ту же операцию для существующего столбца, используйте модификатор `FINAL`.
+Материализует или обновляет столбец таблицы с выражением для значения по умолчанию (`DEFAULT` или `MATERIALIZED`).
+Используется, если необходимо добавить или обновить столбец со сложным выражением, потому как вычисление такого выражения прямо во время выполнения запроса `SELECT` оказывается ощутимо затратным.
 
 Синтаксис:
 
 ```sql
-ALTER TABLE table MATERIALIZE COLUMN col [FINAL];
+ALTER TABLE table MATERIALIZE COLUMN col;
 ```
 
 **Пример**
@@ -211,21 +213,39 @@ ALTER TABLE table MATERIALIZE COLUMN col [FINAL];
 DROP TABLE IF EXISTS tmp;
 SET mutations_sync = 2;
 CREATE TABLE tmp (x Int64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY tuple();
-INSERT INTO tmp SELECT * FROM system.numbers LIMIT 10;
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5;
 ALTER TABLE tmp ADD COLUMN s String MATERIALIZED toString(x);
 
 ALTER TABLE tmp MATERIALIZE COLUMN s;
 
+SELECT groupArray(x), groupArray(s) FROM (select x,s from tmp order by x);
+
+┌─groupArray(x)─┬─groupArray(s)─────────┐
+│ [0,1,2,3,4]   │ ['0','1','2','3','4'] │
+└───────────────┴───────────────────────┘
+
+ALTER TABLE tmp MODIFY COLUMN s String MATERIALIZED toString(round(100/x));
+
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5,5;
+
 SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)──────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['0','1','2','3','4','20','17','14','12','11'] │
+└───────────────────────┴────────────────────────────────────────────────┘
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)─────────────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['inf','100','50','33','25','20','17','14','12','11'] │
+└───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-**Результат:**
+**Смотрите также**
 
-```sql
-┌─groupArray(x)─────────┬─groupArray(s)─────────────────────────────┐
-│ [0,1,2,3,4,5,6,7,8,9] │ ['0','1','2','3','4','5','6','7','8','9'] │
-└───────────────────────┴───────────────────────────────────────────┘
-```
+- [MATERIALIZED](../../statements/create/table.md#materialized).
 
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 

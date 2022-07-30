@@ -64,10 +64,10 @@ public:
     }
 
 private:
-    void finalizeImpl() override final
+    void finalizeImpl() override
     {
         vector.resize(
-            ((position() - reinterpret_cast<Position>(vector.data()))
+            ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
                 + sizeof(typename VectorType::value_type) - 1)  /// Align up.
             / sizeof(typename VectorType::value_type));
 

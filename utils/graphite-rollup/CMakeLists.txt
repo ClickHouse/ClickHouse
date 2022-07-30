@@ -1,4 +1,4 @@
-add_executable(graphite-rollup-bench graphite-rollup-bench.cpp)
+clickhouse_add_executable(graphite-rollup-bench graphite-rollup-bench.cpp)
 target_link_libraries(
     graphite-rollup-bench
     PRIVATE
@@ -17,7 +17,7 @@ target_include_directories(
     ${ClickHouse_SOURCE_DIR}/contrib/double-conversion ${ClickHouse_SOURCE_DIR}/contrib/dragonbox/include
     ${ClickHouse_SOURCE_DIR}/contrib/fmtlib/include
     ${ClickHouse_SOURCE_DIR}/contrib/cityhash102/include
-    ${RE2_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/re2_st
+    ${RE2_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/re2-cmake
 )
 
 target_compile_definitions(graphite-rollup-bench PRIVATE RULES_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

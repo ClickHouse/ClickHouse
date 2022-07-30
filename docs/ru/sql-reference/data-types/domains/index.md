@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Домены"
-toc_title_title: "Обзор"
-toc_priority: 56
+sidebar_label: "Домены"
+sidebar_position: 56
 ---
 
 

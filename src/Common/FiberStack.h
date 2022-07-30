@@ -31,15 +31,15 @@ public:
     /// probably it worth to try to increase stack size for coroutines.
     ///
     /// Current value is just enough for all tests in our CI. It's not selected in some special
-    /// way. We will have 40 pages with 4KB page size.
-    static constexpr size_t default_stack_size = 192 * 1024; /// 64KB was not enough for tests
+    /// way. We will have 80 pages with 4KB page size.
+    static constexpr size_t default_stack_size = 320 * 1024; /// 64KB was not enough for tests
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
         page_size = getPageSize();
     }
 
-    boost::context::stack_context allocate()
+    boost::context::stack_context allocate() const
     {
         size_t num_pages = 1 + (stack_size - 1) / page_size;
         size_t num_bytes = (num_pages + 1) * page_size; /// Add one page at bottom that will be used as guard-page
@@ -68,7 +68,7 @@ public:
         return sctx;
     }
 
-    void deallocate(boost::context::stack_context & sctx)
+    void deallocate(boost::context::stack_context & sctx) const
     {
 #if defined(BOOST_USE_VALGRIND)
         VALGRIND_STACK_DEREGISTER(sctx.valgrind_stack_id);

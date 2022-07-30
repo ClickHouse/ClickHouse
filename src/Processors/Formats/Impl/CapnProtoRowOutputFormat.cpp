@@ -169,7 +169,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
                     auto value_builder = initStructFieldBuilder(nested_column, row_num, struct_builder, value_field);
                     auto value = convertToDynamicValue(nested_column, nullable_type->getNestedType(), row_num, value_builder, enum_comparing_mode, temporary_text_data_storage);
                     if (value)
-                        struct_builder.set(value_field, std::move(*value));
+                        struct_builder.set(value_field, *value);
                 }
             }
             else
@@ -184,7 +184,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
                         = initStructFieldBuilder(nested_columns[pos], row_num, struct_builder, nested_struct_schema.getFieldByName(name));
                     auto value = convertToDynamicValue(nested_columns[pos], nested_types[pos], row_num, field_builder, enum_comparing_mode, temporary_text_data_storage);
                     if (value)
-                        struct_builder.set(name, std::move(*value));
+                        struct_builder.set(name, *value);
                 }
             }
             return std::nullopt;
@@ -215,7 +215,7 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
 
                 auto value = convertToDynamicValue(nested_column, nested_type, offset + i, value_builder, enum_comparing_mode, temporary_text_data_storage);
                 if (value)
-                    list_builder.set(i, std::move(*value));
+                    list_builder.set(i, *value);
             }
             return std::nullopt;
         }

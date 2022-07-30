@@ -1,6 +1,6 @@
 #pragma once
 
-/// This code was based on the code by Fedor Korotkiy (prime@yandex-team.ru) for YT product in Yandex.
+/// This code was based on the code by Fedor Korotkiy https://www.linkedin.com/in/fedor-korotkiy-659a1838/
 
 /** Collects all dl_phdr_info items and caches them in a static array.
   * Also rewrites dl_iterate_phdr with a lock-free version which consults the above cache

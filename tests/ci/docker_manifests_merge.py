@@ -18,7 +18,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Push multi-arch images to Dockerhub (actions)"
+NAME = "Push multi-arch images to Dockerhub"
 CHANGED_IMAGES = "changed_images_{}.json"
 Images = Dict[str, List[str]]
 
@@ -44,26 +44,32 @@ def parse_args() -> argparse.Namespace:
         default=RUNNER_TEMP,
         help="path to changed_images_*.json files",
     )
+    parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-reports",
-        action="store_true",
+        action="store_false",
+        dest="reports",
+        default=argparse.SUPPRESS,
         help="don't push reports to S3 and github",
     )
+    parser.add_argument("--push", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
         "--no-push-images",
-        action="store_true",
+        action="store_false",
+        dest="push",
+        default=argparse.SUPPRESS,
         help="don't push images to docker hub",
     )
 
     args = parser.parse_args()
     if len(args.suffixes) < 2:
-        raise parser.error("more than two --suffix should be given")
+        parser.error("more than two --suffix should be given")
 
     return args
 
 
 def load_images(path: str, suffix: str) -> Images:
-    with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "r") as images:
+    with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
         return json.load(images)
 
 
@@ -81,6 +87,7 @@ def strip_suffix(suffix: str, images: Images) -> Images:
 
 
 def check_sources(to_merge: Dict[str, Images]) -> Images:
+    """get a dict {arch1: Images, arch2: Images}"""
     result = {}  # type: Images
     first_suffix = ""
     for suffix, images in to_merge.items():
@@ -124,39 +131,37 @@ def merge_images(to_merge: Dict[str, Images]) -> Dict[str, List[List[str]]]:
 def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
     tag = tags[0]
     manifest = f"{image}:{tag}"
-    cmd = "docker manifest create --amend {}".format(
-        " ".join((f"{image}:{t}" for t in tags))
-    )
+    cmd = "docker manifest create --amend " + " ".join((f"{image}:{t}" for t in tags))
     logging.info("running: %s", cmd)
-    popen = subprocess.Popen(
+    with subprocess.Popen(
         cmd,
         shell=True,
         stderr=subprocess.STDOUT,
         stdout=subprocess.PIPE,
         universal_newlines=True,
-    )
-    retcode = popen.wait()
-    if retcode != 0:
-        output = popen.stdout.read()  # type: ignore
-        logging.error("failed to create manifest for %s:\n %s\n", manifest, output)
-        return manifest, "FAIL"
-    if not push:
-        return manifest, "OK"
+    ) as popen:
+        retcode = popen.wait()
+        if retcode != 0:
+            output = popen.stdout.read()  # type: ignore
+            logging.error("failed to create manifest for %s:\n %s\n", manifest, output)
+            return manifest, "FAIL"
+        if not push:
+            return manifest, "OK"
 
     cmd = f"docker manifest push {manifest}"
     logging.info("running: %s", cmd)
-    popen = subprocess.Popen(
+    with subprocess.Popen(
         cmd,
         shell=True,
         stderr=subprocess.STDOUT,
         stdout=subprocess.PIPE,
         universal_newlines=True,
-    )
-    retcode = popen.wait()
-    if retcode != 0:
-        output = popen.stdout.read()  # type: ignore
-        logging.error("failed to push %s:\n %s\n", manifest, output)
-        return manifest, "FAIL"
+    ) as popen:
+        retcode = popen.wait()
+        if retcode != 0:
+            output = popen.stdout.read()  # type: ignore
+            logging.error("failed to push %s:\n %s\n", manifest, output)
+            return manifest, "FAIL"
 
     return manifest, "OK"
 
@@ -166,8 +171,7 @@ def main():
     stopwatch = Stopwatch()
 
     args = parse_args()
-    push = not args.no_push_images
-    if push:
+    if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'robotclickhouse' --password-stdin",
             input=get_parameter_from_ssm("dockerhub_robot_password"),
@@ -188,12 +192,14 @@ def main():
     test_results = []  # type: List[Tuple[str, str]]
     for image, versions in merged.items():
         for tags in versions:
-            manifest, test_result = create_manifest(image, tags, push)
+            manifest, test_result = create_manifest(image, tags, args.push)
             test_results.append((manifest, test_result))
             if test_result != "OK":
                 status = "failure"
 
-    with open(os.path.join(args.path, "changed_images.json"), "w") as ci:
+    with open(
+        os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
+    ) as ci:
         json.dump(changed_images, ci)
 
     pr_info = PRInfo()
@@ -201,10 +207,10 @@ def main():
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
-    print("::notice ::Report url: {}".format(url))
-    print('::set-output name=url_output::"{}"'.format(url))
+    print(f"::notice ::Report url: {url}")
+    print(f'::set-output name=url_output::"{url}"')
 
-    if args.no_reports:
+    if not args.reports:
         return
 
     if changed_images:
@@ -228,7 +234,7 @@ def main():
         NAME,
     )
     ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
 
 if __name__ == "__main__":

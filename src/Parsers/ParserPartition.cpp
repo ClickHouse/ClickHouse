@@ -5,6 +5,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -13,6 +14,7 @@ namespace DB
 bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_id("ID");
+    ParserKeyword s_all("ALL");
     ParserStringLiteral parser_string_literal;
     ParserExpression parser_expr;
 
@@ -27,6 +29,10 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         partition->id = partition_id->as<ASTLiteral &>().value.get<String>();
+    }
+    else if (s_all.ignore(pos, expected))
+    {
+        partition->all = true;
     }
     else
     {

@@ -7,6 +7,7 @@
 
 #include <Common/Exception.h>
 #include <IO/BufferBase.h>
+#include <IO/AsynchronousReader.h>
 
 
 namespace DB
@@ -16,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** A simple abstract class for buffered data reading (char sequences) from somewhere.
@@ -206,10 +208,20 @@ public:
     virtual void prefetch() {}
 
     /**
-     * For reading from remote filesystem, when it matters how much we read.
+     * Set upper bound for read range [..., position).
+     * Required for reading from remote filesystem, when it matters how much we read.
      */
     virtual void setReadUntilPosition(size_t /* position */) {}
+
     virtual void setReadUntilEnd() {}
+
+    /// Read at most `size` bytes into data at specified offset `offset`. First ignore `ignore` bytes if `ignore` > 0.
+    /// Notice: this function only need to be implemented in synchronous read buffers to be wrapped in asynchronous read.
+    /// Such as ReadBufferFromRemoteFSGather and AsynchronousReadIndirectBufferFromRemoteFS.
+    virtual IAsynchronousReader::Result readInto(char * /*data*/, size_t /*size*/, size_t /*offset*/, size_t /*ignore*/)
+    {
+        throw Exception("readInto not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

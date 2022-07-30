@@ -8,7 +8,6 @@ import logging
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.client import QueryRuntimeException
-from helpers.network import PartitionManager
 
 import json
 import subprocess
@@ -20,20 +19,27 @@ from kafka.protocol.group import MemberAssignment
 import socket
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml'],
-                                user_configs=['configs/users.xml'],
-                                with_kerberized_kafka=True,
-                                clickhouse_path_dir="clickhouse_path")
+instance = cluster.add_instance(
+    "instance",
+    main_configs=["configs/kafka.xml"],
+    user_configs=["configs/users.xml"],
+    with_kerberized_kafka=True,
+    clickhouse_path_dir="clickhouse_path",
+)
+
 
 def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
+
 
 def get_kafka_producer(port, serializer):
     errors = []
     for _ in range(15):
         try:
-            producer = KafkaProducer(bootstrap_servers="localhost:{}".format(port), value_serializer=serializer)
+            producer = KafkaProducer(
+                bootstrap_servers="localhost:{}".format(port),
+                value_serializer=serializer,
+            )
             logging.debug("Kafka Connection establised: localhost:{}".format(port))
             return producer
         except Exception as e:
@@ -42,9 +48,16 @@ def get_kafka_producer(port, serializer):
 
     raise Exception("Connection not establised, {}".format(errors))
 
+
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None):
-    logging.debug("kafka_produce server:{}:{} topic:{}".format("localhost", kafka_cluster.kerberized_kafka_port, topic))
-    producer = get_kafka_producer(kafka_cluster.kerberized_kafka_port, producer_serializer)
+    logging.debug(
+        "kafka_produce server:{}:{} topic:{}".format(
+            "localhost", kafka_cluster.kerberized_kafka_port, topic
+        )
+    )
+    producer = get_kafka_producer(
+        kafka_cluster.kerberized_kafka_port, producer_serializer
+    )
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
@@ -52,13 +65,16 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None):
 
 # Fixtures
 
+
 @pytest.fixture(scope="module")
 def kafka_cluster():
     try:
         cluster.start()
         if instance.is_debug_build():
             # https://github.com/ClickHouse/ClickHouse/issues/27651
-            pytest.skip("librdkafka calls system function for kinit which does not pass harmful check in debug build")
+            pytest.skip(
+                "librdkafka calls system function for kinit which does not pass harmful check in debug build"
+            )
         yield cluster
     finally:
         cluster.shutdown()
@@ -66,15 +82,27 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query('DROP DATABASE IF EXISTS test; CREATE DATABASE test;')
+    instance.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
     yield  # run test
+
 
 # Tests
 
-def test_kafka_json_as_string(kafka_cluster):
-    kafka_produce(kafka_cluster, 'kafka_json_as_string', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
 
-    instance.query('''
+def test_kafka_json_as_string(kafka_cluster):
+    kafka_produce(
+        kafka_cluster,
+        "kafka_json_as_string",
+        [
+            '{"t": 123, "e": {"x": "woof"} }',
+            "",
+            '{"t": 124, "e": {"x": "test"} }',
+            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}',
+        ],
+    )
+
+    instance.query(
+        """
         CREATE TABLE test.kafka (field String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
@@ -83,24 +111,71 @@ def test_kafka_json_as_string(kafka_cluster):
                      kafka_group_name = 'kafka_json_as_string',
                      kafka_format = 'JSONAsString',
                      kafka_flush_interval_ms=1000;
-        ''')
+        """
+    )
 
     time.sleep(3)
 
-    result = instance.query('SELECT * FROM test.kafka;')
-    expected = '''\
+    result = instance.query("SELECT * FROM test.kafka;")
+    expected = """\
 {"t": 123, "e": {"x": "woof"} }
 {"t": 124, "e": {"x": "test"} }
 {"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}
-'''
+"""
     assert TSV(result) == TSV(expected)
-    assert instance.contains_in_log("Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows")
+    assert instance.contains_in_log(
+        "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
+    )
+
+
+def test_kafka_json_as_string_request_new_ticket_after_expiration(kafka_cluster):
+    # Ticket should be expired after the wait time
+    # On run of SELECT query new ticket should be requested and SELECT query should run fine.
+
+    kafka_produce(
+        kafka_cluster,
+        "kafka_json_as_string",
+        [
+            '{"t": 123, "e": {"x": "woof"} }',
+            "",
+            '{"t": 124, "e": {"x": "test"} }',
+            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}',
+        ],
+    )
+
+    instance.query(
+        """
+        CREATE TABLE test.kafka (field String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
+                     kafka_topic_list = 'kafka_json_as_string',
+                     kafka_commit_on_select = 1,
+                     kafka_group_name = 'kafka_json_as_string',
+                     kafka_format = 'JSONAsString',
+                     kafka_flush_interval_ms=1000;
+        """
+    )
+
+    time.sleep(45)  # wait for ticket expiration
+
+    result = instance.query("SELECT * FROM test.kafka;")
+    expected = """\
+{"t": 123, "e": {"x": "woof"} }
+{"t": 124, "e": {"x": "test"} }
+{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}
+"""
+    assert TSV(result) == TSV(expected)
+    assert instance.contains_in_log(
+        "Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows"
+    )
+
 
 def test_kafka_json_as_string_no_kdc(kafka_cluster):
     # When the test is run alone (not preceded by any other kerberized kafka test),
     # we need a ticket to
     # assert instance.contains_in_log("Ticket expired")
-    instance.query('''
+    instance.query(
+        """
         CREATE TABLE test.kafka_no_kdc_warm_up (field String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
@@ -109,16 +184,27 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
                      kafka_commit_on_select = 1,
                      kafka_format = 'JSONAsString',
                      kafka_flush_interval_ms=1000;
-        ''')
+        """
+    )
 
-    instance.query('SELECT * FROM test.kafka_no_kdc_warm_up;')
+    instance.query("SELECT * FROM test.kafka_no_kdc_warm_up;")
 
-    kafka_produce(kafka_cluster, 'kafka_json_as_string_no_kdc', ['{"t": 123, "e": {"x": "woof"} }', '', '{"t": 124, "e": {"x": "test"} }', '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}'])
+    kafka_produce(
+        kafka_cluster,
+        "kafka_json_as_string_no_kdc",
+        [
+            '{"t": 123, "e": {"x": "woof"} }',
+            "",
+            '{"t": 124, "e": {"x": "test"} }',
+            '{"F1":"V1","F2":{"F21":"V21","F22":{},"F23":"V23","F24":"2019-12-24T16:28:04"},"F3":"V3"}',
+        ],
+    )
 
-    kafka_cluster.pause_container('kafka_kerberos')
-    time.sleep(45)   # wait for ticket expiration
+    kafka_cluster.pause_container("kafka_kerberos")
+    time.sleep(45)  # wait for ticket expiration
 
-    instance.query('''
+    instance.query(
+        """
         CREATE TABLE test.kafka_no_kdc (field String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
@@ -127,21 +213,21 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
                      kafka_commit_on_select = 1,
                      kafka_format = 'JSONAsString',
                      kafka_flush_interval_ms=1000;
-        ''')
+        """
+    )
 
-    result = instance.query('SELECT * FROM test.kafka_no_kdc;')
-    expected = ''
+    result = instance.query("SELECT * FROM test.kafka_no_kdc;")
+    expected = ""
 
-    kafka_cluster.unpause_container('kafka_kerberos')
-
+    kafka_cluster.unpause_container("kafka_kerberos")
 
     assert TSV(result) == TSV(expected)
     assert instance.contains_in_log("StorageKafka (kafka_no_kdc): Nothing to commit")
     assert instance.contains_in_log("Ticket expired")
-    assert instance.contains_in_log("Kerberos ticket refresh failed")
+    assert instance.contains_in_log("KerberosInit failure:")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
     cluster.shutdown()

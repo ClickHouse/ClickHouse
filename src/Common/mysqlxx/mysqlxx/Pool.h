@@ -48,7 +48,7 @@ public:
     class Entry
     {
     public:
-        Entry() {}
+        Entry() {} /// NOLINT
 
         Entry(const Entry & src)
             : data(src.data), pool(src.pool)
@@ -61,7 +61,7 @@ public:
             decrementRefCount();
         }
 
-        Entry & operator= (const Entry & src)
+        Entry & operator= (const Entry & src) /// NOLINT
         {
             pool = src.pool;
             if (data)
@@ -77,13 +77,13 @@ public:
             return data == nullptr;
         }
 
-        operator mysqlxx::Connection & () &
+        operator mysqlxx::Connection & () & /// NOLINT
         {
             forceConnected();
             return data->conn;
         }
 
-        operator const mysqlxx::Connection & () const &
+        operator const mysqlxx::Connection & () const & /// NOLINT
         {
             forceConnected();
             return data->conn;
@@ -136,7 +136,7 @@ public:
     };
 
 
-    Pool(const std::string & config_name,
+    explicit Pool(const std::string & config_name,
         unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
         unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
         const char * parent_config_name_ = nullptr)

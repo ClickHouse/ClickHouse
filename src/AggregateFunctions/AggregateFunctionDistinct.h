@@ -200,7 +200,7 @@ public:
             arguments_raw[i] = arguments[i].get();
 
         assert(!arguments.empty());
-        nested_func->addBatchSinglePlace(arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
+        nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
         nested_func->insertResultInto(getNestedPlace(place), to, arena);
     }
 

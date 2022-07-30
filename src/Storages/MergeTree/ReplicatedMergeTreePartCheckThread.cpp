@@ -59,7 +59,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 {
     std::lock_guard lock(parts_mutex);
 
-    if (parts_set.count(name))
+    if (parts_set.contains(name))
         return;
 
     parts_queue.emplace_back(name, time(nullptr) + delay_to_check_seconds);
@@ -155,19 +155,21 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
         {
             auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.format_version);
 
+            /// All three following cases are "good" outcome for check thread and don't require
+            /// any special attention.
             if (part_info == part_on_replica_info)
             {
                 /// Found missing part at ourself. If we are here then something wrong with this part, so skipping.
                 if (replica_path == storage.replica_path)
                     continue;
 
-                LOG_WARNING(log, "Found the missing part {} at {} on {}", part_name, part_on_replica, replica);
+                LOG_INFO(log, "Found the missing part {} at {} on {}", part_name, part_on_replica, replica);
                 return MissingPartSearchResult::FoundAndNeedFetch;
             }
 
             if (part_on_replica_info.contains(part_info))
             {
-                LOG_WARNING(log, "Found part {} on {} that covers the missing part {}", part_on_replica, replica, part_name);
+                LOG_INFO(log, "Found part {} on {} that covers the missing part {}", part_on_replica, replica, part_name);
                 return MissingPartSearchResult::FoundAndDontNeedFetch;
             }
 
@@ -181,7 +183,7 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
                     /// FIXME It may never appear
-                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. Hoping that it will eventually appear as a result of a merge.", part_name, replica);
+                    LOG_INFO(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. Hoping that it will eventually appear as a result of a merge.", part_name, replica);
                     return MissingPartSearchResult::FoundAndDontNeedFetch;
                 }
             }
@@ -359,7 +361,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
                 String message = "Part " + part_name + " looks broken. Removing it and will try to fetch.";
-                LOG_ERROR(log, message);
+                LOG_ERROR(log, fmt::runtime(message));
 
                 /// Delete part locally.
                 storage.forgetPartAndMoveToDetached(part, "broken");
@@ -378,7 +380,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
             String message = "Unexpected part " + part_name + " in filesystem. Removing.";
-            LOG_ERROR(log, message);
+            LOG_ERROR(log, fmt::runtime(message));
             storage.forgetPartAndMoveToDetached(part, "unexpected");
             return {part_name, false, message};
         }
@@ -399,6 +401,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         LOG_WARNING(log, "We have part {} covering part {}", part->name, part_name);
     }
 
+    part->checkMetadata();
     return {part_name, true, ""};
 }
 
@@ -465,6 +468,8 @@ void ReplicatedMergeTreePartCheckThread::run()
                 parts_queue.erase(selected);
             }
         }
+
+        storage.checkBrokenDisks();
 
         task->schedule();
     }

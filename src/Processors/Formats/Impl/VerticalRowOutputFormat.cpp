@@ -141,7 +141,7 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
     row_number = 0;
     field_number = 0;
 
-    size_t num_columns = columns.size();
+    size_t columns_size = columns.size();
 
     writeCString(title, out);
     writeCString(":\n", out);
@@ -151,7 +151,7 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
         writeCString("─", out);
     writeChar('\n', out);
 
-    for (size_t i = 0; i < num_columns; ++i)
+    for (size_t i = 0; i < columns_size; ++i)
         writeField(*columns[i], *serializations[i], row_num);
 }
 

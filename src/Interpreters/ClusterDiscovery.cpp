@@ -7,7 +7,7 @@
 #include <unordered_set>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -229,7 +229,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 
     bool secure = cluster_info.current_node.secure;
     auto cluster = std::make_shared<Cluster>(
-        context->getSettings(),
+        context->getSettingsRef(),
         shards,
         /* username= */ context->getUserName(),
         /* password= */ "",

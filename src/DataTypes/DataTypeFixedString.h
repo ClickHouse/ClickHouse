@@ -29,7 +29,7 @@ public:
     static constexpr bool is_parametric = true;
     static constexpr auto type_id = TypeIndex::FixedString;
 
-    DataTypeFixedString(size_t n_) : n(n_)
+    explicit DataTypeFixedString(size_t n_) : n(n_)
     {
         if (n == 0)
             throw Exception("FixedString size must be positive", ErrorCodes::ARGUMENT_OUT_OF_BOUND);

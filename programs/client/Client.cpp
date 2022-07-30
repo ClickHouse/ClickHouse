@@ -1,10 +1,11 @@
-#include <stdlib.h>
+#include <cstdlib>
 #include <fcntl.h>
 #include <map>
 #include <iostream>
 #include <iomanip>
 #include <optional>
-#include <base/scope_guard_safe.h>
+#include <string_view>
+#include <Common/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
@@ -21,7 +22,6 @@
 #include <Common/Config/configReadClient.h>
 
 #include <Core/QueryProcessingStage.h>
-#include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
 #include <Poco/Util/Application.h>
 
@@ -43,13 +43,13 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include "TestTags.h"
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
 namespace fs = std::filesystem;
+using namespace std::literals;
 
 
 namespace DB
@@ -102,220 +102,41 @@ void Client::processError(const String & query) const
 }
 
 
-bool Client::executeMultiQuery(const String & all_queries_text)
+void Client::showWarnings()
 {
-    // It makes sense not to base any control flow on this, so that it is
-    // the same in tests and in normal usage. The only difference is that in
-    // normal mode we ignore the test hints.
-    const bool test_mode = config().has("testmode");
-    if (test_mode)
+    try
     {
-        /// disable logs if expects errors
-        TestHint test_hint(test_mode, all_queries_text);
-        if (test_hint.clientError() || test_hint.serverError())
-            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-    }
-
-    bool echo_query = echo_queries;
-
-    /// Test tags are started with "--" so they are interpreted as comments anyway.
-    /// But if the echo is enabled we have to remove the test tags from `all_queries_text`
-    /// because we don't want test tags to be echoed.
-    size_t test_tags_length = test_mode ? getTestTagsLength(all_queries_text) : 0;
-
-    /// Several queries separated by ';'.
-    /// INSERT data is ended by the end of line, not ';'.
-    /// An exception is VALUES format where we also support semicolon in
-    /// addition to end of line.
-    const char * this_query_begin = all_queries_text.data() + test_tags_length;
-    const char * this_query_end;
-    const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
-
-    String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
-    String query_to_execute;
-    ASTPtr parsed_query;
-    std::optional<Exception> current_exception;
-
-    while (true)
-    {
-        auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
-                                           query_to_execute, parsed_query, all_queries_text, current_exception);
-        switch (stage)
+        std::vector<String> messages = loadWarningMessages();
+        if (!messages.empty())
         {
-            case MultiQueryProcessingStage::QUERIES_END:
-            case MultiQueryProcessingStage::PARSING_FAILED:
-            {
-                return true;
-            }
-            case MultiQueryProcessingStage::CONTINUE_PARSING:
-            {
-                continue;
-            }
-            case MultiQueryProcessingStage::PARSING_EXCEPTION:
-            {
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-
-                // Try to find test hint for syntax error. We don't know where
-                // the query ends because we failed to parse it, so we consume
-                // the entire line.
-                TestHint hint(test_mode, String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.serverError())
-                {
-                    // Syntax errors are considered as client errors
-                    current_exception->addMessage("\nExpected server error '{}'.", hint.serverError());
-                    current_exception->rethrow();
-                }
-
-                if (hint.clientError() != current_exception->code())
-                {
-                    if (hint.clientError())
-                        current_exception->addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
-                    current_exception->rethrow();
-                }
-
-                /// It's expected syntax error, skip the line
-                this_query_begin = this_query_end;
-                current_exception.reset();
-
-                continue;
-            }
-            case MultiQueryProcessingStage::EXECUTE_QUERY:
-            {
-                full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
-                if (query_fuzzer_runs)
-                {
-                    if (!processWithFuzzing(full_query))
-                        return false;
-                    this_query_begin = this_query_end;
-                    continue;
-                }
-
-                // Now we know for sure where the query ends.
-                // Look for the hint in the text of query + insert data + trailing
-                // comments,
-                // e.g. insert into t format CSV 'a' -- { serverError 123 }.
-                // Use the updated query boundaries we just calculated.
-                TestHint test_hint(test_mode, full_query);
-                // Echo all queries if asked; makes for a more readable reference
-                // file.
-                echo_query = test_hint.echoQueries().value_or(echo_query);
-                try
-                {
-                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
-                }
-                catch (...)
-                {
-                    // Surprisingly, this is a client error. A server error would
-                    // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
-                    have_error = true;
-                }
-                // Check whether the error (or its absence) matches the test hints
-                // (or their absence).
-                bool error_matches_hint = true;
-                if (have_error)
-                {
-                    if (test_hint.serverError())
-                    {
-                        if (!server_exception)
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
-                                       test_hint.serverError(), full_query);
-                        }
-                        else if (server_exception->code() != test_hint.serverError())
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
-                                       test_hint.serverError(), server_exception->code(), full_query);
-                        }
-                    }
-                    if (test_hint.clientError())
-                    {
-                        if (!client_exception)
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
-                                       test_hint.clientError(), full_query);
-                        }
-                        else if (client_exception->code() != test_hint.clientError())
-                        {
-                            error_matches_hint = false;
-                            fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
-                                       test_hint.clientError(), client_exception->code(), full_query);
-                        }
-                    }
-                    if (!test_hint.clientError() && !test_hint.serverError())
-                    {
-                        // No error was expected but it still occurred. This is the
-                        // default case w/o test hint, doesn't need additional
-                        // diagnostics.
-                        error_matches_hint = false;
-                    }
-                }
-                else
-                {
-                    if (test_hint.clientError())
-                    {
-                        fmt::print(stderr, "The query succeeded but the client error '{}' was expected (query: {}).\n",
-                                   test_hint.clientError(), full_query);
-                        error_matches_hint = false;
-                    }
-                    if (test_hint.serverError())
-                    {
-                        fmt::print(stderr, "The query succeeded but the server error '{}' was expected (query: {}).\n",
-                                   test_hint.serverError(), full_query);
-                        error_matches_hint = false;
-                    }
-                }
-                // If the error is expected, force reconnect and ignore it.
-                if (have_error && error_matches_hint)
-                {
-                    client_exception.reset();
-                    server_exception.reset();
-                    have_error = false;
-
-                    if (!connection->checkConnected())
-                        connect();
-                }
-
-                // For INSERTs with inline data: use the end of inline data as
-                // reported by the format parser (it is saved in sendData()).
-                // This allows us to handle queries like:
-                //   insert into t values (1); select 1
-                // , where the inline data is delimited by semicolon and not by a
-                // newline.
-                auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && insert_ast->data)
-                {
-                    this_query_end = insert_ast->end;
-                    adjustQueryEnd(this_query_end, all_queries_end, global_context->getSettingsRef().max_parser_depth);
-                }
-
-                // Report error.
-                if (have_error)
-                    processError(full_query);
-
-                // Stop processing queries if needed.
-                if (have_error && !ignore_error)
-                    return is_interactive;
-
-                this_query_begin = this_query_end;
-                break;
-            }
+            std::cout << "Warnings:" << std::endl;
+            for (const auto & message : messages)
+                std::cout << " * " << message << std::endl;
+            std::cout << std::endl;
         }
     }
+    catch (...)
+    {
+        /// Ignore exception
+    }
 }
-
 
 /// Make query to get all server warnings
 std::vector<String> Client::loadWarningMessages()
 {
+    /// Older server versions cannot execute the query loading warnings.
+    constexpr UInt64 min_server_revision_to_load_warnings = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
+
+    if (server_revision < min_server_revision_to_load_warnings)
+        return {};
+
     std::vector<String> messages;
-    connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
+    connection->sendQuery(connection_parameters.timeouts,
+                          "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
+                          "" /* query_id */,
                           QueryProcessingStage::Complete,
                           &global_context->getSettingsRef(),
-                          &global_context->getClientInfo(), false);
+                          &global_context->getClientInfo(), false, {});
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -333,13 +154,9 @@ std::vector<String> Client::loadWarningMessages()
                 continue;
 
             case Protocol::Server::Progress:
-                continue;
             case Protocol::Server::ProfileInfo:
-                continue;
             case Protocol::Server::Totals:
-                continue;
             case Protocol::Server::Extremes:
-                continue;
             case Protocol::Server::Log:
                 continue;
 
@@ -370,6 +187,27 @@ void Client::initialize(Poco::Util::Application & self)
         home_path = home_path_cstr;
 
     configReadClient(config(), home_path);
+
+    /** getenv is thread-safe in Linux glibc and in all sane libc implementations.
+      * But the standard does not guarantee that subsequent calls will not rewrite the value by returned pointer.
+      *
+      * man getenv:
+      *
+      * As typically implemented, getenv() returns a pointer to a string within the environment list.
+      * The caller must take care not to modify this string, since that would change the environment of
+      * the process.
+      *
+      * The implementation of getenv() is not required to be reentrant. The string pointed to by the return value of getenv()
+      * may be statically allocated, and can be modified by a subsequent call to getenv(), putenv(3), setenv(3), or unsetenv(3).
+      */
+
+    const char * env_user = getenv("CLICKHOUSE_USER");
+    if (env_user)
+        config().setString("user", env_user);
+
+    const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+    if (env_password)
+        config().setString("password", env_password);
 
     // global_context->setApplicationType(Context::ApplicationType::CLIENT);
     global_context->setQueryParameters(query_parameters);
@@ -413,25 +251,9 @@ try
 
     connect();
 
-    /// Load Warnings at the beginning of connection
+    /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
-    {
-        try
-        {
-            std::vector<String> messages = loadWarningMessages();
-            if (!messages.empty())
-            {
-                std::cout << "Warnings:" << std::endl;
-                for (const auto & message : messages)
-                    std::cout << " * " << message << std::endl;
-                std::cout << std::endl;
-            }
-        }
-        catch (...)
-        {
-            /// Ignore exception
-        }
-    }
+        showWarnings();
 
     if (is_interactive && !delayed_interactive)
     {
@@ -481,52 +303,83 @@ catch (...)
 
 void Client::connect()
 {
-    connection_parameters = ConnectionParameters(config());
-
-    if (is_interactive)
-        std::cout << "Connecting to "
-                    << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
-                                                                        : "")
-                    << connection_parameters.host << ":" << connection_parameters.port
-                    << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
-
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
 
-    try
+    if (hosts_and_ports.empty())
     {
-        connection = Connection::createConnection(connection_parameters, global_context);
-
-        if (max_client_network_bandwidth)
-        {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-            connection->setThrottler(throttler);
-        }
-
-        connection->getServerVersion(
-            connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+        String host = config().getString("host", "localhost");
+        UInt16 port = ConnectionParameters::getPortFromConfig(config());
+        hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
-    catch (const Exception & e)
-    {
-        /// It is typical when users install ClickHouse, type some password and instantly forget it.
-        if ((connection_parameters.user.empty() || connection_parameters.user == "default")
-            && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
-        {
-            std::cerr << std::endl
-                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                << "and deleting this file will reset the password." << std::endl
-                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                << std::endl;
-        }
 
-        throw;
+    for (size_t attempted_address_index = 0; attempted_address_index < hosts_and_ports.size(); ++attempted_address_index)
+    {
+        try
+        {
+            connection_parameters = ConnectionParameters(
+                config(), hosts_and_ports[attempted_address_index].host, hosts_and_ports[attempted_address_index].port);
+
+            if (is_interactive)
+                std::cout << "Connecting to "
+                          << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
+                                                                              : "")
+                          << connection_parameters.host << ":" << connection_parameters.port
+                          << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+
+            connection = Connection::createConnection(connection_parameters, global_context);
+
+            if (max_client_network_bandwidth)
+            {
+                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+                connection->setThrottler(throttler);
+            }
+
+            connection->getServerVersion(
+                connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            config().setString("host", connection_parameters.host);
+            config().setInt("port", connection_parameters.port);
+            break;
+        }
+        catch (const Exception & e)
+        {
+            /// It is typical when users install ClickHouse, type some password and instantly forget it.
+            /// This problem can't be fixed with reconnection so it is not attempted
+            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
+                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            {
+                std::cerr << std::endl
+                          << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
+                          << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
+                          << "and deleting this file will reset the password." << std::endl
+                          << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
+                          << std::endl;
+                throw;
+            }
+            else
+            {
+                if (attempted_address_index == hosts_and_ports.size() - 1)
+                    throw;
+
+                if (is_interactive)
+                {
+                    std::cerr << "Connection attempt to database at "
+                              << connection_parameters.host << ":" << connection_parameters.port
+                              << " resulted in failure"
+                              << std::endl
+                              << getExceptionMessage(e, false)
+                              << std::endl
+                              << "Attempting connection to the next provided address"
+                              << std::endl;
+                }
+            }
+        }
     }
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
-    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false));
+    load_suggestions = is_interactive && (server_revision >= Suggest::MIN_SERVER_REVISION) && !config().getBool("disable_suggestion", false);
 
     if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         server_display_name = config().getString("host", "localhost");
@@ -637,9 +490,9 @@ void Client::printChangedSettings() const
 }
 
 
-static bool queryHasWithClause(const IAST * ast)
+static bool queryHasWithClause(const IAST & ast)
 {
-    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(ast); select && select->with())
+    if (const auto * select = dynamic_cast<const ASTSelectQuery *>(&ast); select && select->with())
     {
         return true;
     }
@@ -649,12 +502,9 @@ static bool queryHasWithClause(const IAST * ast)
     // breakage when the AST structure changes and some new variant of query
     // nesting is added. This function is used in fuzzer, so it's better to be
     // defensive and avoid weird unexpected errors.
-    // clang-tidy is confused by this function: it thinks that if `select` is
-    // nullptr, `ast` is also nullptr, and complains about nullptr dereference.
-    // NOLINTNEXTLINE
-    for (const auto & child : ast->children)
+    for (const auto & child : ast.children)
     {
-        if (queryHasWithClause(child.get()))
+        if (queryHasWithClause(*child))
         {
             return true;
         }
@@ -878,7 +728,7 @@ bool Client::processWithFuzzing(const String & full_query)
         // query, but second and third.
         // If you have to add any more workarounds to this check, just remove
         // it altogether, it's not so useful.
-        if (!have_error && !queryHasWithClause(parsed_query.get()))
+        if (parsed_query && !have_error && !queryHasWithClause(*parsed_query))
         {
             ASTPtr ast_2;
             try
@@ -957,6 +807,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 {
     std::cout << options_description.main_description.value() << "\n";
     std::cout << options_description.external_description.value() << "\n";
+    std::cout << options_description.hosts_and_ports_description.value() << "\n";
     std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
 }
 
@@ -966,8 +817,6 @@ void Client::addOptions(OptionsDescription & options_description)
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
-        ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
-        ("port", po::value<int>()->default_value(9000), "server port")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
@@ -979,10 +828,9 @@ void Client::addOptions(OptionsDescription & options_description)
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("testmode,T", "enable test hints in comments")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
-        ("compression", po::value<bool>(), "enable or disable compression")
+        ("compression", po::value<bool>(), "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
@@ -992,6 +840,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
+        ("fake-drop", "Ignore all DROP queries, should be used only for testing")
     ;
 
     /// Commandline options related to external tables.
@@ -1013,12 +862,24 @@ void Client::addOptions(OptionsDescription & options_description)
     (
         "types", po::value<std::string>(), "types"
     );
+
+    /// Commandline options related to hosts and ports.
+    options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
+    options_description.hosts_and_ports_description->add_options()
+        ("host,h", po::value<String>()->default_value("localhost"),
+         "Server hostname. Multiple hosts can be passed via multiple arguments"
+         "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
+         "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
+         "if there is no such host, the port will be attached to the next first host or to default host.")
+         ("port", po::value<UInt16>(), "server ports")
+    ;
 }
 
 
 void Client::processOptions(const OptionsDescription & options_description,
                             const CommandLineOptions & options,
-                            const std::vector<Arguments> & external_tables_arguments)
+                            const std::vector<Arguments> & external_tables_arguments,
+                            const std::vector<Arguments> & hosts_and_ports_arguments)
 {
     namespace po = boost::program_options;
 
@@ -1050,6 +911,21 @@ void Client::processOptions(const OptionsDescription & options_description,
             exit(exit_code);
         }
     }
+
+    for (const auto & hosts_and_ports_argument : hosts_and_ports_arguments)
+    {
+        /// Parse commandline options related to external tables.
+        po::parsed_options parsed_hosts_and_ports
+            = po::command_line_parser(hosts_and_ports_argument).options(options_description.hosts_and_ports_description.value()).run();
+        po::variables_map host_and_port_options;
+        po::store(parsed_hosts_and_ports, host_and_port_options);
+        std::string host = host_and_port_options["host"].as<std::string>();
+        std::optional<UInt16> port = !host_and_port_options["port"].empty()
+                                     ? std::make_optional(host_and_port_options["port"].as<UInt16>())
+                                     : std::nullopt;
+        hosts_and_ports.emplace_back(HostAndPort{host, port});
+    }
+
     send_external_tables = true;
 
     shared_context = Context::createShared();
@@ -1066,7 +942,12 @@ void Client::processOptions(const OptionsDescription & options_description,
     {
         const auto & name = setting.getName();
         if (options.count(name))
-            config().setString(name, options[name].as<String>());
+        {
+            if (allow_repeated_settings)
+                config().setString(name, options[name].as<Strings>().back());
+            else
+                config().setString(name, options[name].as<String>());
+        }
     }
 
     if (options.count("config-file") && options.count("config"))
@@ -1074,12 +955,8 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
-    if (options.count("host") && !options["host"].defaulted())
-        config().setString("host", options["host"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("port") && !options["port"].defaulted())
-        config().setInt("port", options["port"].as<int>());
     if (options.count("secure"))
         config().setBool("secure", true);
     if (options.count("user") && !options["user"].defaulted())
@@ -1090,14 +967,14 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("ask-password", true);
     if (options.count("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
-    if (options.count("testmode"))
-        config().setBool("testmode", true);
     if (options.count("max_client_network_bandwidth"))
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
     if (options.count("compression"))
         config().setBool("compression", options["compression"].as<bool>());
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
+    if (options.count("fake-drop"))
+        fake_drop = true;
 
     if ((query_fuzzer_runs = options["query-fuzzer-runs"].as<int>()))
     {
@@ -1128,7 +1005,7 @@ void Client::processConfig()
     ///   The value of the option is used as the text of query (or of multiple queries).
     ///   If stdin is not a terminal, INSERT data for the first query is read from it.
     /// - stdin is not a terminal. In this case queries are read from it.
-    /// - -qf (--queries-file) command line option is present.
+    /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
     delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
@@ -1148,6 +1025,7 @@ void Client::processConfig()
             global_context->setCurrentQueryId(query_id);
     }
     print_stack_trace = config().getBool("stacktrace", false);
+    logging_initialized = true;
 
     if (config().has("multiquery"))
         is_multiquery = true;
@@ -1171,6 +1049,159 @@ void Client::processConfig()
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
     client_info.quota_key = config().getString("quota_key", "");
+    client_info.query_kind = query_kind;
+}
+
+
+void Client::readArguments(
+    int argc,
+    char ** argv,
+    Arguments & common_arguments,
+    std::vector<Arguments> & external_tables_arguments,
+    std::vector<Arguments> & hosts_and_ports_arguments)
+{
+    /** We allow different groups of arguments:
+        * - common arguments;
+        * - arguments for any number of external tables each in form "--external args...",
+        *   where possible args are file, name, format, structure, types;
+        * - param arguments for prepared statements.
+        * Split these groups before processing.
+        */
+    bool in_external_group = false;
+
+    std::string prev_host_arg;
+    std::string prev_port_arg;
+
+    for (int arg_num = 1; arg_num < argc; ++arg_num)
+    {
+        std::string_view arg = argv[arg_num];
+
+        if (arg == "--external")
+        {
+            in_external_group = true;
+            external_tables_arguments.emplace_back(Arguments{""});
+        }
+        /// Options with value after equal sign.
+        else if (
+            in_external_group
+            && (arg.starts_with("--file=") || arg.starts_with("--name=") || arg.starts_with("--format=") || arg.starts_with("--structure=")
+                || arg.starts_with("--types=")))
+        {
+            external_tables_arguments.back().emplace_back(arg);
+        }
+        /// Options with value after whitespace.
+        else if (in_external_group && (arg == "--file" || arg == "--name" || arg == "--format" || arg == "--structure" || arg == "--types"))
+        {
+            if (arg_num + 1 < argc)
+            {
+                external_tables_arguments.back().emplace_back(arg);
+                ++arg_num;
+                arg = argv[arg_num];
+                external_tables_arguments.back().emplace_back(arg);
+            }
+            else
+                break;
+        }
+        else
+        {
+            in_external_group = false;
+            if (arg == "--file"sv || arg == "--name"sv || arg == "--structure"sv || arg == "--types"sv)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter must be in external group, try add --external before {}", arg);
+
+            /// Parameter arg after underline.
+            if (arg.starts_with("--param_"))
+            {
+                auto param_continuation = arg.substr(strlen("--param_"));
+                auto equal_pos = param_continuation.find_first_of('=');
+
+                if (equal_pos == std::string::npos)
+                {
+                    /// param_name value
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Parameter requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    query_parameters.emplace(String(param_continuation), String(arg));
+                }
+                else
+                {
+                    if (equal_pos == 0)
+                        throw Exception("Parameter name cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+                    /// param_name=value
+                    query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
+                }
+            }
+            else if (arg.starts_with("--host") || arg.starts_with("-h"))
+            {
+                std::string host_arg;
+                /// --host host
+                if (arg == "--host" || arg == "-h")
+                {
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Host argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    host_arg = "--host=";
+                    host_arg.append(arg);
+                }
+                else
+                    host_arg = arg;
+
+                /// --port port1 --host host1
+                if (!prev_port_arg.empty())
+                {
+                    hosts_and_ports_arguments.push_back({host_arg, prev_port_arg});
+                    prev_port_arg.clear();
+                }
+                else
+                {
+                    /// --host host1 --host host2
+                    if (!prev_host_arg.empty())
+                        hosts_and_ports_arguments.push_back({prev_host_arg});
+
+                    prev_host_arg = host_arg;
+                }
+            }
+            else if (arg.starts_with("--port"))
+            {
+                auto port_arg = String{arg};
+                /// --port port
+                if (arg == "--port")
+                {
+                    port_arg.push_back('=');
+                    ++arg_num;
+                    if (arg_num >= argc)
+                        throw Exception("Port argument requires value", ErrorCodes::BAD_ARGUMENTS);
+                    arg = argv[arg_num];
+                    port_arg.append(arg);
+                }
+
+                /// --host host1 --port port1
+                if (!prev_host_arg.empty())
+                {
+                    hosts_and_ports_arguments.push_back({port_arg, prev_host_arg});
+                    prev_host_arg.clear();
+                }
+                else
+                {
+                    /// --port port1 --port port2
+                    if (!prev_port_arg.empty())
+                        hosts_and_ports_arguments.push_back({prev_port_arg});
+
+                    prev_port_arg = port_arg;
+                }
+            }
+            else if (arg == "--allow_repeated_settings")
+                allow_repeated_settings = true;
+            else
+                common_arguments.emplace_back(arg);
+        }
+    }
+    if (!prev_host_arg.empty())
+        hosts_and_ports_arguments.push_back({prev_host_arg});
+    if (!prev_port_arg.empty())
+        hosts_and_ports_arguments.push_back({prev_port_arg});
 }
 
 }
