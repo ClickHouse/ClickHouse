@@ -25,7 +25,7 @@ int main(int argc, char ** argv)
         return 0;
     }
 
-    String cache_name = "";
+    const char * cache_name = "";
     if (argc == 4)
         cache_name = argv[3];
 
