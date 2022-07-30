@@ -1239,6 +1239,21 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
+    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
+
+    /// Optimizes logical expressions.
+    LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
+
+    NameSet all_source_columns_set = source_columns_set;
+    if (table_join)
+    {
+        for (const auto & [name, _] : table_join->columns_from_joined_table)
+            all_source_columns_set.insert(name);
+    }
+
+    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
+
+
     if (getContext()->getSettingsRef().enable_positional_arguments)
     {
         if (select_query->groupBy())
@@ -1257,20 +1272,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                 replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
         }
     }
-
-    translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
-
-    /// Optimizes logical expressions.
-    LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
-
-    NameSet all_source_columns_set = source_columns_set;
-    if (table_join)
-    {
-        for (const auto & [name, _] : table_join->columns_from_joined_table)
-            all_source_columns_set.insert(name);
-    }
-
-    normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
