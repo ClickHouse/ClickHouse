@@ -3,10 +3,9 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
@@ -30,7 +29,7 @@ struct ParallelReadingExtension
 };
 
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
-class MergeTreeBaseSelectProcessor : public ISource
+class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
 public:
     MergeTreeBaseSelectProcessor(
@@ -58,12 +57,6 @@ public:
         const Block & sample_block);
 
 protected:
-    /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
-    struct BlockAndRowCount
-    {
-        Block block;
-        size_t row_count = 0;
-    };
 
     Chunk generate() final;
 
@@ -81,29 +74,21 @@ protected:
     /// Closes readers and unlock part locks
     virtual void finish() = 0;
 
-    virtual BlockAndRowCount readFromPart();
+    virtual Chunk readFromPart();
 
-    BlockAndRowCount readFromPartImpl();
+    Chunk readFromPartImpl();
 
-    /// Used for filling header with no rows as well as block with data
+    /// Two versions for header and chunk.
     static void
-    injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+    injectVirtualColumns(Block & block, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+    static void
+    injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
 
-    /// Sets up data readers for each step of prewhere and where
-    void initializeMergeTreeReadersForPart(
-        MergeTreeData::DataPartPtr & data_part,
-        const MergeTreeReadTaskColumns & task_columns, const StorageMetadataPtr & metadata_snapshot,
-        const MarkRanges & mark_ranges, const IMergeTreeReader::ValueSizeMap & value_size_map,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback);
-
-    /// Sets up range readers corresponding to data readers
     void initializeRangeReaders(MergeTreeReadTask & task);
 
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
 
-    /// This step is added when the part has lightweight delete mask
-    const PrewhereExprStep lightweight_delete_filter_step { nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, true };
     PrewhereInfoPtr prewhere_info;
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
@@ -117,9 +102,6 @@ protected:
 
     Names virt_column_names;
 
-    /// These columns will be filled by the merge tree range reader
-    Names non_const_virtual_column_names;
-
     DataTypePtr partition_value_type;
 
     /// This header is used for chunks from readFromPart().
@@ -130,7 +112,7 @@ protected:
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
-    std::vector<MergeTreeReaderPtr> pre_reader_for_step;
+    MergeTreeReaderPtr pre_reader;
 
     MergeTreeReadTaskPtr task;
 

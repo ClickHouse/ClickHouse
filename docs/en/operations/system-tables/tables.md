@@ -1,4 +1,4 @@
-# tables
+# system.tables {#system-tables}
 
 Contains metadata of each table that the server knows about.
 
@@ -12,13 +12,11 @@ Columns:
 
 -   `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
--   `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Table uuid (Atomic database).
-
 -   `engine` ([String](../../sql-reference/data-types/string.md)) — Table engine name (without parameters).
 
 -   `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table is temporary.
 
--   `data_paths` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Paths to the table data in the file systems.
+-   `data_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table data in the file system.
 
 -   `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
 
@@ -62,14 +60,6 @@ Columns:
 
 -   `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the table itself stores some data on disk or only accesses some other source.
 
--   `loading_dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database  loading dependencies (list of objects which should be loaded before the current object).
-
--   `loading_dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table loading dependencies (list of objects which should be loaded before the current object).
-
--   `loading_dependent_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading database.
-
--   `loading_dependent_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading table.
-
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
 **Example**
@@ -105,10 +95,6 @@ lifetime_rows:              ᴺᵁᴸᴸ
 lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
 has_own_data:               0
-loading_dependencies_database: []
-loading_dependencies_table:    []
-loading_dependent_database:    []
-loading_dependent_table:       []
 
 Row 2:
 ──────
@@ -136,8 +122,4 @@ lifetime_rows:              ᴺᵁᴸᴸ
 lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
 has_own_data:               0
-loading_dependencies_database: []
-loading_dependencies_table:    []
-loading_dependent_database:    []
-loading_dependent_table:       []
 ```

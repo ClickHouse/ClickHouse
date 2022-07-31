@@ -78,6 +78,9 @@ private:
 
     template <typename ... Params, typename... Args>
     void deserializeImpl(IColumn & column, DeserializeFunctionPtr<Params...> func, Args &&... args) const;
+
+    // template <typename Creator>
+    // static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);
 };
 
 }

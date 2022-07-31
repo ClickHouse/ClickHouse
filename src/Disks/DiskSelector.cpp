@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Interpreters/Context.h>
 
 #include <set>
@@ -68,7 +68,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
-        if (!result->getDisksMap().contains(disk_name))
+        if (result->getDisksMap().count(disk_name) == 0)
         {
             result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context, result->getDisksMap()));
         }

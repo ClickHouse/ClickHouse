@@ -95,10 +95,7 @@ def test_blocade_leader(started_cluster):
         wait_nodes()
         try:
             for i, node in enumerate([node1, node2, node3]):
-                node.query(
-                    "CREATE DATABASE IF NOT EXISTS ordinary ENGINE=Ordinary",
-                    settings={"allow_deprecated_database_ordinary": 1},
-                )
+                node.query("CREATE DATABASE IF NOT EXISTS ordinary ENGINE=Ordinary")
                 node.query(
                     "CREATE TABLE IF NOT EXISTS ordinary.t1 (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t1', '{}') ORDER BY tuple()".format(
                         i + 1
@@ -299,10 +296,7 @@ def test_blocade_leader_twice(started_cluster):
         wait_nodes()
         try:
             for i, node in enumerate([node1, node2, node3]):
-                node.query(
-                    "CREATE DATABASE IF NOT EXISTS ordinary ENGINE=Ordinary",
-                    settings={"allow_deprecated_database_ordinary": 1},
-                )
+                node.query("CREATE DATABASE IF NOT EXISTS ordinary ENGINE=Ordinary")
                 node.query(
                     "CREATE TABLE IF NOT EXISTS ordinary.t2 (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t2', '{}') ORDER BY tuple()".format(
                         i + 1

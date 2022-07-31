@@ -393,6 +393,20 @@ if args.report == "main":
             ]
         )
 
+    unmarked_short_rows = tsvRows("report/unexpected-query-duration.tsv")
+    error_tests += len(unmarked_short_rows)
+    addSimpleTable(
+        "Unexpected Query Duration",
+        ["Problem", 'Marked as "short"?', "Run time, s", "Test", "#", "Query"],
+        unmarked_short_rows,
+    )
+    if unmarked_short_rows:
+        errors_explained.append(
+            [
+                f'<a href="#{currentTableAnchor()}">Some queries have unexpected duration</a>'
+            ]
+        )
+
     def add_partial():
         rows = tsvRows("report/partial-queries-report.tsv")
         if not rows:
@@ -652,16 +666,12 @@ if args.report == "main":
     # Don't show mildly unstable queries, only the very unstable ones we
     # treat as errors.
     if very_unstable_queries:
+        if very_unstable_queries > 5:
+            error_tests += very_unstable_queries
+            status = "failure"
         message_array.append(str(very_unstable_queries) + " unstable")
-    # FIXME: uncomment the following lines when tests are stable and
-    #     reliable
-    #     if very_unstable_queries > 5:
-    #         error_tests += very_unstable_queries
-    #         status = "failure"
-    #
-    # error_tests += slow_average_tests
-    # FIXME: until here
 
+    error_tests += slow_average_tests
     if error_tests:
         status = "failure"
         message_array.insert(0, str(error_tests) + " errors")

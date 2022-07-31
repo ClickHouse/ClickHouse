@@ -1,9 +1,9 @@
 ---
-sidebar_position: 68
-sidebar_label: Build on Linux for RISC-V 64
+toc_priority: 68
+toc_title: Build on Linux for RISC-V 64
 ---
 
-# How to Build ClickHouse on Linux for RISC-V 64 Architecture 
+# How to Build ClickHouse on Linux for RISC-V 64 Architecture {#how-to-build-clickhouse-on-linux-for-risc-v-64-architecture}
 
 As of writing (11.11.2021) building for risc-v considered to be highly experimental. Not all features can be enabled.
 
@@ -23,7 +23,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ``` bash
 cd ClickHouse
 mkdir build-riscv64
-CC=clang-14 CXX=clang++-14 cmake . -Bbuild-riscv64 -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-riscv64.cmake -DGLIBC_COMPATIBILITY=OFF -DENABLE_LDAP=OFF  -DOPENSSL_NO_ASM=ON -DENABLE_JEMALLOC=ON -DENABLE_PARQUET=OFF -DENABLE_ORC=OFF -DUSE_UNWIND=OFF -DENABLE_GRPC=OFF -DENABLE_HDFS=OFF -DENABLE_MYSQL=OFF
+CC=clang-13 CXX=clang++-13 cmake . -Bbuild-riscv64 -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-riscv64.cmake -DGLIBC_COMPATIBILITY=OFF -DENABLE_LDAP=OFF  -DOPENSSL_NO_ASM=ON -DENABLE_JEMALLOC=ON -DENABLE_PARQUET=OFF -DENABLE_ORC=OFF -DUSE_UNWIND=OFF -DENABLE_GRPC=OFF -DENABLE_HDFS=OFF -DENABLE_MYSQL=OFF
 ninja -C build-riscv64
 ```
 

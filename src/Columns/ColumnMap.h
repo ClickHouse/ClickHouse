@@ -36,8 +36,7 @@ public:
     static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
     static Ptr create(ColumnPtr && arg) { return create(arg); }
 
-    template <typename ... Args>
-    requires (IsMutableColumns<Args ...>::value)
+    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
     static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
 
     std::string getName() const override;

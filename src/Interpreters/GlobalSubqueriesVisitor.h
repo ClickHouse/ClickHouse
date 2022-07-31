@@ -39,7 +39,6 @@ public:
     {
         size_t subquery_depth;
         bool is_remote;
-        bool is_explain;
         TemporaryTablesMapping & external_tables;
         SubqueriesForSets & subqueries_for_sets;
         bool & has_global_subqueries;
@@ -48,14 +47,12 @@ public:
             ContextPtr context_,
             size_t subquery_depth_,
             bool is_remote_,
-            bool is_explain_,
             TemporaryTablesMapping & tables,
             SubqueriesForSets & subqueries_for_sets_,
             bool & has_global_subqueries_)
             : WithContext(context_)
             , subquery_depth(subquery_depth_)
             , is_remote(is_remote_)
-            , is_explain(is_explain_)
             , external_tables(tables)
             , subqueries_for_sets(subqueries_for_sets_)
             , has_global_subqueries(has_global_subqueries_)
@@ -163,11 +160,7 @@ public:
             /// We need to materialize external tables immediately because reading from distributed
             /// tables might generate local plans which can refer to external tables during index
             /// analysis. It's too late to populate the external table via CreatingSetsTransform.
-            if (is_explain)
-            {
-                /// Do not materialize external tables if it's explain statement.
-            }
-            else if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
+            if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
             {
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
@@ -239,7 +232,7 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
                 || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             data.addExternalStorage(table_elem.table_expression, true);

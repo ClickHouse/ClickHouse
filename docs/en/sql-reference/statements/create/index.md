@@ -1,9 +1,10 @@
 ---
-sidebar_position: 34
-sidebar_label: CREATE
+toc_folder_title: CREATE
+toc_priority: 34
+toc_title: Overview
 ---
 
-# CREATE Queries
+# CREATE Queries {#create-queries}
 
 Create queries make a new entity of one of the following kinds:
 

@@ -48,9 +48,7 @@ public:
 
     TaskHolder createTask(const std::string & log_name, const TaskFunc & function);
 
-    /// As for MergeTreeBackgroundExecutor we refuse to implement tasks eviction, because it will
-    /// be error prone. We support only increasing number of threads at runtime.
-    void increaseThreadsCount(size_t new_threads_count);
+    size_t getNumberOfThreads() const { return size; }
 
     /// thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
     BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_);
@@ -62,25 +60,21 @@ private:
     void threadFunction();
     void delayExecutionThreadFunction();
 
-    void scheduleTask(TaskInfoPtr task_info);
-
     /// Schedule task for execution after specified delay from now.
     void scheduleDelayedTask(const TaskInfoPtr & task_info, size_t ms, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
     /// Remove task, that was scheduled with delay, from schedule.
     void cancelDelayedTask(const TaskInfoPtr & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
+    /// Number for worker threads.
+    const size_t size;
     std::atomic<bool> shutdown {false};
-
-    /// Tasks.
-    std::condition_variable tasks_cond_var;
-    std::mutex tasks_mutex;
-    std::deque<TaskInfoPtr> tasks;
     Threads threads;
+    Poco::NotificationQueue queue;
 
-    /// Delayed tasks.
+    /// Delayed notifications.
 
-    std::condition_variable delayed_tasks_cond_var;
+    std::condition_variable wakeup_cond;
     std::mutex delayed_tasks_mutex;
     /// Thread waiting for next delayed task.
     ThreadFromGlobalPool delayed_thread;
@@ -108,7 +102,7 @@ public:
 
     /// Schedule for execution after specified delay.
     /// If overwrite is set then the task will be re-scheduled (if it was already scheduled, i.e. delayed == true).
-    bool scheduleAfter(size_t milliseconds, bool overwrite = true);
+    bool scheduleAfter(size_t ms, bool overwrite = true);
 
     /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
     void deactivate();
@@ -167,7 +161,7 @@ public:
             task_info->deactivate();
     }
 
-    explicit operator bool() const { return task_info != nullptr; }
+    operator bool() const { return task_info != nullptr; } /// NOLINT
 
     BackgroundSchedulePoolTaskInfo * operator->() { return task_info.get(); }
     const BackgroundSchedulePoolTaskInfo * operator->() const { return task_info.get(); }

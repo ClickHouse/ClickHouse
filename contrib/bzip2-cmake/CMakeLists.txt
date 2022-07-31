@@ -1,6 +1,6 @@
 option(ENABLE_BZIP2 "Enable bzip2 compression support" ${ENABLE_LIBRARIES})
 if (NOT ENABLE_BZIP2)
-    message (STATUS "Not using bzip2")
+    message (STATUS "bzip2 compression disabled")
     return()
 endif()
 
@@ -26,4 +26,8 @@ configure_file (
 
 add_library(_bzip2 ${SRCS})
 add_library(ch_contrib::bzip2 ALIAS _bzip2)
+# To avoid -Wreserved-id-macro we use SYSTEM:
+#
+#     clickhouse/contrib/bzip2/bzlib.h:23:9: error: macro name is a reserved identifier [-Werror,-Wreserved-id-macro]
+#     #define _BZLIB_H
 target_include_directories(_bzip2 SYSTEM BEFORE PUBLIC "${BZIP2_SOURCE_DIR}" "${BZIP2_BINARY_DIR}")

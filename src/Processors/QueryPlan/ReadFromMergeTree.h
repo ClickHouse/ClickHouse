@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/RequestResponse.h>
 
 namespace DB
 {
@@ -9,8 +8,6 @@ namespace DB
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 class Pipe;
-
-using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 struct MergeTreeDataSelectSamplingData
 {
@@ -103,8 +100,7 @@ public:
         bool enable_parallel_reading
     );
 
-    static constexpr auto name = "ReadFromMergeTree";
-    String getName() const override { return name; }
+    String getName() const override { return "ReadFromMergeTree"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -114,7 +110,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    StorageID getStorageID() const { return data.getStorageID(); }
+    const StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
@@ -131,13 +127,6 @@ public:
         const Names & real_column_names,
         bool sample_factor_column_queried,
         Poco::Logger * log);
-
-    ContextPtr getContext() const { return context; }
-    const SelectQueryInfo & getQueryInfo() const { return query_info; }
-    StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
-
-    void setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> read_in_order_optimizer);
-    void setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info);
 
 private:
     const MergeTreeReaderSettings reader_settings;

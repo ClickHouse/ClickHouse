@@ -2,7 +2,7 @@
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -92,7 +92,7 @@ String Macros::expand(const String & s,
             res += info.table_id.table_name;
             info.expanded_table = true;
         }
-        else if (macro_name == "uuid" && !info.expand_special_macros_only)
+        else if (macro_name == "uuid")
         {
             if (info.table_id.uuid == UUIDHelpers::Nil)
                 throw Exception("Macro 'uuid' and empty arguments of ReplicatedMergeTree "
@@ -109,12 +109,12 @@ String Macros::expand(const String & s,
         else if (info.shard && macro_name == "shard")
         {
             res += *info.shard;
-            info.expanded_other = true;
+            info.expanded_uuid = true;
         }
         else if (info.replica && macro_name == "replica")
         {
             res += *info.replica;
-            info.expanded_other = true;
+            info.expanded_uuid = true;
         }
         else if (info.ignore_unknown || info.expand_special_macros_only)
         {

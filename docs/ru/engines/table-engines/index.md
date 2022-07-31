@@ -1,6 +1,7 @@
 ---
-sidebar_label: "Движки таблиц"
-sidebar_position: 26
+toc_folder_title: "Движки таблиц"
+toc_priority: 26
+toc_title: "Введение"
 ---
 
 

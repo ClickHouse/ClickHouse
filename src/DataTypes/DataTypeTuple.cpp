@@ -54,6 +54,9 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
         if (name.empty())
             return Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
+        if (isNumericASCII(name[0]))
+            return Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
+
         if (!names_set.insert(name).second)
             return Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
     }
@@ -212,19 +215,6 @@ size_t DataTypeTuple::getPositionByName(const String & name) const
         if (names[i] == name)
             return i;
     throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-}
-
-std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name) const
-{
-    size_t size = elems.size();
-    for (size_t i = 0; i < size; ++i)
-    {
-        if (names[i] == name)
-        {
-            return std::optional<size_t>(i);
-        }
-    }
-    return std::nullopt;
 }
 
 String DataTypeTuple::getNameByPosition(size_t i) const

@@ -21,7 +21,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Push to Dockerhub"
+NAME = "Push to Dockerhub (actions)"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
 
@@ -490,7 +490,7 @@ def main():
         NAME,
     )
     ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
 
     if status == "error":
         sys.exit(1)

@@ -49,9 +49,6 @@ void registerFunctionBase64Decode(FunctionFactory &);
 void registerFunctionTryBase64Decode(FunctionFactory &);
 #endif
 
-void registerFunctionBase58Encode(FunctionFactory &);
-void registerFunctionBase58Decode(FunctionFactory &);
-
 #if USE_NLP
 void registerFunctionStem(FunctionFactory &);
 void registerFunctionSynonyms(FunctionFactory &);
@@ -107,9 +104,6 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionBase64Decode(factory);
     registerFunctionTryBase64Decode(factory);
 #endif
-
-    registerFunctionBase58Encode(factory);
-    registerFunctionBase58Decode(factory);
 
 #if USE_NLP
     registerFunctionStem(factory);

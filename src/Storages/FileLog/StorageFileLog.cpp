@@ -9,15 +9,17 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSource.h>
+#include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -677,7 +679,7 @@ bool StorageFileLog::streamToViews()
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot);
 
     auto max_streams_number = std::min<UInt64>(filelog_settings->max_threads.value, file_infos.file_names.size());
     /// No files to parse
@@ -718,10 +720,9 @@ bool StorageFileLog::streamToViews()
 
     assertBlocksHaveEqualStructure(input.getHeader(), block_io.pipeline.getHeader(), "StorageFileLog streamToViews");
 
-    std::atomic<size_t> rows = 0;
+    size_t rows = 0;
     {
         block_io.pipeline.complete(std::move(input));
-        block_io.pipeline.setNumThreads(max_streams_number);
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
@@ -761,7 +762,7 @@ void registerStorageFileLog(StorageFactory & factory)
 
         if (!num_threads) /// Default
         {
-            num_threads = std::max(1U, physical_cpu_cores / 4);
+            num_threads = std::max(unsigned(1), physical_cpu_cores / 4);
             filelog_settings->set("max_threads", num_threads);
         }
         else if (num_threads > physical_cpu_cores)
@@ -803,10 +804,10 @@ void registerStorageFileLog(StorageFactory & factory)
         auto path_ast = evaluateConstantExpressionAsLiteral(engine_args[0], args.getContext());
         auto format_ast = evaluateConstantExpressionAsLiteral(engine_args[1], args.getContext());
 
-        auto path = checkAndGetLiteralArgument<String>(path_ast, "path");
-        auto format = checkAndGetLiteralArgument<String>(format_ast, "format");
+        auto path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
+        auto format = format_ast->as<ASTLiteral &>().value.safeGet<String>();
 
-        return std::make_shared<StorageFileLog>(
+        return StorageFileLog::create(
             args.table_id,
             args.getContext(),
             args.columns,

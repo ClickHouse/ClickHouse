@@ -12,7 +12,6 @@
 
 namespace DB
 {
-class IBackupCoordination;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
@@ -27,13 +26,7 @@ public:
         OpenMode open_mode = OpenMode::WRITE;
         BackupInfo backup_info;
         std::optional<BackupInfo> base_backup_info;
-        String compression_method;
-        int compression_level = -1;
-        String password;
         ContextPtr context;
-        bool is_internal_backup = false;
-        std::shared_ptr<IBackupCoordination> backup_coordination;
-        std::optional<UUID> backup_uuid;
     };
 
     static BackupFactory & instance();

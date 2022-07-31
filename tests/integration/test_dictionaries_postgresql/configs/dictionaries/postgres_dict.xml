@@ -4,7 +4,7 @@
       <name>dict0</name>
       <source>
          <postgresql>
-            <db>postgres_database</db>
+            <db>clickhouse</db>
             <host>postgres1</host>
             <port>5432</port>
             <user>postgres</user>
@@ -38,7 +38,7 @@
       <name>dict1</name>
       <source>
          <postgresql>
-            <db>postgres_database</db>
+            <db>clickhouse</db>
             <user>postgres</user>
             <password>mysecretpassword</password>
             <table>test1</table>

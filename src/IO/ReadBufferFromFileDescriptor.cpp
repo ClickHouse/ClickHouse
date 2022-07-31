@@ -1,5 +1,5 @@
-#include <cerrno>
-#include <ctime>
+#include <errno.h>
+#include <time.h>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -8,9 +8,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Progress.h>
-#include <Common/filesystemHelpers.h>
 #include <sys/stat.h>
-#include <Interpreters/Context.h>
 
 
 #ifdef HAS_RESERVED_IDENTIFIER
@@ -40,6 +38,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_SELECT;
+    extern const int CANNOT_FSTAT;
     extern const int CANNOT_ADVISE;
 }
 
@@ -192,7 +191,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
             off_t res = ::lseek(fd, seek_pos, SEEK_SET);
             if (-1 == res)
-                throwFromErrnoWithPath(fmt::format("Cannot seek through file {} at offset {}", getFileName(), seek_pos), getFileName(),
+                throwFromErrnoWithPath("Cannot seek through file " + getFileName(), getFileName(),
                     ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             /// Also note that seeking past the file size is not allowed.
@@ -250,9 +249,13 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 }
 
 
-size_t ReadBufferFromFileDescriptor::getFileSize()
+off_t ReadBufferFromFileDescriptor::size()
 {
-    return getSizeFromFileDescriptor(fd, getFileName());
+    struct stat buf;
+    int res = fstat(fd, &buf);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot execute fstat " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSTAT);
+    return buf.st_size;
 }
 
 

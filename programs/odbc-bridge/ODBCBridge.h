@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
-#include <Bridge/IBridge.h>
+#include <bridge/IBridge.h>
 #include "HandlerFactory.h"
 
 

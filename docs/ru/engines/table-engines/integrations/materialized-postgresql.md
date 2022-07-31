@@ -1,6 +1,6 @@
 ---
-sidebar_position: 12
-sidebar_label: MaterializedPostgreSQL
+toc_priority: 12
+toc_title: MaterializedPostgreSQL
 ---
 
 # MaterializedPostgreSQL {#materialize-postgresql}
@@ -51,5 +51,5 @@ PRIMARY KEY key;
 SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Репликация **TOAST**-значений не поддерживается. Для типа данных будет использоваться значение по умолчанию.

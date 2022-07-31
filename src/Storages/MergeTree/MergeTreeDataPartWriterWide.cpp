@@ -5,7 +5,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -71,7 +71,6 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
 
 MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const MergeTreeData::DataPartPtr & data_part_,
-    DataPartStorageBuilderPtr data_part_storage_builder_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
@@ -79,7 +78,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
-    : MergeTreeDataPartWriterOnDisk(data_part_, std::move(data_part_storage_builder_), columns_list_, metadata_snapshot_,
+    : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
            indices_to_recalc_, marks_file_extension_,
            default_codec_, settings_, index_granularity_)
 {
@@ -98,7 +97,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
-        if (column_streams.contains(stream_name))
+        if (column_streams.count(stream_name))
             return;
 
         const auto & subtype = substream_path.back().data.type;
@@ -112,12 +111,11 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
-            data_part_storage_builder,
-            stream_name, DATA_FILE_EXTENSION,
-            stream_name, marks_file_extension,
+            data_part->volume->getDisk(),
+            part_path + stream_name, DATA_FILE_EXTENSION,
+            part_path + stream_name, marks_file_extension,
             compression_codec,
-            settings.max_compress_block_size,
-            settings.query_write_settings);
+            settings.max_compress_block_size);
     };
 
     ISerialization::SubstreamPath path;
@@ -135,7 +133,7 @@ ISerialization::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGett
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
-        if (is_offsets && offset_columns.contains(stream_name))
+        if (is_offsets && offset_columns.count(stream_name))
             return nullptr;
 
         return &column_streams.at(stream_name)->compressed;
@@ -285,7 +283,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
-        if (is_offsets && offset_columns.contains(stream_name))
+        if (is_offsets && offset_columns.count(stream_name))
             return;
 
         Stream & stream = *column_streams[stream_name];
@@ -324,7 +322,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         /// Don't write offsets more than one time for Nested type.
-        if (is_offsets && offset_columns.contains(stream_name))
+        if (is_offsets && offset_columns.count(stream_name))
             return;
 
         column_streams[stream_name]->compressed.nextIfAtEnd();
@@ -364,7 +362,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
         if (granule.mark_on_start)
         {
-            if (last_non_written_marks.contains(name))
+            if (last_non_written_marks.count(name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "We have to add new mark for column, but already have non written mark. Current mark {}, total marks {}, offset {}", getCurrentMark(), index_granularity.getMarksCount(), rows_written_in_last_mark);
             last_non_written_marks[name] = getCurrentMarksForColumn(name_and_type, offset_columns, serialize_settings.path);
         }
@@ -410,18 +408,17 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     if (!type->isValueRepresentedByNumber() || type->haveSubtypes() || serialization->getKind() != ISerialization::Kind::DEFAULT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type->getName());
 
+    auto disk = data_part->volume->getDisk();
     String escaped_name = escapeForFileName(name);
-    String mrk_path = escaped_name + marks_file_extension;
-    String bin_path = escaped_name + DATA_FILE_EXTENSION;
-
-    auto data_part_storage = data_part_storage_builder->getStorage();
+    String mrk_path = part_path + escaped_name + marks_file_extension;
+    String bin_path = part_path + escaped_name + DATA_FILE_EXTENSION;
 
     /// Some columns may be removed because of ttl. Skip them.
-    if (!data_part_storage->exists(mrk_path))
+    if (!disk->exists(mrk_path))
         return;
 
-    auto mrk_in = data_part_storage->readFile(mrk_path, {}, std::nullopt, std::nullopt);
-    DB::CompressedReadBufferFromFile bin_in(data_part_storage->readFile(bin_path, {}, std::nullopt, std::nullopt));
+    auto mrk_in = disk->readFile(mrk_path);
+    DB::CompressedReadBufferFromFile bin_in(disk->readFile(bin_path));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;
@@ -472,7 +469,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         if (index_granularity_rows != index_granularity.getMarkRows(mark_num))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Incorrect mark rows for part {} for mark #{} (compressed offset {}, decompressed offset {}), in-memory {}, on disk {}, total marks {}",
-                data_part_storage_builder->getFullPath(), mark_num, offset_in_compressed_file, offset_in_decompressed_block, index_granularity.getMarkRows(mark_num), index_granularity_rows, index_granularity.getMarksCount());
+                data_part->getFullPath(), mark_num, offset_in_compressed_file, offset_in_decompressed_block, index_granularity.getMarkRows(mark_num), index_granularity_rows, index_granularity.getMarksCount());
 
         auto column = type->createColumn();
 

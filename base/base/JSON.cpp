@@ -1,5 +1,5 @@
 #include <string>
-#include <cstring>
+#include <string.h>
 
 #include <Poco/UTF8Encoding.h>
 #include <Poco/NumberParser.h>
@@ -12,14 +12,7 @@
 #define JSON_MAX_DEPTH 100
 
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
-#endif
-POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException") // NOLINT(cert-err60-cpp, modernize-use-noexcept, hicpp-use-noexcept)
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException")
 
 
 /// Прочитать беззнаковое целое в простом формате из не-0-terminated строки.
@@ -669,18 +662,18 @@ std::string JSON::getName() const
     return getString();
 }
 
-std::string_view JSON::getRawString() const
+StringRef JSON::getRawString() const
 {
     Pos s = ptr_begin;
     if (*s != '"')
         throw JSONException(std::string("JSON: expected \", got ") + *s);
     while (++s != ptr_end && *s != '"');
     if (s != ptr_end)
-        return std::string_view(ptr_begin + 1, s - ptr_begin - 1);
+        return StringRef(ptr_begin + 1, s - ptr_begin - 1);
     throw JSONException("JSON: incorrect syntax (expected end of string, found end of JSON).");
 }
 
-std::string_view JSON::getRawName() const
+StringRef JSON::getRawName() const
 {
     return getRawString();
 }

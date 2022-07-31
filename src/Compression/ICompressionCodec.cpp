@@ -91,6 +91,7 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
     return header_size + compressed_bytes_written;
 }
 
+
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
     assert(source != nullptr && dest != nullptr);

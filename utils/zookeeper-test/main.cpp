@@ -4,7 +4,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/LineReader.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <fmt/format.h>
 #include <random>
 #include <iterator>
@@ -238,9 +238,9 @@ std::string currentDateTime()
     tstruct = *localtime(&now);
     // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
     // for more information about date/time format
-    size_t size = strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tstruct);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tstruct);
 
-    return std::string(buf, size);
+    return buf;
 }
 
 

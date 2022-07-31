@@ -1,5 +1,3 @@
--- { echo }
-
 select '-- no-tld';
 -- even if there is no TLD, 2-nd level by default anyway
 -- FIXME: make this behavior optional (so that TLD for host never changed, either empty or something real)
@@ -44,14 +42,3 @@ select '-- no new line';
 select cutToFirstSignificantSubdomainCustom('foo.bar', 'no_new_line_list');
 select cutToFirstSignificantSubdomainCustom('a.foo.bar', 'no_new_line_list');
 select cutToFirstSignificantSubdomainCustom('a.foo.baz', 'no_new_line_list');
-
-select '-- asterisk';
-select cutToFirstSignificantSubdomainCustom('foo.something.sheffield.sch.uk', 'public_suffix_list');
-select cutToFirstSignificantSubdomainCustom('something.sheffield.sch.uk', 'public_suffix_list');
-select cutToFirstSignificantSubdomainCustom('sheffield.sch.uk', 'public_suffix_list');
-
-select '-- exclamation mark';
-select cutToFirstSignificantSubdomainCustom('foo.kawasaki.jp', 'public_suffix_list');
-select cutToFirstSignificantSubdomainCustom('foo.foo.kawasaki.jp', 'public_suffix_list');
-select cutToFirstSignificantSubdomainCustom('city.kawasaki.jp', 'public_suffix_list');
-select cutToFirstSignificantSubdomainCustom('some.city.kawasaki.jp', 'public_suffix_list');

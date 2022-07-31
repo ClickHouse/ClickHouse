@@ -14,8 +14,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortDescriptionWithPositions & desc, Int64 total_bytes_)
-    : all_columns(chunk.getColumns()), num_rows(chunk.getNumRows()), total_bytes(total_bytes_)
+FinishAggregatingInOrderAlgorithm::State::State(
+    const Chunk & chunk, const SortDescription & desc, Int64 total_bytes_)
+    : all_columns(chunk.getColumns())
+    , num_rows(chunk.getNumRows())
+    , total_bytes(total_bytes_)
 {
     if (!chunk)
         return;
@@ -29,13 +32,25 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     const Block & header_,
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
-    const SortDescription & description_,
+    SortDescription description_,
     size_t max_block_size_,
     size_t max_block_bytes_)
-    : header(header_), num_inputs(num_inputs_), params(params_), max_block_size(max_block_size_), max_block_bytes(max_block_bytes_)
+    : header(header_)
+    , num_inputs(num_inputs_)
+    , params(params_)
+    , description(std::move(description_))
+    , max_block_size(max_block_size_)
+    , max_block_bytes(max_block_bytes_)
 {
-    for (const auto & column_description : description_)
-        description.emplace_back(column_description, header_.getPositionByName(column_description.column_name));
+    /// Replace column names in description to positions.
+    for (auto & column_description : description)
+    {
+        if (!column_description.column_name.empty())
+        {
+            column_description.column_number = header_.getPositionByName(column_description.column_name);
+            column_description.column_name.clear();
+        }
+    }
 }
 
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)

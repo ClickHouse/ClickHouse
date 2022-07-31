@@ -1,7 +1,6 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <QueryPipeline/BlockIO.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -10,7 +9,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
-#include <Interpreters/MergeTreeTransaction.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/queryToString.h>
@@ -146,14 +144,12 @@ namespace
 struct QueryASTSettings
 {
     bool graph = false;
-    bool optimize = false;
 
     constexpr static char name[] = "AST";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"graph", graph},
-        {"optimize", optimize}
     };
 };
 
@@ -272,20 +268,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
-    SelectQueryOptions options;
-    options.setExplain();
-
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
-            if (settings.optimize)
-            {
-                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
-                ExplainAnalyzedSyntaxVisitor(data).visit(query);
-            }
-
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
             else
@@ -311,7 +298,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
             interpreter.buildQueryPlan(plan);
 
             if (settings.optimize)
@@ -346,7 +333,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
 
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
                 interpreter.buildQueryPlan(plan);
                 auto pipeline = plan.buildQueryPipeline(
                     QueryPlanOptimizationSettings::fromContext(getContext()),
@@ -355,8 +342,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (settings.graph)
                 {
                     /// Pipe holds QueryPlan, should not go out-of-scope
-                    QueryPlanResourceHolder resources;
-                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
+                    auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline));
                     const auto & processors = pipe.getProcessors();
 
                     if (settings.compact)
@@ -412,23 +398,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);
             override_info.appendTo(buf);
-            break;
-        }
-        case ASTExplainQuery::CurrentTransaction:
-        {
-            if (ast.getSettings())
-                throw Exception("Settings are not supported for EXPLAIN CURRENT TRANSACTION query.", ErrorCodes::UNKNOWN_SETTING);
-
-            if (auto txn = getContext()->getCurrentTransaction())
-            {
-                String dump = txn->dumpDescription();
-                buf.write(dump.data(), dump.size());
-            }
-            else
-            {
-                writeCString("<no current transaction>", buf);
-            }
-
             break;
         }
     }

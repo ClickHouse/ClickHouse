@@ -22,15 +22,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
-    : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(header, description)
+MergeSorter::MergeSorter(Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
+    : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     Chunks nonempty_chunks;
-    size_t chunks_size = chunks.size();
-
-    for (size_t chunk_index = 0; chunk_index < chunks_size; ++chunk_index)
+    for (auto & chunk : chunks)
     {
-        auto & chunk = chunks[chunk_index];
         if (chunk.getNumRows() == 0)
             continue;
 
@@ -39,7 +36,7 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
         /// which can be inefficient.
         convertToFullIfSparse(chunk);
 
-        cursors.emplace_back(header, chunk.getColumns(), description, chunk_index);
+        cursors.emplace_back(chunk.getColumns(), description);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
@@ -47,11 +44,12 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
 
     chunks.swap(nonempty_chunks);
 
-    queue_variants.callOnBatchVariant([&](auto & queue)
-    {
-        using QueueType = std::decay_t<decltype(queue)>;
-        queue = QueueType(cursors);
-    });
+    if (has_collation)
+        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+    else if (description.size() > 1)
+        queue_without_collation = SortingHeap<SortCursor>(cursors);
+    else
+        queue_simple = SortingHeap<SimpleSortCursor>(cursors);
 }
 
 
@@ -67,17 +65,17 @@ Chunk MergeSorter::read()
         return res;
     }
 
-    Chunk result = queue_variants.callOnBatchVariant([&](auto & queue)
-    {
-        return mergeBatchImpl(queue);
-    });
-
-    return result;
+    if (has_collation)
+        return mergeImpl(queue_with_collation);
+    else if (description.size() > 1)
+        return mergeImpl(queue_without_collation);
+    else
+        return mergeImpl(queue_simple);
 }
 
 
-template <typename TSortingQueue>
-Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
+template <typename TSortingHeap>
+Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
@@ -85,53 +83,38 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     /// Reserve
     if (queue.isValid())
     {
-        /// The size of output block will not be larger than the `max_merged_block_size`.
-        /// If redundant memory space is reserved, `MemoryTracker` will count more memory usage than actual usage.
-        size_t size_to_reserve = std::min(static_cast<size_t>(chunks[0].getNumRows()), max_merged_block_size);
+        /// The expected size of output block is the same as input block
+        size_t size_to_reserve = chunks[0].getNumRows();
         for (auto & column : merged_columns)
             column->reserve(size_to_reserve);
     }
+
+    /// TODO: Optimization when a single block left.
 
     /// Take rows from queue in right order and push to 'merged'.
     size_t merged_rows = 0;
     while (queue.isValid())
     {
-        auto [current_ptr, batch_size] = queue.current();
-        auto & current = *current_ptr;
+        auto current = queue.current();
 
-        if (merged_rows + batch_size > max_merged_block_size)
-            batch_size -= merged_rows + batch_size - max_merged_block_size;
-
-        bool limit_reached = false;
-        if (limit && total_merged_rows + batch_size > limit)
-        {
-            batch_size -= total_merged_rows + batch_size - limit;
-            limit_reached = true;
-        }
-
-        /// Append rows from queue.
+        /// Append a row from queue.
         for (size_t i = 0; i < num_columns; ++i)
-        {
-            if (batch_size == 1)
-                merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
-            else
-                merged_columns[i]->insertRangeFrom(*current->all_columns[i], current->getRow(), batch_size);
-        }
+            merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
 
-        total_merged_rows += batch_size;
-        merged_rows += batch_size;
+        ++total_merged_rows;
+        ++merged_rows;
 
         /// We don't need more rows because of limit has reached.
-        if (limit_reached)
+        if (limit && total_merged_rows == limit)
         {
             chunks.clear();
             break;
         }
 
-        queue.next(batch_size);
+        queue.next();
 
         /// It's enough for current output block but we will continue.
-        if (merged_rows >= max_merged_block_size)
+        if (merged_rows == max_merged_block_size)
             break;
     }
 
@@ -144,18 +127,27 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     return Chunk(std::move(merged_columns), merged_rows);
 }
 
+
 SortingTransform::SortingTransform(
     const Block & header,
     const SortDescription & description_,
-    size_t max_merged_block_size_,
-    UInt64 limit_,
-    bool increase_sort_description_compile_attempts)
+    size_t max_merged_block_size_, UInt64 limit_)
     : IProcessor({header}, {header})
     , description(description_)
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
 {
     const auto & sample = inputs.front().getHeader();
+
+    /// Replace column names to column position in sort_description.
+    for (auto & column_description : description)
+    {
+        if (!column_description.column_name.empty())
+        {
+            column_description.column_number = sample.getPositionByName(column_description.column_name);
+            column_description.column_name.clear();
+        }
+    }
 
     /// Remove constants from header and map old indexes to new.
     size_t num_columns = sample.columns();
@@ -172,28 +164,21 @@ SortingTransform::SortingTransform(
         }
     }
 
-    DataTypes sort_description_types;
-    sort_description_types.reserve(description.size());
-
     /// Remove constants from column_description and remap positions.
     SortDescription description_without_constants;
     description_without_constants.reserve(description.size());
     for (const auto & column_description : description)
     {
-        auto old_pos = header.getPositionByName(column_description.column_name);
+        auto old_pos = column_description.column_number;
         auto new_pos = map[old_pos];
-
         if (new_pos < num_columns)
         {
-            sort_description_types.emplace_back(sample.safeGetByPosition(old_pos).type);
             description_without_constants.push_back(column_description);
+            description_without_constants.back().column_number = new_pos;
         }
     }
 
     description.swap(description_without_constants);
-
-    if (SortQueueVariants(sort_description_types, description).variantSupportJITCompilation())
-        compileSortDescriptionIfNeeded(description, sort_description_types, increase_sort_description_compile_attempts /*increase_compile_attempts*/);
 }
 
 SortingTransform::~SortingTransform() = default;

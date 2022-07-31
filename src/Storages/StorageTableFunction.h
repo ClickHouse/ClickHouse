@@ -5,8 +5,6 @@
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/Context.h>
 
@@ -93,8 +91,7 @@ public:
             nested->drop();
     }
 
-    void read(
-            QueryPlan & query_plan,
+    Pipe read(
             const Names & column_names,
             const StorageSnapshotPtr & storage_snapshot,
             SelectQueryInfo & query_info,
@@ -107,27 +104,28 @@ public:
         for (const auto & c : column_names)
             cnames += c + " ";
         auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
-        storage->read(query_plan, column_names, nested_snapshot, query_info, context,
+        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr());
+        auto pipe = storage->read(column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
-        if (add_conversion)
+        if (!pipe.empty() && add_conversion)
         {
-            auto from_header = query_plan.getCurrentDataStream().header;
             auto to_header = getHeaderForProcessingStage(column_names, storage_snapshot,
                                                          query_info, context, processed_stage);
 
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                    from_header.getColumnsWithTypeAndName(),
+                    pipe.getHeader().getColumnsWithTypeAndName(),
                     to_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Name);
+            auto convert_actions = std::make_shared<ExpressionActions>(
+                convert_actions_dag,
+                ExpressionActionsSettings::fromSettings(context->getSettingsRef(), CompileExpressions::yes));
 
-            auto step = std::make_unique<ExpressionStep>(
-                query_plan.getCurrentDataStream(),
-                convert_actions_dag);
-
-            step->setStepDescription("Converting columns");
-            query_plan.addStep(std::move(step));
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, convert_actions);
+            });
         }
+        return pipe;
     }
 
     SinkToStoragePtr write(

@@ -96,7 +96,6 @@ bool ReadBufferFromEncryptedFile::nextImpl()
 
     encryptor.decrypt(encrypted_buffer.data(), bytes_read, working_buffer.begin());
 
-    offset += bytes_read;
     pos = working_buffer.begin();
     return true;
 }

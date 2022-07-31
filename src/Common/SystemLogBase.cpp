@@ -9,15 +9,12 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/ZooKeeperLog.h>
-#include <Interpreters/TransactionsInfoLog.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SystemLogBase.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/scope_guard.h>
 
 namespace DB
@@ -79,7 +76,7 @@ void SystemLogBase<LogElement>::add(const LogElement & element)
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     /// Should not log messages under mutex.
     bool queue_is_half_full = false;
@@ -139,7 +136,7 @@ void SystemLogBase<LogElement>::flush(bool force)
     uint64_t this_thread_requested_offset;
 
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
 
         if (is_shutdown)
             return;

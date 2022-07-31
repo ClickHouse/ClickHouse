@@ -1,5 +1,5 @@
 #include <IO/WriteHelpers.h>
-#include <cinttypes>
+#include <inttypes.h>
 #include <Common/hex.h>
 
 
@@ -52,7 +52,7 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 {
     writeBinary(e.code(), buf);
     writeBinary(String(e.name()), buf);
-    writeBinary(e.displayText() + getExtraExceptionInfo(e), buf);
+    writeBinary(e.displayText(), buf);
 
     if (with_stack_trace)
         writeBinary(e.getStackTraceString(), buf);
@@ -66,9 +66,9 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 
 /// The same, but quotes apply only if there are characters that do not match the identifier without quotes
 template <typename F>
-static inline void writeProbablyQuotedStringImpl(StringRef s, WriteBuffer & buf, F && write_quoted_string)
+static inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
 {
-    if (isValidIdentifier(s.toView())
+    if (isValidIdentifier(std::string_view{s})
         /// This are valid identifiers but are problematic if present unquoted in SQL query.
         && !(s.size == strlen("distinct") && 0 == strncasecmp(s.data, "distinct", strlen("distinct")))
         && !(s.size == strlen("all") && 0 == strncasecmp(s.data, "all", strlen("all"))))
@@ -79,19 +79,19 @@ static inline void writeProbablyQuotedStringImpl(StringRef s, WriteBuffer & buf,
         write_quoted_string(s, buf);
 }
 
-void writeProbablyBackQuotedString(StringRef s, WriteBuffer & buf)
+void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
 }
 
-void writeProbablyDoubleQuotedString(StringRef s, WriteBuffer & buf)
+void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
 }
 
-void writeProbablyBackQuotedStringMySQL(StringRef s, WriteBuffer & buf)
+void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](StringRef s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
 }
 
 void writePointerHex(const void * ptr, WriteBuffer & buf)

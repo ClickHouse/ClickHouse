@@ -4,7 +4,7 @@ toc_priority: 26
 toc_title: Introduction
 ---
 
-# Table Engines
+# Table Engines {#table_engines}
 
 The table engine (type of table) determines:
 
@@ -12,7 +12,7 @@ The table engine (type of table) determines:
 -   Which queries are supported, and how.
 -   Concurrent data access.
 -   Use of indexes, if present.
--   Whether multithread request execution is possible.
+-   Whether multithreaded request execution is possible.
 -   Data replication parameters.
 
 ## Engine Families {#engine-families}

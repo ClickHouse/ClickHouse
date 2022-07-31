@@ -1,10 +1,10 @@
 ---
-sidebar_label: Settings
-sidebar_position: 51
-slug: /en/operations/settings/
+toc_folder_title: Settings
+toc_priority: 55
+toc_title: Introduction
 ---
 
-# Settings Overview
+# Settings {#session-settings-intro}
 
 There are multiple ways to make all the settings described in this section of documentation.
 

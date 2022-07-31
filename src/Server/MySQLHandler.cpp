@@ -21,7 +21,7 @@
 #include <regex>
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/config_version.h>
 
@@ -94,7 +94,7 @@ void MySQLHandler::run()
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
+    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
 
     try
     {
@@ -331,7 +331,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         ReadBufferFromString replacement(replacement_query);
 
         auto query_context = session->makeQueryContext();
-        query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
+        query_context->setCurrentQueryId(Poco::format("mysql:%lu", connection_id));
         CurrentThread::QueryScope query_scope{query_context};
 
         std::atomic<size_t> affected_rows {0};
@@ -403,7 +403,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
     sequence_id = 2;
-    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
+    packet_endpoint = MySQLProtocol::PacketEndpoint::create(*in, *out, sequence_id);
     packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
 }
 
@@ -472,7 +472,7 @@ static String selectLimitReplacementQuery(const String & query)
     return query;
 }
 
-/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
+/// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id = 'mysql:[connection_id]'".
 static String killConnectionIdReplacementQuery(const String & query)
 {
     const String prefix = "KILL QUERY ";
@@ -482,7 +482,7 @@ static String killConnectionIdReplacementQuery(const String & query)
         static const std::regex expr{"^[0-9]"};
         if (std::regex_match(suffix, expr))
         {
-            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
+            String replacement = Poco::format("KILL QUERY WHERE query_id = 'mysql:%s'", suffix);
             return replacement;
         }
     }

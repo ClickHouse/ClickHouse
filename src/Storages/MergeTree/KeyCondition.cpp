@@ -53,7 +53,7 @@ String Range::toString() const
 
 
 /// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
-String extractFixedPrefixFromLikePattern(const String & like_pattern)
+static String extractFixedPrefixFromLikePattern(const String & like_pattern)
 {
     String fixed_prefix;
 
@@ -449,7 +449,7 @@ KeyCondition::KeyCondition(
     for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
         const auto & name = key_column_names[i];
-        if (!key_columns.contains(name))
+        if (!key_columns.count(name))
             key_columns[name] = i;
     }
 
@@ -487,7 +487,7 @@ KeyCondition::KeyCondition(
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
-    if (!key_columns.contains(column))
+    if (!key_columns.count(column))
         return false;
     rpn.emplace_back(RPNElement::FUNCTION_IN_RANGE, key_columns[column], range);
     rpn.emplace_back(RPNElement::FUNCTION_AND);
@@ -715,12 +715,18 @@ bool KeyCondition::transformConstantWithValidFunctions(
 
             if (is_valid_chain)
             {
+                /// Here we cast constant to the input type.
+                /// It is not clear, why this works in general.
+                /// I can imagine the case when expression like `column < const` is legal,
+                /// but `type(column)` and `type(const)` are of different types,
+                /// and const cannot be casted to column type.
+                /// (There could be `superType(type(column), type(const))` which is used for comparison).
+                ///
+                /// However, looks like this case newer happenes (I could not find such).
+                /// Let's assume that any two comparable types are castable to each other.
                 auto const_type = cur_node->result_type;
                 auto const_column = out_type->createColumnConst(1, out_value);
-                auto const_value = (*castColumnAccurateOrNull({const_column, out_type, ""}, const_type))[0];
-
-                if (const_value.isNull())
-                    return false;
+                auto const_value = (*castColumn({const_column, out_type, ""}, const_type))[0];
 
                 while (!chain.empty())
                 {
@@ -776,10 +782,10 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 {
     String expr_name = node->getColumnNameWithoutAlias();
 
-    if (array_joined_columns.contains(expr_name))
+    if (array_joined_columns.count(expr_name))
         return false;
 
-    if (!key_subexpr_names.contains(expr_name))
+    if (key_subexpr_names.count(expr_name) == 0)
         return false;
 
     if (out_value.isNull())
@@ -807,10 +813,10 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 {
     String expr_name = ast->getColumnNameWithoutAlias();
 
-    if (array_joined_columns.contains(expr_name))
+    if (array_joined_columns.count(expr_name))
         return false;
 
-    if (!key_subexpr_names.contains(expr_name))
+    if (key_subexpr_names.count(expr_name) == 0)
     {
         /// Let's check another one case.
         /// If our storage was created with moduloLegacy in partition key,
@@ -825,7 +831,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
         KeyDescription::moduloToModuloLegacyRecursive(adjusted_ast);
         expr_name = adjusted_ast->getColumnName();
 
-        if (!key_subexpr_names.contains(expr_name))
+        if (key_subexpr_names.count(expr_name) == 0)
             return false;
     }
 
@@ -1080,7 +1086,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     // Key columns should use canonical names for index analysis
     String name = node->getColumnNameWithoutAlias();
 
-    if (array_joined_columns.contains(name))
+    if (array_joined_columns.count(name))
         return false;
 
     auto it = key_columns.find(name);
@@ -1300,7 +1306,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 }
                 else
                 {
-                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
+                    DataTypePtr common_type = tryGetLeastSupertype({key_expr_type_not_null, const_type});
                     if (!common_type)
                         return false;
 
@@ -2050,7 +2056,7 @@ bool KeyCondition::mayBeTrueInRange(
 }
 
 String KeyCondition::RPNElement::toString() const { return toString("column " + std::to_string(key_column), false); }
-String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const
+String KeyCondition::RPNElement::toString(const std::string_view & column_name, bool print_constants) const
 {
     auto print_wrapped_column = [this, &column_name, print_constants](WriteBuffer & buf)
     {

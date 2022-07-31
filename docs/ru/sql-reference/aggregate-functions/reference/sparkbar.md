@@ -1,6 +1,6 @@
 ---
-sidebar_position: 311
-sidebar_label: sparkbar
+toc_priority: 311
+toc_title: sparkbar
 ---
 
 # sparkbar {#sparkbar}

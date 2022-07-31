@@ -27,7 +27,7 @@ MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MergeListEntry & merge_
     prev_untracked_memory = current_thread->untracked_memory;
     current_thread->untracked_memory = merge_list_entry->untracked_memory;
 
-    prev_query_id = std::string(current_thread->getQueryId());
+    prev_query_id = current_thread->getQueryId().toString();
     current_thread->setQueryId(merge_list_entry->query_id);
 }
 
@@ -60,12 +60,11 @@ MergeListElement::MergeListElement(
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
-    , description{"to apply mutate/merge in " + query_id}
 {
     for (const auto & source_part : future_part->parts)
     {
         source_part_names.emplace_back(source_part->name);
-        source_part_paths.emplace_back(source_part->data_part_storage->getFullPath());
+        source_part_paths.emplace_back(source_part->getFullPath());
 
         total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_marks += source_part->getMarksCount();
@@ -78,7 +77,7 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    memory_tracker.setDescription(description.c_str());
+    memory_tracker.setDescription("Mutate/Merge");
     /// MemoryTracker settings should be set here, because
     /// later (see MemoryTrackerThreadSwitcher)
     /// parent memory tracker will be changed, and if merge executed from the
@@ -88,7 +87,7 @@ MergeListElement::MergeListElement(
     /// thread_group::memory_tracker, but MemoryTrackerThreadSwitcher will reset parent).
     memory_tracker.setProfilerStep(settings.memory_profiler_step);
     memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
-    memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
+    memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage);
     if (settings.memory_tracker_fault_probability)
         memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
 

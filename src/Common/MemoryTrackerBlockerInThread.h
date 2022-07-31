@@ -11,12 +11,9 @@ private:
     static thread_local VariableContext level;
 
     VariableContext previous_level;
-
-    /// level_ - block in level and above
-    explicit MemoryTrackerBlockerInThread(VariableContext level_);
-
 public:
-    explicit MemoryTrackerBlockerInThread();
+    /// level_ - block in level and above
+    explicit MemoryTrackerBlockerInThread(VariableContext level_ = VariableContext::User);
     ~MemoryTrackerBlockerInThread();
 
     MemoryTrackerBlockerInThread(const MemoryTrackerBlockerInThread &) = delete;
@@ -26,6 +23,4 @@ public:
     {
         return counter > 0 && current_level >= level;
     }
-
-    friend class MemoryTracker;
 };

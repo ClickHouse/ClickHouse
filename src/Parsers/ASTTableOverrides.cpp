@@ -122,7 +122,7 @@ void ASTTableOverrideList::removeTableOverride(const String & name)
 
 bool ASTTableOverrideList::hasOverride(const String & name) const
 {
-    return positions.contains(name);
+    return positions.count(name);
 }
 
 void ASTTableOverrideList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

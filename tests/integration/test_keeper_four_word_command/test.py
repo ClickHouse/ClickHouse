@@ -6,6 +6,7 @@ import string
 import os
 import time
 from multiprocessing.dummy import Pool
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 from io import StringIO
 import csv
@@ -227,8 +228,8 @@ def test_cmd_mntr(started_cluster):
         # contains:
         #   10 nodes created by test
         #   3 nodes created by clickhouse "/clickhouse/task_queue/ddl"
-        #   1 root node, 2 keeper system nodes
-        assert int(result["zk_znode_count"]) == 13
+        #   1 root node
+        assert int(result["zk_znode_count"]) == 11
         assert int(result["zk_watch_count"]) == 2
         assert int(result["zk_ephemerals_count"]) == 2
         assert int(result["zk_approximate_data_size"]) > 0
@@ -294,7 +295,7 @@ def test_cmd_conf(started_cluster):
         assert "tcp_port_secure" not in result
         assert "superdigest" not in result
 
-        assert result["four_letter_word_allow_list"] == "*"
+        assert result["four_letter_word_white_list"] == "*"
         assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
         assert (
             result["snapshot_storage_path"]
@@ -369,7 +370,7 @@ def test_cmd_srvr(started_cluster):
         assert int(result["Connections"]) == 1
         assert int(result["Zxid"]) > 14
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "13"
+        assert result["Node count"] == "11"
 
     finally:
         destroy_zk_client(zk)
@@ -407,7 +408,7 @@ def test_cmd_stat(started_cluster):
         assert int(result["Connections"]) == 1
         assert int(result["Zxid"]) > 14
         assert result["Mode"] == "leader"
-        assert result["Node count"] == "13"
+        assert result["Node count"] == "11"
 
         # filter connection statistics
         cons = [n for n in data.split("\n") if "=" in n]

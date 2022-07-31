@@ -90,8 +90,9 @@ public:
 private:
     void downloadBaseOrProjectionPartToDisk(
             const String & replica_path,
-            DataPartStorageBuilderPtr & data_part_storage_builder,
+            const String & part_download_path,
             bool sync,
+            DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
             MergeTreeData::DataPart::Checksums & checksums,
             ThrottlerPtr throttler) const;

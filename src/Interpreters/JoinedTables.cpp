@@ -1,7 +1,5 @@
 #include <Interpreters/JoinedTables.h>
 
-#include <Core/SettingsEnums.h>
-
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -59,18 +57,9 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     if (!join || !join->table_expression)
         return;
 
-    const auto & table_join = join->table_join->as<ASTTableJoin &>();
-
     /// TODO: Push down for CROSS JOIN is not OK [disabled]
-    if (table_join.kind == JoinKind::Cross)
-        return;
-
-    /* Do not push down predicates for ASOF because it can lead to incorrect results
-     * (for example, if we will filter a suitable row before joining and will choose another, not the closest row).
-     * ANY join behavior can also be different with this optimization,
-     * but it's ok because we don't guarantee which row to choose for ANY, unlike ASOF, where we have to pick the closest one.
-     */
-    if (table_join.strictness == JoinStrictness::Asof)
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+    if (table_join.kind == ASTTableJoin::Kind::Cross)
         return;
 
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();
@@ -303,7 +292,6 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         return {};
 
     auto settings = context->getSettingsRef();
-    MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
     auto table_join = std::make_shared<TableJoin>(settings, context->getTemporaryVolume());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query.join();
@@ -317,19 +305,9 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         if (storage)
         {
             if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
-            {
                 table_join->setStorageJoin(storage_join);
-            }
-            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
-                     storage_dict && join_algorithm.isSet(JoinAlgorithm::DIRECT))
-            {
+            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
                 table_join->setStorageJoin(storage_dict);
-            }
-            else if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueStorage>(storage);
-                     storage_kv && join_algorithm.isSet(JoinAlgorithm::DIRECT))
-            {
-                table_join->setStorageJoin(storage_kv);
-            }
         }
     }
 

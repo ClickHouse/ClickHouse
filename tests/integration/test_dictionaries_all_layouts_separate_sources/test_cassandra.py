@@ -24,7 +24,7 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    cluster = ClickHouseCluster(__file__)
+    cluster = ClickHouseCluster(__file__, name=test_name)
 
     SOURCE = SourceCassandra(
         "Cassandra",

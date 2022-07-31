@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <array>
 

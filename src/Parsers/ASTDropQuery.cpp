@@ -72,8 +72,8 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (permanently)
         settings.ostr << " PERMANENTLY";
 
-    if (sync)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+    if (no_delay)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " NO DELAY" << (settings.hilite ? hilite_none : "");
 }
 
 }

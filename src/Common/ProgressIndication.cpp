@@ -8,7 +8,6 @@
 #include "Common/formatReadable.h"
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
-#include <Common/Stopwatch.h>
 #include "IO/WriteBufferFromString.h"
 #include <Databases/DatabaseMemory.h>
 
@@ -17,16 +16,16 @@ namespace
 {
     constexpr UInt64 ALL_THREADS = 0;
 
-    UInt64 aggregateCPUUsageNs(DB::ThreadIdToTimeMap times)
+    double calculateCPUUsage(DB::ThreadIdToTimeMap times, UInt64 elapsed)
     {
-        constexpr UInt64 us_to_ns = 1000;
-        return us_to_ns * std::accumulate(times.begin(), times.end(), 0ull,
-        [](UInt64 acc, const auto & elem)
+        auto accumulated = std::accumulate(times.begin(), times.end(), 0,
+        [](Int64 acc, const auto & elem)
         {
             if (elem.first == ALL_THREADS)
                 return acc;
             return acc + elem.second.time();
         });
+        return static_cast<double>(accumulated) / elapsed;
     }
 }
 
@@ -54,11 +53,8 @@ void ProgressIndication::resetProgress()
     show_progress_bar = false;
     written_progress_chars = 0;
     write_progress_on_update = false;
-    {
-        std::lock_guard lock(profile_events_mutex);
-        cpu_usage_meter.reset(static_cast<double>(clock_gettime_ns()));
-        thread_data.clear();
-    }
+    host_cpu_usage.clear();
+    thread_data.clear();
 }
 
 void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
@@ -75,31 +71,23 @@ void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool
 
 void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id)
 {
-    std::lock_guard lock(profile_events_mutex);
-
     auto & thread_to_times = thread_data[host];
     if (thread_to_times.contains(thread_id))
         return;
     thread_to_times[thread_id] = {};
 }
 
-void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data)
+void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time)
 {
-    std::lock_guard lock(profile_events_mutex);
-
-    UInt64 total_cpu_ns = 0;
     for (auto & new_host_map : new_thread_data)
     {
-        total_cpu_ns += aggregateCPUUsageNs(new_host_map.second);
+        host_cpu_usage[new_host_map.first] = calculateCPUUsage(new_host_map.second, elapsed_time);
         thread_data[new_host_map.first] = std::move(new_host_map.second);
     }
-    cpu_usage_meter.add(static_cast<double>(clock_gettime_ns()), total_cpu_ns);
 }
 
 size_t ProgressIndication::getUsedThreadsCount() const
 {
-    std::lock_guard lock(profile_events_mutex);
-
     return std::accumulate(thread_data.cbegin(), thread_data.cend(), 0,
         [] (size_t acc, auto const & threads)
         {
@@ -107,16 +95,16 @@ size_t ProgressIndication::getUsedThreadsCount() const
         });
 }
 
-double ProgressIndication::getCPUUsage()
+double ProgressIndication::getCPUUsage() const
 {
-    std::lock_guard lock(profile_events_mutex);
-    return cpu_usage_meter.rate(clock_gettime_ns());
+    double res = 0;
+    for (const auto & elem : host_cpu_usage)
+        res += elem.second;
+    return res;
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
 {
-    std::lock_guard lock(profile_events_mutex);
-
     return std::accumulate(thread_data.cbegin(), thread_data.cend(), MemoryUsage{},
         [](MemoryUsage const & acc, auto const & host_data)
         {
@@ -149,8 +137,6 @@ void ProgressIndication::writeFinalProgress()
 
 void ProgressIndication::writeProgress()
 {
-    std::lock_guard lock(progress_mutex);
-
     /// Output all progress bar commands to stderr at once to avoid flicker.
     WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
 
@@ -179,17 +165,18 @@ void ProgressIndication::writeProgress()
     message << '\r';
 
     size_t prefix_size = message.count();
+    size_t read_bytes = progress.read_raw_bytes ? progress.read_raw_bytes : progress.read_bytes;
 
     message << indicator << " Progress: ";
     message
         << formatReadableQuantity(progress.read_rows) << " rows, "
-        << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+        << formatReadableSizeWithDecimalSuffix(read_bytes);
 
     auto elapsed_ns = watch.elapsed();
     if (elapsed_ns)
         message << " ("
                 << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableSizeWithDecimalSuffix(read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
     else
         message << ". ";
 
@@ -205,10 +192,6 @@ void ProgressIndication::writeProgress()
     {
         WriteBufferFromOwnString profiling_msg_builder;
 
-        /// We don't want -0. that can appear due to rounding errors.
-        if (cpu_usage <= 0)
-            cpu_usage = 0;
-
         profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
 
         if (memory_usage > 0)
@@ -223,7 +206,7 @@ void ProgressIndication::writeProgress()
     int64_t remaining_space = static_cast<int64_t>(terminal_width) - written_progress_chars;
 
     /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
-    if (progress.total_rows_to_read || progress.total_bytes_to_read)
+    if (progress.total_rows_to_read || progress.total_raw_bytes_to_read)
     {
         size_t current_count, max_count;
         if (progress.total_rows_to_read)
@@ -233,8 +216,8 @@ void ProgressIndication::writeProgress()
         }
         else
         {
-            current_count = progress.read_bytes;
-            max_count = std::max(progress.read_bytes, progress.total_bytes_to_read);
+            current_count = progress.read_raw_bytes;
+            max_count = std::max(progress.read_raw_bytes, progress.total_raw_bytes_to_read);
         }
 
         /// To avoid flicker, display progress bar only if .5 seconds have passed since query execution start

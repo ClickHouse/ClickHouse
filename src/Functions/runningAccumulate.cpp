@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <Common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 
 namespace DB

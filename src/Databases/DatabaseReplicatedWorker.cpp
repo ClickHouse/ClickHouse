@@ -66,17 +66,9 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
     if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
-    {
         database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
-        zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
-        initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
-    }
     else
-    {
-        String log_entry_name = DDLTaskBase::getLogEntryName(our_log_ptr);
-        last_skipped_entry_name.emplace(log_entry_name);
-        initializeLogPointer(log_entry_name);
-    }
+        last_skipped_entry_name.emplace(DDLTaskBase::getLogEntryName(our_log_ptr));
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
@@ -84,51 +76,6 @@ String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
     auto zookeeper = getAndSetZooKeeper();
     return enqueueQueryImpl(zookeeper, entry, database);
 }
-
-
-bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
-{
-    auto zookeeper = getAndSetZooKeeper();
-    const auto our_log_ptr_path = database->replica_path + "/log_ptr";
-    const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
-    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
-    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(max_log_ptr_path));
-    assert(our_log_ptr <= max_log_ptr);
-
-    /// max_log_ptr is the number of the last successfully executed request on the initiator
-    /// The log could contain other entries which are not committed yet
-    /// This equality is enough to say that current replicas is up-to-date
-    if (our_log_ptr == max_log_ptr)
-        return true;
-
-    auto max_log =  DDLTask::getLogEntryName(max_log_ptr);
-    LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
-
-    {
-        std::unique_lock lock{mutex};
-        bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
-        {
-            assert(zookeeper->expired() || current_task <= max_log);
-            return zookeeper->expired() || current_task == max_log || stop_flag;
-        });
-
-        if (!processed)
-            return false;
-    }
-
-    LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
-
-    /// Lets now wait for max_log_ptr to be processed
-    Coordination::Stat stat;
-    auto event_ptr = std::make_shared<Poco::Event>();
-    auto new_log = zookeeper->get(our_log_ptr_path, &stat, event_ptr);
-
-    if (new_log == toString(max_log_ptr))
-        return true;
-
-    return event_ptr->tryWait(timeout_ms);
-}
-
 
 String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
                                DatabaseReplicated * const database, bool committed)
@@ -193,10 +140,10 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     /// but it requires more complex logic around /try node.
 
     auto zookeeper = getAndSetZooKeeper();
-    UInt32 our_log_ptr = getLogPointer();
+    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(database->replica_path + "/log_ptr"));
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-
-    if (our_log_ptr + database->db_settings.max_replication_lag_to_enqueue < max_log_ptr)
+    assert(our_log_ptr <= max_log_ptr);
+    if (database->db_settings.max_replication_lag_to_enqueue < max_log_ptr - our_log_ptr)
         throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
                         "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
 
@@ -232,12 +179,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     if (!task->was_executed)
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Entry {} was executed, but was not committed: code {}: {}",
-            task->entry_name,
-            task->execution_status.code,
-            task->execution_status.message);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Entry {} was executed, but was not committed: code {}: {}",
+                        task->execution_status.code, task->execution_status.message);
     }
 
     try_node->setAlreadyRemoved();
@@ -256,7 +199,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    UInt32 our_log_ptr = getLogPointer();
+    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(fs::path(database->replica_path) / "log_ptr"));
     UInt32 entry_num = DatabaseReplicatedTask::getLogEntryNumber(entry_name);
 
     if (entry_num <= our_log_ptr)
@@ -359,19 +302,6 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
     UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
     return entry_number + logs_to_keep < max_log_ptr;
-}
-
-void DatabaseReplicatedDDLWorker::initializeLogPointer(const String & processed_entry_name)
-{
-    updateMaxDDLEntryID(processed_entry_name);
-}
-
-UInt32 DatabaseReplicatedDDLWorker::getLogPointer() const
-{
-    /// NOTE it may not be equal to the log_ptr in zk:
-    ///  - max_id can be equal to log_ptr - 1 due to race condition (when it's updated in zk, but not updated in memory yet)
-    ///  - max_id can be greater than log_ptr, because log_ptr is not updated for failed and dummy entries
-    return max_id.load();
 }
 
 }

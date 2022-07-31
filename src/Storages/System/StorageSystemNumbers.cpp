@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/LimitTransform.h>
 
@@ -14,11 +14,11 @@ namespace DB
 namespace
 {
 
-class NumbersSource : public ISource
+class NumbersSource : public SourceWithProgress
 {
 public:
     NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_)
-        : ISource(createHeader()), block_size(block_size_), next(offset_), step(step_) {}
+        : SourceWithProgress(createHeader()), block_size(block_size_), next(offset_), step(step_) {}
 
     String getName() const override { return "Numbers"; }
 
@@ -36,7 +36,7 @@ protected:
 
         next += step;
 
-        progress(column->size(), column->byteSize());
+        progress({column->size(), column->byteSize()});
 
         return { Columns {std::move(column)}, block_size };
     }
@@ -61,11 +61,11 @@ struct NumbersMultiThreadedState
 
 using NumbersMultiThreadedStatePtr = std::shared_ptr<NumbersMultiThreadedState>;
 
-class NumbersMultiThreadedSource : public ISource
+class NumbersMultiThreadedSource : public SourceWithProgress
 {
 public:
     NumbersMultiThreadedSource(NumbersMultiThreadedStatePtr state_, UInt64 block_size_, UInt64 max_counter_)
-        : ISource(createHeader())
+        : SourceWithProgress(createHeader())
         , state(std::move(state_))
         , block_size(block_size_)
         , max_counter(max_counter_) {}
@@ -94,7 +94,7 @@ protected:
         while (pos < end)
             *pos++ = curr++;
 
-        progress(column->size(), column->byteSize());
+        progress({column->size(), column->byteSize()});
 
         return { Columns {std::move(column)}, block_size };
     }

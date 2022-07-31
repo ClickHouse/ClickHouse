@@ -2,8 +2,6 @@
 
 #include <cmath>
 #include <cstring>
-#include <string>
-#include <string_view>
 #include <limits>
 #include <algorithm>
 #include <iterator>
@@ -165,7 +163,6 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
-void assertNotEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
@@ -620,8 +617,6 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf);
 struct NullOutput
 {
     void append(const char *, size_t) {}
-    void append(const char *) {}
-    void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
 };
 
@@ -836,7 +831,7 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseFromString(std::string_view str)
+inline T parseFromString(const std::string_view & str)
 {
     return parse<T>(str.data(), str.size());
 }
@@ -856,8 +851,6 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
     /// YYYY-MM-DD hh:mm:ss
     static constexpr auto DateTimeStringInputSize = 19;
-    ///YYYY-MM-DD
-    static constexpr auto DateStringInputSize = 10;
     bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
 
     if (optimistic_path_for_date_time_input)
@@ -868,27 +861,16 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
             UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-            UInt8 hour = 0;
-            UInt8 minute = 0;
-            UInt8 second = 0;
-            ///simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
-            bool dt_long = (s[10] == ' ' || s[10] == 'T');
-            if (dt_long)
-            {
-                hour = (s[11] - '0') * 10 + (s[12] - '0');
-                minute = (s[14] - '0') * 10 + (s[15] - '0');
-                second = (s[17] - '0') * 10 + (s[18] - '0');
-            }
+            UInt8 hour = (s[11] - '0') * 10 + (s[12] - '0');
+            UInt8 minute = (s[14] - '0') * 10 + (s[15] - '0');
+            UInt8 second = (s[17] - '0') * 10 + (s[18] - '0');
 
             if (unlikely(year == 0))
                 datetime = 0;
             else
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
-            if (dt_long)
-                buf.position() += DateTimeStringInputSize;
-            else
-                buf.position() += DateStringInputSize;
+            buf.position() += DateTimeStringInputSize;
             return ReturnType(true);
         }
         else
@@ -907,8 +889,6 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     {
         return ReturnType(false);
     }
-
-    int negative_multiplier = 1;
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
@@ -935,21 +915,6 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         /// Ignore digits that are out of precision.
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
-
-        /// Fractional part (subseconds) is treated as positive by users
-        /// (as DateTime64 itself is a positive, although underlying decimal is negative)
-        /// setting fractional part to be negative when whole is 0 results in wrong value,
-        /// so we multiply result by -1.
-        if (components.whole < 0 && components.fractional != 0)
-        {
-            const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
-            ++components.whole;
-            components.fractional = scale_multiplier - components.fractional;
-            if (!components.whole)
-            {
-                negative_multiplier = -1;
-            }
-        }
     }
     /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 9908870400LL)
@@ -960,7 +925,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
-    datetime64 = negative_multiplier * DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
 
     return ReturnType(true);
 }
@@ -1064,8 +1029,6 @@ inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
 {
     return tryReadIntText(x, buf);
 }
-
-inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
 
 inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
@@ -1238,7 +1201,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field);
+void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
 
 
 /** Read serialized exception.
@@ -1338,7 +1301,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSizeSuffix(std::string_view s)
+inline T parseWithSizeSuffix(const std::string_view & s)
 {
     return parseWithSizeSuffix<T>(s.data(), s.size());
 }
@@ -1362,12 +1325,6 @@ inline T parse(const String & s)
 }
 
 template <typename T>
-inline T parse(std::string_view s)
-{
-    return parse<T>(s.data(), s.size());
-}
-
-template <typename T>
 inline bool tryParse(T & res, const char * data)
 {
     return tryParse(res, data, strlen(data));
@@ -1375,12 +1332,6 @@ inline bool tryParse(T & res, const char * data)
 
 template <typename T>
 inline bool tryParse(T & res, const String & s)
-{
-    return tryParse(res, s.data(), s.size());
-}
-
-template <typename T>
-inline bool tryParse(T & res, std::string_view s)
 {
     return tryParse(res, s.data(), s.size());
 }
@@ -1451,11 +1402,8 @@ struct PcgDeserializer
     }
 };
 
-template <typename Vector>
-void readQuotedFieldInto(Vector & s, ReadBuffer & buf);
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
 
-void readQuotedField(String & s, ReadBuffer & buf);
-
-void readJSONField(String & s, ReadBuffer & buf);
+void readJSONFieldIntoString(String & s, ReadBuffer & buf);
 
 }

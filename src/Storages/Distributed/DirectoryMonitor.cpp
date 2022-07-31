@@ -1,6 +1,6 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
@@ -9,6 +9,7 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
+#include <base/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -298,7 +299,7 @@ namespace
         }
 
         /// This is old format, that does not have header for the block in the file header,
-        /// applying ConvertingTransform in this case is not a big overhead.
+        /// applying ConvertingBlockInputStream in this case is not a big overhead.
         ///
         /// Anyway we can get header only from the first block, which contain all rows anyway.
         if (!distributed_header.block_header)
@@ -339,7 +340,7 @@ namespace
 
     uint64_t doubleToUInt64(double d)
     {
-        if (d >= static_cast<double>(std::numeric_limits<uint64_t>::max()))
+        if (d >= double(std::numeric_limits<uint64_t>::max()))
             return std::numeric_limits<uint64_t>::max();
         return static_cast<uint64_t>(d);
     }
@@ -904,7 +905,7 @@ private:
     }
 };
 
-class DirectoryMonitorSource : public ISource
+class DirectoryMonitorSource : public SourceWithProgress
 {
 public:
 
@@ -939,7 +940,7 @@ public:
     }
 
     explicit DirectoryMonitorSource(Data data_)
-        : ISource(data_.first_block.cloneEmpty())
+        : SourceWithProgress(data_.first_block.cloneEmpty())
         , data(std::move(data_))
     {
     }
@@ -1020,7 +1021,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         UInt64 file_idx = file.first;
         const String & file_path = file.second;
 
-        if (file_indices_to_skip.contains(file_idx))
+        if (file_indices_to_skip.count(file_idx))
             continue;
 
         size_t total_rows = 0;

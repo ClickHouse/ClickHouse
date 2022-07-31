@@ -1,8 +1,8 @@
 ---
-sidebar_position: 129
+toc_priority: 129
 ---
 
-# groupBitmapAnd
+# groupBitmapAnd {#groupbitmapand}
 
 Calculations the AND of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
 

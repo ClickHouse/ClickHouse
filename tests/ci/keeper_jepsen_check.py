@@ -27,7 +27,7 @@ from rerun_helper import RerunHelper
 JEPSEN_GROUP_NAME = "jepsen_group"
 DESIRED_INSTANCE_COUNT = 3
 IMAGE_NAME = "clickhouse/keeper-jepsen-test"
-CHECK_NAME = "ClickHouse Keeper Jepsen"
+CHECK_NAME = "ClickHouse Keeper Jepsen (actions)"
 
 
 SUCCESSFUL_TESTS_ANCHOR = "# Successful tests"
@@ -200,8 +200,10 @@ if __name__ == "__main__":
         head = requests.head(build_url)
         counter += 1
         if counter >= 180:
-            logging.warning("Cannot fetch build in 30 minutes, exiting")
-            sys.exit(0)
+            post_commit_status(
+                gh, pr_info.sha, CHECK_NAME, "Cannot fetch build to run", "error", ""
+            )
+            raise Exception("Cannot fetch build")
 
     with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key") + "\n"):
         ssh_auth_sock = os.environ["SSH_AUTH_SOCK"]
@@ -271,5 +273,5 @@ if __name__ == "__main__":
         report_url,
         CHECK_NAME,
     )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
     clear_autoscaling_group()

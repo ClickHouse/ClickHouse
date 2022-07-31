@@ -9,7 +9,6 @@ void registerFunctionNotLike(FunctionFactory &);
 void registerFunctionNotILike(FunctionFactory &);
 void registerFunctionMatch(FunctionFactory &);
 void registerFunctionExtract(FunctionFactory &);
-void registerFunctionTranslate(FunctionFactory &);
 void registerFunctionReplaceOne(FunctionFactory &);
 void registerFunctionReplaceAll(FunctionFactory &);
 void registerFunctionReplaceRegexpOne(FunctionFactory &);
@@ -32,7 +31,6 @@ void registerFunctionsStringRegexp(FunctionFactory & factory)
     registerFunctionNotILike(factory);
     registerFunctionMatch(factory);
     registerFunctionExtract(factory);
-    registerFunctionTranslate(factory);
     registerFunctionReplaceOne(factory);
     registerFunctionReplaceAll(factory);
     registerFunctionReplaceRegexpOne(factory);

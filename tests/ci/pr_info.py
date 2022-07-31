@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import logging
 import os
 from typing import Set
 
@@ -13,9 +12,6 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_EVENT_PATH,
 )
-
-FORCE_TESTS_LABEL = "force tests"
-SKIP_SIMPLE_CHECK_LABEL = "skip simple check"
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -105,20 +101,12 @@ class PRInfo:
         if "pull_request" in github_event:  # pull request and other similar events
             self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
-                try:
-                    response = get_with_retries(
-                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
-                        f"/pulls/{self.number}",
-                        sleep=RETRY_SLEEP,
-                    )
-                    github_event["pull_request"] = response.json()
-                except Exception as e:
-                    logging.warning(
-                        "Unable to get pull request event %s from API, "
-                        "fallback to received event. Exception: %s",
-                        self.number,
-                        e,
-                    )
+                response = get_with_retries(
+                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
+                    f"/pulls/{self.number}",
+                    sleep=RETRY_SLEEP,
+                )
+                github_event["pull_request"] = response.json()
 
             if "after" in github_event:
                 self.sha = github_event["after"]
@@ -209,7 +197,6 @@ class PRInfo:
                         f"compare/{self.head_ref}...master.diff"
                     )
         else:
-            print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
@@ -272,18 +259,9 @@ class PRInfo:
                 return True
         return False
 
-    def has_changes_in_submodules(self):
-        if self.changed_files is None or not self.changed_files:
-            return True
-
-        for f in self.changed_files:
-            if "contrib/" in f:
-                return True
-        return False
-
     def can_skip_builds_and_use_version_from_master(self):
         # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -302,7 +280,7 @@ class PRInfo:
 
     def can_skip_integration_tests(self):
         # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:
@@ -319,7 +297,7 @@ class PRInfo:
 
     def can_skip_functional_tests(self):
         # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
+        if "force tests" in self.labels:
             return False
 
         if self.changed_files is None or not self.changed_files:

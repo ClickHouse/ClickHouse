@@ -11,7 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -171,7 +171,7 @@ struct SocketInterruptablePollWrapper
 
             if (rc >= 1 && poll_buf[0].revents & POLLIN)
                 socket_ready = true;
-            if (rc >= 2 && poll_buf[1].revents & POLLIN)
+            if (rc >= 1 && poll_buf[1].revents & POLLIN)
                 fd_ready = true;
 #endif
         }
@@ -345,7 +345,7 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->isServerActive())
+    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
     {
         try
         {
@@ -365,7 +365,15 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
+        String reason;
+        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
+            reason = "server is not initialized yet and no alive leader exists";
+        else if (!keeper_dispatcher->checkInit())
+            reason = "server is not initialized yet";
+        else
+            reason = "no alive leader exists";
+
+        LOG_WARNING(log, "Ignoring user request, because {}", reason);
         sendHandshake(false);
         return;
     }
@@ -407,13 +415,6 @@ void KeeperTCPHandler::runImpl()
             log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
-                if (in->eof())
-                {
-                    LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
-                    keeper_dispatcher->finishSession(session_id);
-                    break;
-                }
-
                 auto [received_op, received_xid] = receiveRequest();
                 packageReceived();
                 log_long_operation("Receiving request");

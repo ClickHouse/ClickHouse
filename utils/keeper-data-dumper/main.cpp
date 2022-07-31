@@ -7,7 +7,7 @@
 #include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 using namespace Coordination;
 using namespace DB;
@@ -32,9 +32,9 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
             ", numChildren: " << value.stat.numChildren <<
             ", dataLength: " << value.stat.dataLength <<
             "}" << std::endl;
-        std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
+        std::cout << "\tData: " << storage.container.getValue(key).data << std::endl;
 
-        for (const auto & child : value.getChildren())
+        for (const auto & child : value.children)
         {
             if (key == "/")
                 keys.push(key + child.toString());
@@ -62,8 +62,7 @@ int main(int argc, char *argv[])
     ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>();
-    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, argv[1], settings, keeper_context);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, argv[1], settings);
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 

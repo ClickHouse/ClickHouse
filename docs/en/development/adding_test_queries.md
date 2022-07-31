@@ -1,9 +1,3 @@
----
-sidebar_label: Adding Test Queries
-sidebar_position: 63
-description: Instructions on how to add a test case to ClickHouse continuous integration
----
-
 # How to add test queries to ClickHouse CI
 
 ClickHouse has hundreds (or even thousands) of features. Every commit gets checked by a complex set of tests containing many thousands of test cases.
@@ -106,7 +100,7 @@ vim tests/queries/0_stateless/01521_dummy_test.sql
 
 4) run the test, and put the result of that into the reference file:
 ```
-clickhouse-client -nm < tests/queries/0_stateless/01521_dummy_test.sql | tee tests/queries/0_stateless/01521_dummy_test.reference
+clickhouse-client -nmT < tests/queries/0_stateless/01521_dummy_test.sql | tee tests/queries/0_stateless/01521_dummy_test.reference
 ```
 
 5) ensure everything is correct, if the test output is incorrect (due to some bug for example), adjust the reference file using text editor.
@@ -138,7 +132,7 @@ It's important to name tests correctly, so one could turn some tests subset off 
 
 | Tester flag| What should be in test name | When flag should be added |
 |---|---|---|---|
-| `--[no-]zookeeper`| "zookeeper" or "replica" | Test uses tables from `ReplicatedMergeTree` family |
+| `--[no-]zookeeper`| "zookeeper" or "replica" | Test uses tables from ReplicatedMergeTree family |
 | `--[no-]shard` | "shard" or "distributed" or "global"| Test using connections to 127.0.0.2 or similar |
 | `--[no-]long` | "long" or "deadlock" or "race" | Test runs longer than 60 seconds |
 

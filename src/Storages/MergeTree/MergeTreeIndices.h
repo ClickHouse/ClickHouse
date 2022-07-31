@@ -10,7 +10,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -30,7 +29,7 @@ struct MergeTreeIndexFormat
     MergeTreeIndexVersion version;
     const char* extension;
 
-    explicit operator bool() const { return version != 0; }
+    operator bool() const { return version != 0; } /// NOLINT
 };
 
 /// Stores some info about a single block of data.
@@ -148,9 +147,9 @@ struct IMergeTreeIndex
     /// Returns extension for deserialization.
     ///
     /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const DataPartStoragePtr & data_part_storage, const std::string & relative_path_prefix) const
+    virtual MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
     {
-        if (data_part_storage->exists(relative_path_prefix + ".idx"))
+        if (disk->exists(relative_path_prefix + ".idx"))
             return {1, ".idx"};
         return {0 /*unknown*/, ""};
     }

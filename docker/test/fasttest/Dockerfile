@@ -7,7 +7,7 @@ FROM clickhouse/test-util:$FROM_TAG
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=14
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -71,8 +71,6 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         unixodbc \
-        file \
-        nasm \
        --yes --no-install-recommends
 
 RUN pip3 install numpy scipy pandas Jinja2

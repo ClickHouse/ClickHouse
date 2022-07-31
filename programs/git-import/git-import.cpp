@@ -715,7 +715,7 @@ void updateSnapshot(Snapshot & snapshot, const Commit & commit, CommitDiff & fil
                 uint32_t this_line_in_prev_commit = line_change.hunk_start_line_number_old
                     + (line_change.line_number_new - line_change.hunk_start_line_number_new);
 
-                if (deleted_lines.contains(this_line_in_prev_commit))
+                if (deleted_lines.count(this_line_in_prev_commit))
                 {
                     const auto & prev_commit = deleted_lines[this_line_in_prev_commit];
                     if (prev_commit.time <= commit.time)
@@ -1150,7 +1150,7 @@ void processLog(const Options & options)
         readString(hash, in);
         assertChar('\n', in);
 
-        if (!options.skip_commits.contains(hash))
+        if (!options.skip_commits.count(hash))
             hashes.emplace_back(std::move(hash));
     }
 
@@ -1231,5 +1231,5 @@ try
 catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
-    return DB::getCurrentExceptionCode();
+    throw;
 }

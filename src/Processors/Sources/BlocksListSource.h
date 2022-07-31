@@ -1,25 +1,25 @@
 #pragma once
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
 {
 
 /** A stream of blocks from which you can read the next block from an explicitly provided list.
-  * Also see SourceFromSingleChunk.
+  * Also see OneBlockInputStream.
   */
-class BlocksListSource : public ISource
+class BlocksListSource : public SourceWithProgress
 {
 public:
     /// Acquires the ownership of the block list.
     explicit BlocksListSource(BlocksList && list_)
-        : ISource(list_.empty() ? Block() : list_.front().cloneEmpty())
+        : SourceWithProgress(list_.empty() ? Block() : list_.front().cloneEmpty())
         , list(std::move(list_)), it(list.begin()), end(list.end()) {}
 
     /// Uses a list of blocks lying somewhere else.
     BlocksListSource(BlocksList::iterator & begin_, BlocksList::iterator & end_)
-        : ISource(begin_ == end_ ? Block() : begin_->cloneEmpty())
+        : SourceWithProgress(begin_ == end_ ? Block() : begin_->cloneEmpty())
         , it(begin_), end(end_) {}
 
     String getName() const override { return "BlocksListSource"; }

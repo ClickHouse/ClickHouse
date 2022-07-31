@@ -30,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_DATA;
 }
 
 CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_)
@@ -265,20 +264,20 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     if (in->eof())
         return false;
 
-    try
+    auto array = readMessage();
+
+#if CAPNP_VERSION >= 7000 && CAPNP_VERSION < 8000
+    capnp::UnalignedFlatArrayMessageReader msg(array);
+#else
+    capnp::FlatArrayMessageReader msg(array);
+#endif
+
+    auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
+
+    for (size_t i = 0; i != columns.size(); ++i)
     {
-        auto array = readMessage();
-        capnp::FlatArrayMessageReader msg(array);
-        auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
-        for (size_t i = 0; i != columns.size(); ++i)
-        {
-            auto value = getReaderByColumnName(root_reader, column_names[i]);
-            insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
-        }
-    }
-    catch (const kj::Exception & e)
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read row: {}", e.getDescription().cStr());
+        auto value = getReaderByColumnName(root_reader, column_names[i]);
+        insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
     }
 
     return true;
@@ -299,7 +298,7 @@ NamesAndTypesList CapnProtoSchemaReader::readSchema()
 
     auto schema_parser = CapnProtoSchemaParser();
     auto schema = schema_parser.getMessageSchema(schema_info);
-    return capnProtoSchemaToCHSchema(schema, format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
+    return capnProtoSchemaToCHSchema(schema);
 }
 
 void registerInputFormatCapnProto(FormatFactory & factory)
@@ -311,7 +310,6 @@ void registerInputFormatCapnProto(FormatFactory & factory)
             return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params),
                        FormatSchemaInfo(settings, "CapnProto", true), settings);
         });
-    factory.markFormatSupportsSubsetOfColumns("CapnProto");
     factory.registerFileExtension("capnp", "CapnProto");
 }
 

@@ -29,14 +29,7 @@ def start_cluster():
 # max_memory_usage_for_user cannot be used, since the memory for user accounted
 # correctly, only total is not (it is set via conf.xml)
 def test_memory_tracking_total():
-    if instance.is_built_with_thread_sanitizer():
-        pytest.skip(
-            "Memory tracking does not make sense to check under Thread Sanitizer"
-        )
-
     instance.query("CREATE TABLE null (row String) ENGINE=Null")
-
-    # Prepare data for insertion
     instance.exec_in_container(
         [
             "bash",
@@ -44,7 +37,6 @@ def test_memory_tracking_total():
             "clickhouse local -q \"SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), ' ') from numbers(10000)\" > data.json",
         ]
     )
-
     for it in range(0, 20):
         # the problem can be triggered only via HTTP,
         # since clickhouse-client parses the data by itself.

@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT -q "create table test_02127 (x Float32, y Float64) engine=Mem
 
 for escaping_rule in Quoted JSON Escaped CSV Raw
 do
-echo -e "+42.42\t+42.42" | $CLICKHOUSE_CLIENT -q "insert into test_02127 settings format_custom_escaping_rule='$escaping_rule' format CustomSeparated"
+echo -e "+42.42\t+42.42" | $CLICKHOUSE_CLIENT -q "insert into test_02127 format CustomSeparated settings format_custom_escaping_rule='$escaping_rule'"
 done
 
 

@@ -18,7 +18,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Push multi-arch images to Dockerhub"
+NAME = "Push multi-arch images to Dockerhub (actions)"
 CHANGED_IMAGES = "changed_images_{}.json"
 Images = Dict[str, List[str]]
 
@@ -234,7 +234,7 @@ def main():
         NAME,
     )
     ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
 
 
 if __name__ == "__main__":

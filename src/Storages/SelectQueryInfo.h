@@ -7,7 +7,6 @@
 #include <Core/Names.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
-#include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
 
@@ -49,6 +48,8 @@ using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 struct PrewhereInfo
 {
+    /// Actions which are executed in order to alias columns are used for prewhere actions.
+    ActionsDAGPtr alias_actions;
     /// Actions for row level security filter. Applied separately before prewhere_actions.
     /// This actions are separate because prewhere condition should not be executed over filtered rows.
     ActionsDAGPtr row_level_filter;
@@ -142,8 +143,6 @@ struct SelectQueryInfoBase
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
 
-    std::shared_ptr<const StorageLimitsList> storage_limits;
-
     /// Cluster for the query.
     ClusterPtr cluster;
     /// Optimized cluster for the query.
@@ -155,10 +154,6 @@ struct SelectQueryInfoBase
     TreeRewriterResultPtr syntax_analyzer_result;
 
     PrewhereInfoPtr prewhere_info;
-
-    /// This is an additional filer applied to current table.
-    /// It is needed only for additional PK filtering.
-    ASTPtr additional_filter_ast;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage

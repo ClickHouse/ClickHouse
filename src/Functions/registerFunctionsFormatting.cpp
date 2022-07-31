@@ -7,7 +7,6 @@ void registerFunctionsBitToArray(FunctionFactory &);
 void registerFunctionFormatReadableSize(FunctionFactory &);
 void registerFunctionFormatReadableQuantity(FunctionFactory &);
 void registerFunctionFormatReadableTimeDelta(FunctionFactory &);
-void registerFunctionParseTimeDelta(FunctionFactory &);
 
 void registerFunctionsFormatting(FunctionFactory & factory)
 {
@@ -15,7 +14,6 @@ void registerFunctionsFormatting(FunctionFactory & factory)
     registerFunctionFormatReadableSize(factory);
     registerFunctionFormatReadableQuantity(factory);
     registerFunctionFormatReadableTimeDelta(factory);
-    registerFunctionParseTimeDelta(factory);
 }
 
 }

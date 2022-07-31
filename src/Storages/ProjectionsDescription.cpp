@@ -14,11 +14,9 @@
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <base/range.h>
 
 
@@ -31,7 +29,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PROJECTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-}
+};
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
@@ -111,7 +109,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     InterpreterSelectQuery select(
         result.query_ast, query_context, storage, {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizationsAlias());
 
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
@@ -223,7 +221,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     InterpreterSelectQuery select(
         result.query_ast, query_context, storage, {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizationsAlias());
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 
@@ -286,7 +284,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
                                                                        : QueryProcessingStage::WithMergeableState})
                        .buildQueryPipeline();
     builder.resize(1);
-    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), block.bytes()));
+    builder.addTransform(std::make_shared<SquashingChunksTransform>(builder.getHeader(), block.rows(), 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
@@ -330,18 +328,14 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
 
 bool ProjectionsDescription::has(const String & projection_name) const
 {
-    return map.contains(projection_name);
+    return map.count(projection_name) > 0;
 }
 
 const ProjectionDescription & ProjectionsDescription::get(const String & projection_name) const
 {
     auto it = map.find(projection_name);
     if (it == map.end())
-    {
-        String exception_message = fmt::format("There is no projection {} in table", projection_name);
-        appendHintsMessage(exception_message, projection_name);
-        throw Exception(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
-    }
+        throw Exception("There is no projection " + projection_name + " in table", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
 
     return *(it->second);
 }
@@ -382,23 +376,11 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     {
         if (if_exists)
             return;
-
-        String exception_message = fmt::format("There is no projection {} in table", projection_name);
-        appendHintsMessage(exception_message, projection_name);
-        throw Exception(exception_message, ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
+        throw Exception("There is no projection " + projection_name + " in table.", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
     }
 
     projections.erase(it->second);
     map.erase(it);
-}
-
-std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
-{
-    std::vector<String> names;
-    names.reserve(map.size());
-    for (const auto & pair : map)
-        names.push_back(pair.first);
-    return names;
 }
 
 ExpressionActionsPtr

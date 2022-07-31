@@ -32,8 +32,6 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
         assert(view_name == ast_create.getTable());
-        ast_create.attach = false;
-        ast_create.setDatabase(database.getDatabaseName());
         if (is_uppercase)
             ast_create.setTable(Poco::toUpper(view_name));
 
