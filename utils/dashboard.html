@@ -703,7 +703,7 @@ function resize() {
 
 new ResizeObserver(resize).observe(document.body);
 
-document.getElementById('run').onclick = function(event) {
+document.getElementById('params').onsubmit = function(event) {
     updateParams();
     drawAll();
     event.preventDefault();
