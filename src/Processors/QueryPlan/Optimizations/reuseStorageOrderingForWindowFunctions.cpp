@@ -29,7 +29,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 {
     /// Find the following sequence of steps, add InputOrderInfo and apply prefix sort description to
     /// SortingStep:
-    /// WindowStep <- SortingStep <- [Expression] <- [SettingQuotaAndLimits] <- ReadFromMergeTree
+    /// WindowStep <- SortingStep <- [Expression] <- ReadFromMergeTree
 
     auto * window_node = parent_node;
     auto * window = typeid_cast<WindowStep *>(window_node->step.get());
