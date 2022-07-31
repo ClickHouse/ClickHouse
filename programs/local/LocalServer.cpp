@@ -325,7 +325,7 @@ void LocalServer::setupUsers()
     access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
     if (config().has("config-file") || fs::exists("config.xml"))
     {
-        String config_path = config().getString("config-file","");
+        String config_path = config().getString("config-file", "");
         bool has_user_directories = config().has("user_directories");
         const auto config_dir = std::filesystem::path{config_path}.remove_filename().string();
         String users_config_path = config().getString("users_config","");
