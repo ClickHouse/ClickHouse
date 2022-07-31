@@ -267,7 +267,7 @@ The system will prepare ClickHouse binary builds for your pull request individua
 
 Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
 
-## Browse ClickHouse Source Code
+## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
 
 You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
 
