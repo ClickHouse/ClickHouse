@@ -9,8 +9,7 @@
     <style>
         :root {
             --color: black;
-            --background-gradient-start: #00CCFF;
-            --background-gradient-end: #00D0D0;
+            --background: linear-gradient(to bottom, #00CCFF, #00D0D0);
             --chart-background: white;
             --shadow-color: rgba(0, 0, 0, 0.25);
             --input-shadow-color: rgba(0, 255, 0, 1);
@@ -32,8 +31,7 @@
 
         [data-theme="dark"] {
             --color: white;
-            --background-gradient-start: #151C2C;
-            --background-gradient-end: #151C2C;
+            --background: #151C2C;
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
             --input-shadow-color: rgba(255, 128, 0, 0.25);
@@ -65,7 +63,7 @@
             font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             padding: 1rem;
             overflow-x: hidden;
-            background: linear-gradient(to bottom, var(--background-gradient-start), var(--background-gradient-end));
+            background: var(--background);
             display: grid;
             grid-template-columns: auto;
             grid-template-rows: fit-content(10%) auto;
@@ -286,7 +284,7 @@
 </body>
 <script>
 
-const queries = [
+let queries = [
     { title: "Weekly Unique Comment Authors", query:
     `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
 FROM github_events
@@ -339,7 +337,6 @@ ORDER BY t`},
 let params = {
     start: '2015-01-01',
     repo: 'ClickHouse/ClickHouse',
-    //word2: 'Coronavirus',
 };
 
 let theme = 'light';
@@ -360,7 +357,7 @@ let plots = queries.map(e => null);
 /// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
 const query_param_regexp = /\{(\w+):[^}]+\}/g;
 
-/// Automatically parse more parameters from queires.
+/// Automatically parse more parameters from the queries.
 function findParamsInQuery(query) {
     for (let match of query.matchAll(query_param_regexp)) {
         const name = match[1];
@@ -657,6 +654,8 @@ async function draw(idx, chart, url_params, query) {
         ? ["#F88", "#FEE", "#EED", "#2c3235"]
         : ["#864", "#045", "#2c3235", "#c7d0d9"];
 
+    let sync = uPlot.sync("sync");
+
     const opts = {
         width: chart.clientWidth,
         height: chart.clientHeight,
@@ -669,10 +668,16 @@ async function draw(idx, chart, url_params, query) {
         series: [ { label: "x" },
                   { label: "y", stroke: line_color, fill: fill_color } ],
         padding: [ null, null, null, (Math.floor(Math.log10(Math.max(...data[1]))) + Math.floor(Math.log10(Math.max(...data[1])) / 3)) * 6 - 10 ],
-        plugins: [ legendAsTooltipPlugin() ]
+        plugins: [ legendAsTooltipPlugin() ],
+        cursor: {
+            sync: {
+                key: "sync",
+            }
+        }
     };
 
     plots[idx] = new uPlot(opts, data, chart);
+    sync.sub(plots[idx]);
 
     /// Set title
     const title = queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] );
