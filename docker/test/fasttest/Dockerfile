@@ -71,6 +71,8 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         unixodbc \
+        file \
+        nasm \
        --yes --no-install-recommends
 
 RUN pip3 install numpy scipy pandas Jinja2

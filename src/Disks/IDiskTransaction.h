@@ -10,7 +10,7 @@ namespace DB
 
 struct RemoveRequest
 {
-    std::string path;
+    std::string path; /// Relative path.
     bool if_exists = false;
 
     explicit RemoveRequest(std::string path_, bool if_exists_ = false)
@@ -108,7 +108,6 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const std::string & src_path, const std::string & dst_path) = 0;
-
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;

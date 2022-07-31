@@ -90,15 +90,30 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!out_file_p.parse(pos, query_with_output.out_file, expected))
             return false;
 
+        ParserKeyword s_stdout("AND STDOUT");
+        if (s_stdout.ignore(pos, expected))
+        {
+            query_with_output.is_into_outfile_with_stdout = true;
+        }
+
         ParserKeyword s_compression_method("COMPRESSION");
         if (s_compression_method.ignore(pos, expected))
         {
             ParserStringLiteral compression;
             if (!compression.parse(pos, query_with_output.compression, expected))
                 return false;
+
+            ParserKeyword s_compression_level("LEVEL");
+            if (s_compression_level.ignore(pos, expected))
+            {
+                ParserNumber compression_level;
+                if (!compression_level.parse(pos, query_with_output.compression_level, expected))
+                    return false;
+            }
         }
 
         query_with_output.children.push_back(query_with_output.out_file);
+
     }
 
     ParserKeyword s_format("FORMAT");

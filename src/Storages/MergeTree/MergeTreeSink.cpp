@@ -139,6 +139,9 @@ void MergeTreeSink::finishDelayedChunk()
 
         bool added = false;
 
+        /// It's important to create it outside of lock scope because
+        /// otherwise it can lock parts in destructor and deadlock is possible.
+        MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         {
             auto lock = storage.lockParts();
             storage.fillNewPartName(part, lock);
@@ -152,22 +155,12 @@ void MergeTreeSink::finishDelayedChunk()
                 {
                     ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
                     LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
-                }
-                else
-                {
-                    MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-                    added = storage.renameTempPartAndAdd(part, transaction, lock);
-                    transaction.commit(&lock);
-
+                    continue;
                 }
             }
-            else
-            {
-                MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
-                added = storage.renameTempPartAndAdd(part, transaction, lock);
-                transaction.commit(&lock);
-            }
 
+            added = storage.renameTempPartAndAdd(part, transaction, partition.temp_part.builder, lock);
+            transaction.commit(&lock);
         }
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added

@@ -25,7 +25,7 @@ VOLUME_NAME = "clickhouse_integration_tests"
 CONTAINER_NAME = f"{VOLUME_NAME}_{random_str()}"
 
 CONFIG_DIR_IN_REPO = "programs/server"
-INTERGATION_DIR_IN_REPO = "tests/integration"
+INTEGRATION_DIR_IN_REPO = "tests/integration"
 SRC_DIR_IN_REPO = "src"
 
 
@@ -82,7 +82,7 @@ def check_args_and_update_paths(args):
             )
     else:
         args.cases_dir = os.path.abspath(
-            os.path.join(CLICKHOUSE_ROOT, INTERGATION_DIR_IN_REPO)
+            os.path.join(CLICKHOUSE_ROOT, INTEGRATION_DIR_IN_REPO)
         )
         logging.info("Cases dir is not set. Will use %s" % (args.cases_dir))
 
@@ -351,6 +351,17 @@ if __name__ == "__main__":
             )
         except Exception as ex:
             print("Volume creationg failed, probably it already exists, exception", ex)
+        # TODO: this part cleans out stale volumes produced by container name
+        # randomizer, we should remove it after Sep 2022
+        try:
+            subprocess.check_call(
+                "docker volume rm $(docker volume ls -q | "
+                f"grep '{VOLUME_NAME}_.*_volume')",
+                shell=True,
+            )
+        except Exception as ex:
+            print("Probably, some stale volumes still there, just continue:", ex)
+        # TODO END
         dockerd_internal_volume = f"--volume={VOLUME_NAME}_volume:/var/lib/docker"
 
     # If enabled we kill and remove containers before pytest session run.
@@ -397,15 +408,15 @@ if __name__ == "__main__":
         command=args.command,
     )
 
-    try:
-        print("Trying to kill container", CONTAINER_NAME, "if it's already running")
-        subprocess.check_call(
-            f'docker kill $(docker ps -a -q --filter name={CONTAINER_NAME} --format="{{{{.ID}}}}")',
-            shell=True,
-        )
-        print("Container killed")
-    except:
-        print("Nothing to kill")
+    containers = subprocess.check_output(
+        f"docker ps -a -q --filter name={CONTAINER_NAME} --format={{{{.ID}}}}",
+        shell=True,
+        universal_newlines=True,
+    ).splitlines()
+    if containers:
+        print(f"Trying to kill containers name={CONTAINER_NAME} ids={containers}")
+        subprocess.check_call(f"docker kill {' '.join(containers)}", shell=True)
+        print(f"Containers {containers} killed")
 
     print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)
