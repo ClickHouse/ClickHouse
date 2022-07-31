@@ -14,6 +14,7 @@ node2 = cluster.add_instance(
     "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True
 )
 
+
 def get_fake_zk(node, timeout=30.0):
     _fake_zk_instance = KazooClient(
         hosts=cluster.get_instance_ip(node.name) + ":9181", timeout=timeout
@@ -32,8 +33,9 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def test_snapshot_on_exit(started_cluster):
-    zk_conn = get_fake_zk(node1);
+    zk_conn = get_fake_zk(node1)
 
     zk_conn.create("/some_path", b"some_data")
 
