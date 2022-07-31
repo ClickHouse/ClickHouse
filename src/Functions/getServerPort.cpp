@@ -128,7 +128,7 @@ public:
 
 }
 
-void registerFunctionGetServerPort(FunctionFactory & factory)
+REGISTER_FUNCTION(GetServerPort)
 {
     factory.registerFunction<GetServerPortOverloadResolver>();
 }

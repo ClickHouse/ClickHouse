@@ -140,7 +140,7 @@ public:
 /// auc(array_score, array_label) - Calculate AUC with array of score and label
 using FunctionArrayAUC = FunctionArrayScalarProduct<ArrayAUCImpl, NameArrayAUC>;
 
-void registerFunctionArrayAUC(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayAUC)
 {
     factory.registerFunction<FunctionArrayAUC>();
 }
