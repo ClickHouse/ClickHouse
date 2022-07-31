@@ -328,7 +328,7 @@ void LocalServer::setupUsers()
         String config_path = config().getString("config-file", "");
         bool has_user_directories = config().has("user_directories");
         const auto config_dir = std::filesystem::path{config_path}.remove_filename().string();
-        String users_config_path = config().getString("users_config","");
+        String users_config_path = config().getString("users_config", "");
         if (users_config_path.empty() && !has_user_directories)
             users_config = getConfigurationFromXMLString(minimal_default_user_xml);
         else
