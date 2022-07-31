@@ -11,6 +11,7 @@
 #include <aws/s3/model/HeadObjectResult.h>
 #include <aws/s3/model/ListObjectsV2Result.h>
 #include <Storages/StorageS3Settings.h>
+#include <Common/MultiVersion.h>
 
 
 namespace DB

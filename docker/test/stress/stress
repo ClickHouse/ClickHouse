@@ -46,6 +46,9 @@ def get_options(i, backward_compatibility_check):
     if i == 13:
         client_options.append("memory_tracker_fault_probability=0.001")
 
+    if i % 2 == 1 and not backward_compatibility_check:
+        client_options.append("group_by_use_nulls=1")
+
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 

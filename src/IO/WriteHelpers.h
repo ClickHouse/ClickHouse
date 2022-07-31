@@ -360,19 +360,9 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 }
 
 
-inline void writeJSONString(StringRef s, WriteBuffer & buf, const FormatSettings & settings)
-{
-    writeJSONString(s.data, s.data + s.size, buf, settings);
-}
-
 inline void writeJSONString(std::string_view s, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(StringRef{s}, buf, settings);
-}
-
-inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
-{
-    writeJSONString(StringRef{s}, buf, settings);
+    writeJSONString(s.data(), s.data() + s.size(), buf, settings);
 }
 
 template <typename T>
@@ -417,7 +407,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
 
 
 template <char c>
-void writeAnyEscapedString(const String & s, WriteBuffer & buf)
+void writeAnyEscapedString(std::string_view s, WriteBuffer & buf)
 {
     writeAnyEscapedString<c>(s.data(), s.data() + s.size(), buf);
 }
@@ -426,18 +416,6 @@ void writeAnyEscapedString(const String & s, WriteBuffer & buf)
 inline void writeEscapedString(const char * str, size_t size, WriteBuffer & buf)
 {
     writeAnyEscapedString<'\''>(str, str + size, buf);
-}
-
-
-inline void writeEscapedString(const String & s, WriteBuffer & buf)
-{
-    writeEscapedString(s.data(), s.size(), buf);
-}
-
-
-inline void writeEscapedString(StringRef ref, WriteBuffer & buf)
-{
-    writeEscapedString(ref.data, ref.size, buf);
 }
 
 inline void writeEscapedString(std::string_view ref, WriteBuffer & buf)
@@ -455,16 +433,9 @@ void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & bu
 
 
 template <char quote_character>
-void writeAnyQuotedString(const String & s, WriteBuffer & buf)
+void writeAnyQuotedString(std::string_view ref, WriteBuffer & buf)
 {
-    writeAnyQuotedString<quote_character>(s.data(), s.data() + s.size(), buf);
-}
-
-
-template <char quote_character>
-void writeAnyQuotedString(StringRef ref, WriteBuffer & buf)
-{
-    writeAnyQuotedString<quote_character>(ref.data, ref.data + ref.size, buf);
+    writeAnyQuotedString<quote_character>(ref.data(), ref.data() + ref.size(), buf);
 }
 
 
@@ -475,7 +446,7 @@ inline void writeQuotedString(const String & s, WriteBuffer & buf)
 
 inline void writeQuotedString(StringRef ref, WriteBuffer & buf)
 {
-    writeAnyQuotedString<'\''>(ref, buf);
+    writeAnyQuotedString<'\''>(ref.toView(), buf);
 }
 
 inline void writeQuotedString(std::string_view ref, WriteBuffer & buf)
@@ -490,7 +461,7 @@ inline void writeDoubleQuotedString(const String & s, WriteBuffer & buf)
 
 inline void writeDoubleQuotedString(StringRef s, WriteBuffer & buf)
 {
-    writeAnyQuotedString<'"'>(s, buf);
+    writeAnyQuotedString<'"'>(s.toView(), buf);
 }
 
 inline void writeDoubleQuotedString(std::string_view s, WriteBuffer & buf)
@@ -501,7 +472,7 @@ inline void writeDoubleQuotedString(std::string_view s, WriteBuffer & buf)
 /// Outputs a string in backquotes.
 inline void writeBackQuotedString(StringRef s, WriteBuffer & buf)
 {
-    writeAnyQuotedString<'`'>(s, buf);
+    writeAnyQuotedString<'`'>(s.toView(), buf);
 }
 
 /// Outputs a string in backquotes for MySQL.
@@ -611,14 +582,9 @@ inline void writeXMLStringForTextElementOrAttributeValue(const char * begin, con
     }
 }
 
-inline void writeXMLStringForTextElementOrAttributeValue(const String & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElementOrAttributeValue(std::string_view s, WriteBuffer & buf)
 {
     writeXMLStringForTextElementOrAttributeValue(s.data(), s.data() + s.size(), buf);
-}
-
-inline void writeXMLStringForTextElementOrAttributeValue(StringRef s, WriteBuffer & buf)
-{
-    writeXMLStringForTextElementOrAttributeValue(s.data, s.data + s.size, buf);
 }
 
 /// Writing a string to a text node in XML (not into an attribute - otherwise you need more escaping).
@@ -652,14 +618,9 @@ inline void writeXMLStringForTextElement(const char * begin, const char * end, W
     }
 }
 
-inline void writeXMLStringForTextElement(const String & s, WriteBuffer & buf)
+inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
 {
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
-}
-
-inline void writeXMLStringForTextElement(StringRef s, WriteBuffer & buf)
-{
-    writeXMLStringForTextElement(s.data, s.data + s.size, buf);
 }
 
 template <typename IteratorSrc, typename IteratorDst>

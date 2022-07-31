@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Common/hex.h>
 #include <Common/getRandomASCIIString.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents

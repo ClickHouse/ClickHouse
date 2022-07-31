@@ -2,6 +2,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Disks/DiskLocal.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
