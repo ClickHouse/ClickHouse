@@ -153,7 +153,11 @@ if __name__ == "__main__":
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
+        # Finish with the same code as previous
+        state = rerun_helper.get_finished_status().state  # type: ignore
+        # state == "success" -> code = 0
+        code = int(state != "success")
+        sys.exit(code)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)

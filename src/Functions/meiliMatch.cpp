@@ -41,7 +41,7 @@ namespace
 
 }
 
-void registerFunctionMeiliMatch(FunctionFactory & factory)
+REGISTER_FUNCTION(MeiliMatch)
 {
     factory.registerFunction<FunctionMeiliMatch>();
 }
