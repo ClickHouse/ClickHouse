@@ -27,6 +27,7 @@
             --param-background-color: #EEE;
             --param-text-color: black;
             --input-background: white;
+            --chart-button-hover-color: red;
         }
 
         [data-theme="dark"] {
@@ -38,17 +39,18 @@
             --input-shadow-color: rgba(255, 128, 0, 0.25);
             --error-color: #F66;
             --legend-background: rgba(255, 255, 255, 0.25);
-            --title-color: #AAA;
+            --title-color: white;
             --text-color: white;
-            --edit-title-background: #442228;
+            --edit-title-background: #364f69;
             --edit-title-border: #333;
-            --button-background-color: #484;
+            --button-background-color: orange;
             --button-text-color: black;
             --new-chart-background-color: #666;
             --new-chart-text-color: white;
             --param-background-color: #666;
             --param-text-color: white;
             --input-background: #364f69;
+            --chart-button-hover-color: #F40;
         }
 
         * {
@@ -124,6 +126,7 @@
 
         #toggle-dark, #toggle-light {
             padding-right: 0.5rem;
+            user-select: none;
             cursor: pointer;
         }
 
@@ -137,6 +140,7 @@
             background: var(--button-background-color);
             color: var(--button-text-color);
             font-weight: bold;
+            user-select: none;
             cursor: pointer;
             margin-bottom: 1rem;
         }
@@ -147,6 +151,7 @@
 
         #add {
             font-weight: bold;
+            user-select: none;
             cursor: pointer;
             padding-left: 0.5rem;
             padding-right: 0.5rem;
@@ -204,7 +209,7 @@
             margin-right: 0.25rem;
         }
         .chart-buttons a:hover {
-            color: red;
+            color: var(--chart-button-hover-color);
         }
 
         .query-editor {
@@ -236,6 +241,7 @@
             border-bottom: 1px solid var(--edit-title-border);
             background: var(--chart-background);
             color: var(--text-color);
+            resize: none;
         }
 
         .query-editor input {
@@ -281,7 +287,7 @@
 <script>
 
 const queries = [
-    { title: "{repo} Weekly Unique Comment Authors", query:
+    { title: "Weekly Unique Comment Authors", query:
     `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
 FROM github_events
 WHERE repo_name = {repo:String}
@@ -290,7 +296,7 @@ AND event_type = 'IssueCommentEvent'
 AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
 GROUP BY t
 ORDER BY t`},
-    { title: "{repo} Weekly Unique Comments", query:
+    { title: "Weekly Unique Comments", query:
     `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
 FROM github_events
 WHERE repo_name = {repo:String}
@@ -299,7 +305,7 @@ AND event_type = 'IssueCommentEvent'
 AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
 GROUP BY t
 ORDER BY t`},
-    { title: "{repo} Weekly Unique PR Authors", query:
+    { title: "Weekly Unique PR Authors", query:
     `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
 FROM github_events
 WHERE repo_name = {repo:String}
@@ -308,7 +314,7 @@ AND event_type = 'PullRequestEvent'
 AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
 GROUP BY t
 ORDER BY t`},
-    { title: "{repo} Weekly Unique PRs", query:
+    { title: "Weekly Unique PRs", query:
     `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
 FROM github_events
 WHERE repo_name = {repo:String}
@@ -649,7 +655,7 @@ async function draw(idx, chart, url_params, query) {
 
     const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
         ? ["#F88", "#FEE", "#EED", "#2c3235"]
-        : ["#045", "#045", "#2c3235", "#c7d0d9"];
+        : ["#864", "#045", "#2c3235", "#c7d0d9"];
 
     const opts = {
         width: chart.clientWidth,
