@@ -133,7 +133,7 @@ public:
 
 }
 
-void registerFunctionH3Line(FunctionFactory & factory)
+REGISTER_FUNCTION(H3Line)
 {
     factory.registerFunction<FunctionH3Line>();
 }
