@@ -16,5 +16,3 @@ ClickHouse® is an open-source column-oriented database management system that a
 
 ## Upcoming events
 * **v22.8 Release Webinar** Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.
-
-
