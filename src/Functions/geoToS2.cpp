@@ -119,7 +119,7 @@ public:
 
 }
 
-void registerFunctionGeoToS2(FunctionFactory & factory)
+REGISTER_FUNCTION(GeoToS2)
 {
     factory.registerFunction<FunctionGeoToS2>();
 }

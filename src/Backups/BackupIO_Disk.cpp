@@ -17,7 +17,7 @@ bool BackupReaderDisk::fileExists(const String & file_name)
     return disk->exists(path / file_name);
 }
 
-size_t BackupReaderDisk::getFileSize(const String & file_name)
+UInt64 BackupReaderDisk::getFileSize(const String & file_name)
 {
     return disk->getFileSize(path / file_name);
 }
@@ -36,6 +36,11 @@ BackupWriterDisk::~BackupWriterDisk() = default;
 bool BackupWriterDisk::fileExists(const String & file_name)
 {
     return disk->exists(path / file_name);
+}
+
+UInt64 BackupWriterDisk::getFileSize(const String & file_name)
+{
+    return disk->getFileSize(path / file_name);
 }
 
 bool BackupWriterDisk::fileContentsEqual(const String & file_name, const String & expected_file_contents)

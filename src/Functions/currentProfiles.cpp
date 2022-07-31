@@ -79,7 +79,7 @@ namespace
     };
 }
 
-void registerFunctionCurrentProfiles(FunctionFactory & factory)
+REGISTER_FUNCTION(CurrentProfiles)
 {
     factory.registerFunction<FunctionCurrentProfiles<Kind::CURRENT_PROFILES>>();
     factory.registerFunction<FunctionCurrentProfiles<Kind::ENABLED_PROFILES>>();
