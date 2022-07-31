@@ -519,7 +519,11 @@ public:
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
 
+    /// Returns true if there's a drop range covering new_drop_range_info
     bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
+
+    /// Returns virtual part covering part_name (if any) or empty string
+    String getCoveringVirtualPart(const String & part_name) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

@@ -156,6 +156,10 @@ struct SelectQueryInfoBase
 
     PrewhereInfoPtr prewhere_info;
 
+    /// This is an additional filer applied to current table.
+    /// It is needed only for additional PK filtering.
+    ASTPtr additional_filter_ast;
+
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
     InputOrderInfoPtr input_order_info;

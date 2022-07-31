@@ -71,6 +71,8 @@ static void loadDiskLocalConfig(const String & name,
             throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         if (path.back() != '/')
             throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        if (path == context->getPath())
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path ('{}') cannot be equal to <path>. Use <default> disk instead.", path);
     }
 
     bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");

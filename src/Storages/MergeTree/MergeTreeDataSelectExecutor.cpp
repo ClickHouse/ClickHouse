@@ -383,6 +383,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     merge_threads,
                     temporary_data_merge_threads,
                     /* storage_has_evenly_distributed_read_= */ false,
+                    /* group_by_use_nulls */ false,
                     std::move(group_by_info),
                     std::move(group_by_sort_description),
                     should_produce_results_in_order_of_bucket_number);
@@ -1211,6 +1212,10 @@ static void selectColumnNames(
             virt_column_names.push_back(name);
         }
         else if (name == "_part_offset")
+        {
+            virt_column_names.push_back(name);
+        }
+        else if (name == LightweightDeleteDescription::FILTER_COLUMN.name)
         {
             virt_column_names.push_back(name);
         }

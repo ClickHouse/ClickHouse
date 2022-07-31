@@ -217,8 +217,8 @@ MergeTreeData::MergeTreeData(
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
     , broken_part_callback(broken_part_callback_)
-    , log_name(table_id_.getNameForLogs())
-    , log(&Poco::Logger::get(log_name))
+    , log_name(std::make_shared<String>(table_id_.getNameForLogs()))
+    , log(&Poco::Logger::get(*log_name))
     , storage_settings(std::move(storage_settings_))
     , pinned_part_uuids(std::make_shared<PinnedPartUUIDs>())
     , data_parts_by_info(data_parts_indexes.get<TagByInfo>())
@@ -1003,6 +1003,7 @@ void MergeTreeData::loadDataPartsFromDisk(
     size_t suspicious_broken_parts_bytes = 0;
     std::atomic<bool> has_adaptive_parts = false;
     std::atomic<bool> has_non_adaptive_parts = false;
+    std::atomic<bool> has_lightweight_in_parts = false;
 
     std::mutex mutex;
     auto load_part = [&](const String & part_name, const DiskPtr & part_disk_ptr)
@@ -1075,6 +1076,10 @@ void MergeTreeData::loadDataPartsFromDisk(
             has_non_adaptive_parts.store(true, std::memory_order_relaxed);
         else
             has_adaptive_parts.store(true, std::memory_order_relaxed);
+
+        /// Check if there is lightweight delete in part
+        if (part->hasLightweightDelete())
+            has_lightweight_in_parts.store(true, std::memory_order_relaxed);
 
         part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
         /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
@@ -1149,6 +1154,9 @@ void MergeTreeData::loadDataPartsFromDisk(
             ErrorCodes::LOGICAL_ERROR);
 
     has_non_adaptive_index_granularity_parts = has_non_adaptive_parts;
+
+    if (has_lightweight_in_parts)
+        has_lightweight_delete_parts.store(true);
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
@@ -2057,8 +2065,13 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     relative_data_path = new_table_path;
 
     renameInMemory(new_table_id);
+}
 
-
+void MergeTreeData::renameInMemory(const StorageID & new_table_id)
+{
+    IStorage::renameInMemory(new_table_id);
+    std::atomic_store(&log_name, std::make_shared<String>(new_table_id.getNameForLogs()));
+    log = &Poco::Logger::get(*log_name);
 }
 
 void MergeTreeData::dropAllData()
@@ -2887,6 +2900,9 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     if (&out_transaction.data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
             ErrorCodes::LOGICAL_ERROR);
+
+    if (part->hasLightweightDelete())
+        has_lightweight_delete_parts.store(true);
 
     checkPartCanBeAddedToTable(part, lock);
 
@@ -4509,6 +4525,17 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
+bool MergeTreeData::supportsLightweightDelete() const
+{
+    auto lock = lockParts();
+    for (const auto & part : data_parts_by_info)
+    {
+        if (!part->supportLightweightDeleteMutate())
+            return false;
+    }
+    return true;
+}
+
 MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     ProjectionPartsVector res;
@@ -4758,11 +4785,19 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
         if (!destination_ptr)
         {
             if (move_ttl_entry->destination_type == DataDestinationType::VOLUME && !move_ttl_entry->if_exists)
-                LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found or rule is not applicable at the moment",
-                    move_ttl_entry->destination_name, log_name);
+                LOG_WARNING(
+                    log,
+                    "Would like to reserve space on volume '{}' by TTL rule of table '{}' but volume was not found or rule is not "
+                    "applicable at the moment",
+                    move_ttl_entry->destination_name,
+                    *std::atomic_load(&log_name));
             else if (move_ttl_entry->destination_type == DataDestinationType::DISK && !move_ttl_entry->if_exists)
-                LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found or rule is not applicable at the moment",
-                    move_ttl_entry->destination_name, log_name);
+                LOG_WARNING(
+                    log,
+                    "Would like to reserve space on disk '{}' by TTL rule of table '{}' but disk was not found or rule is not applicable "
+                    "at the moment",
+                    move_ttl_entry->destination_name,
+                    *std::atomic_load(&log_name));
         }
         else
         {
@@ -4771,11 +4806,17 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
                 return reservation;
             else
                 if (move_ttl_entry->destination_type == DataDestinationType::VOLUME)
-                    LOG_WARNING(log, "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space",
-                    move_ttl_entry->destination_name, log_name);
+                    LOG_WARNING(
+                        log,
+                        "Would like to reserve space on volume '{}' by TTL rule of table '{}' but there is not enough space",
+                        move_ttl_entry->destination_name,
+                        *std::atomic_load(&log_name));
                 else if (move_ttl_entry->destination_type == DataDestinationType::DISK)
-                    LOG_WARNING(log, "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
-                        move_ttl_entry->destination_name, log_name);
+                    LOG_WARNING(
+                        log,
+                        "Would like to reserve space on disk '{}' by TTL rule of table '{}' but there is not enough space",
+                        move_ttl_entry->destination_name,
+                        *std::atomic_load(&log_name));
         }
     }
 
@@ -5696,7 +5737,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
     ProjectionCandidate * selected_candidate = nullptr;
     size_t min_sum_marks = std::numeric_limits<size_t>::max();
-    if (metadata_snapshot->minmax_count_projection)
+    if (metadata_snapshot->minmax_count_projection && !has_lightweight_delete_parts.load(std::memory_order_relaxed)) /// Disable ReadFromStorage for parts with lightweight.
         add_projection_candidate(*metadata_snapshot->minmax_count_projection, true);
     std::optional<ProjectionCandidate> minmax_count_projection_candidate;
     if (!candidates.empty())
@@ -6055,8 +6096,10 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) con
                 broken_part_callback(part->name);
         }
     }
-    else
+    else if (data_part && data_part->getState() == IMergeTreeDataPart::State::Active)
         broken_part_callback(data_part->name);
+    else
+        LOG_DEBUG(log, "Will not check potentially broken part {} because it's not active", data_part->getNameWithState());
 }
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
@@ -6575,6 +6618,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
+        LightweightDeleteDescription::FILTER_COLUMN,
     };
 }
 
@@ -6619,7 +6663,10 @@ bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t m
         return false;
     if (query_id_set.size() >= max_queries)
         throw Exception(
-            ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Too many simultaneous queries for table {}. Maximum is: {}", log_name, max_queries);
+            ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+            "Too many simultaneous queries for table {}. Maximum is: {}",
+            *std::atomic_load(&log_name),
+            max_queries);
     query_id_set.insert(query_id);
     return true;
 }

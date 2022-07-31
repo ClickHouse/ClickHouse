@@ -12,6 +12,7 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
