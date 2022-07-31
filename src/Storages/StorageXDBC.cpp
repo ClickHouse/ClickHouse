@@ -160,24 +160,27 @@ namespace
     template <typename BridgeHelperMixin>
     void registerXDBCStorage(StorageFactory & factory, const std::string & name)
     {
-        factory.registerStorage(name, [name](const StorageFactory::Arguments & args)
+        factory.registerStorage(name, [name](const StorageFactory::Arguments & args) -> StoragePtr
         {
-            ASTs & engine_args = args.engine_args;
+            ASTList & engine_args = args.engine_args;
 
             if (engine_args.size() != 3)
                 throw Exception("Storage " + name + " requires exactly 3 parameters: " + name + "('DSN', database or schema, table)",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            for (size_t i = 0; i < 3; ++i)
-                engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
+            for (auto & arg = engine_args)
+                arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, args.getLocalContext());
 
+            auto it = engine_args.begin();
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
                 args.getContext()->getSettingsRef().http_receive_timeout.value,
-                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"));
+                checkAndGetLiteralArgument<String>(*(it++), "connection_string"));
+            const auto & database = *(it++);
+            const auto & table = *(it++);
             return std::make_shared<StorageXDBC>(
                 args.table_id,
-                checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),
-                checkAndGetLiteralArgument<String>(engine_args[2], "table_name"),
+                checkAndGetLiteralArgument<String>(database, "database_name"),
+                checkAndGetLiteralArgument<String>(table, "table_name"),
                 args.columns,
                 args.comment,
                 args.getContext(),

@@ -180,7 +180,7 @@ public:
 
     bool supportsPartitionBy() const override;
 
-    static StorageS3Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
+    static StorageS3Configuration getConfiguration(ASTList & engine_args, ContextPtr local_context);
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,

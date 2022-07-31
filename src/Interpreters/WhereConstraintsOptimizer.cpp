@@ -83,7 +83,7 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
         if (func && func->arguments->children.size() == 2)
         {
             const auto expected = ComparisonGraph::atomToCompareResult(atom);
-            if (graph.isAlwaysCompare(expected, func->arguments->children[0], func->arguments->children[1]))
+            if (graph.isAlwaysCompare(expected, func->arguments->children.front(), func->arguments->children.back()))
                 return true;
         }
     }
@@ -115,7 +115,7 @@ bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const Com
     {
         /// TODO: special support for !=
         const auto expected = ComparisonGraph::atomToCompareResult(atom);
-        return !graph.isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]);
+        return !graph.isPossibleCompare(expected, func->arguments->children.front(), func->arguments->children.back());
     }
 
     return false;

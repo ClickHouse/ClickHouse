@@ -44,7 +44,7 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
 
-    static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    static StorageMongoDBConfiguration getConfiguration(ASTList engine_args, ContextPtr context);
 
 private:
     void connectIfNotConnected();

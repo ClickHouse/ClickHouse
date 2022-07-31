@@ -1096,15 +1096,16 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.comment,
             };
 
-            ASTs & engine_args_ast = factory_args.engine_args;
+            ASTList & engine_args_ast = factory_args.engine_args;
 
             if (!(engine_args_ast.size() >= 1 && engine_args_ast.size() <= 3)) // NOLINT
                 throw Exception(
                     "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
-            storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");
+            auto it = engine_args_ast.begin();
+            *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, factory_args.getLocalContext());
+            storage_args.format_name = checkAndGetLiteralArgument<String>(*it, "format_name");
 
             // Use format settings from global server context + settings from
             // the SETTINGS clause of the create query. Settings from current
@@ -1144,7 +1145,8 @@ void registerStorageFile(StorageFactory & factory)
             int source_fd = -1;
             String source_path;
 
-            if (auto opt_name = tryGetIdentifierName(engine_args_ast[1]))
+            ++it;
+            if (auto opt_name = tryGetIdentifierName(*it))
             {
                 if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;
@@ -1156,7 +1158,7 @@ void registerStorageFile(StorageFactory & factory)
                     throw Exception(
                         "Unknown identifier '" + *opt_name + "' in second arg of File storage constructor", ErrorCodes::UNKNOWN_IDENTIFIER);
             }
-            else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
+            else if (const auto * literal = (*it)->as<ASTLiteral>())
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
@@ -1169,10 +1171,11 @@ void registerStorageFile(StorageFactory & factory)
                     throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
             }
 
+            ++it;
             if (engine_args_ast.size() == 3)
             {
-                engine_args_ast[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[2], factory_args.getLocalContext());
-                storage_args.compression_method = checkAndGetLiteralArgument<String>(engine_args_ast[2], "compression_method");
+                *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, factory_args.getLocalContext());
+                storage_args.compression_method = checkAndGetLiteralArgument<String>(*it, "compression_method");
             }
             else
                 storage_args.compression_method = "auto";

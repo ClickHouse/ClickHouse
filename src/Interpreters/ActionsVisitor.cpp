@@ -779,7 +779,6 @@ ASTList ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::
 
 void ActionsMatcher::visit(ASTExpressionList & expression_list, const ASTPtr &, Data & data)
 {
-    size_t num_children = expression_list.children.size();
     for (auto it = expression_list.children.begin(); it != expression_list.children.end(); ++it)
     {
         const auto * function = (*it)->as<ASTFunction>();

@@ -82,9 +82,9 @@ static ASTs splitConjunctionPredicate(const std::initializer_list<const ASTPtr> 
     return res;
 }
 
-std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const ASTPtr & where, const ASTPtr & prewhere)
+std::vector<ASTList> PredicateExpressionsOptimizer::extractTablesPredicates(const ASTPtr & where, const ASTPtr & prewhere)
 {
-    std::vector<ASTs> tables_predicates(tables_with_columns.size());
+    std::vector<ASTList> tables_predicates(tables_with_columns.size());
 
     for (const auto & predicate_expression : splitConjunctionPredicate({where, prewhere}))
     {
@@ -113,7 +113,7 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
     return tables_predicates;    /// everything is OK, it can be optimized
 }
 
-bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_element, const std::vector<ASTs> & tables_predicates)
+bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTList & tables_element, const std::vector<ASTList> & tables_predicates)
 {
     bool is_rewrite_tables = false;
 
@@ -121,7 +121,8 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
         throw Exception("Unexpected elements count in predicate push down: `set enable_optimize_predicate_expression = 0` to disable",
                         ErrorCodes::LOGICAL_ERROR);
 
-    for (size_t index = tables_element.size(); index > 0; --index)
+    auto it = tables_element.rbegin();
+    for (size_t index = tables_element.size(); index > 0; --index, ++it)
     {
         size_t table_pos = index - 1;
 
@@ -138,7 +139,7 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
         ///       It happens because the not-matching columns are replaced with a global default values on JOIN.
         ///       Same is true for RIGHT JOIN and FULL JOIN.
 
-        if (const auto & table_element = tables_element[table_pos]->as<ASTTablesInSelectQueryElement>())
+        if (const auto & table_element = (*it)->as<ASTTablesInSelectQueryElement>())
         {
             if (table_element->table_join && isLeft(table_element->table_join->as<ASTTableJoin>()->kind))
                 continue;  /// Skip right table optimization
@@ -146,7 +147,7 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
             if (table_element->table_join && isFull(table_element->table_join->as<ASTTableJoin>()->kind))
                 break;  /// Skip left and right table optimization
 
-            is_rewrite_tables |= tryRewritePredicatesToTable(tables_element[table_pos], tables_predicates[table_pos],
+            is_rewrite_tables |= tryRewritePredicatesToTable(*it, tables_predicates[table_pos],
                 tables_with_columns[table_pos]);
 
             if (table_element->table_join && isRight(table_element->table_join->as<ASTTableJoin>()->kind))
@@ -157,7 +158,7 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
     return is_rewrite_tables;
 }
 
-bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, const TableWithColumnNamesAndTypes & table_columns) const
+bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTList & table_predicates, const TableWithColumnNamesAndTypes & table_columns) const
 {
     if (!table_predicates.empty())
     {

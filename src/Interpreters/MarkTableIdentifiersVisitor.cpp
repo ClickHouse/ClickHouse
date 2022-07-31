@@ -18,7 +18,7 @@ namespace
     {
         if (!func.arguments || (func.arguments->children.size() <= argument_pos))
             return;
-        auto arg = func.arguments->children[argument_pos];
+        auto & arg = *std::next(func.arguments->children.begin(), argument_pos);
         auto * identifier = arg->as<ASTIdentifier>();
         if (!identifier)
             return;
@@ -27,7 +27,7 @@ namespace
         auto table_identifier = identifier->createTable();
         if (!table_identifier)
             return;
-        func.arguments->children[argument_pos] = table_identifier;
+        arg = table_identifier;
     }
 }
 

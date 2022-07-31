@@ -48,7 +48,7 @@ const ASTTableExpression * getTableExpression(const ASTSelectQuery & select, siz
     if (tables_in_select_query.children.size() <= table_number)
         return {};
 
-    const auto & tables_element = tables_in_select_query.children[table_number]->as<ASTTablesInSelectQueryElement &>();
+    const auto & tables_element = (*std::next(tables_in_select_query.children.begin(), table_number))->as<ASTTablesInSelectQueryElement &>();
 
     if (!tables_element.table_expression)
         return {};
@@ -67,7 +67,7 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
             return table_expression->table_function;
 
         if (table_expression->subquery)
-            return table_expression->subquery->children[0];
+            return table_expression->subquery->children.front();
     }
 
     return nullptr;
@@ -83,7 +83,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
     NamesAndTypesList names_and_type_list;
     if (table_expression.subquery)
     {
-        const auto & subquery = table_expression.subquery->children.at(0);
+        const auto & subquery = table_expression.subquery->children.front();
         names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context, true).getNamesAndTypesList();
     }
     else if (table_expression.table_function)

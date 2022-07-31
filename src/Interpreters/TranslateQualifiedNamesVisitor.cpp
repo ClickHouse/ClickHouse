@@ -151,7 +151,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
     String func_name_lowercase = Poco::toLower(node.name);
     if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&
-        func_arguments->children[0]->as<ASTAsterisk>())
+        func_arguments->children.front()->as<ASTAsterisk>())
         func_arguments->children.clear();
 }
 
@@ -160,7 +160,7 @@ void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk &, const A
     if (ast->children.empty())
         throw Exception("Logical error: qualified asterisk must have children", ErrorCodes::LOGICAL_ERROR);
 
-    auto & ident = ast->children[0];
+    auto & ident = ast->children.front();
 
     /// @note it could contain table alias as table name.
     DatabaseAndTableWithAlias db_and_table(ident);
@@ -210,7 +210,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 {
     const auto & tables_with_columns = data.tables;
 
-    ASTs old_children;
+    ASTList old_children;
     if (data.processAsterisks())
     {
         bool has_asterisk = false;
@@ -232,7 +232,6 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         if (has_asterisk)
         {
             old_children.swap(node.children);
-            node.children.reserve(old_children.size());
         }
     }
 
@@ -286,7 +285,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
         {
-            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
+            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children.front());
 
             for (const auto & table : tables_with_columns)
             {
@@ -299,7 +298,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             }
 
             // QualifiedAsterisk's transformers start to appear at child 1
-            for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+            for (auto it = ++qualified_asterisk->children.begin(); it != qualified_asterisk->children.end(); ++it)
             {
                 IASTColumnsTransformer::transform(*it, columns);
             }

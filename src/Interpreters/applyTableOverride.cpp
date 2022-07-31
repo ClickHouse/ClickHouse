@@ -39,7 +39,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                         dest_children.emplace_back(override_column_ast);
                 }
                 else
-                    dest_children[exists - dest_children.begin()] = override_column_ast;
+                    *exists = override_column_ast;
             }
         }
         if (columns->indices)
@@ -59,7 +59,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (exists == dest_children.end())
                     dest_children.emplace_back(override_index_ast);
                 else
-                    dest_children[exists - dest_children.begin()] = override_index_ast;
+                    *exists = override_index_ast;
             }
         }
         if (columns->constraints)
@@ -79,7 +79,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (exists == dest_children.end())
                     dest_children.emplace_back(override_constraint_ast);
                 else
-                    dest_children[exists - dest_children.begin()] = override_constraint_ast;
+                    * exists = override_constraint_ast;
             }
         }
         if (columns->projections)
@@ -99,7 +99,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 if (exists == dest_children.end())
                     dest_children.emplace_back(override_projection_ast);
                 else
-                    dest_children[exists - dest_children.begin()] = override_projection_ast;
+                    *exists = override_projection_ast;
             }
         }
     }

@@ -89,11 +89,13 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
         return;
 
     auto & name_parts = ast_identifier->name_parts;
-    for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
+    auto jt = ast_identifier->children.begin();
+    for (size_t i = 0, size = name_parts.size(); i < size; ++i)
     {
         if (name_parts[i].empty())
         {
-            const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
+            const auto & ast_param = (*jt)->as<ASTQueryParameter &>();
+            ++jt;
             name_parts[i] = getParamValue(ast_param.name);
         }
     }

@@ -47,13 +47,13 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
     if (!user_defined_function)
         return nullptr;
 
-    const auto & function_arguments_list = function.children.at(0)->as<ASTExpressionList>();
+    const auto & function_arguments_list = function.children.front()->as<ASTExpressionList>();
     auto & function_arguments = function_arguments_list->children;
 
     const auto & create_function_query = user_defined_function->as<ASTCreateFunctionQuery>();
-    auto & function_core_expression = create_function_query->function_core->children.at(0);
+    auto & function_core_expression = create_function_query->function_core->children.front();
 
-    const auto & identifiers_expression_list = function_core_expression->children.at(0)->children.at(0)->as<ASTExpressionList>();
+    const auto & identifiers_expression_list = function_core_expression->children.front()->children.front()->as<ASTExpressionList>();
     const auto & identifiers_raw = identifiers_expression_list->children;
 
     if (function_arguments.size() != identifiers_raw.size())
@@ -65,10 +65,12 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
 
     std::unordered_map<std::string, ASTPtr> identifier_name_to_function_argument;
 
-    for (size_t parameter_index = 0; parameter_index < identifiers_raw.size(); ++parameter_index)
+    auto id_it = identifiers_raw.begin();
+    auto args_it = function_arguments.begin();
+    for (; id_it != identifiers_raw.end(); ++id_it, ++args_it)
     {
-        const auto & identifier = identifiers_raw[parameter_index]->as<ASTIdentifier>();
-        const auto & function_argument = function_arguments[parameter_index];
+        const auto & identifier = (*id_it)->as<ASTIdentifier>();
+        const auto & function_argument = *args_it;
         const auto & identifier_name = identifier->name();
 
         identifier_name_to_function_argument.emplace(identifier_name, function_argument);
@@ -76,7 +78,7 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
 
     auto [it, _] = udf_in_replace_process.emplace(function.name);
 
-    auto function_body_to_update = function_core_expression->children.at(1)->clone();
+    auto function_body_to_update = (*++function_core_expression->children.begin())->clone();
 
     auto expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
@@ -121,7 +123,7 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
 
     udf_in_replace_process.erase(it);
 
-    function_body_to_update = expression_list->children[0];
+    function_body_to_update = expression_list->children.front();
 
     auto function_alias = function.tryGetAlias();
 

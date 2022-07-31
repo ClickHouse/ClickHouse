@@ -211,9 +211,10 @@ TTLDescription TTLDescription::getTTLFromAST(
             NameSet aggregation_columns_set;
             NameSet used_primary_key_columns_set;
 
-            for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
+            auto it = ttl_element->group_by_key.begin();
+            for (size_t i = 0; it != ttl_element->group_by_key.end(); ++i, ++it)
             {
-                if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
+                if ((*it)->getColumnName() != pk_columns[i])
                     throw Exception(
                         "TTL Expression GROUP BY key should be a prefix of primary key",
                         ErrorCodes::BAD_TTL_EXPRESSION);
@@ -251,11 +252,12 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// Wrap with 'any' aggregate function primary key columns,
             /// which are not in 'GROUP BY' key and was not set explicitly.
             /// The separate step, because not all primary key columns are ordinary columns.
-            for (size_t i = ttl_element->group_by_key.size(); i < primary_key_expressions.size(); ++i)
+            auto jt = std::next(primary_key_expressions.begin(), ttl_element->group_by_key.size());
+            for (size_t i = ttl_element->group_by_key.size(); jt != primary_key_expressions.end(); ++i, ++jt)
             {
                 if (!aggregation_columns_set.contains(pk_columns[i]))
                 {
-                    ASTPtr expr = makeASTFunction("any", primary_key_expressions[i]->clone());
+                    ASTPtr expr = makeASTFunction("any", (*jt)->clone());
                     aggregations.emplace_back(pk_columns[i], std::move(expr));
                     aggregation_columns_set.insert(pk_columns[i]);
                 }

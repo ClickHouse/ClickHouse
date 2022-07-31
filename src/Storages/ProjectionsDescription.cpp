@@ -230,8 +230,9 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     std::map<String, size_t> partition_column_name_to_value_index;
     if (partition_columns)
     {
-        for (auto i : collections::range(partition_columns->children.size()))
-            partition_column_name_to_value_index[partition_columns->children[i]->getColumnNameWithoutAlias()] = i;
+        size_t i = 0;
+        for (auto & col : partition_columns->children)
+            partition_column_name_to_value_index[col->getColumnNameWithoutAlias()] = i++;
     }
 
     const auto & analysis_result = select.getAnalysisResult();

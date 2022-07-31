@@ -240,7 +240,7 @@ static std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList, NameS
                     /// column_name(int64 literal)
                     if (columns_name_set.contains(function->name) && function->arguments->children.size() == 1)
                     {
-                        const auto & prefix_limit = function->arguments->children[0]->as<ASTLiteral>();
+                        const auto & prefix_limit = function->arguments->children.front()->as<ASTLiteral>();
 
                         if (prefix_limit && isInt64OrUInt64FieldType(prefix_limit->value.getType()))
                             res->children.back() = std::make_shared<ASTIdentifier>(function->name);
@@ -618,14 +618,15 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
             const auto & additional_columns_description = createColumnsDescription(additional_columns_name_and_type, alter_command->additional_columns);
             const auto & additional_columns = InterpreterCreateQuery::formatColumns(additional_columns_description);
 
-            for (size_t index = 0; index < additional_columns_name_and_type.size(); ++index)
+            auto jt = alter_command->additional_columns->children.begin();
+            for (auto it = additional_columns->children.begin(); it != additional_columns->children.end(); ++it, ++jt)
             {
                 auto rewritten_command = std::make_shared<ASTAlterCommand>();
                 rewritten_command->type = ASTAlterCommand::ADD_COLUMN;
                 rewritten_command->first = alter_command->first;
-                rewritten_command->col_decl = additional_columns->children[index]->clone();
+                rewritten_command->col_decl = (*it)->clone();
 
-                const auto & column_declare = alter_command->additional_columns->children[index]->as<MySQLParser::ASTDeclareColumn>();
+                const auto & column_declare = (*jt)->as<MySQLParser::ASTDeclareColumn>();
                 if (column_declare && column_declare->column_options)
                 {
                     /// We need to add default expression for fill data

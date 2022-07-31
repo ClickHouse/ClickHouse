@@ -339,8 +339,8 @@ void registerStorageDictionary(StorageFactory & factory)
                 throw Exception("Storage Dictionary requires single parameter: name of dictionary",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
+            args.engine_args.front() = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args.front(), local_context);
+            String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args.front(), "dictionary_name");
 
             if (!args.attach)
             {

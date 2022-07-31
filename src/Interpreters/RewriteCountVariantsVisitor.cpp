@@ -22,7 +22,7 @@ void RewriteCountVariantsVisitor::visit(ASTPtr & node)
 
 void RewriteCountVariantsVisitor::visit(ASTFunction & func)
 {
-    if (!func.arguments || func.arguments->children.empty() || func.arguments->children.size() > 1 || !func.arguments->children[0])
+    if (!func.arguments || func.arguments->children.empty() || func.arguments->children.size() > 1 || !func.arguments->children.front())
         return;
 
     auto name = Poco::toLower(func.name);
@@ -32,7 +32,7 @@ void RewriteCountVariantsVisitor::visit(ASTFunction & func)
 
     auto & func_arguments = func.arguments->children;
 
-    const auto * first_arg_literal = func_arguments[0]->as<ASTLiteral>();
+    const auto * first_arg_literal = func_arguments.front()->as<ASTLiteral>();
     if (!first_arg_literal)
         return;
 

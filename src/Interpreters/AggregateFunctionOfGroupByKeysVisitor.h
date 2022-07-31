@@ -101,7 +101,7 @@ public:
             if (!keep_data.keep_aggregator && function_node->arguments && !function_node->arguments->children.empty())
             {
                 String alias = function_node->alias;
-                ast = (function_node->arguments->children[0])->clone();
+                ast = (function_node->arguments->children.front())->clone();
                 ast->setAlias(alias);
             }
         }

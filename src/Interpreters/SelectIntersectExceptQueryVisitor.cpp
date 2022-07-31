@@ -42,7 +42,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
 
     std::reverse(selects.begin(), selects.end());
 
-    ASTs children = {selects.back()};
+    ASTList children = {selects.back()};
     selects.pop_back();
     SelectUnionModes modes;
 
@@ -82,7 +82,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 ASTPtr left;
                 if (from_except)
                 {
-                    left = std::move(children.back()->children[1]);
+                    left = std::move(children.back()->children.back());
                 }
                 else
                 {
@@ -98,7 +98,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 intersect_node->children = {left, right};
 
                 if (from_except)
-                    children.back()->children[1] = std::move(intersect_node);
+                    children.back()->children.back() = std::move(intersect_node);
                 else
                     children.push_back(std::move(intersect_node));
 

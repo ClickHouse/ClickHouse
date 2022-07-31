@@ -172,7 +172,7 @@ SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const Storage
     return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
 }
 
-StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTList engine_args, ContextPtr context)
 {
     StorageMongoDBConfiguration configuration;
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
@@ -202,17 +202,18 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         /// 27017 is the default MongoDB port.
-        auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
+        auto it = engine_args.begin();
+        auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(*(it++), "host:port"), 27017);
 
         configuration.host = parsed_host_port.first;
         configuration.port = parsed_host_port.second;
-        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
-        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
+        configuration.database = checkAndGetLiteralArgument<String>(*(it++), "database");
+        configuration.table = checkAndGetLiteralArgument<String>(*(it++), "table");
+        configuration.username = checkAndGetLiteralArgument<String>(*(it++), "username");
+        configuration.password = checkAndGetLiteralArgument<String>(*(it++), "password");
 
         if (engine_args.size() >= 6)
-            configuration.options = checkAndGetLiteralArgument<String>(engine_args[5], "database");
+            configuration.options = checkAndGetLiteralArgument<String>(*(it++), "database");
 
     }
 
@@ -224,7 +225,7 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
 
 void registerStorageMongoDB(StorageFactory & factory)
 {
-    factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
+    factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args) -> StoragePtr
     {
         auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 

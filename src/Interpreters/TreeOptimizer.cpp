@@ -96,21 +96,12 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 
     auto & group_exprs = select_query->groupBy()->children;
 
-    /// removes expression at index idx by making it last one and calling .pop_back()
-    const auto remove_expr_at_index = [&group_exprs] (const size_t idx)
-    {
-        if (idx < group_exprs.size() - 1)
-            std::swap(group_exprs[idx], group_exprs.back());
-
-        group_exprs.pop_back();
-    };
-
     const auto & settings = context->getSettingsRef();
 
     /// iterate over each GROUP BY expression, eliminate injective function calls and literals
-    for (size_t i = 0; i < group_exprs.size();)
+    for (auto it = group_exprs.begin(); it != group_exprs.end();)
     {
-        if (const auto * function = group_exprs[i]->as<ASTFunction>())
+        if (const auto * function = (*it)->as<ASTFunction>())
         {
             /// assert function is injective
             if (possibly_injective_function_names.contains(function->name))
@@ -118,15 +109,15 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 /// do not handle semantic errors here
                 if (function->arguments->children.size() < 2)
                 {
-                    ++i;
+                    ++it;
                     continue;
                 }
 
-                const auto * dict_name_ast = function->arguments->children[0]->as<ASTLiteral>();
-                const auto * attr_name_ast = function->arguments->children[1]->as<ASTLiteral>();
+                const auto * dict_name_ast = function->arguments->children.front()->as<ASTLiteral>();
+                const auto * attr_name_ast = function->arguments->children.back()->as<ASTLiteral>();
                 if (!dict_name_ast || !attr_name_ast)
                 {
-                    ++i;
+                    ++it;
                     continue;
                 }
 
@@ -136,7 +127,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 const auto & dict_ptr = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
                 if (!dict_ptr->isInjective(attr_name))
                 {
-                    ++i;
+                    ++it;
                     continue;
                 }
             }
@@ -149,7 +140,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 
                 if (!function_builder->isInjective({}))
                 {
-                    ++i;
+                    ++it;
                     continue;
                 }
             }
@@ -160,7 +151,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             /** remove function call and take a step back to ensure
               * next iteration does not skip not yet processed data
               */
-            remove_expr_at_index(i);
+            it = group_exprs.erase(it);
 
             /// copy non-literal arguments
             std::remove_copy_if(
@@ -168,12 +159,12 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     std::back_inserter(group_exprs), is_literal
             );
         }
-        else if (is_literal(group_exprs[i]))
+        else if (is_literal(*it))
         {
             bool keep_position = false;
             if (settings.enable_positional_arguments)
             {
-                const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
+                const auto & value = (*it)->as<ASTLiteral>()->value;
                 if (value.getType() == Field::Types::UInt64)
                 {
                     auto pos = value.get<UInt64>();
@@ -183,14 +174,14 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             }
 
             if (keep_position)
-                ++i;
+                ++it;
             else
-                remove_expr_at_index(i);
+                it = group_exprs.erase(it);
         }
         else
         {
             /// if neither a function nor literal - advance to next expression
-            ++i;
+            ++it;
         }
     }
 
@@ -204,7 +195,7 @@ struct GroupByKeysInfo
     bool has_function = false;
 };
 
-GroupByKeysInfo getGroupByKeysInfo(const ASTs & group_by_keys)
+GroupByKeysInfo getGroupByKeysInfo(const ASTList & group_by_keys)
 {
     GroupByKeysInfo data;
 
@@ -241,7 +232,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     auto group_by = select_query->groupBy();
     const auto & group_by_keys = group_by->children;
 
-    ASTs modified; ///result
+    ASTList modified; ///result
 
     GroupByKeysInfo group_by_keys_data = getGroupByKeysInfo(group_by_keys);
 
@@ -250,8 +241,6 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
 
     GroupByFunctionKeysVisitor::Data visitor_data{group_by_keys_data.key_names};
     GroupByFunctionKeysVisitor(visitor_data).visit(group_by);
-
-    modified.reserve(group_by_keys.size());
 
     /// filling the result
     for (const auto & group_key : group_by_keys)
@@ -285,9 +274,8 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
     using NameAndLocale = std::pair<String, String>;
     std::set<NameAndLocale> elems_set;
 
-    ASTs & elems = select_query->orderBy()->children;
-    ASTs unique_elems;
-    unique_elems.reserve(elems.size());
+    ASTList & elems = select_query->orderBy()->children;
+    ASTList unique_elems;
 
     for (const auto & elem : elems)
     {
@@ -320,7 +308,7 @@ const ASTSelectQuery * getSimpleSubselect(const ASTSelectQuery & select)
     if (tables.empty() || tables.size() != 1)
         return nullptr;
 
-    const auto & ast_table_expression = tables[0]->as<ASTTablesInSelectQueryElement>()->table_expression;
+    const auto & ast_table_expression = tables.front()->as<ASTTablesInSelectQueryElement>()->table_expression;
     if (!ast_table_expression)
         return nullptr;
 
@@ -332,12 +320,12 @@ const ASTSelectQuery * getSimpleSubselect(const ASTSelectQuery & select)
     if (!subquery || subquery->children.size() != 1)
         return nullptr;
 
-    const auto & subselect_union = subquery->children[0]->as<ASTSelectWithUnionQuery>();
+    const auto & subselect_union = subquery->children.front()->as<ASTSelectWithUnionQuery>();
     if (!subselect_union || !subselect_union->list_of_selects ||
         subselect_union->list_of_selects->children.size() != 1)
         return nullptr;
 
-    const auto & subselect = subselect_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    const auto & subselect = subselect_union->list_of_selects->children.front()->as<ASTSelectQuery>();
     if (subselect && subselect->settings())
         return nullptr;
 
@@ -485,11 +473,12 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     auto sorting_key_columns = result.storage_snapshot ? result.storage_snapshot->metadata->getSortingKeyColumns() : Names{};
 
     bool is_sorting_key_prefix = true;
-    for (size_t i = 0; i < order_by->children.size(); ++i)
+    auto it = order_by->children.begin();
+    for (size_t i = 0; it != order_by->children.end(); ++it, ++i)
     {
-        auto * order_by_element = order_by->children[i]->as<ASTOrderByElement>();
+        auto * order_by_element = (*it)->as<ASTOrderByElement>();
 
-        auto & ast_func = order_by_element->children[0];
+        auto & ast_func = order_by_element->children.front();
         if (!ast_func->as<ASTFunction>())
             continue;
 
@@ -536,13 +525,12 @@ void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, Co
     }
 
     std::unordered_set<String> prev_keys;
-    ASTs modified;
-    modified.reserve(order_by->children.size());
+    ASTList modified;
 
     for (auto & order_by_element : order_by->children)
     {
         /// Order by contains ASTOrderByElement as children and meaning item only as a grand child.
-        ASTPtr & name_or_function = order_by_element->children[0];
+        ASTPtr & name_or_function = order_by_element->children.front();
 
         if (name_or_function->as<ASTFunction>())
         {
@@ -574,9 +562,8 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
 
     std::set<String> elems_set;
 
-    ASTs & elems = select_query->limitBy()->children;
-    ASTs unique_elems;
-    unique_elems.reserve(elems.size());
+    ASTList & elems = select_query->limitBy()->children;
+    ASTList unique_elems;
 
     for (const auto & elem : elems)
     {
@@ -636,8 +623,8 @@ void optimizeUsing(const ASTSelectQuery * select_query)
     if (!(table_join && table_join->using_expression_list))
         return;
 
-    ASTs & expression_list = table_join->using_expression_list->children;
-    ASTs uniq_expressions_list;
+    ASTList & expression_list = table_join->using_expression_list->children;
+    ASTList uniq_expressions_list;
 
     std::set<String> expressions_names;
 
@@ -719,10 +706,10 @@ std::shared_ptr<ASTFunction> getQuantileFuseCandidate(const String & func_name, 
         assert(ast && *ast);
         const auto * func = (*ast)->as<ASTFunction>();
         assert(func && func->parameters->as<ASTExpressionList>());
-        const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
+        const ASTList & parameters = func->parameters->as<ASTExpressionList &>().children;
         if (parameters.size() != 1)
             return nullptr; /// query is illegal, give up
-        func_base->parameters->children.push_back(parameters[0]);
+        func_base->parameters->children.push_back(parameters.front());
     }
     return func_base;
 }

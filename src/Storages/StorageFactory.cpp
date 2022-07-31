@@ -208,7 +208,7 @@ StoragePtr StorageFactory::get(
     if (query.comment)
         comment = query.comment->as<ASTLiteral &>().value.get<String>();
 
-    ASTs empty_engine_args;
+    ASTList empty_engine_args;
     Arguments arguments{
         .engine_name = name,
         .engine_args = has_engine_args ? storage_def->engine->arguments->children : empty_engine_args,

@@ -30,13 +30,13 @@ void OptimizeIfChainsVisitor::visit(ASTPtr & current_ast)
         }
 
         const auto * function_args = function_node->arguments->as<ASTExpressionList>();
-        if (!function_args || function_args->children.size() != 3 || !function_args->children[2])
+        if (!function_args || function_args->children.size() != 3 || !*std::next(function_args->children.begin(), 2))
         {
             visit(child);
             continue;
         }
 
-        const auto * else_arg = function_args->children[2]->as<ASTFunction>();
+        const auto * else_arg = (*std::next(function_args->children.begin(), 2))->as<ASTFunction>();
         if (!else_arg || else_arg->name != "if")
         {
             visit(child);
@@ -53,7 +53,7 @@ void OptimizeIfChainsVisitor::visit(ASTPtr & current_ast)
     }
 }
 
-ASTs OptimizeIfChainsVisitor::ifChain(const ASTPtr & child)
+ASTList OptimizeIfChainsVisitor::ifChain(const ASTPtr & child)
 {
     const auto * function_node = child->as<ASTFunction>();
     if (!function_node || !function_node->arguments)
@@ -65,25 +65,24 @@ ASTs OptimizeIfChainsVisitor::ifChain(const ASTPtr & child)
         throw Exception("Wrong number of arguments for function 'if' (" + toString(function_args->children.size()) + " instead of 3)",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const auto * else_arg = function_args->children[2]->as<ASTFunction>();
+    const auto * else_arg = function_args->children.back()->as<ASTFunction>();
 
     /// Recursively collect arguments from the innermost if ("head-recursion").
     /// Arguments will be returned in reverse order.
 
     if (else_arg && else_arg->name == "if")
     {
-        auto cur = ifChain(function_node->arguments->children[2]);
-        cur.push_back(function_node->arguments->children[1]);
-        cur.push_back(function_node->arguments->children[0]);
+        auto cur = ifChain(function_node->arguments->children.back());
+        cur.push_back(*++function_node->arguments->children.begin());
+        cur.push_back(function_node->arguments->children.front());
         return cur;
     }
     else
     {
-        ASTs end;
-        end.reserve(3);
-        end.push_back(function_node->arguments->children[2]);
-        end.push_back(function_node->arguments->children[1]);
-        end.push_back(function_node->arguments->children[0]);
+        ASTList end;
+        end.push_back(function_node->arguments->children.back());
+        end.push_back(*++function_node->arguments->children.begin());
+        end.push_back(function_node->arguments->children.front());
         return end;
     }
 }

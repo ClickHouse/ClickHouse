@@ -963,7 +963,7 @@ void registerStorageHive(StorageFactory & factory)
             if (have_settings)
                 hive_settings->loadFromQuery(*args.storage_def);
 
-            ASTs & engine_args = args.engine_args;
+            ASTList & engine_args = args.engine_args;
             if (engine_args.size() != 3)
                 throw Exception(
                     "Storage Hive requires 3 arguments: hive metastore address, hive database and hive table",
@@ -976,9 +976,13 @@ void registerStorageHive(StorageFactory & factory)
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-            const String & hive_metastore_url = checkAndGetLiteralArgument<String>(engine_args[0], "hive_metastore_url");
-            const String & hive_database = checkAndGetLiteralArgument<String>(engine_args[1], "hive_database");
-            const String & hive_table = checkAndGetLiteralArgument<String>(engine_args[2], "hive_table");
+            auto it = engine_args.begin();
+            const String & hive_metastore_url = checkAndGetLiteralArgument<String>(*it, "hive_metastore_url");
+            ++it;
+            const String & hive_database = checkAndGetLiteralArgument<String>(*it, "hive_database");
+            ++it;
+            const String & hive_table = checkAndGetLiteralArgument<String>(*it, "hive_table");
+            ++it;
             return std::make_shared<StorageHive>(
                 hive_metastore_url,
                 hive_database,

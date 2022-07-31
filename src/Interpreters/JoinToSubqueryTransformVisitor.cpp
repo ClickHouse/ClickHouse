@@ -127,7 +127,6 @@ private:
     {
         bool has_asterisks = false;
         data.new_select_expression_list = std::make_shared<ASTExpressionList>();
-        data.new_select_expression_list->children.reserve(node.children.size());
 
         for (const auto & child : node.children)
         {
@@ -148,12 +147,12 @@ private:
 
                 if (child->children.size() != 1)
                     throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
-                auto & identifier = child->children[0]->as<ASTTableIdentifier &>();
+                auto & identifier = child->children.front()->as<ASTTableIdentifier &>();
 
                 data.addTableColumns(identifier.name(), columns);
 
                 // QualifiedAsterisk's transformers start to appear at child 1
-                for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+                for (auto it = ++qualified_asterisk->children.begin(); it != qualified_asterisk->children.end(); ++it)
                 {
                     IASTColumnsTransformer::transform(*it, columns);
                 }
@@ -209,7 +208,7 @@ struct RewriteTablesVisitorData
     {
         if (done)
             return;
-        std::vector<ASTPtr> new_tables{left, right};
+        ASTList new_tables{left, right};
         ast->children.swap(new_tables);
         done = true;
     }
@@ -232,16 +231,16 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
     size_t num_using = 0;
 
     table_expressions.reserve(num_tables);
-    for (size_t i = 0; i < num_tables; ++i)
+    for (auto it = tables->children.begin(); it != tables->children.end(); ++it)
     {
-        const auto * table = tables->children[i]->as<ASTTablesInSelectQueryElement>();
+        const auto * table = (*it)->as<ASTTablesInSelectQueryElement>();
         if (!table)
             throw Exception("Table expected", ErrorCodes::LOGICAL_ERROR);
 
         if (table->table_expression)
             if (const auto * expression = table->table_expression->as<ASTTableExpression>())
                 table_expressions.push_back(expression);
-        if (!i)
+        if (it == tables->children.begin())
             continue;
 
         if (!table->table_join && !table->array_join)
@@ -340,7 +339,7 @@ struct CollectColumnIdentifiersMatcher
         {
             data.pushIgnored(RequiredSourceColumnsMatcher::extractNamesFromLambda(func));
 
-            Visitor(data).visit(func.arguments->children[1]);
+            Visitor(data).visit(*++func.arguments->children.begin());
 
             data.popIgnored();
         }
@@ -430,9 +429,6 @@ struct TableNeededColumns
 
     void fillExpressionList(ASTExpressionList & expression_list) const
     {
-        size_t columns_count = no_clashes.size() + column_clashes.size() + alias_clashes.size();
-        expression_list.children.reserve(expression_list.children.size() + columns_count);
-
         String table_name = table.getQualifiedNamePrefix(false);
 
         for (const auto & column : no_clashes)
@@ -672,9 +668,10 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     std::unordered_map<String, ASTPtr> on_aliases;
 
     /// Collect columns from JOIN sections. Detect if we have aliases there (they need pushdown).
-    for (size_t table_pos = 0; table_pos < tables_count; ++table_pos)
+    auto tab_it = src_tables.begin();
+    for (size_t table_pos = 0; tab_it != src_tables.end(); ++table_pos, ++tab_it)
     {
-        auto * table = src_tables[table_pos]->as<ASTTablesInSelectQueryElement>();
+        auto * table = (*tab_it)->as<ASTTablesInSelectQueryElement>();
         if (table->table_join)
         {
             auto & join = table->table_join->as<ASTTableJoin &>();
@@ -744,11 +741,12 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
 
     /// Rewrite JOINs with subselects
 
-    ASTPtr left_table = src_tables[0];
+    ASTPtr left_table = src_tables.front();
 
     static ASTPtr subquery_template = makeSubqueryTemplate();
 
-    for (size_t i = 1; i < src_tables.size() - 1; ++i)
+    auto it = ++src_tables.begin();
+    for (size_t i = 1; i < src_tables.size() - 1; ++i, ++it)
     {
         auto expression_list = subqueryExpressionList(i, needed_columns, alias_pushdown);
 
@@ -756,7 +754,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         SubqueryExpressionsRewriteVisitor::Data expr_rewrite_data{std::move(expression_list)};
         SubqueryExpressionsRewriteVisitor(expr_rewrite_data).visit(subquery);
 
-        left_table = replaceJoin(left_table, src_tables[i], subquery);
+        left_table = replaceJoin(left_table, *it, subquery);
     }
 
     RewriteVisitor::Data visitor_data{left_table, src_tables.back()};

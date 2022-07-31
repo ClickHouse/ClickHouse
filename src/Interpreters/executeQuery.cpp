@@ -341,7 +341,7 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
 {
-    const ASTs & children = select_with_union.list_of_selects->children;
+    const ASTList & children = select_with_union.list_of_selects->children;
     if (children.empty())
         return;
 

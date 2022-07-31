@@ -914,7 +914,6 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
-    list_of_columns->children.reserve(block_to_write.columns());
     for (const auto & column : block_to_write)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
@@ -1055,52 +1054,57 @@ void registerStorageBuffer(StorageFactory & factory)
 
     factory.registerStorage("Buffer", [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
 
         if (engine_args.size() < 9 || engine_args.size() > 12)
             throw Exception("Storage Buffer requires from 9 to 12 parameters: "
                 " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        auto it = engine_args.begin();
+
         // Table and database name arguments accept expressions, evaluate them.
-        engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.getLocalContext());
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
+        *it = evaluateConstantExpressionForDatabaseName(*it, args.getLocalContext());
+        ++it;
+        *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, args.getLocalContext());
+        ++it;
 
         // After we evaluated all expressions, check that all arguments are
         // literals.
-        for (size_t i = 0; i < engine_args.size(); ++i)
+        it = engine_args.begin();
+        for (size_t i = 0; i < engine_args.size(); ++i, ++it)
         {
-            if (!typeid_cast<ASTLiteral *>(engine_args[i].get()))
+            if (!typeid_cast<ASTLiteral *>((*it).get()))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Storage Buffer expects a literal as an argument #{}, got '{}'"
-                    " instead", i, engine_args[i]->formatForErrorMessage());
+                    " instead", i, (*it)->formatForErrorMessage());
             }
         }
 
-        size_t i = 0;
+        it = engine_args.begin();
 
-        String destination_database = checkAndGetLiteralArgument<String>(engine_args[i++], "destination_database");
-        String destination_table = checkAndGetLiteralArgument<String>(engine_args[i++], "destination_table");
+        String destination_database = checkAndGetLiteralArgument<String>(*(it++), "destination_database");
+        String destination_table = checkAndGetLiteralArgument<String>(*(it++), "destination_table");
 
-        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
 
         StorageBuffer::Thresholds min;
         StorageBuffer::Thresholds max;
         StorageBuffer::Thresholds flush;
 
-        min.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        max.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        min.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        max.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        min.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        max.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        if (engine_args.size() > i)
-            flush.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        if (engine_args.size() > i)
-            flush.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
-        if (engine_args.size() > i)
-            flush.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        min.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
+        max.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
+        min.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
+        max.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
+        min.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
+        max.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
+        if (engine_args.end() != it)
+            flush.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
+        if (engine_args.end() != it)
+            flush.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
+        if (engine_args.end() != it)
+            flush.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), (*(it++))->as<ASTLiteral &>().value);
 
         /// If destination_id is not set, do not write data from the buffer, but simply empty the buffer.
         StorageID destination_id = StorageID::createEmpty();

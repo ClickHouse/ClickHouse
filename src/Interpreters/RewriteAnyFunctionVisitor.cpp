@@ -72,7 +72,7 @@ void RewriteAnyFunctionMatcher::visit(ASTPtr & ast, Data & data)
 
 void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
-    if (!func.arguments || func.arguments->children.empty() || !func.arguments->children[0])
+    if (!func.arguments || func.arguments->children.empty() || !func.arguments->children.front())
         return;
 
     if (func.name != "any" && func.name != "anyLast")
@@ -83,15 +83,15 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
     if (func_arguments.size() != 1)
         return;
 
-    const auto * first_arg_func = func_arguments[0]->as<ASTFunction>();
+    const auto * first_arg_func = func_arguments.front()->as<ASTFunction>();
     if (!first_arg_func || first_arg_func->arguments->children.empty())
         return;
 
     /// We have rewritten this function. Just unwrap its argument.
     if (data.rewritten.contains(ast.get()))
     {
-        func_arguments[0]->setAlias(func.alias);
-        ast = func_arguments[0];
+        func_arguments.front()->setAlias(func.alias);
+        ast = func_arguments.front();
         return;
     }
 
@@ -110,8 +110,8 @@ void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Da
     data.rewritten.insert(ast.get());
 
     /// Unwrap function: any(f(any(x), any(y), g(any(z)))) -> f(any(x), any(y), g(any(z)))
-    func_arguments[0]->setAlias(func.alias);
-    ast = func_arguments[0];
+    func_arguments.front()->setAlias(func.alias);
+    ast = func_arguments.front();
 }
 
 bool RewriteAnyFunctionMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)

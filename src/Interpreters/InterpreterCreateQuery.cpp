@@ -1522,12 +1522,12 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
         bool has_explicit_zk_path_arg = create.storage->engine->arguments &&
                                         create.storage->engine->arguments->children.size() >= 2 &&
-                                        create.storage->engine->arguments->children[0]->as<ASTLiteral>() &&
-                                        create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.getType() == Field::Types::String;
+                                        create.storage->engine->arguments->children.front()->as<ASTLiteral>() &&
+                                        create.storage->engine->arguments->children.front()->as<ASTLiteral>()->value.getType() == Field::Types::String;
 
         if (has_explicit_zk_path_arg)
         {
-            String zk_path = create.storage->engine->arguments->children[0]->as<ASTLiteral>()->value.get<String>();
+            String zk_path = create.storage->engine->arguments->children.front()->as<ASTLiteral>()->value.get<String>();
             Macros::MacroExpansionInfo info;
             info.table_id.uuid = create.uuid;
             info.ignore_unknown = true;

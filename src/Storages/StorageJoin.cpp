@@ -232,7 +232,7 @@ void registerStorageJoin(StorageFactory & factory)
     {
         /// Join(ANY, LEFT, k1, k2, ...)
 
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
 
         const auto & settings = args.getContext()->getSettingsRef();
 

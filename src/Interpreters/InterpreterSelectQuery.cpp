@@ -157,7 +157,7 @@ FilterDAGInfoPtr generateFilterActions(
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot);
     filter_info->actions = analyzer.simpleSelectActions();
 
-    filter_info->column_name = expr_list->children.at(0)->getColumnName();
+    filter_info->column_name = expr_list->children.front()->getColumnName();
     filter_info->actions->removeUnusedActions(NameSet{filter_info->column_name});
     filter_info->actions->projectInput(false);
 

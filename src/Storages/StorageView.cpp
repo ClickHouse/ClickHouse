@@ -67,7 +67,7 @@ bool hasJoin(const ASTSelectQuery & select)
     if (!tables || tables->children.size() < 2)
         return false;
 
-    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
+    const auto & joined_table = (*++tables->children.begin())->as<ASTTablesInSelectQueryElement &>();
     return joined_table.table_join != nullptr;
 }
 

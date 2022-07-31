@@ -177,22 +177,23 @@ void registerStorageExecutable(StorageFactory & factory)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "StorageExecutable requires minimum 2 arguments: script_name, format, [input_query...]");
 
-        for (size_t i = 0; i < 2; ++i)
-            args.engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[i], local_context);
+        auto arg_it = args.engine_args.begin();
+        for (size_t i = 0; i < 2; ++i, ++arg_it)
+            *arg_it = evaluateConstantExpressionOrIdentifierAsLiteral(*arg_it, local_context);
 
-        auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args.engine_args[0], "script_name_with_arguments_value");
+        auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args.engine_args.front(), "script_name_with_arguments_value");
 
         std::vector<String> script_name_with_arguments;
         boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c) { return c == ' '; });
 
         auto script_name = script_name_with_arguments[0];
         script_name_with_arguments.erase(script_name_with_arguments.begin());
-        auto format = checkAndGetLiteralArgument<String>(args.engine_args[1], "format");
+        auto format = checkAndGetLiteralArgument<String>(*++args.engine_args.begin(), "format");
 
         std::vector<ASTPtr> input_queries;
-        for (size_t i = 2; i < args.engine_args.size(); ++i)
+        for (; arg_it != args.engine_args.end(); ++arg_it)
         {
-            ASTPtr query = args.engine_args[i]->children.at(0);
+            ASTPtr query = (*arg_it)->children.front();
             if (!query->as<ASTSelectWithUnionQuery>())
                 throw Exception(
                     ErrorCodes::UNSUPPORTED_METHOD, "StorageExecutable argument is invalid input query {}",

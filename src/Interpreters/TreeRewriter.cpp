@@ -247,7 +247,7 @@ struct FuseSumCountAggregatesVisitorData
 
             // Probably we can extend it to match count() for non-nullable argument
             // to sum/avg with any other argument. Now we require strict match.
-            const auto argument = func.arguments->children.at(0)->getColumnName();
+            const auto argument = func.arguments->children.front()->getColumnName();
             auto it = fuse_map.find(argument);
             if (it != fuse_map.end())
             {
@@ -276,14 +276,14 @@ struct ExistsExpressionData
     {
         bool exists_expression = func.name == "exists"
             && func.arguments && func.arguments->children.size() == 1
-            && typeid_cast<const ASTSubquery *>(func.arguments->children[0].get());
+            && typeid_cast<const ASTSubquery *>(func.arguments->children.front().get());
 
         if (!exists_expression)
             return;
 
         /// EXISTS(subquery) --> 1 IN (SELECT 1 FROM subquery LIMIT 1)
 
-        auto subquery_node = func.arguments->children[0];
+        auto subquery_node = func.arguments->children.front();
         auto table_expression = std::make_shared<ASTTableExpression>();
         table_expression->subquery = std::move(subquery_node);
         table_expression->children.push_back(table_expression->subquery);
@@ -400,7 +400,7 @@ bool hasArrayJoin(const ASTPtr & ast)
 /// Keep number of columns for 'GLOBAL IN (SELECT 1 AS a, a)'
 void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 {
-    ASTs & elements = select_query->select()->children;
+    ASTList & elements = select_query->select()->children;
 
     std::set<String> all_column_names;
     std::set<String> assigned_column_names;
@@ -434,7 +434,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 /// Also remove all INTERPOLATE columns which are not in SELECT anymore.
 void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
-    ASTs & elements = select_query->select()->children;
+    ASTList & elements = select_query->select()->children;
 
     std::unordered_map<String, size_t> required_columns_with_duplicate_count;
     /// Order of output columns should match order in required_result_columns,
@@ -546,7 +546,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         }
     }
 
-    elements = std::move(new_elements);
+    elements = ASTList(new_elements.begin(), new_elements.end());
 }
 
 /// Replacing scalar subqueries with constant values.
@@ -575,7 +575,7 @@ void getArrayJoinedColumns(ASTPtr & query, TreeRewriterResult & result, const AS
         if (select_query->arrayJoinExpressionList().first->children.empty())
             throw DB::Exception("ARRAY JOIN requires an argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        ASTPtr expr = select_query->arrayJoinExpressionList().first->children.at(0);
+        ASTPtr expr = select_query->arrayJoinExpressionList().first->children.front();
         String source_name = expr->getColumnName();
         String result_name = expr->getAliasOrColumnName();
 

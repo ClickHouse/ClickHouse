@@ -1078,7 +1078,7 @@ void StorageS3::processNamedCollectionResult(StorageS3Configuration & configurat
 }
 
 
-StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+StorageS3Configuration StorageS3::getConfiguration(ASTList & engine_args, ContextPtr local_context)
 {
     StorageS3Configuration configuration;
 
@@ -1098,17 +1098,19 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
-        configuration.url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+        auto it = engine_args.begin();
+        configuration.url = checkAndGetLiteralArgument<String>(*(it++), "url");
         if (engine_args.size() >= 4)
         {
-            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
-            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
+            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(*(it++), "access_key_id");
+            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(*(it++), "secret_access_key");
         }
 
         if (engine_args.size() == 3 || engine_args.size() == 5)
         {
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args.back(), "compression_method");
-            configuration.format = checkAndGetLiteralArgument<String>(engine_args[engine_args.size() - 2], "format");
+            auto jt = engine_args.rbegin();
+            configuration.compression_method = checkAndGetLiteralArgument<String>(*(jt++), "compression_method");
+            configuration.format = checkAndGetLiteralArgument<String>(*(jt++), "format");
         }
         else if (engine_args.size() != 1)
         {
@@ -1185,7 +1187,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
 void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
-    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
+    factory.registerStorage(name, [](const StorageFactory::Arguments & args) -> StoragePtr
     {
         auto & engine_args = args.engine_args;
         if (engine_args.empty())

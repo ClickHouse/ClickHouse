@@ -23,7 +23,7 @@ std::vector<String> RequiredSourceColumnsMatcher::extractNamesFromLambda(const A
     if (node.arguments->children.size() != 2)
         throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const auto * lambda_args_tuple = node.arguments->children[0]->as<ASTFunction>();
+    const auto * lambda_args_tuple = node.arguments->children.front()->as<ASTFunction>();
 
     if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
         throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
@@ -196,7 +196,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
                 local_aliases.push_back(name);
 
         /// visit child with masked local aliases
-        RequiredSourceColumnsVisitor(data).visit(node.arguments->children[1]);
+        RequiredSourceColumnsVisitor(data).visit(*++node.arguments->children.begin());
 
         for (const auto & name : local_aliases)
             data.private_aliases.erase(name);

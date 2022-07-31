@@ -93,7 +93,7 @@ private:
 
     using ParentNodes = std::vector<IAST *>;
     using FunctionParentMap = std::unordered_map<const IAST *, ParentNodes>;
-    using ColumnToPosition = std::unordered_map<const IAST *, size_t>;
+    using ColumnToPosition = std::unordered_map<const IAST *, ASTList::iterator>;
 
     ASTSelectQuery * select_query;
     const ExtractedSettings settings;

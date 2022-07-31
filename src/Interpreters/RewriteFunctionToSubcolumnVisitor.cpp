@@ -71,7 +71,7 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
     if (arguments.empty() || arguments.size() > 2)
         return;
 
-    const auto * identifier = arguments[0]->as<ASTIdentifier>();
+    const auto * identifier = arguments.front()->as<ASTIdentifier>();
     if (!identifier)
         return;
 
@@ -102,7 +102,7 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
     {
         if (function.name == "tupleElement" && column_type_id == TypeIndex::Tuple)
         {
-            const auto * literal = arguments[1]->as<ASTLiteral>();
+            const auto * literal = arguments.back()->as<ASTLiteral>();
             if (!literal)
                 return;
 
@@ -130,7 +130,7 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
                 const auto & [type_id, subcolumn_name, transformer] = it->second;
                 if (column_type_id == type_id)
                 {
-                    ast = transformer(name_in_storage, subcolumn_name, arguments[1]);
+                    ast = transformer(name_in_storage, subcolumn_name, arguments.back());
                     ast->setAlias(alias);
                 }
             }

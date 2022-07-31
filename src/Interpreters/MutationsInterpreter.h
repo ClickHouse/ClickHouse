@@ -122,7 +122,7 @@ private:
     {
         explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
 
-        ASTs filters;
+        ASTList filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
 
         /// Contains columns that are changed by this stage, columns changed by

@@ -21,7 +21,7 @@ public:
         const UnionMode & union_default_mode;
     };
 
-    static void getSelectsFromUnionListNode(ASTPtr ast_select, ASTs & selects);
+    static void getSelectsFromUnionListNode(ASTPtr ast_select, ASTList & selects);
 
     static void visit(ASTPtr & ast, Data &);
     static void visit(ASTSelectWithUnionQuery &, Data &);

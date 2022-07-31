@@ -27,13 +27,13 @@ public:
 
     PredicateRewriteVisitorData(
         ContextPtr context_,
-        const ASTs & predicates_,
+        const ASTList & predicates_,
         const TableWithColumnNamesAndTypes & table_columns_,
         bool optimize_final_,
         bool optimize_with_);
 
 private:
-    const ASTs & predicates;
+    const ASTList & predicates;
     const TableWithColumnNamesAndTypes & table_columns;
     bool optimize_final;
     bool optimize_with;

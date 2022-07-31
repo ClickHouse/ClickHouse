@@ -34,13 +34,13 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
     if (lower_name == "sumif")
     {
         /// sumIf(1, cond) -> countIf(cond)
-        const auto * literal = func_arguments[0]->as<ASTLiteral>();
+        const auto * literal = func_arguments.front()->as<ASTLiteral>();
         if (!literal || !DB::isInt64OrUInt64FieldType(literal->value.getType()))
             return;
 
         if (func_arguments.size() == 2 && literal->value.get<UInt64>() == 1)
         {
-            auto new_func = makeASTFunction("countIf", func_arguments[1]);
+            auto new_func = makeASTFunction("countIf", func_arguments.back());
             new_func->setAlias(func.alias);
             ast = std::move(new_func);
             return;
@@ -48,15 +48,15 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
     }
     else
     {
-        const auto * nested_func = func_arguments[0]->as<ASTFunction>();
+        const auto * nested_func = func_arguments.front()->as<ASTFunction>();
 
         if (!nested_func || Poco::toLower(nested_func->name) != "if" || nested_func->arguments->children.size() != 3)
             return;
 
         const auto & if_arguments = nested_func->arguments->children;
 
-        const auto * first_literal = if_arguments[1]->as<ASTLiteral>();
-        const auto * second_literal = if_arguments[2]->as<ASTLiteral>();
+        const auto * first_literal = (*std::next(if_arguments.begin(), 1))->as<ASTLiteral>();
+        const auto * second_literal = (*std::next(if_arguments.begin(), 2))->as<ASTLiteral>();
 
         if (first_literal && second_literal)
         {
@@ -68,7 +68,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
             /// sum(if(cond, 1, 0)) -> countIf(cond)
             if (first_value == 1 && second_value == 0)
             {
-                auto new_func = makeASTFunction("countIf", if_arguments[0]);
+                auto new_func = makeASTFunction("countIf", if_arguments.front());
                 new_func->setAlias(func.alias);
                 ast = std::move(new_func);
                 return;
@@ -76,7 +76,7 @@ void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, 
             /// sum(if(cond, 0, 1)) -> countIf(not(cond))
             if (first_value == 0 && second_value == 1)
             {
-                auto not_func = makeASTFunction("not", if_arguments[0]);
+                auto not_func = makeASTFunction("not", if_arguments.front());
                 auto new_func = makeASTFunction("countIf", not_func);
                 new_func->setAlias(func.alias);
                 ast = std::move(new_func);

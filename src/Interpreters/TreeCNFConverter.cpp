@@ -53,9 +53,9 @@ void splitMultiLogic(ASTPtr & node)
 
         if (func->arguments->children.size() > 2)
         {
-            ASTPtr res = func->arguments->children[0]->clone();
-            for (size_t i = 1; i < func->arguments->children.size(); ++i)
-                res = makeASTFunction(func->name, res, func->arguments->children[i]->clone());
+            ASTPtr res = func->arguments->children.front()->clone();
+            for (auto it = ++func->arguments->children.begin(); it != func->arguments->children.end(); ++it)
+                res = makeASTFunction(func->name, res, *it);
 
             node = res;
         }
@@ -87,8 +87,8 @@ void traversePushNot(ASTPtr & node, bool add_negation)
             /// apply De Morgan's Law
             node = makeASTFunction(
                 (func->name == "and" ? "or" : "and"),
-                func->arguments->children[0]->clone(),
-                func->arguments->children[1]->clone());
+                func->arguments->children.front()->clone(),
+                func->arguments->children.back()->clone());
         }
 
         auto * new_func = node->as<ASTFunction>();
@@ -100,7 +100,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
         if (func->arguments->children.size() != 1)
             throw Exception("Bad NOT function. Expected 1 argument", ErrorCodes::INCORRECT_QUERY);
         /// delete NOT
-        node = func->arguments->children[0]->clone();
+        node = func->arguments->children.front()->clone();
 
         traversePushNot(node, !add_negation);
     }
@@ -130,24 +130,27 @@ bool traversePushOr(ASTPtr & node, size_t num_atoms, size_t max_atoms)
     if (func && func->name == "or")
     {
         assert(func->arguments->children.size() == 2);
-        size_t and_node_id = func->arguments->children.size();
-        for (size_t i = 0; i < func->arguments->children.size(); ++i)
+        ASTPtr and_node = nullptr;
+        ASTPtr other_node = nullptr;
+
+        auto * and_func = func->arguments->children.front()->as<ASTFunction>();
+        if (and_func && and_func->name == "and")
         {
-            auto & child = func->arguments->children[i];
-            auto * and_func = child->as<ASTFunction>();
-            if (and_func && and_func->name == "and")
-                and_node_id = i;
+            and_node = func->arguments->children.front();
+            other_node = func->arguments->children.back();
+        }
+        else if (and_func = func->arguments->children.back()->as<ASTFunction>(); and_func && and_func->name == "and")
+        {
+            and_node = func->arguments->children.back();
+            other_node = func->arguments->children.front();
         }
 
-        if (and_node_id == func->arguments->children.size())
+        if (!and_node)
             return true;
 
-        const size_t other_node_id = 1 - and_node_id;
-        const auto * and_func = func->arguments->children[and_node_id]->as<ASTFunction>();
-
-        auto a = func->arguments->children[other_node_id];
-        auto b = and_func->arguments->children[0];
-        auto c = and_func->arguments->children[1];
+        auto a = other_node;
+        auto b = and_func->arguments->children.front();
+        auto c = and_func->arguments->children.back();
 
         /// apply the distributive law ( a or (b and c) -> (a or b) and (a or c) )
         node = makeASTFunction(

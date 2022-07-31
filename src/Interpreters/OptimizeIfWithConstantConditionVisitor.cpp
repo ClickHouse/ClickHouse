@@ -39,14 +39,14 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
                 if (expr_list->children.size() != 2)
                     throw Exception("Function CAST must have exactly two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-                const ASTPtr & type_ast = expr_list->children.at(1);
+                const ASTPtr & type_ast = expr_list->children.back();
                 if (const auto * type_literal = type_ast->as<ASTLiteral>())
                 {
                     if (type_literal->value.getType() == Field::Types::String)
                     {
                         const auto & type_str = type_literal->value.get<std::string>();
                         if (type_str == "UInt8" || type_str == "Nullable(UInt8)")
-                            return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
+                            return tryExtractConstValueFromCondition(expr_list->children.front(), value);
                     }
                 }
             }
@@ -58,7 +58,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
                 if (expr_list->children.size() != 1)
                     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must have exactly two arguments", function->name);
 
-                return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
+                return tryExtractConstValueFromCondition(expr_list->children.front(), value);
             }
         }
     }
@@ -91,9 +91,13 @@ void OptimizeIfWithConstantConditionVisitor::visit(ASTPtr & current_ast)
         visit(function_node->arguments);
         const auto * args = function_node->arguments->as<ASTExpressionList>();
 
-        ASTPtr condition_expr = args->children[0];
-        ASTPtr then_expr = args->children[1];
-        ASTPtr else_expr = args->children[2];
+        auto it = args->children.begin();
+        ASTPtr condition_expr = *it;
+        ++it;
+        ASTPtr then_expr = *it;
+        ++it;
+        ASTPtr else_expr = *it;
+        ++it;
 
         bool condition;
         if (tryExtractConstValueFromCondition(condition_expr, condition))

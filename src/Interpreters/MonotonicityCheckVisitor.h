@@ -60,7 +60,7 @@ public:
             if (identifier)
                 return true;
 
-            identifier = ast_function.arguments->children[0]->as<ASTIdentifier>();
+            identifier = ast_function.arguments->children.front()->as<ASTIdentifier>();
             if (!identifier)
                 return false;
 

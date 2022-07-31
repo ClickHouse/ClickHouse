@@ -64,17 +64,18 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
-        Block full_result_header = getCurrentChildResultHeader(ast->list_of_selects->children.at(0), required_result_column_names);
+        Block full_result_header = getCurrentChildResultHeader(ast->list_of_selects->children.front(), required_result_column_names);
 
         std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
 
         for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
             positions_of_required_result_columns[required_result_num] = full_result_header.getPositionByName(required_result_column_names[required_result_num]);
 
-        for (size_t query_num = 1; query_num < num_children; ++query_num)
+        auto it = ast->list_of_selects->children.begin();
+        for (size_t query_num = 1; query_num < num_children; ++query_num, ++it)
         {
             Block full_result_header_for_current_select
-                = getCurrentChildResultHeader(ast->list_of_selects->children.at(query_num), required_result_column_names);
+                = getCurrentChildResultHeader(*it, required_result_column_names);
 
             if (full_result_header_for_current_select.columns() != full_result_header.columns())
                 throw Exception("Different number of columns in UNION ALL elements:\n"
@@ -91,7 +92,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     if (num_children == 1 && settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
-        const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
+        const ASTPtr first_select_ast = ast->list_of_selects->children.front();
         ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
         if (!select_query)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type in list_of_selects: {}", first_select_ast->getID());
@@ -137,13 +138,14 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
-    for (size_t query_num = 0; query_num < num_children; ++query_num)
+    auto it = ast->list_of_selects->children.begin();
+    for (size_t query_num = 0; query_num < num_children; ++query_num, ++it)
     {
         const Names & current_required_result_column_names
             = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(
-            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), require_full_header ? Names() : current_required_result_column_names));
+            buildCurrentChildInterpreter(*it, require_full_header ? Names() : current_required_result_column_names));
         // We need to propagate the uses_view_source flag from children to the (self) parent since, if one of the children uses
         // a view source that means that the parent uses it too and can be cached globally
         uses_view_source |= nested_interpreters.back()->usesViewSource();

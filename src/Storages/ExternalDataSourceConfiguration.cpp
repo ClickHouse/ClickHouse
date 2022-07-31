@@ -94,7 +94,7 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
 
 template <typename T>
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
-    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<T> & storage_settings)
+    const ASTList & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<T> & storage_settings)
 {
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
@@ -102,7 +102,7 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     ExternalDataSourceConfiguration configuration;
     StorageSpecificArgs non_common_args;
 
-    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
+    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args.front().get()))
     {
         const auto & config = context->getConfigRef();
         const auto & collection_prefix = fmt::format("named_collections.{}", collection->name());
@@ -139,23 +139,23 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         }
 
         /// Check key-value arguments.
-        for (size_t i = 1; i < args.size(); ++i)
+        for (auto it = ++args.begin(); it != args.end(); ++it)
         {
-            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
+            if (const auto * ast_function = typeid_cast<const ASTFunction *>(it->get()))
             {
                 const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
                 auto function_args = args_expr->children;
                 if (function_args.size() != 2)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
 
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                if (function_args[1]->as<ASTFunction>())
+                auto arg_name = function_args.front()->as<ASTIdentifier>()->name();
+                if (function_args.back()->as<ASTFunction>())
                 {
-                    non_common_args.emplace_back(std::make_pair(arg_name, function_args[1]));
+                    non_common_args.emplace_back(std::make_pair(arg_name, function_args.back()));
                     continue;
                 }
 
-                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args.back(), context);
                 auto * arg_value_literal = arg_value_ast->as<ASTLiteral>();
                 if (arg_value_literal)
                 {
@@ -391,7 +391,7 @@ void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration 
 }
 
 
-std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context)
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTList & args, ContextPtr context)
 {
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
@@ -399,7 +399,7 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
     URLBasedDataSourceConfiguration configuration;
     StorageSpecificArgs non_common_args;
 
-    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
+    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args.front().get()))
     {
         const auto & config = context->getConfigRef();
         auto config_prefix = fmt::format("named_collections.{}", collection->name());
@@ -449,17 +449,17 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
         }
 
         /// Check key-value arguments.
-        for (size_t i = 1; i < args.size(); ++i)
+        for (auto it = ++args.begin(); it != args.end(); ++it)
         {
-            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
+            if (const auto * ast_function = typeid_cast<const ASTFunction *>(it->get()))
             {
                 const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
                 auto function_args = args_expr->children;
                 if (function_args.size() != 2)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
 
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                auto arg_name = function_args.front()->as<ASTIdentifier>()->name();
+                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args.back(), context);
                 auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
 
                 if (arg_name == "url")
@@ -521,8 +521,8 @@ bool getExternalDataSourceConfiguration(const ASTList & args, BaseSettings<T> & 
                 if (function_args.size() != 2)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
 
-                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                auto arg_name = function_args.front()->as<ASTIdentifier>()->name();
+                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args.back(), context);
                 auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
                 config_settings.emplace_back(arg_name, arg_value);
             }

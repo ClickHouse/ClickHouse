@@ -101,14 +101,13 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
             select_query->replaceDatabaseAndTable(table_id);
         }
 
-        select_expression_list->children.reserve(columns.size());
         /// manually substitute column names in place of asterisk
         for (const auto & column : columns)
             select_expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
     }
     else
     {
-        query = subquery->children.at(0);
+        query = subquery->children.front();
         subquery_options.removeDuplicates();
     }
 

@@ -36,7 +36,7 @@ public:
 
     ASTs filterConstraints(ConstraintType selection) const;
 
-    const ASTs & getConstraints() const;
+    const ASTList & getConstraints() const;
 
     const std::vector<std::vector<CNFQuery::AtomicFormula>> & getConstraintData() const;
     std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData() const;

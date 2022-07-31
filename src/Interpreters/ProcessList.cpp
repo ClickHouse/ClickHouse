@@ -55,7 +55,7 @@ static bool isUnlimitedQuery(const IAST * ast)
         if (!ast_selects->list_of_selects || ast_selects->list_of_selects->children.empty())
             return false;
 
-        const auto * ast_select = ast_selects->list_of_selects->children[0]->as<ASTSelectQuery>();
+        const auto * ast_select = ast_selects->list_of_selects->children.front()->as<ASTSelectQuery>();
         if (!ast_select)
             return false;
 

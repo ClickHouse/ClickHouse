@@ -355,28 +355,28 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
             if (group_by_kind != GroupByKind::ORDINARY)
                 aggregated_columns.emplace_back("__grouping_set", std::make_shared<DataTypeUInt64>());
 
-            for (ssize_t i = 0; i < static_cast<ssize_t>(group_asts.size()); ++i)
+            for (auto it = group_asts.begin(); it != group_asts.end();)
             {
-                ssize_t size = group_asts.size();
+                size_t size = group_asts.size();
 
                 if (getContext()->getSettingsRef().enable_positional_arguments)
-                    replaceForPositionalArguments(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
+                    replaceForPositionalArguments(*it, select_query, ASTSelectQuery::Expression::GROUP_BY);
 
                 if (select_query->group_by_with_grouping_sets)
                 {
-                    ASTs group_elements_ast;
-                    const ASTExpressionList * group_ast_element = group_asts[i]->as<const ASTExpressionList>();
+                    ASTList group_elements_ast;
+                    const ASTExpressionList * group_ast_element = (*it)->as<const ASTExpressionList>();
                     group_elements_ast = group_ast_element->children;
 
                     NamesAndTypesList grouping_set_list;
                     ColumnNumbers grouping_set_indexes_list;
 
-                    for (ssize_t j = 0; j < ssize_t(group_elements_ast.size()); ++j)
+                    for (auto jt = group_elements_ast.begin(); jt != group_elements_ast.end();)
                     {
-                        getRootActionsNoMakeSet(group_elements_ast[j], temp_actions, false);
+                        getRootActionsNoMakeSet(*jt, temp_actions, false);
 
                         ssize_t group_size = group_elements_ast.size();
-                        const auto & column_name = group_elements_ast[j]->getColumnName();
+                        const auto & column_name = (*jt)->getColumnName();
                         const auto * node = temp_actions->tryFindInIndex(column_name);
                         if (!node)
                             throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
@@ -392,12 +392,8 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                                 /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                                 if (!aggregate_descriptions.empty() || group_size > 1)
                                 {
-                                    if (j + 1 < static_cast<ssize_t>(group_size))
-                                        group_elements_ast[j] = std::move(group_elements_ast.back());
-
+                                    std::swap(*jt, group_elements_ast.back());
                                     group_elements_ast.pop_back();
-
-                                    --j;
                                     continue;
                                 }
                             }
@@ -421,6 +417,8 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         {
                             grouping_set_indexes_list.push_back(unique_keys[key.name]);
                         }
+
+                        ++jt;
                     }
 
                     aggregation_keys_list.push_back(std::move(grouping_set_list));
@@ -428,9 +426,9 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 }
                 else
                 {
-                    getRootActionsNoMakeSet(group_asts[i], temp_actions, false);
+                    getRootActionsNoMakeSet(*it, temp_actions, false);
 
-                    const auto & column_name = group_asts[i]->getColumnName();
+                    const auto & column_name = (*it)->getColumnName();
                     const auto * node = temp_actions->tryFindInIndex(column_name);
                     if (!node)
                         throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
@@ -446,12 +444,8 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                             if (!aggregate_descriptions.empty() || size > 1)
                             {
-                                if (i + 1 < static_cast<ssize_t>(size))
-                                    group_asts[i] = std::move(group_asts.back());
-
+                                std::swap(*it, group_asts.back());
                                 group_asts.pop_back();
-
-                                --i;
                                 continue;
                             }
                         }
@@ -468,6 +462,8 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         /// Key is no longer needed, therefore we can save a little by moving it.
                         aggregated_columns.push_back(std::move(key));
                     }
+
+                    ++it;
                 }
             }
 
@@ -579,14 +575,14 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
     }
 
     const auto * func = node->as<ASTFunction>();
-    if (func && functionIsInOrGlobalInOperator(func->name))
+    if (func && functionIsInOrGlobalInOperator(func->name) && func->arguments->children.size() == 2)
     {
         const IAST & args = *func->arguments;
-        const ASTPtr & left_in_operand = args.children.at(0);
+        const ASTPtr & left_in_operand = args.children.front();
 
         if (storage()->mayBenefitFromIndexForIn(left_in_operand, getContext(), metadata_snapshot))
         {
-            const ASTPtr & arg = args.children.at(1);
+            const ASTPtr & arg = args.children.back();
             if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
             {
                 if (settings.use_index_for_in_with_subqueries)
@@ -700,13 +696,14 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
 
         aggregate.column_name = node->getColumnName();
 
-        const ASTs & arguments = node->arguments ? node->arguments->children : ASTs();
-        aggregate.argument_names.resize(arguments.size());
-        DataTypes types(arguments.size());
+        const ASTList & arguments = node->arguments ? node->arguments->children : ASTList();
+        aggregate.argument_names.reserve(arguments.size());
+        DataTypes types;
+        types.reserve(arguments.size());
 
-        for (size_t i = 0; i < arguments.size(); ++i)
+        for (const auto & arg : arguments)
         {
-            const std::string & name = arguments[i]->getColumnName();
+            const std::string & name = arg->getColumnName();
             const auto * dag_node = actions->tryFindInIndex(name);
             if (!dag_node)
             {
@@ -715,8 +712,8 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
                     name, node->formatForErrorMessage());
             }
 
-            types[i] = dag_node->result_type;
-            aggregate.argument_names[i] = name;
+            types.push_back(dag_node->result_type);
+            aggregate.argument_names.push_back(name);
         }
 
         AggregateFunctionProperties properties;
@@ -907,13 +904,13 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         // Hence we clone the node (not very sane either, I know).
         getRootActionsNoMakeSet(window_function.function_node->clone(), actions);
 
-        const ASTs & arguments
+        const ASTList & arguments
             = window_function.function_node->arguments->children;
-        window_function.argument_types.resize(arguments.size());
-        window_function.argument_names.resize(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
+        window_function.argument_types.reserve(arguments.size());
+        window_function.argument_names.reserve(arguments.size());
+        for (const auto & arg : arguments)
         {
-            const std::string & name = arguments[i]->getColumnName();
+            const std::string & name = arg->getColumnName();
             const auto * node = actions->tryFindInIndex(name);
 
             if (!node)
@@ -923,8 +920,8 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
                     name, window_function.function_node->formatForErrorMessage());
             }
 
-            window_function.argument_types[i] = node->result_type;
-            window_function.argument_names[i] = name;
+            window_function.argument_types.push_back(node->result_type);
+            window_function.argument_names.push_back(name);
         }
 
         AggregateFunctionProperties properties;
@@ -1374,7 +1371,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
 
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
-    ASTs asts = select_query->groupBy()->children;
+    ASTList asts = select_query->groupBy()->children;
     if (select_query->group_by_with_grouping_sets)
     {
         for (const auto & ast : asts)
@@ -1583,7 +1580,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
         {
-            replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
+            replaceForPositionalArguments(ast->children.front(), select_query, ASTSelectQuery::Expression::ORDER_BY);
         }
     }
 
@@ -1594,7 +1591,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     for (auto & child : select_query->orderBy()->children)
     {
         auto * ast = child->as<ASTOrderByElement>();
-        ASTPtr order_expression = ast->children.at(0);
+        ASTPtr order_expression = ast->children.front();
         const String & column_name = order_expression->getColumnName();
         step.addRequiredOutput(column_name);
         order_by_keys.emplace(column_name);
@@ -1704,7 +1701,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 
     NamesWithAliases result_columns;
 
-    ASTs asts = select_query->select()->children;
+    ASTList asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
         String result_name = ast->getAliasOrColumnName();
@@ -1762,12 +1759,12 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
     NamesWithAliases result_columns;
     Names result_names;
 
-    ASTs asts;
+    ASTList asts;
 
     if (const auto * node = query->as<ASTExpressionList>())
         asts = node->children;
     else
-        asts = ASTs(1, query);
+        asts = ASTList(1, query);
 
     for (const auto & ast : asts)
     {

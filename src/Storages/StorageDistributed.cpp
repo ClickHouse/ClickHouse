@@ -771,7 +771,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
     if (select.list_of_selects->children.size() == 1)
     {
-        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        if (auto * select_query = select.list_of_selects->children.front()->as<ASTSelectQuery>())
         {
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
@@ -1397,7 +1397,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
 
 void registerStorageDistributed(StorageFactory & factory)
 {
-    factory.registerStorage("Distributed", [](const StorageFactory::Arguments & args)
+    factory.registerStorage("Distributed", [](const StorageFactory::Arguments & args) -> StoragePtr
     {
         /** Arguments of engine is following:
           * - name of cluster in configuration;
@@ -1414,7 +1414,7 @@ void registerStorageDistributed(StorageFactory & factory)
           * Distributed engine also supports SETTINGS clause.
           */
 
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
 
         if (engine_args.size() < 3 || engine_args.size() > 5)
             throw Exception(
@@ -1426,23 +1426,26 @@ void registerStorageDistributed(StorageFactory & factory)
                 "policy to store data in (optional).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
+        auto it = engine_args.begin();
+        String cluster_name = getClusterNameAndMakeLiteral(*(it++));
 
         const ContextPtr & context = args.getContext();
         const ContextPtr & local_context = args.getLocalContext();
 
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
-        engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], local_context);
+        *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, local_context);
+        ++it;
+        *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, local_context);
+        ++it;
 
-        String remote_database = checkAndGetLiteralArgument<String>(engine_args[1], "remote_database");
-        String remote_table = checkAndGetLiteralArgument<String>(engine_args[2], "remote_table");
+        String remote_database = checkAndGetLiteralArgument<String>(*(it++), "remote_database");
+        String remote_table = checkAndGetLiteralArgument<String>(*(it++), "remote_table");
 
-        const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
+        const auto & sharding_key = engine_args.size() >= 4 ? *(it++) : nullptr;
         String storage_policy = "default";
         if (engine_args.size() >= 5)
         {
-            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
-            storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
+            *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, local_context);
+            storage_policy = checkAndGetLiteralArgument<String>(*(it++), "storage_policy");
         }
 
         /// Check that sharding_key exists in the table and has numeric type.

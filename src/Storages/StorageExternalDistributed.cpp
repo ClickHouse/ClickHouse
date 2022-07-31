@@ -225,11 +225,11 @@ void registerStorageExternalDistributed(StorageFactory & factory)
 {
     factory.registerStorage("ExternalDistributed", [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
         if (engine_args.size() < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine ExternalDistributed must have at least 2 arguments: engine_name, named_collection and/or description");
 
-        auto engine_name = checkAndGetLiteralArgument<String>(engine_args[0], "engine_name");
+        auto engine_name = checkAndGetLiteralArgument<String>(engine_args.front(), "engine_name");
         StorageExternalDistributed::ExternalStorageEngine table_engine;
         if (engine_name == "URL")
             table_engine = StorageExternalDistributed::ExternalStorageEngine::URL;
@@ -242,7 +242,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL, URL",
                 engine_name);
 
-        ASTs inner_engine_args(engine_args.begin() + 1, engine_args.end());
+        ASTList inner_engine_args(++engine_args.begin(), engine_args.end());
         String cluster_description;
 
         if (engine_name == "URL")
@@ -271,11 +271,12 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (auto & engine_arg : engine_args)
                     engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-                cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
-                configuration.format = checkAndGetLiteralArgument<String>(engine_args[2], "format");
+                auto it = ++engine_args.begin();
+                cluster_description = checkAndGetLiteralArgument<String>(*(it++), "cluster_description");
+                configuration.format = checkAndGetLiteralArgument<String>(*(it++), "format");
                 configuration.compression_method = "auto";
                 if (engine_args.size() == 4)
-                    configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[3], "compression_method");
+                    configuration.compression_method = checkAndGetLiteralArgument<String>(*(it++), "compression_method");
             }
 
 
@@ -320,11 +321,12 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                         "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-                cluster_description = checkAndGetLiteralArgument<String>(engine_args[1], "cluster_description");
-                configuration.database = checkAndGetLiteralArgument<String>(engine_args[2], "database");
-                configuration.table = checkAndGetLiteralArgument<String>(engine_args[3], "table");
-                configuration.username = checkAndGetLiteralArgument<String>(engine_args[4], "username");
-                configuration.password = checkAndGetLiteralArgument<String>(engine_args[5], "password");
+                auto it = ++engine_args.begin();
+                cluster_description = checkAndGetLiteralArgument<String>(*(it++), "cluster_description");
+                configuration.database = checkAndGetLiteralArgument<String>(*(it++), "database");
+                configuration.table = checkAndGetLiteralArgument<String>(*(it++), "table");
+                configuration.username = checkAndGetLiteralArgument<String>(*(it++), "username");
+                configuration.password = checkAndGetLiteralArgument<String>(*(it++), "password");
             }
 
 

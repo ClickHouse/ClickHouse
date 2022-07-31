@@ -140,7 +140,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     count_func->arguments = std::make_shared<ASTExpressionList>();
     select->select()->children.push_back(count_func);
 
-    ASTs conditions;
+    ASTList conditions;
     for (const MutationCommand & command : commands)
     {
         if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command, storage, context))
@@ -874,7 +874,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     {
         ASTPtr where_expression;
         if (prepared_stages[0].filters.size() == 1)
-            where_expression = prepared_stages[0].filters[0];
+            where_expression = prepared_stages[0].filters.front();
         else
         {
             auto coalesced_predicates = std::make_shared<ASTFunction>();

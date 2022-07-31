@@ -15,7 +15,7 @@ public:
     void visit(ASTPtr & ast);
 
 private:
-    ASTs ifChain(const ASTPtr & child);
+    ASTList ifChain(const ASTPtr & child);
 };
 
 /// Replaces multiIf with one condition to if,

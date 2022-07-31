@@ -27,8 +27,8 @@ ASTPtr getFixedPoint(const ASTPtr & ast)
     if (!func || func->name != "equals")
         return nullptr;
 
-    const auto & lhs = func->arguments->children[0];
-    const auto & rhs = func->arguments->children[1];
+    const auto & lhs = func->arguments->children.front();
+    const auto & rhs = func->arguments->children.back();
 
     if (lhs->as<ASTLiteral>())
         return rhs;

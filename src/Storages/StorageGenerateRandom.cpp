@@ -456,7 +456,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 {
     factory.registerStorage("GenerateRandom", [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
 
         if (engine_args.size() > 3)
             throw Exception("Storage GenerateRandom requires at most three arguments: "
@@ -467,18 +467,20 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         UInt64 max_string_length = 10;
         UInt64 max_array_length = 10;
 
+        auto it = engine_args.begin();
         if (!engine_args.empty())
         {
-            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
+            const auto & ast_literal = (*it)->as<const ASTLiteral &>();
+            ++it;
             if (!ast_literal.value.isNull())
                 random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+            max_string_length = checkAndGetLiteralArgument<UInt64>(*(it++), "max_string_length");
 
         if (engine_args.size() == 3)
-            max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+            max_array_length = checkAndGetLiteralArgument<UInt64>(*(it++), "max_array_length");
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });

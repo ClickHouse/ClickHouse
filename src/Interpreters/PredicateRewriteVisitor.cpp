@@ -20,7 +20,7 @@ namespace DB
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
     ContextPtr context_,
-    const ASTs & predicates_,
+    const ASTList & predicates_,
     const TableWithColumnNamesAndTypes & table_columns_,
     bool optimize_final_,
     bool optimize_with_)
@@ -36,19 +36,20 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
 {
     auto & internal_select_list = union_select_query.list_of_selects->children;
 
-    for (size_t index = 0; index < internal_select_list.size(); ++index)
+    auto it = internal_select_list.begin();
+    for (size_t index = 0; index < internal_select_list.size(); ++index, ++it)
     {
-        if (auto * child_union = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
+        if (auto * child_union = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            visit(*child_union, internal_select_list[index]);
+            visit(*child_union, *it);
         }
-        else if (auto * child_select = internal_select_list[index]->as<ASTSelectQuery>())
+        else if (auto * child_select = (*it)->as<ASTSelectQuery>())
         {
-            visitInternalSelect(index, *child_select, internal_select_list[index]);
+            visitInternalSelect(index, *child_select, *it);
         }
-        else if (auto * child_intersect_except = internal_select_list[index]->as<ASTSelectIntersectExceptQuery>())
+        else if (auto * child_intersect_except = (*it)->as<ASTSelectIntersectExceptQuery>())
         {
-            visit(*child_intersect_except, internal_select_list[index]);
+            visit(*child_intersect_except, *it);
         }
     }
 }

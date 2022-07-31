@@ -666,21 +666,24 @@ void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage("HDFS", [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
 
         if (engine_args.empty() || engine_args.size() > 3)
             throw Exception(
                 "Storage HDFS requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
+        auto it = engine_args.begin();
+        *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, args.getLocalContext());
 
-        String url = checkAndGetLiteralArgument<String>(engine_args[0], "url");
+        String url = checkAndGetLiteralArgument<String>(*it, "url");
+        ++it;
 
         String format_name = "auto";
         if (engine_args.size() > 1)
         {
-            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
-            format_name = checkAndGetLiteralArgument<String>(engine_args[1], "format_name");
+            *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, args.getLocalContext());
+            format_name = checkAndGetLiteralArgument<String>(*it, "format_name");
+            ++it;
         }
 
         if (format_name == "auto")
@@ -689,8 +692,9 @@ void registerStorageHDFS(StorageFactory & factory)
         String compression_method;
         if (engine_args.size() == 3)
         {
-            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[2], "compression_method");
+            *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, args.getLocalContext());
+            compression_method = checkAndGetLiteralArgument<String>(*it, "compression_method");
+            ++it;
         } else compression_method = "auto";
 
         ASTPtr partition_by;

@@ -29,7 +29,7 @@ static bool removeInjectiveFunction(ASTPtr & ast, ContextPtr context, const Func
     if (!function_factory.get(func->name, context)->isInjective({}))
         return false;
 
-    ast = func->arguments->children[0];
+    ast = func->arguments->children.front();
     return true;
 }
 

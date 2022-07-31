@@ -865,10 +865,10 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     return format_settings;
 }
 
-ASTs::iterator StorageURL::collectHeaders(
-    ASTs & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context)
+ASTList::iterator StorageURL::collectHeaders(
+    ASTList & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context)
 {
-    ASTs::iterator headers_it = url_function_args.end();
+    ASTList::iterator headers_it = url_function_args.end();
 
     for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
@@ -898,13 +898,13 @@ ASTs::iterator StorageURL::collectHeaders(
                         "Headers argument is incorrect: expected 2 arguments, got {}",
                         header_args.size());
 
-                auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args[0], context);
+                auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args.front(), context);
                 auto arg_name_value = ast_literal->as<ASTLiteral>()->value;
                 if (arg_name_value.getType() != Field::Types::Which::String)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as header name");
                 auto arg_name = arg_name_value.safeGet<String>();
 
-                ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args[1], context);
+                ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args.back(), context);
                 auto arg_value = ast_literal->as<ASTLiteral>()->value;
                 if (arg_value.getType() != Field::Types::Which::String)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as header value");
@@ -923,7 +923,7 @@ ASTs::iterator StorageURL::collectHeaders(
     return headers_it;
 }
 
-URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, ContextPtr local_context)
+URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTList & args, ContextPtr local_context)
 {
     URLBasedDataSourceConfiguration configuration;
 
@@ -960,11 +960,12 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
         if (header_it != args.end())
             args.erase(header_it);
 
-        configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
+        auto it = args.begin();
+        configuration.url = checkAndGetLiteralArgument<String>(*(it++), "url");
         if (args.size() > 1)
-            configuration.format = checkAndGetLiteralArgument<String>(args[1], "format");
+            configuration.format = checkAndGetLiteralArgument<String>(*(it++), "format");
         if (args.size() == 3)
-            configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
+            configuration.compression_method = checkAndGetLiteralArgument<String>(*(it++), "compression_method");
     }
 
     if (configuration.format == "auto")
@@ -978,9 +979,9 @@ void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
         "URL",
-        [](const StorageFactory::Arguments & args)
+        [](const StorageFactory::Arguments & args) -> StoragePtr
         {
-            ASTs & engine_args = args.engine_args;
+            ASTList & engine_args = args.engine_args;
             auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
 

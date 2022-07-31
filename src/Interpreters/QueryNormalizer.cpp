@@ -191,18 +191,19 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
             }
         }
 
-        /// We skip the first argument. We also assume that the lambda function can not have parameters.
-        size_t first_pos = 0;
-        if (func_node->name == "lambda")
-            first_pos = 1;
 
         if (func_node->arguments)
         {
             auto & func_children = func_node->arguments->children;
 
-            for (size_t i = first_pos; i < func_children.size(); ++i)
+            /// We skip the first argument. We also assume that the lambda function can not have parameters.
+            auto it = func_children.begin();
+            if (func_node->name == "lambda")
+                ++it;
+
+            for (; it != func_children.end(); ++it)
             {
-                auto & child = func_children[i];
+                auto & child = *it;
 
                 if (needVisitChild(child))
                     visit(child, data);

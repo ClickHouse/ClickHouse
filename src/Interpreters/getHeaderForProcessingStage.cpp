@@ -22,7 +22,7 @@ bool hasJoin(const ASTSelectQuery & select)
     if (!tables || tables->children.size() < 2)
         return false;
 
-    const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
+    const auto & joined_table = (*++tables->children.begin())->as<ASTTablesInSelectQueryElement &>();
     return joined_table.table_join != nullptr;
 }
 
@@ -68,7 +68,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
             query.setExpression(expr, {});
         else if (new_conj->arguments->children.size() == 1)
             /// Only one expression, lift from `and`
-            query.setExpression(expr, std::move(new_conj->arguments->children[0]));
+            query.setExpression(expr, std::move(new_conj->arguments->children.front()));
         else
             /// Set new expression
             query.setExpression(expr, std::move(new_conj));

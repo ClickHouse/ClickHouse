@@ -107,9 +107,9 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     const auto & definition_arguments = index_definition->type->arguments;
     if (definition_arguments)
     {
-        for (size_t i = 0; i < definition_arguments->children.size(); ++i)
+        for (const auto & arg : definition_arguments->children)
         {
-            const auto * argument = definition_arguments->children[i]->as<ASTLiteral>();
+            const auto * argument = arg->as<ASTLiteral>();
             if (!argument)
                 throw Exception("Only literals can be skip index arguments", ErrorCodes::INCORRECT_QUERY);
             result.arguments.emplace_back(argument->value);

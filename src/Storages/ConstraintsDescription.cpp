@@ -190,7 +190,7 @@ ConstraintsDescription::ConstraintsDescription(const ConstraintsDescription & ot
 
 ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDescription & other)
 {
-    for (const auto & expr : constraints)
+    for (const auto & expr : other.constraints)
         constraints.emplace_back(expr->clone());
     update();
     return *this;
