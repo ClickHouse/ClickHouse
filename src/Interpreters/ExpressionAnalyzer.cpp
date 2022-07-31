@@ -793,7 +793,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     with_alias->getColumnName(), 1 /* direction */,
                     1 /* nulls_direction */));
 
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, actions_dag);
             desc.partition_by_actions.push_back(std::move(actions_dag));
         }
@@ -814,7 +814,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                     order_by_element.direction,
                     order_by_element.nulls_direction));
 
-            auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
+            auto actions_dag = std::make_shared<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, actions_dag);
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
