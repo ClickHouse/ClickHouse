@@ -113,7 +113,7 @@ CI_CONFIG = {
             "tidy": "enable",
             "with_coverage": False,
         },
-        "binary_splitted": {
+        "binary_shared": {
             "compiler": "clang-14",
             "build_type": "",
             "sanitizer": "",
@@ -192,7 +192,7 @@ CI_CONFIG = {
         ],
         "ClickHouse special build check": [
             "binary_tidy",
-            "binary_splitted",
+            "binary_shared",
             "binary_darwin",
             "binary_aarch64",
             "binary_freebsd",
@@ -297,7 +297,7 @@ CI_CONFIG = {
             "required_build": "package_release",
         },
         "Split build smoke test": {
-            "required_build": "binary_splitted",
+            "required_build": "binary_shared",
         },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
