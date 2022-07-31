@@ -6,10 +6,33 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css"> <!-- TODO: Add SRI -->
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
     <style>
+        :root {
+            --color: black;
+            --background-gradient-start: #00CCFF;
+            --background-gradient-end: #00D0D0;
+            --chart-background: white;
+            --shadow-color: rgba(0, 0, 0, 0.25);
+            --input-shadow-color: rgba(0, 255, 0, 1);
+            --error-color: red;
+            --legend-background: rgba(255, 255, 255, 0.75);
+        }
+
+        [data-theme="dark"] {
+            --color: white;
+            --background-gradient-start: #151C2C;
+            --background-gradient-end: #151C2C;
+            --chart-background: #1b2834;
+            --shadow-color: rgba(0, 0, 0, 0);
+            --input-shadow-color: rgba(0, 255, 0, 1);
+            --error-color: #F66;
+            --legend-background: rgba(255, 255, 255, 0.25);
+        }
+
         * {
             box-sizing: border-box;
         }
         html, body {
+            color: var(--color);
             height: 100%;
             margin: 0;
         }
@@ -17,7 +40,7 @@
             font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             padding: 1rem;
             overflow-x: hidden;
-            background: linear-gradient(to bottom, #00CCFF, #00D0D0);
+            background: linear-gradient(to bottom, var(--background-gradient-start), var(--background-gradient-end));
             display: grid;
             grid-template-columns: auto;
             grid-template-rows: fit-content(10%) auto;
@@ -33,8 +56,8 @@
             flex: 1 40%;
             min-width: 20rem;
             min-height: 16rem;
-            background: white;
-            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.25);
+            background: var(--chart-background);
+            box-shadow: 0 0 1rem var(--shadow-color);
             overflow: hidden;
             position: relative;
         }
@@ -44,7 +67,7 @@
         .inputs { font-size: 14pt; }
 
         .inputs input {
-            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.25);
+            box-shadow: 0 0 1rem var(--shadow-color);
             padding: 0.25rem;
             margin-right: 0.25rem;
         }
@@ -111,22 +134,21 @@
             padding: 0.25rem;
             background: #EEE;
             display: inline-block;
-            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.25);
+            box-shadow: 0 0 1rem var(--shadow-color);
             margin-bottom: 1rem;
         }
 
         input:focus {
-            box-shadow: 0 0 1rem rgba(0, 255, 0, 1);
+            box-shadow: 0 0 1rem var(--input-shadow-color);
         }
 
         .title {
-            position: relative;
             left: 50%;
             top: 0.25em;
             transform: translate(-50%, 0);
-            font-size: 20pt;
+            font-size: 16pt;
             font-weight: bold;
-            color: #888;
+            color: #666;
             z-index: 10;
         }
 
@@ -155,6 +177,14 @@
             position: absolute;
             width: 100%;
             height: 100%;
+        }
+
+        .query-error {
+            display: none;
+            z-index: 10;
+            position: absolute;
+            color: var(--error-color);
+            padding: 2rem;
         }
 
         .query-editor textarea {
@@ -201,373 +231,428 @@
 </div>
 </body>
 <script>
-    const user = '';
-    const password = '';
-    const url = 'https://play.clickhouse.com/?user=play';
-    const theme = 'light';
 
-    const queries = [
-        { title: "{repo} Weekly Unique Comment Authors", query:
-        `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
-            FROM github_events
-            WHERE repo_name = {repo:String}
-            AND event_type = 'IssueCommentEvent'
-            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-            GROUP BY t
-            ORDER BY t
-            FORMAT JSONCompactColumns`},
-        { title: "{repo} Weekly Unique Comments", query:
-        `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
-            FROM github_events
-            WHERE repo_name = {repo:String}
-            AND event_type = 'IssueCommentEvent'
-            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-            GROUP BY t
-            ORDER BY t
-            FORMAT JSONCompactColumns`},
-        { title: "{repo} Weekly Unique PR Authors", query:
-        `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
-            FROM github_events
-            WHERE repo_name = {repo:String}
-            AND event_type = 'PullRequestEvent'
-            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-            GROUP BY t
-            ORDER BY t
-            FORMAT JSONCompactColumns`},
-        { title: "{repo} Weekly Unique PRs", query:
-        `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
-            FROM github_events
-            WHERE repo_name = {repo:String}
-            AND event_type = 'PullRequestEvent'
-            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-            GROUP BY t
-            ORDER BY t
-            FORMAT JSONCompactColumns`},
-        { title: "{repo} Daily Stars", query:
-        `SELECT toStartOfDay(created_at)::INT AS t, count() AS events
-            FROM github_events
-            WHERE repo_name = {repo:String}
-            AND event_type = 'WatchEvent'
-            AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-            GROUP BY t
-            ORDER BY t
-            FORMAT JSONCompactColumns`},
-    ];
+let theme = 'light';
 
-    /// Query parameters with predefined default values.
-    /// All other parameters will be automatically found in the queries.
-    let params = {
-        start: '2015-01-01',
-        repo: 'ClickHouse/ClickHouse',
-        //word2: 'Coronavirus',
-    };
+function setTheme(new_theme) {
+    theme = new_theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    window.localStorage.setItem('theme', theme);
+    drawAll();
+}
 
-    /// uPlot objects will go here.
-    let plots = queries.map(e => null);
+document.getElementById('toggle-light').addEventListener('click', e => setTheme('light'));
+document.getElementById('toggle-dark').addEventListener('click', e => setTheme('dark'));
 
-    /// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
-    const query_param_regexp = /\{(\w+):[^}]+\}/g;
+let new_theme = window.localStorage.getItem('theme');
+if (new_theme && new_theme != theme) {
+    setTheme(new_theme);
+}
 
-    /// Automatically parse more parameters from queires.
-    function findParamsInQuery(query) {
-        for (let match of query.matchAll(query_param_regexp)) {
-            const name = match[1];
-            if (!params[name]) {
-                params[name] = '';
-            };
-        }
-    }
+const user = '';
+const password = '';
+const url = 'https://play.clickhouse.com/?user=play&default_format=JSONCompactColumns';
 
-    function findParamsInQueries() {
-        queries.forEach(q => findParamsInQuery(q.query));
-    }
+const queries = [
+    { title: "{repo} Weekly Unique Comment Authors", query:
+    `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
+FROM github_events
+WHERE repo_name = {repo:String}
+AND created_at >= {start:Date}
+AND event_type = 'IssueCommentEvent'
+AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+GROUP BY t
+ORDER BY t`},
+    { title: "{repo} Weekly Unique Comments", query:
+    `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
+FROM github_events
+WHERE repo_name = {repo:String}
+AND created_at >= {start:Date}
+AND event_type = 'IssueCommentEvent'
+AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+GROUP BY t
+ORDER BY t`},
+    { title: "{repo} Weekly Unique PR Authors", query:
+    `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
+FROM github_events
+WHERE repo_name = {repo:String}
+AND created_at >= {start:Date}
+AND event_type = 'PullRequestEvent'
+AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+GROUP BY t
+ORDER BY t`},
+    { title: "{repo} Weekly Unique PRs", query:
+    `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
+FROM github_events
+WHERE repo_name = {repo:String}
+AND created_at >= {start:Date}
+AND event_type = 'PullRequestEvent'
+AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+GROUP BY t
+ORDER BY t`},
+    { title: "{repo} Daily Stars", query:
+    `SELECT toStartOfDay(created_at)::INT AS t, count() AS events
+FROM github_events
+WHERE repo_name = {repo:String}
+AND created_at >= {start:Date}
+AND event_type = 'WatchEvent'
+AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
+GROUP BY t
+ORDER BY t`},
+];
 
-    function insertParam(name, value) {
-        let param_wrapper = document.createElement('span');
-        param_wrapper.className = 'nowrap';
+/// Query parameters with predefined default values.
+/// All other parameters will be automatically found in the queries.
+let params = {
+    start: '2015-01-01',
+    repo: 'ClickHouse/ClickHouse',
+    //word2: 'Coronavirus',
+};
 
-        let param_name = document.createElement('span');
-        param_name.className = 'param_name';
-        let param_name_text = document.createTextNode(`${name}: `);
-        param_name.appendChild(param_name_text);
+/// uPlot objects will go here.
+let plots = queries.map(e => null);
 
-        let param_value = document.createElement('input');
-        param_value.className = 'param';
-        param_value.name = `${name}`;
-        param_value.type = 'text';
-        param_value.value = value;
+/// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
+const query_param_regexp = /\{(\w+):[^}]+\}/g;
 
-        param_wrapper.appendChild(param_name);
-        param_wrapper.appendChild(param_value);
-        document.getElementById('params').appendChild(param_wrapper);
-    }
-
-    function buildParams() {
-        let params_elem = document.getElementById('params');
-        while (params_elem.firstChild) {
-            params_elem.removeChild(params_elem.lastChild);
-        }
-
-        for (let [name, value] of Object.entries(params)) {
-            insertParam(name, value);
-        }
-
-        let run = document.createElement('input');
-        run.id = 'run';
-        run.type = 'submit';
-        run.value = 'Ok';
-
-        document.getElementById('params').appendChild(run);
-    }
-
-    function updateParams() {
-        [...document.getElementsByClassName('param')].forEach(e => { params[e.name] = e.value });
-    }
-
-    findParamsInQueries();
-    buildParams();
-
-    function getParamsForURL() {
-        let url = '';
-        for (let [name, value] of Object.entries(params)) {
-            url += `&param_${name}=${value}`;
+/// Automatically parse more parameters from queires.
+function findParamsInQuery(query) {
+    for (let match of query.matchAll(query_param_regexp)) {
+        const name = match[1];
+        if (!params[name]) {
+            params[name] = '';
         };
-        return url;
+    }
+}
+
+function findParamsInQueries() {
+    queries.forEach(q => findParamsInQuery(q.query));
+}
+
+function insertParam(name, value) {
+    let param_wrapper = document.createElement('span');
+    param_wrapper.className = 'nowrap';
+
+    let param_name = document.createElement('span');
+    param_name.className = 'param_name';
+    let param_name_text = document.createTextNode(`${name}: `);
+    param_name.appendChild(param_name_text);
+
+    let param_value = document.createElement('input');
+    param_value.className = 'param';
+    param_value.name = `${name}`;
+    param_value.type = 'text';
+    param_value.value = value;
+    param_value.spellcheck = false;
+
+    param_wrapper.appendChild(param_name);
+    param_wrapper.appendChild(param_value);
+    document.getElementById('params').appendChild(param_wrapper);
+}
+
+function buildParams() {
+    let params_elem = document.getElementById('params');
+    while (params_elem.firstChild) {
+        params_elem.removeChild(params_elem.lastChild);
     }
 
-    let charts = document.getElementById('charts');
+    for (let [name, value] of Object.entries(params)) {
+        insertParam(name, value);
+    }
 
-    function insertChart(i) {
-        let q = queries[i];
-        let chart = document.createElement('div');
-        chart.className = 'chart';
+    let run = document.createElement('input');
+    run.id = 'run';
+    run.type = 'submit';
+    run.value = 'Ok';
 
-        let chart_title = document.createElement('div');
-        let title_text = document.createTextNode('');
-        chart_title.appendChild(title_text);
-        chart_title.className = 'title';
-        chart.appendChild(chart_title);
+    document.getElementById('params').appendChild(run);
+}
 
-        let query_editor = document.createElement('div');
-        query_editor.className = 'query-editor';
+function updateParams() {
+    [...document.getElementsByClassName('param')].forEach(e => { params[e.name] = e.value });
+}
 
-        let query_editor_textarea = document.createElement('textarea');
-        query_editor_textarea.spellcheck = false;
-        query_editor_textarea.value = q.query;
-        query_editor_textarea.placeholder = 'Query';
-        query_editor.appendChild(query_editor_textarea);
+findParamsInQueries();
+buildParams();
 
-        let query_editor_title = document.createElement('input');
-        query_editor_title.type = 'text';
-        query_editor_title.value = q.title;
-        query_editor_title.placeholder = 'Chart title';
-        query_editor_title.className = 'edit-title';
-        query_editor.appendChild(query_editor_title);
-
-        let query_editor_confirm = document.createElement('input');
-        query_editor_confirm.type = 'submit';
-        query_editor_confirm.value = 'Ok';
-        query_editor_confirm.className = 'edit-confirm';
-
-        function editConfirm() {
-            query_editor.style.display = 'none';
-            q.title = query_editor_title.value;
-            q.query = query_editor_textarea.value;
-            title_text.data = '';
-            findParamsInQuery(q.query);
-            buildParams();
-            draw(i, chart, getParamsForURL(), q.query);
-        }
-
-        query_editor_confirm.addEventListener('click', editConfirm);
-        query_editor.addEventListener('keydown', e => {
-            if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-                editConfirm();
-            }
-        });
-
-        query_editor.addEventListener('keyup', e => {
-            if (e.key == 'Escape') {
-                query_editor.style.display = 'none';
-            }
-        });
-
-        query_editor.appendChild(query_editor_confirm);
-
-        chart.appendChild(query_editor);
-
-        let edit_buttons = document.createElement('div');
-        edit_buttons.className = 'chart-buttons';
-
-        let edit = document.createElement('a');
-        let edit_text = document.createTextNode('✎');
-        edit.appendChild(edit_text);
-        edit.addEventListener('click', e => {
-            query_editor.style.display = 'grid';
-            query_editor_textarea.focus();
-        });
-
-        let trash = document.createElement('a');
-        let trash_text = document.createTextNode('✕');
-        trash.appendChild(trash_text);
-        trash.addEventListener('click', e => {
-            chart.style.display = 'none';
-            queries.splice(i, 1);
-            plots.splice(i, 1);
-            resize();
-        });
-
-        edit_buttons.appendChild(edit);
-        edit_buttons.appendChild(trash);
-
-        chart.appendChild(edit_buttons);
-
-        chart.addEventListener('mouseenter', e => { edit_buttons.style.display = 'block'; });
-        chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
-
-        charts.appendChild(chart);
+function getParamsForURL() {
+    let url = '';
+    for (let [name, value] of Object.entries(params)) {
+        url += `&param_${name}=${value}`;
     };
+    return url;
+}
 
-    for (let i = 0; i < queries.length; ++i) {
-        insertChart(i);
+let charts = document.getElementById('charts');
+
+function insertChart(i) {
+    let q = queries[i];
+    let chart = document.createElement('div');
+    chart.className = 'chart';
+
+    let chart_title = document.createElement('div');
+    let title_text = document.createTextNode('');
+    chart_title.appendChild(title_text);
+    chart_title.className = 'title';
+    chart.appendChild(chart_title);
+
+    let query_error = document.createElement('div');
+    query_error.className = 'query-error';
+    query_error.appendChild(document.createTextNode(''));
+    chart.appendChild(query_error);
+
+    let query_editor = document.createElement('div');
+    query_editor.className = 'query-editor';
+
+    let query_editor_textarea = document.createElement('textarea');
+    query_editor_textarea.spellcheck = false;
+    query_editor_textarea.value = q.query;
+    query_editor_textarea.placeholder = 'Query';
+    query_editor.appendChild(query_editor_textarea);
+
+    let query_editor_title = document.createElement('input');
+    query_editor_title.type = 'text';
+    query_editor_title.value = q.title;
+    query_editor_title.placeholder = 'Chart title';
+    query_editor_title.className = 'edit-title';
+    query_editor.appendChild(query_editor_title);
+
+    let query_editor_confirm = document.createElement('input');
+    query_editor_confirm.type = 'submit';
+    query_editor_confirm.value = 'Ok';
+    query_editor_confirm.className = 'edit-confirm';
+
+    function editConfirm() {
+        query_editor.style.display = 'none';
+        query_error.style.display = 'none';
+        q.title = query_editor_title.value;
+        q.query = query_editor_textarea.value;
+        title_text.data = '';
+        findParamsInQuery(q.query);
+        buildParams();
+        draw(i, chart, getParamsForURL(), q.query);
     }
 
-    document.getElementById('add').addEventListener('click', e => {
-        queries.push({ title: '', query: '' });
-        insertChart(plots.length);
-        plots.push(null);
+    query_editor_confirm.addEventListener('click', editConfirm);
+
+    /// Ctrl+Enter (or Cmd+Enter on Mac) will also confirm editing.
+    query_editor.addEventListener('keydown', e => {
+        if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+            editConfirm();
+        }
+    });
+
+    query_editor.addEventListener('keyup', e => {
+        if (e.key == 'Escape') {
+            query_editor.style.display = 'none';
+        }
+    });
+
+    query_editor.appendChild(query_editor_confirm);
+
+    chart.appendChild(query_editor);
+
+    let edit_buttons = document.createElement('div');
+    edit_buttons.className = 'chart-buttons';
+
+    let edit = document.createElement('a');
+    let edit_text = document.createTextNode('✎');
+    edit.appendChild(edit_text);
+
+    function editStart() {
+        query_editor.style.display = 'grid';
+        query_editor_textarea.focus();
+    }
+
+    edit.addEventListener('click', e => editStart());
+    if (!q.query) {
+        editStart();
+    }
+
+    let trash = document.createElement('a');
+    let trash_text = document.createTextNode('✕');
+    trash.appendChild(trash_text);
+    trash.addEventListener('click', e => {
+        chart.style.display = 'none';
+        queries.splice(i, 1);
+        plots.splice(i, 1);
         resize();
     });
 
-    function legendAsTooltipPlugin({ className, style = { background: "rgba(255, 255, 255, 0.75)" } } = {}) {
-        let legendEl;
+    edit_buttons.appendChild(edit);
+    edit_buttons.appendChild(trash);
 
-        function init(u, opts) {
-            legendEl = u.root.querySelector(".u-legend");
+    chart.appendChild(edit_buttons);
 
-            legendEl.classList.remove("u-inline");
-            className && legendEl.classList.add(className);
+    chart.addEventListener('mouseenter', e => { edit_buttons.style.display = 'block'; });
+    chart.addEventListener('mouseleave', e => { edit_buttons.style.display = 'none'; });
 
-            uPlot.assign(legendEl.style, {
-                textAlign: "left",
-                pointerEvents: "none",
-                display: "none",
-                position: "absolute",
-                left: 0,
-                top: 0,
-                zIndex: 100,
-                boxShadow: "2px 2px 10px rgba(0,0,0,0.1)",
-                ...style
-            });
+    charts.appendChild(chart);
+};
 
-            // hide series color markers
-            const idents = legendEl.querySelectorAll(".u-marker");
+for (let i = 0; i < queries.length; ++i) {
+    insertChart(i);
+}
 
-            for (let i = 0; i < idents.length; i++)
-                idents[i].style.display = "none";
+document.getElementById('add').addEventListener('click', e => {
+    queries.push({ title: '', query: '' });
+    insertChart(plots.length);
+    plots.push(null);
+    resize();
+});
 
-            const overEl = u.over;
+function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
+    let legendEl;
 
-            overEl.appendChild(legendEl);
+    function init(u, opts) {
+        legendEl = u.root.querySelector(".u-legend");
 
-            overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
-            overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
-        }
+        legendEl.classList.remove("u-inline");
+        className && legendEl.classList.add(className);
 
-        function update(u) {
-            let { left, top } = u.cursor;
-            left -= legendEl.clientWidth / 2;
-            top -= legendEl.clientHeight / 2;
-            legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
-        }
-
-        return {
-            hooks: {
-                init: init,
-                setCursor: update,
-            }
-        };
-    }
-
-    async function draw(idx, chart, url_params, query) {
-        if (plots[idx]) {
-            plots[idx].destroy();
-            plots[idx] = null;
-        }
-
-        let headers = {};
-        if (user || password) {
-            headers['Authorization'] = 'Basic ' + btoa(`${user ? user : 'default'}${password ? ':' + password : ''}`);
-        }
-
-        const response = await fetch(url + url_params, { method: "POST", body: query, headers: headers });
-        let data, error;
-        try {
-            data = await response.json();
-        } catch (e) {
-            console.log(e);
-        }
-
-        if (error) {
-            chart.querySelector('.title').firstChild.data = error;
-            return;
-        }
-
-        if (!(Array.isArray(data) && data.length == 2 && Array.isArray(data[0]) && Array.isArray(data[1]) && data[0].length == data[1].length)) {
-            return;
-        }
-
-        const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
-            ? ["#F88", "#FEE", "#EED", "#2c3235"]
-            : ["#888", "#045", "#2c3235", "#c7d0d9"];
-
-        const opts = {
-            width: chart.clientWidth,
-            height: chart.clientHeight,
-            axes: [ { stroke: axes_color,
-                      grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                      ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-                    { stroke: axes_color,
-                      grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                      ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-            series: [ { label: "x" },
-                      { label: "y", stroke: line_color, fill: fill_color } ],
-            padding: [ null, null, null, (Math.floor(Math.log10(Math.max(...data[1]))) + Math.floor(Math.log10(Math.max(...data[1])) / 3)) * 6 - 10 ],
-            plugins: [ legendAsTooltipPlugin() ]
-        };
-
-        plots[idx] = new uPlot(opts, data, chart);
-
-        /// Set title
-        const title = queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] );
-        chart.querySelector('.title').firstChild.data = title;
-    }
-
-    async function drawAll() {
-        let params = getParamsForURL();
-        const charts = document.getElementsByClassName('chart');
-        for (let i = 0; i < queries.length; ++i) {
-            draw(i, charts[i], params, queries[i].query);
-        }
-    }
-
-    function resize() {
-        plots.forEach(plot => {
-            if (plot) {
-                let chart = plot.over.closest('.chart');
-                plot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
-            }
+        uPlot.assign(legendEl.style, {
+            textAlign: "left",
+            pointerEvents: "none",
+            display: "none",
+            position: "absolute",
+            left: 0,
+            top: 0,
+            zIndex: 100,
+            boxShadow: "2px 2px 10px rgba(0,0,0,0.1)",
+            ...style
         });
+
+        // hide series color markers
+        const idents = legendEl.querySelectorAll(".u-marker");
+
+        for (let i = 0; i < idents.length; i++)
+            idents[i].style.display = "none";
+
+        const overEl = u.over;
+
+        overEl.appendChild(legendEl);
+
+        overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
+        overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
     }
 
-    new ResizeObserver(resize).observe(document.body);
-
-    document.getElementById('run').onclick = function(event) {
-        updateParams();
-        drawAll();
-        event.preventDefault();
+    function update(u) {
+        let { left, top } = u.cursor;
+        left -= legendEl.clientWidth / 2;
+        top -= legendEl.clientHeight / 2;
+        legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
     }
 
+    return {
+        hooks: {
+            init: init,
+            setCursor: update,
+        }
+    };
+}
+
+async function draw(idx, chart, url_params, query) {
+    if (plots[idx]) {
+        plots[idx].destroy();
+        plots[idx] = null;
+    }
+
+    let headers = {};
+    if (user || password) {
+        headers['Authorization'] = 'Basic ' + btoa(`${user ? user : 'default'}${password ? ':' + password : ''}`);
+    }
+
+    let response, data, error;
+    try {
+        response = await fetch(url + url_params, { method: "POST", body: query, headers: headers });
+        data = await response.text();
+        if (response.ok) {
+            data = JSON.parse(data);
+        } else {
+            error = data;
+        }
+    } catch (e) {
+        console.log(e);
+        error = e.toString();
+    }
+
+    if (!error) {
+        if (!Array.isArray(data)) {
+            error = "Query should return an array.";
+        } else if (data.length == 0) {
+            error = "Query returned empty result.";
+        } else if (data.length != 2) {
+            error = "Query should return exactly two columns: unix timestamp and value.";
+        } else if (!Array.isArray(data[0]) || !Array.isArray(data[1]) || data[0].length != data[1].length) {
+            error = "Wrong data format of the query.";
+        }
+    }
+
+    let error_div = chart.querySelector('.query-error');
+    let title_div = chart.querySelector('.title');
+    if (error) {
+        error_div.firstChild.data = error;
+        title_div.style.display = 'none';
+        error_div.style.display = 'block';
+        return;
+    } else {
+        error_div.firstChild.data = '';
+        error_div.style.display = 'none';
+        title_div.style.display = 'block';
+    }
+
+    const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
+        ? ["#F88", "#FEE", "#EED", "#2c3235"]
+        : ["#366", "#045", "#2c3235", "#c7d0d9"];
+
+    const opts = {
+        width: chart.clientWidth,
+        height: chart.clientHeight,
+        axes: [ { stroke: axes_color,
+                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+                { stroke: axes_color,
+                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+        series: [ { label: "x" },
+                  { label: "y", stroke: line_color, fill: fill_color } ],
+        padding: [ null, null, null, (Math.floor(Math.log10(Math.max(...data[1]))) + Math.floor(Math.log10(Math.max(...data[1])) / 3)) * 6 - 10 ],
+        plugins: [ legendAsTooltipPlugin() ]
+    };
+
+    plots[idx] = new uPlot(opts, data, chart);
+
+    /// Set title
+    const title = queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] );
+    chart.querySelector('.title').firstChild.data = title;
+}
+
+async function drawAll() {
+    let params = getParamsForURL();
+    const charts = document.getElementsByClassName('chart');
+    for (let i = 0; i < queries.length; ++i) {
+        draw(i, charts[i], params, queries[i].query);
+    }
+}
+
+function resize() {
+    plots.forEach(plot => {
+        if (plot) {
+            let chart = plot.over.closest('.chart');
+            plot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
+        }
+    });
+}
+
+new ResizeObserver(resize).observe(document.body);
+
+document.getElementById('run').onclick = function(event) {
+    updateParams();
     drawAll();
+    event.preventDefault();
+}
+
+drawAll();
+
 </script>
 </html>
