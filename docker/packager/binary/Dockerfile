@@ -119,5 +119,20 @@ ENV GOCACHE=/workdir/
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
 
+# FIXME: thread sanitizer is broken in clang-14, we have to build it with clang-13
+# https://github.com/ClickHouse/ClickHouse/pull/39450
+# https://github.com/google/sanitizers/issues/1540
+# https://github.com/google/sanitizers/issues/1552
+
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-13 main" >> \
+        /etc/apt/sources.list.d/clang.list \
+    && apt-get update \
+    && apt-get install \
+        clang-13 \
+        clang-tidy-13 \
+        --yes --no-install-recommends \
+    && apt-get clean
+
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]

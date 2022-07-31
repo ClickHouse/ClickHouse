@@ -1,9 +1,9 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#if defined OS_DARWIN
-#include <sys/mount.h>
+#if defined(OS_DARWIN) || defined(OS_FREEBSD)
+#   include <sys/mount.h>
 #else
-#include <sys/statfs.h>
+#   include <sys/statfs.h>
 #endif
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -12,17 +12,17 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
-#if defined OS_DARWIN
 
-// dependencies
-#include <machine/endian.h>
-#include <libkern/OSByteOrder.h>
-
-// define 64 bit macros
-#define le64toh(x) OSSwapLittleToHostInt64(x)
-
+#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
+#   include <machine/endian.h>
 #else
-#include <endian.h>
+#   include <endian.h>
+#endif
+
+#if defined OS_DARWIN
+#   include <libkern/OSByteOrder.h>
+    // define 64 bit macros
+#   define le64toh(x) OSSwapLittleToHostInt64(x)
 #endif
 
 #include "types.h"
@@ -150,6 +150,8 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
 
         --number_of_forks;
     }
+
+    ZSTD_freeDCtx(dctx);
 
     /// If error happen end of processed part will not reach end
     if (in_pointer < end || error_happened)

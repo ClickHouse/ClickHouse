@@ -63,6 +63,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
+        .apply_deleted_mask = context->applyDeletedMask(),
     };
 }
 
@@ -177,6 +178,7 @@ Pipe ReadFromMergeTree::readFromPool(
         storage_snapshot,
         prewhere_info,
         required_columns,
+        virt_column_names,
         backoff_settings,
         settings.preferred_block_size_bytes,
         false);
