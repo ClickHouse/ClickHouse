@@ -609,7 +609,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     try
     {
