@@ -188,7 +188,7 @@ namespace
             });
 
         changes.emplace_back("internal", true);
-        changes.emplace_back("async", false);
+        changes.emplace_back("async", true);
         changes.emplace_back("host_id", params.host_id);
 
         auto out_settings = std::make_shared<ASTSetQuery>();

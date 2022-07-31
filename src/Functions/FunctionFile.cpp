@@ -67,8 +67,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            StringRef filename = column_src->getDataAt(row);
-            fs::path file_path(filename.data, filename.data + filename.size);
+            std::string_view filename = column_src->getDataAt(row).toView();
+            fs::path file_path(filename.data(), filename.data() + filename.size());
 
             if (file_path.is_relative())
                 file_path = user_files_absolute_path / file_path;
@@ -94,7 +94,7 @@ public:
 };
 
 
-void registerFunctionFile(FunctionFactory & factory)
+REGISTER_FUNCTION(File)
 {
     factory.registerFunction<FunctionFile>();
 }

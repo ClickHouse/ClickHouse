@@ -1,7 +1,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackupCoordination.h>
-#include <Backups/BackupCoordinationHelpers.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/IDatabase.h>
@@ -32,23 +32,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+namespace Stage = BackupCoordinationStage;
+
 namespace
 {
-    /// Finding all tables and databases which we're going to put to the backup and collecting their metadata.
-    constexpr const char * kGatheringMetadataStatus = "gathering metadata";
-
-    /// Making temporary hard links and prepare backup entries.
-    constexpr const char * kExtractingDataFromTablesStatus = "extracting data from tables";
-
-    /// Running special tasks for replicated tables which can also prepare some backup entries.
-    constexpr const char * kRunningPostTasksStatus = "running post-tasks";
-
-    /// Writing backup entries to the backup and removing temporary hard links.
-    constexpr const char * kWritingBackupStatus = "writing backup";
-
-    /// Error status.
-    constexpr const char * kErrorStatus = BackupCoordinationStatusSync::kErrorStatus;
-
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
     {
@@ -94,7 +82,8 @@ BackupEntriesCollector::BackupEntriesCollector(
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
     , context(context_)
-    , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 300000))
+    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
+    , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000))
     , log(&Poco::Logger::get("BackupEntriesCollector"))
 {
 }
@@ -103,85 +92,64 @@ BackupEntriesCollector::~BackupEntriesCollector() = default;
 
 BackupEntries BackupEntriesCollector::run()
 {
-    try
-    {
-        /// run() can be called onle once.
-        if (!current_status.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
+    /// run() can be called onle once.
+    if (!current_stage.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
 
-        /// Find other hosts working along with us to execute this ON CLUSTER query.
-        all_hosts
-            = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
+    /// Find other hosts working along with us to execute this ON CLUSTER query.
+    all_hosts
+        = BackupSettings::Util::filterHostIDs(backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
 
-        /// Do renaming in the create queries according to the renaming config.
-        renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
+    /// Do renaming in the create queries according to the renaming config.
+    renaming_map = makeRenamingMapFromBackupQuery(backup_query_elements);
 
-        /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
-        calculateRootPathInBackup();
+    /// Calculate the root path for collecting backup entries, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
+    calculateRootPathInBackup();
 
-        /// Find databases and tables which we're going to put to the backup.
-        gatherMetadataAndCheckConsistency();
+    /// Find databases and tables which we're going to put to the backup.
+    gatherMetadataAndCheckConsistency();
 
-        /// Make backup entries for the definitions of the found databases.
-        makeBackupEntriesForDatabasesDefs();
+    /// Make backup entries for the definitions of the found databases.
+    makeBackupEntriesForDatabasesDefs();
 
-        /// Make backup entries for the definitions of the found tables.
-        makeBackupEntriesForTablesDefs();
+    /// Make backup entries for the definitions of the found tables.
+    makeBackupEntriesForTablesDefs();
 
-        /// Make backup entries for the data of the found tables.
-        setStatus(kExtractingDataFromTablesStatus);
-        makeBackupEntriesForTablesData();
+    /// Make backup entries for the data of the found tables.
+    setStage(Stage::EXTRACTING_DATA_FROM_TABLES);
+    makeBackupEntriesForTablesData();
 
-        /// Run all the tasks added with addPostCollectingTask().
-        setStatus(kRunningPostTasksStatus);
-        runPostTasks();
+    /// Run all the tasks added with addPostCollectingTask().
+    setStage(Stage::RUNNING_POST_TASKS);
+    runPostTasks();
 
-        /// No more backup entries or tasks are allowed after this point.
-        setStatus(kWritingBackupStatus);
+    /// No more backup entries or tasks are allowed after this point.
+    setStage(Stage::WRITING_BACKUP);
 
-        return std::move(backup_entries);
-    }
-    catch (...)
-    {
-        try
-        {
-            setStatus(kErrorStatus, getCurrentExceptionMessage(false));
-        }
-        catch (...)
-        {
-        }
-        throw;
-    }
+    return std::move(backup_entries);
 }
 
-Strings BackupEntriesCollector::setStatus(const String & new_status, const String & message)
+Strings BackupEntriesCollector::setStage(const String & new_stage, const String & message)
 {
-    if (new_status == kErrorStatus)
+    LOG_TRACE(log, "{}", toUpperFirst(new_stage));
+    current_stage = new_stage;
+
+    backup_coordination->setStage(backup_settings.host_id, new_stage, message);
+
+    if (new_stage == Stage::formatGatheringMetadata(1))
     {
-        LOG_ERROR(log, "{} failed with error: {}", toUpperFirst(current_status), message);
-        backup_coordination->setStatus(backup_settings.host_id, new_status, message);
-        return {};
+        return backup_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+    }
+    else if (new_stage.starts_with(Stage::GATHERING_METADATA))
+    {
+        auto current_time = std::chrono::steady_clock::now();
+        auto end_of_timeout = std::max(current_time, consistent_metadata_snapshot_end_time);
+        return backup_coordination->waitForStage(
+            all_hosts, new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
     }
     else
     {
-        LOG_TRACE(log, "{}", toUpperFirst(new_status));
-        current_status = new_status;
-        if (new_status.starts_with(kGatheringMetadataStatus))
-        {
-            auto now = std::chrono::steady_clock::now();
-            auto end_of_timeout = std::max(now, consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout);
-
-            return backup_coordination->setStatusAndWaitFor(
-                backup_settings.host_id,
-                new_status,
-                message,
-                all_hosts,
-                std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - now).count());
-        }
-        else
-        {
-            return backup_coordination->setStatusAndWait(backup_settings.host_id, new_status, message, all_hosts);
-        }
+        return backup_coordination->waitForStage(all_hosts, new_stage);
     }
 }
 
@@ -202,18 +170,18 @@ void BackupEntriesCollector::calculateRootPathInBackup()
 /// Finds databases and tables which we will put to the backup.
 void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
 {
-    consistent_metadata_snapshot_start_time = std::chrono::steady_clock::now();
-    auto end_of_timeout = consistent_metadata_snapshot_start_time + consistent_metadata_snapshot_timeout;
-    setStatus(fmt::format("{} ({})", kGatheringMetadataStatus, 1));
+    setStage(Stage::formatGatheringMetadata(1));
+
+    consistent_metadata_snapshot_end_time = std::chrono::steady_clock::now() + consistent_metadata_snapshot_timeout;
 
     for (size_t pass = 1;; ++pass)
     {
-        String new_status = fmt::format("{} ({})", kGatheringMetadataStatus, pass + 1);
+        String next_stage = Stage::formatGatheringMetadata(pass + 1);
         std::optional<Exception> inconsistency_error;
         if (tryGatherMetadataAndCompareWithPrevious(inconsistency_error))
         {
             /// Gathered metadata and checked consistency, cool! But we have to check that other hosts cope with that too.
-            auto all_hosts_results = setStatus(new_status, "consistent");
+            auto all_hosts_results = setStage(next_stage, "consistent");
 
             std::optional<String> host_with_inconsistency;
             std::optional<String> inconsistency_error_on_other_host;
@@ -239,13 +207,13 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
         else
         {
             /// Failed to gather metadata or something wasn't consistent. We'll let other hosts know that and try again.
-            setStatus(new_status, inconsistency_error->displayText());
+            setStage(next_stage, inconsistency_error->displayText());
         }
 
         /// Two passes is minimum (we need to compare with table names with previous ones to be sure we don't miss anything).
         if (pass >= 2)
         {
-            if (std::chrono::steady_clock::now() > end_of_timeout)
+            if (std::chrono::steady_clock::now() > consistent_metadata_snapshot_end_time)
                 inconsistency_error->rethrow();
             else
                 LOG_WARNING(log, "{}", inconsistency_error->displayText());
@@ -268,6 +236,7 @@ bool BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(std::option
         table_infos.clear();
         gatherDatabasesMetadata();
         gatherTablesMetadata();
+        lockTablesForReading();
     }
     catch (Exception & e)
     {
@@ -436,46 +405,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
     table_infos.clear();
     for (const auto & [database_name, database_info] : database_infos)
     {
-        const auto & database = database_info.database;
-        bool is_temporary_database = (database_name == DatabaseCatalog::TEMPORARY_DATABASE);
-
-        auto filter_by_table_name = [database_info = &database_info](const String & table_name)
-        {
-            /// We skip inner tables of materialized views.
-            if (table_name.starts_with(".inner_id."))
-                return false;
-
-            if (database_info->tables.contains(table_name))
-                return true;
-
-            if (database_info->all_tables)
-                return !database_info->except_table_names.contains(table_name);
-
-            return false;
-        };
-
-        auto db_tables = database->getTablesForBackup(filter_by_table_name, context);
-
-        std::unordered_set<String> found_table_names;
-        for (const auto & db_table : db_tables)
-        {
-            const auto & create_table_query = db_table.first;
-            const auto & create = create_table_query->as<const ASTCreateQuery &>();
-            found_table_names.emplace(create.getTable());
-
-            if (is_temporary_database && !create.temporary)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a non-temporary create query for {}", tableNameWithTypeToString(database_name, create.getTable(), false));
-
-            if (!is_temporary_database && (create.getDatabase() != database_name))
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected database name {} for {}", backQuoteIfNeed(create.getDatabase()), tableNameWithTypeToString(database_name, create.getTable(), false));
-        }
-
-        /// Check that all tables were found.
-        for (const auto & [table_name, table_info] : database_info.tables)
-        {
-            if (table_info.throw_if_table_not_found && !found_table_names.contains(table_name))
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "{} not found", tableNameWithTypeToString(database_name, table_name, true));
-        }
+        std::vector<std::pair<ASTPtr, StoragePtr>> db_tables = findTablesInDatabase(database_name);
 
         for (const auto & db_table : db_tables)
         {
@@ -501,7 +431,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
 
             /// Add information to `table_infos`.
             auto & res_table_info = table_infos[QualifiedTableName{database_name, table_name}];
-            res_table_info.database = database;
+            res_table_info.database = database_info.database;
             res_table_info.storage = storage;
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
@@ -528,23 +458,83 @@ void BackupEntriesCollector::gatherTablesMetadata()
     }
 }
 
+std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInDatabase(const String & database_name) const
+{
+    const auto & database_info = database_infos.at(database_name);
+    const auto & database = database_info.database;
+
+    auto filter_by_table_name = [database_info = &database_info](const String & table_name)
+    {
+        /// We skip inner tables of materialized views.
+        if (table_name.starts_with(".inner_id."))
+            return false;
+
+        if (database_info->tables.contains(table_name))
+            return true;
+
+        if (database_info->all_tables)
+            return !database_info->except_table_names.contains(table_name);
+
+        return false;
+    };
+
+    std::vector<std::pair<ASTPtr, StoragePtr>> db_tables;
+
+    try
+    {
+        db_tables = database->getTablesForBackup(filter_by_table_name, context);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While collecting tables for backup in database {}", backQuoteIfNeed(database_name));
+        throw;
+    }
+
+    std::unordered_set<String> found_table_names;
+    for (const auto & db_table : db_tables)
+    {
+        const auto & create_table_query = db_table.first;
+        const auto & create = create_table_query->as<const ASTCreateQuery &>();
+        found_table_names.emplace(create.getTable());
+
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        {
+            if (!create.temporary)
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a non-temporary create query for {}", tableNameWithTypeToString(database_name, create.getTable(), false));
+        }
+        else
+        {
+            if (create.getDatabase() != database_name)
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected database name {} for {}", backQuoteIfNeed(create.getDatabase()), tableNameWithTypeToString(database_name, create.getTable(), false));
+        }
+    }
+
+    /// Check that all tables were found.
+    for (const auto & [table_name, table_info] : database_info.tables)
+    {
+        if (table_info.throw_if_table_not_found && !found_table_names.contains(table_name))
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "{} was not found", tableNameWithTypeToString(database_name, table_name, true));
+    }
+
+    return db_tables;
+}
+
 void BackupEntriesCollector::lockTablesForReading()
 {
     for (auto & [table_name, table_info] : table_infos)
     {
         auto storage = table_info.storage;
-        TableLockHolder table_lock;
         if (storage)
         {
             try
             {
-                table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
+                table_info.table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
             }
             catch (Exception & e)
             {
                 if (e.code() != ErrorCodes::TABLE_IS_DROPPED)
                     throw;
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} is dropped", tableNameWithTypeToString(table_name.database, table_name.table, true));
+                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} was dropped during scanning", tableNameWithTypeToString(table_name.database, table_name.table, true));
             }
         }
     }
@@ -648,7 +638,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         if (!database_info.create_database_query)
             continue; /// We store CREATE DATABASE queries only if there was BACKUP DATABASE specified.
 
-        LOG_TRACE(log, "Adding definition of database {}", backQuoteIfNeed(database_name));
+        LOG_TRACE(log, "Adding the definition of database {} to backup", backQuoteIfNeed(database_name));
 
         ASTPtr new_create_query = database_info.create_database_query;
         adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), nullptr);
@@ -664,7 +654,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 {
     for (auto & [table_name, table_info] : table_infos)
     {
-        LOG_TRACE(log, "Adding definition of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
+        LOG_TRACE(log, "Adding the definition of {} to backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
 
         ASTPtr new_create_query = table_info.create_table_query;
         adjustCreateQueryForBackup(new_create_query, context->getGlobalContext(), &table_info.replicated_table_shared_id);
@@ -680,30 +670,46 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    for (const auto & [table_name, table_info] : table_infos)
+    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
+        makeBackupEntriesForTableData(table_name);
+}
+
+void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
+{
+    if (backup_settings.structure_only)
+        return;
+
+    const auto & table_info = table_infos.at(table_name);
+    const auto & storage = table_info.storage;
+    const auto & data_path_in_backup = table_info.data_path_in_backup;
+
+    if (!storage)
     {
-        const auto & storage = table_info.storage;
-        const auto & data_path_in_backup = table_info.data_path_in_backup;
-        if (storage)
-        {
-            LOG_TRACE(log, "Adding data of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
-            storage->backupData(*this, data_path_in_backup, table_info.partitions);
-        }
-        else
-        {
-            /// Storage == null means this storage exists on other replicas but it has not been created on this replica yet.
-            /// If this table is replicated in this case we call IBackupCoordination::addReplicatedDataPath() which will cause
-            /// other replicas to fill the storage's data in the backup.
-            /// If this table is not replicated we'll do nothing leaving the storage's data empty in the backup.
-            if (table_info.replicated_table_shared_id)
-                backup_coordination->addReplicatedDataPath(*table_info.replicated_table_shared_id, data_path_in_backup);
-        }
+        /// If storage == null that means this storage exists on other replicas but it has not been created on this replica yet.
+        /// If this table is replicated in this case we call IBackupCoordination::addReplicatedDataPath() which will cause
+        /// other replicas to fill the storage's data in the backup.
+        /// If this table is not replicated we'll do nothing leaving the storage's data empty in the backup.
+        if (table_info.replicated_table_shared_id)
+            backup_coordination->addReplicatedDataPath(*table_info.replicated_table_shared_id, data_path_in_backup);
+        return;
+    }
+
+    LOG_TRACE(log, "Collecting data of {} for backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
+
+    try
+    {
+        storage->backupData(*this, data_path_in_backup, table_info.partitions);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While collecting data of {} for backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
+        throw;
     }
 }
 
 void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
 {
-    if (current_status == kWritingBackupStatus)
+    if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     backup_entries.emplace_back(file_name, backup_entry);
 }
@@ -715,22 +721,22 @@ void BackupEntriesCollector::addBackupEntry(const std::pair<String, BackupEntryP
 
 void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entries_)
 {
-    if (current_status == kWritingBackupStatus)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
+    if (current_stage == Stage::WRITING_BACKUP)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, backup_entries_);
 }
 
 void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 {
-    if (current_status == kWritingBackupStatus)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
+    if (current_stage == Stage::WRITING_BACKUP)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, std::move(backup_entries_));
 }
 
 void BackupEntriesCollector::addPostTask(std::function<void()> task)
 {
-    if (current_status == kWritingBackupStatus)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding post tasks is not allowed");
+    if (current_stage == Stage::WRITING_BACKUP)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of post tasks is not allowed");
     post_tasks.push(std::move(task));
 }
 

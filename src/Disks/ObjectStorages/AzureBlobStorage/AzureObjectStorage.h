@@ -10,6 +10,7 @@
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/MultiVersion.h>
 
 
 namespace DB
@@ -45,28 +46,29 @@ public:
     using SettingsPtr = std::unique_ptr<AzureObjectStorageSettings>;
 
     AzureObjectStorage(
-        FileCachePtr && cache_,
         const String & name_,
         AzureClientPtr && client_,
         SettingsPtr && settings_);
 
-    bool exists(const std::string & uri) const override;
+    std::string getName() const override { return "AzureObjectStorage"; }
 
-    std::unique_ptr<SeekableReadBuffer> readObject( /// NOLINT
-        const std::string & path,
+    bool exists(const StoredObject & object) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
+        const StoredObject & object,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const PathsWithSize & blobs_to_read,
+        const StoredObjects & objects,
         const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
-        const std::string & path,
+        const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
         FinalizeCallback && finalize_callback = {},
@@ -76,19 +78,19 @@ public:
     void listPrefix(const std::string & path, RelativePathsWithSize & children) const override;
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
-    void removeObject(const std::string & path) override;
+    void removeObject(const StoredObject & object) override;
 
-    void removeObjects(const PathsWithSize & paths) override;
+    void removeObjects(const StoredObjects & objects) override;
 
-    void removeObjectIfExists(const std::string & path) override;
+    void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const PathsWithSize & paths) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
-        const std::string & object_from,
-        const std::string & object_to,
+        const StoredObject & object_from,
+        const StoredObject & object_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override {}
@@ -108,6 +110,9 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
+    std::string generateBlobNameForPath(const std::string & path) override;
+
+    bool isRemote() const override { return true; }
 
 private:
     const String name;

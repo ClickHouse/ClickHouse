@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
@@ -351,6 +352,8 @@ ZooKeeper::ZooKeeper(
 
     send_thread = ThreadFromGlobalPool([this] { sendThread(); });
     receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
+
+    initApiVersion();
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
@@ -698,6 +701,7 @@ void ZooKeeper::receiveEvent()
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
+    UInt64 elapsed_ms = 0;
 
     if (xid == PING_XID)
     {
@@ -758,8 +762,8 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
-        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
+        elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
     }
 
     try
@@ -809,7 +813,7 @@ void ZooKeeper::receiveEvent()
         if (length != actual_length)
             throw Exception("Response length doesn't match. Expected: " + DB::toString(length) + ", actual: " + DB::toString(actual_length), Error::ZMARSHALLINGERROR);
 
-        logOperationIfNeeded(request_info.request, response);   //-V614
+        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);   //-V614
     }
     catch (...)
     {
@@ -828,7 +832,7 @@ void ZooKeeper::receiveEvent()
             if (request_info.callback)
                 request_info.callback(*response);
 
-            logOperationIfNeeded(request_info.request, response);
+            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
         }
         catch (...)
         {
@@ -916,13 +920,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
+                UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
 
                 if (request_info.callback)
                 {
                     try
                     {
                         request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, true);
+                        logOperationIfNeeded(request_info.request, response, true, elapsed_ms);
                     }
                     catch (...)
                     {
@@ -982,7 +987,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
-                        logOperationIfNeeded(info.request, response, true);
+                        UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
+                        logOperationIfNeeded(info.request, response, true, elapsed_ms);
                     }
                     catch (...)
                     {
@@ -1056,6 +1062,44 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
+
+KeeperApiVersion ZooKeeper::getApiVersion()
+{
+    return keeper_api_version;
+}
+
+void ZooKeeper::initApiVersion()
+{
+    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise](const Coordination::GetResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+
+    get(keeper_api_version_path, std::move(callback), {});
+    if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
+    {
+        LOG_TRACE(log, "Failed to get API version: timeout");
+        return;
+    }
+
+    auto response = future.get();
+
+    if (response.error != Coordination::Error::ZOK)
+    {
+        LOG_TRACE(log, "Failed to get API version");
+        return;
+    }
+
+    uint8_t keeper_version{0};
+    DB::ReadBufferFromOwnString buf(response.data);
+    DB::readIntText(keeper_version, buf);
+    keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
+    LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
+}
+
 
 void ZooKeeper::executeGenericRequest(
     const ZooKeeperRequestPtr & request,
@@ -1168,16 +1212,31 @@ void ZooKeeper::set(
 
 void ZooKeeper::list(
     const String & path,
+    ListRequestType list_request_type,
     ListCallback callback,
     WatchCallback watch)
 {
-    ZooKeeperListRequest request;
-    request.path = path;
+    std::shared_ptr<ZooKeeperListRequest> request{nullptr};
+    if (keeper_api_version < Coordination::KeeperApiVersion::WITH_FILTERED_LIST)
+    {
+        if (list_request_type != ListRequestType::ALL)
+            throw Exception("Filtered list request type cannot be used because it's not supported by the server", Error::ZBADARGUMENTS);
+
+        request = std::make_shared<ZooKeeperListRequest>();
+    }
+    else
+    {
+        auto filtered_list_request = std::make_shared<ZooKeeperFilteredListRequest>();
+        filtered_list_request->list_request_type = list_request_type;
+        request = std::move(filtered_list_request);
+    }
+
+    request->path = path;
 
     RequestInfo request_info;
-    request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     request_info.watch = watch;
+    request_info.request = std::move(request);
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperList);
@@ -1254,7 +1313,7 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 }
 
 #ifdef ZOOKEEPER_LOG
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize)
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_ms)
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
     if (!maybe_zk_log)
@@ -1292,6 +1351,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
+        elem.duration_ms = elapsed_ms;
         if (request)
         {
             elem.thread_id = request->thread_id;
@@ -1301,7 +1361,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     }
 }
 #else
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeeperResponsePtr &, bool)
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeeperResponsePtr &, bool, UInt64)
 {}
 #endif
 
