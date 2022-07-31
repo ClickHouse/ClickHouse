@@ -78,7 +78,6 @@
                 <type>azure_blob_storage</type>
                 <storage_account_url>http://localhost:10000/devstoreaccount1</storage_account_url>
                 <container_name>cont</container_name>
-                <container_already_exists>false</container_already_exists>
                 <skip_access_check>false</skip_access_check>
                 <!-- default credentials for Azurite storage account -->
                 <account_name>devstoreaccount1</account_name>
@@ -88,7 +87,7 @@
             <cached_azure>
                 <type>cache</type>
                 <disk>azure</disk>
-                <path>/home/ubuntu/azure_cache/</path>
+                <path>azure_cache/</path>
                 <max_size>100000000000</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </cached_azure>
