@@ -269,6 +269,13 @@
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
 
+    <!-- Maximum number of query processing threads to run all queries.
+         Note that This is not a hard limit. In case if the limit is reached the query will still get one thread to run.
+         For value equals to -1 this parameter is initialized by number of logical cores multiplies by 3.
+         Which is a good heuristic for CPU-bound tasks.
+    -->
+    <concurrent_threads_soft_limit>0</concurrent_threads_soft_limit>
+
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
 
@@ -604,9 +611,23 @@
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
              By default this setting is false for compatibility with earlier access configurations. -->
         <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
+
         <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
              however you can change this behaviour by setting this to true -->
         <on_cluster_queries_require_cluster_grant>false</on_cluster_queries_require_cluster_grant>
+
+        <!-- By default, for backward compatibility "SELECT * FROM system.<table>" doesn't require any grants and can be executed
+             by any user. You can change this behaviour by setting this to true.
+             If it's set to true then this query requires "GRANT SELECT ON system.<table>" just like as for non-system tables.
+             Exceptions: a few system tables ("tables", "columns", "databases", and some constant tables like "one", "contributors")
+             are still accessible for everyone; and if there is a SHOW privilege (e.g. "SHOW USERS") granted the corresponding system
+             table (i.e. "system.users") will be accessible. -->
+        <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
+
+        <!-- By default, for backward compatibility "SELECT * FROM information_schema.<table>" doesn't require any grants and can be
+             executed by any user. You can change this behaviour by setting this to true.
+             If it's set to true then this query requires "GRANT SELECT ON information_schema.<table>" just like as for ordinary tables. -->
+        <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->

@@ -15,9 +15,12 @@ class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IRestoreCoordination;
 struct StorageID;
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 class AccessRestorerFromBackup;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
+
 
 /// Restores the definition of databases and tables and prepares tasks to restore the data of the tables.
 class RestorerFromBackup : private boost::noncopyable
@@ -70,6 +73,7 @@ private:
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     BackupPtr backup;
     ContextMutablePtr context;
+    std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds create_table_timeout;
     Poco::Logger * log;
 
@@ -87,16 +91,23 @@ private:
     void checkAccessForObjectsFoundInBackup() const;
 
     void createDatabases();
+    void createDatabase(const String & database_name) const;
+    void checkDatabase(const String & database_name);
+
     void createTables();
+    void createTable(const QualifiedTableName & table_name);
+    void checkTable(const QualifiedTableName & table_name);
+    void insertDataToTable(const QualifiedTableName & table_name);
 
     DataRestoreTasks getDataRestoreTasks();
 
-    void setStatus(const String & new_status, const String & message = "");
+    void setStage(const String & new_stage, const String & message = "");
 
     struct DatabaseInfo
     {
         ASTPtr create_database_query;
         bool is_predefined_database = false;
+        DatabasePtr database;
     };
 
     struct TableInfo
@@ -107,14 +118,14 @@ private:
         bool has_data = false;
         std::filesystem::path data_path_in_backup;
         std::optional<ASTs> partitions;
-        bool created = false;
+        DatabasePtr database;
         StoragePtr storage;
         TableLockHolder table_lock;
     };
 
     std::vector<QualifiedTableName> findTablesWithoutDependencies() const;
 
-    String current_status;
+    String current_stage;
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::map<QualifiedTableName, TableInfo> table_infos;
     std::vector<DataRestoreTask> data_restore_tasks;

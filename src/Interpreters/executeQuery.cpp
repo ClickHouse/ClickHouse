@@ -180,7 +180,8 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     try
     {
@@ -301,28 +302,15 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         span.operation_name = "query";
         span.start_time_us = current_time_us;
         span.finish_time_us = time_in_microseconds(std::chrono::system_clock::now());
-
-        /// Keep values synchronized to type enum in QueryLogElement::createBlock.
-        span.attribute_names.push_back("clickhouse.query_status");
-        span.attribute_values.push_back("ExceptionBeforeStart");
-
-        span.attribute_names.push_back("db.statement");
-        span.attribute_values.push_back(elem.query);
-
-        span.attribute_names.push_back("clickhouse.query_id");
-        span.attribute_values.push_back(elem.client_info.current_query_id);
-
-        span.attribute_names.push_back("clickhouse.exception");
-        span.attribute_values.push_back(elem.exception);
-
-        span.attribute_names.push_back("clickhouse.exception_code");
-        span.attribute_values.push_back(elem.exception_code);
-
+        span.attributes.reserve(6);
+        span.attributes.push_back(Tuple{"clickhouse.query_status", "ExceptionBeforeStart"});
+        span.attributes.push_back(Tuple{"db.statement", elem.query});
+        span.attributes.push_back(Tuple{"clickhouse.query_id", elem.client_info.current_query_id});
+        span.attributes.push_back(Tuple{"clickhouse.exception", elem.exception});
+        span.attributes.push_back(Tuple{"clickhouse.exception_code", toString(elem.exception_code)});
         if (!context->query_trace_context.tracestate.empty())
         {
-            span.attribute_names.push_back("clickhouse.tracestate");
-            span.attribute_values.push_back(
-                context->query_trace_context.tracestate);
+            span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
         }
 
         opentelemetry_span_log->add(span);
@@ -876,11 +864,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.event_time_microseconds = time_in_microseconds(finish_time);
                 status_info_to_query_log(elem, info, ast, context);
 
-                auto progress_callback = context->getProgressCallback();
-
-                if (progress_callback)
-                    progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
-
                 if (pulling_pipeline)
                 {
                     query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
@@ -889,7 +872,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     auto progress_out = process_list_elem->getProgressOut();
                     elem.result_rows = progress_out.written_rows;
-                    elem.result_bytes = progress_out.written_rows;
+                    elem.result_bytes = progress_out.written_bytes;
+                }
+
+                auto progress_callback = context->getProgressCallback();
+                if (progress_callback)
+                {
+                    Progress p(WriteProgress{info.written_rows, info.written_bytes});
+                    p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+                    progress_callback(p);
                 }
 
                 if (elem.read_rows != 0)
@@ -956,20 +947,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span.start_time_us = elem.query_start_time_microseconds;
                     span.finish_time_us = time_in_microseconds(finish_time);
 
-                    /// Keep values synchronized to type enum in QueryLogElement::createBlock.
-                    span.attribute_names.push_back("clickhouse.query_status");
-                    span.attribute_values.push_back("QueryFinish");
-
-                    span.attribute_names.push_back("db.statement");
-                    span.attribute_values.push_back(elem.query);
-
-                    span.attribute_names.push_back("clickhouse.query_id");
-                    span.attribute_values.push_back(elem.client_info.current_query_id);
+                    span.attributes.reserve(4);
+                    span.attributes.push_back(Tuple{"clickhouse.query_status", "QueryFinish"});
+                    span.attributes.push_back(Tuple{"db.statement", elem.query});
+                    span.attributes.push_back(Tuple{"clickhouse.query_id", elem.client_info.current_query_id});
                     if (!context->query_trace_context.tracestate.empty())
                     {
-                        span.attribute_names.push_back("clickhouse.tracestate");
-                        span.attribute_values.push_back(
-                            context->query_trace_context.tracestate);
+                    span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
                     }
 
                     opentelemetry_span_log->add(span);

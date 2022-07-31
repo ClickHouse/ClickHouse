@@ -32,7 +32,10 @@ struct ConnectionInfo
 class Connection : private boost::noncopyable
 {
 public:
-    explicit Connection(const ConnectionInfo & connection_info_, bool replication_ = false, size_t num_tries = 3);
+    explicit Connection(
+        const ConnectionInfo & connection_info_,
+        bool replication_ = false,
+        size_t num_tries = 3);
 
     void execWithRetry(const std::function<void(pqxx::nontransaction &)> & exec);
 

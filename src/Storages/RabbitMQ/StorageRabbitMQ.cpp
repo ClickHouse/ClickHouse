@@ -578,16 +578,6 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
         }
     }
 
-    /// Impose default settings if there are no user-defined settings.
-    if (!queue_settings.contains("x-max-length"))
-    {
-        queue_settings["x-max-length"] = queue_size;
-    }
-    if (!queue_settings.contains("x-overflow"))
-    {
-        queue_settings["x-overflow"] = "reject-publish";
-    }
-
     /// If queue_base - a single name, then it can be used as one specific queue, from which to read.
     /// Otherwise it is used as a generator (unique for current table) of queue names, because it allows to
     /// maximize performance - via setting `rabbitmq_num_queues`.
@@ -1085,9 +1075,6 @@ bool StorageRabbitMQ::streamToViews()
             *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
         sources.emplace_back(source);
         pipes.emplace_back(source);
-
-        // Limit read batch to maximum block size to allow DDL
-        StreamLocalLimits limits;
 
         Poco::Timespan max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
                                           ? rabbitmq_settings->rabbitmq_flush_interval_ms

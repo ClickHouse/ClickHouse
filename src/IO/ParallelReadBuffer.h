@@ -47,6 +47,7 @@ public:
     off_t getPosition() override;
 
     const ReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
+    ReadBufferFactory & getReadBufferFactory() { return *reader_factory; }
 
 private:
     /// Reader in progress with a list of read segments
