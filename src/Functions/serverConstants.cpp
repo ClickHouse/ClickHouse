@@ -8,9 +8,7 @@
 #include <Common/DateLUT.h>
 #include <Common/ClickHouseRevision.h>
 
-#if defined(OS_LINUX)
-#    include <Poco/Environment.h>
-#endif
+#include <Poco/Environment.h>
 
 #include <Common/config_version.h>
 
