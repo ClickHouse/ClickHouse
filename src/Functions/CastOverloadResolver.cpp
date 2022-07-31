@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void registerCastOverloadResolvers(FunctionFactory & factory)
+REGISTER_FUNCTION(CastOverloadResolvers)
 {
     factory.registerFunction<CastInternalOverloadResolver<CastType::nonAccurate>>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<CastInternalOverloadResolver<CastType::accurate>>();
