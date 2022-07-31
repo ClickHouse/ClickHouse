@@ -8,9 +8,7 @@
 #include <Common/DateLUT.h>
 #include <Common/ClickHouseRevision.h>
 
-#if defined(OS_LINUX)
-#    include <Poco/Environment.h>
-#endif
+#include <Poco/Environment.h>
 
 #include <Common/config_version.h>
 
@@ -109,7 +107,6 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
 
-#if defined(OS_LINUX)
     class FunctionGetOSKernelVersion : public FunctionConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
     {
     public:
@@ -117,7 +114,6 @@ namespace
         explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionConstantBase(Poco::Environment::osName() + " " + Poco::Environment::osVersion(), context->isDistributed()) {}
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
-#endif
 
 }
 
@@ -171,12 +167,10 @@ REGISTER_FUNCTION(ZooKeeperSessionUptime)
 }
 
 
-#if defined(OS_LINUX)
 REGISTER_FUNCTION(GetOSKernelVersion)
 {
     factory.registerFunction<FunctionGetOSKernelVersion>();
 }
-#endif
 
 
 }
