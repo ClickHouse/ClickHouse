@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Dashboard</title>
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css"> <!-- TODO: Add SRI -->
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
     <style>
@@ -15,6 +16,17 @@
             --input-shadow-color: rgba(0, 255, 0, 1);
             --error-color: red;
             --legend-background: rgba(255, 255, 255, 0.75);
+            --title-color: #666;
+            --text-color: black;
+            --edit-title-background: #FEE;
+            --edit-title-border: #F88;
+            --button-background-color: #FFCB80;
+            --button-text-color: black;
+            --new-chart-background-color: #EEE;
+            --new-chart-text-color: black;
+            --param-background-color: #EEE;
+            --param-text-color: black;
+            --input-background: white;
         }
 
         [data-theme="dark"] {
@@ -23,9 +35,20 @@
             --background-gradient-end: #151C2C;
             --chart-background: #1b2834;
             --shadow-color: rgba(0, 0, 0, 0);
-            --input-shadow-color: rgba(0, 255, 0, 1);
+            --input-shadow-color: rgba(255, 128, 0, 0.25);
             --error-color: #F66;
             --legend-background: rgba(255, 255, 255, 0.25);
+            --title-color: #AAA;
+            --text-color: white;
+            --edit-title-background: #442228;
+            --edit-title-border: #333;
+            --button-background-color: #484;
+            --button-text-color: black;
+            --new-chart-background-color: #666;
+            --new-chart-text-color: white;
+            --param-background-color: #666;
+            --param-text-color: white;
+            --input-background: #364f69;
         }
 
         * {
@@ -66,9 +89,19 @@
 
         .inputs { font-size: 14pt; }
 
+        #connection-params {
+            margin-bottom: 0.5rem;
+            display: grid;
+            grid-template-columns: auto 15% 15%;
+            column-gap: 0.25rem;
+        }
+
         .inputs input {
             box-shadow: 0 0 1rem var(--shadow-color);
             padding: 0.25rem;
+        }
+
+        #chart-params input {
             margin-right: 0.25rem;
         }
 
@@ -77,6 +110,8 @@
             outline: none;
             border: none;
             font-size: 14pt;
+            background-color: var(--input-background);
+            color: var(--text-color);
         }
 
         .u-legend th { display: none; }
@@ -99,7 +134,8 @@
         }
 
         #run {
-            background: #FFCB80;
+            background: var(--button-background-color);
+            color: var(--button-text-color);
             font-weight: bold;
             cursor: pointer;
             margin-bottom: 1rem;
@@ -114,15 +150,16 @@
             cursor: pointer;
             padding-left: 0.5rem;
             padding-right: 0.5rem;
-            background: #EEE;
+            background: var(--new-chart-background-color);
+            color: var(--new-chart-text-color);
             float: right;
-            margin-right: 0;
+            margin-right: 0 !important;
             margin-left: 1rem;
             margin-bottom: 1rem;
         }
 
         #add:hover {
-            background: white
+            background: var(--button-background-color);
         }
 
         form {
@@ -132,7 +169,8 @@
         form .param_name {
             font-size: 14pt;
             padding: 0.25rem;
-            background: #EEE;
+            background: var(--param-background-color);
+            color: var(--param-text-color);
             display: inline-block;
             box-shadow: 0 0 1rem var(--shadow-color);
             margin-bottom: 1rem;
@@ -148,7 +186,7 @@
             transform: translate(-50%, 0);
             font-size: 16pt;
             font-weight: bold;
-            color: #666;
+            color: var(--title-color);
             z-index: 10;
         }
 
@@ -195,7 +233,9 @@
             outline: none;
             border: none;
             font-size: 12pt;
-            border-bottom: 1px solid #F88;
+            border-bottom: 1px solid var(--edit-title-border);
+            background: var(--chart-background);
+            color: var(--text-color);
         }
 
         .query-editor input {
@@ -204,11 +244,12 @@
         }
 
         .edit-title {
-            background: #FEE;
+            background: var(--edit-title-background);
         }
 
         .edit-confirm {
-            background: #FFCB80;
+            background: var(--button-background-color);
+            color: var(--button-text-color);
             font-weight: bold;
             cursor: pointer;
         }
@@ -223,35 +264,21 @@
 </head>
 <body>
 <div class="inputs">
-    <input id="add" type="button" value="Add chart">
-    <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
-    <form id="params"></form>
+    <div id="connection-params">
+        <input id="url" type="text" value="https://play.clickhouse.com/" placeholder="URL" />
+        <input id="user" type="text" value="play" placeholder="user" />
+        <input id="password" type="password" placeholder="password" />
+    </div>
+    <div id="chart-params">
+        <input id="add" type="button" value="Add chart">
+        <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
+        <form id="params"></form>
+    </div>
 </div>
 <div id="charts">
 </div>
 </body>
 <script>
-
-let theme = 'light';
-
-function setTheme(new_theme) {
-    theme = new_theme;
-    document.documentElement.setAttribute('data-theme', theme);
-    window.localStorage.setItem('theme', theme);
-    drawAll();
-}
-
-document.getElementById('toggle-light').addEventListener('click', e => setTheme('light'));
-document.getElementById('toggle-dark').addEventListener('click', e => setTheme('dark'));
-
-let new_theme = window.localStorage.getItem('theme');
-if (new_theme && new_theme != theme) {
-    setTheme(new_theme);
-}
-
-const user = '';
-const password = '';
-const url = 'https://play.clickhouse.com/?user=play&default_format=JSONCompactColumns';
 
 const queries = [
     { title: "{repo} Weekly Unique Comment Authors", query:
@@ -308,6 +335,18 @@ let params = {
     repo: 'ClickHouse/ClickHouse',
     //word2: 'Coronavirus',
 };
+
+let theme = 'light';
+
+function setTheme(new_theme) {
+    theme = new_theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    window.localStorage.setItem('theme', theme);
+    drawAll();
+}
+
+document.getElementById('toggle-light').addEventListener('click', e => setTheme('light'));
+document.getElementById('toggle-dark').addEventListener('click', e => setTheme('dark'));
 
 /// uPlot objects will go here.
 let plots = queries.map(e => null);
@@ -378,7 +417,7 @@ buildParams();
 function getParamsForURL() {
     let url = '';
     for (let [name, value] of Object.entries(params)) {
-        url += `&param_${name}=${value}`;
+        url += `&param_${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
     };
     return url;
 }
@@ -557,14 +596,21 @@ async function draw(idx, chart, url_params, query) {
         plots[idx] = null;
     }
 
-    let headers = {};
-    if (user || password) {
-        headers['Authorization'] = 'Basic ' + btoa(`${user ? user : 'default'}${password ? ':' + password : ''}`);
+    const host = document.getElementById('url').value;
+    const user = document.getElementById('user').value;
+    const password = document.getElementById('password').value;
+
+    let url = `${host}?default_format=JSONCompactColumns`
+    if (user) {
+        url += `&user=${encodeURIComponent(user)}`;
+    }
+    if (password) {
+        password += `&password=${encodeURIComponent(password)}`;
     }
 
     let response, data, error;
     try {
-        response = await fetch(url + url_params, { method: "POST", body: query, headers: headers });
+        response = await fetch(url + url_params, { method: "POST", body: query });
         data = await response.text();
         if (response.ok) {
             data = JSON.parse(data);
@@ -603,7 +649,7 @@ async function draw(idx, chart, url_params, query) {
 
     const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
         ? ["#F88", "#FEE", "#EED", "#2c3235"]
-        : ["#366", "#045", "#2c3235", "#c7d0d9"];
+        : ["#045", "#045", "#2c3235", "#c7d0d9"];
 
     const opts = {
         width: chart.clientWidth,
@@ -652,7 +698,12 @@ document.getElementById('run').onclick = function(event) {
     event.preventDefault();
 }
 
-drawAll();
+let new_theme = window.localStorage.getItem('theme');
+if (new_theme && new_theme != theme) {
+    setTheme(new_theme);
+} else {
+    drawAll();
+}
 
 </script>
 </html>
