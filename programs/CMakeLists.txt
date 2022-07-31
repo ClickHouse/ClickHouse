@@ -324,11 +324,7 @@ clickhouse_add_executable (clickhouse main.cpp)
 
 # A library that prevent usage of several functions from libc.
 if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
-    if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-        # shared libraries dev build: not exactly clear why but the server doesn't come up in CI smoke test when libharmful is linked
-    else ()
-        set (HARMFUL_LIB harmful)
-    endif ()
+    set (HARMFUL_LIB harmful)
 endif ()
 
 target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
