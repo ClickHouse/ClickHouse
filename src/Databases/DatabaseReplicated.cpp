@@ -266,7 +266,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
         {
             if (replica_host_id == DROPPED_MARK && !is_create_query)
             {
-                LOG_WARNING(log, "Database {} exists locally, but marked dropped in ZooKeeper {}. "
+                LOG_WARNING(log, "Database {} exists locally, but marked dropped in ZooKeeper ({}). "
                                  "Will not try to start it up", getDatabaseName(), replica_path);
                 is_probably_dropped = true;
                 return;
@@ -290,7 +290,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
         {
             /// It's not CREATE query, but replica does not exist. Probably it was dropped.
             /// Do not create anything, continue as readonly.
-            LOG_WARNING(log, "Database {} exists locally, but its replica does not exist in ZooKeeper {}. "
+            LOG_WARNING(log, "Database {} exists locally, but its replica does not exist in ZooKeeper ({}). "
                              "Assuming it was dropped, will not try to start it up", getDatabaseName(), replica_path);
             is_probably_dropped = true;
             return;
@@ -961,6 +961,8 @@ void DatabaseReplicated::drop(ContextPtr context_)
 
 void DatabaseReplicated::stopReplication()
 {
+    if (is_probably_dropped)
+        return;
     if (ddl_worker)
         ddl_worker->shutdown();
 }
@@ -983,13 +985,20 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
 
+    auto table = tryGetTable(table_name, getContext());
+    if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
+    {
+        /// Avoid recursive locking of metadata_mutex
+        table->dropInnerTableIfAny(sync, local_context);
+    }
+
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
     if (txn)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
-    DatabaseAtomic::dropTable(local_context, table_name, sync);
+    DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
     tables_metadata_digest = new_digest;
 
     assert(debugCheckDigest(local_context));
@@ -1001,6 +1010,15 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(txn);
 
+    if (this != &to_database)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
+    if (table_name == to_table_name)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot rename table to itself");
+    if (!isTableExist(table_name, local_context))
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_name);
+    if (exchange && !to_database.isTableExist(to_table_name, local_context))
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
+
     String statement = readMetadataFile(table_name);
     String statement_to;
     if (exchange)
@@ -1008,15 +1026,6 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
 
     if (txn->isInitialQuery())
     {
-        if (this != &to_database)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
-        if (table_name == to_table_name)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot rename table to itself");
-        if (!isTableExist(table_name, local_context))
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_name);
-        if (exchange && !to_database.isTableExist(to_table_name, local_context))
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", to_table_name);
-
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         String metadata_zk_path_to = zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
