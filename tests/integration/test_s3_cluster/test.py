@@ -236,7 +236,9 @@ def test_distributed_insert_select(started_cluster):
             """
         INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated/file_{}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
         SELECT repeat('{}', 10), number from numbers(100);
-            """.format(file_number, file_number)
+            """.format(
+                file_number, file_number
+            )
         )
 
     first_replica_first_shard.query(
@@ -248,18 +250,27 @@ def test_distributed_insert_select(started_cluster):
         """
     )
 
-    for line in first_replica_first_shard.query(
-        """SELECT * FROM insert_select_local;""").strip().split('\n'):
+    for line in (
+        first_replica_first_shard.query("""SELECT * FROM insert_select_local;""")
+        .strip()
+        .split("\n")
+    ):
         _, b = line.split()
         assert int(b) % 2 == 0
 
-    for line in second_replica_first_shard.query(
-        """SELECT * FROM insert_select_local;""").strip().split('\n'):
+    for line in (
+        second_replica_first_shard.query("""SELECT * FROM insert_select_local;""")
+        .strip()
+        .split("\n")
+    ):
         _, b = line.split()
         assert int(b) % 2 == 0
 
-    for line in first_replica_second_shard.query(
-        """SELECT * FROM insert_select_local;""").strip().split('\n'):
+    for line in (
+        first_replica_second_shard.query("""SELECT * FROM insert_select_local;""")
+        .strip()
+        .split("\n")
+    ):
         _, b = line.split()
         assert int(b) % 2 == 1
 
@@ -293,9 +304,10 @@ def test_distributed_insert_select_with_replicated(started_cluster):
             """
         INSERT INTO TABLE FUNCTION s3('http://minio1:9001/root/data/generated_replicated/file_{}.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')
         SELECT repeat('{}', 10), number from numbers(100);
-            """.format(file_number, file_number)
+            """.format(
+                file_number, file_number
+            )
         )
-
 
     first_replica_first_shard.query(
         """
@@ -306,8 +318,16 @@ def test_distributed_insert_select_with_replicated(started_cluster):
         """
     )
 
-    first = int(first_replica_first_shard.query("""SELECT count(*) FROM insert_select_replicated_local""").strip())
-    second = int(second_replica_first_shard.query("""SELECT count(*) FROM insert_select_replicated_local""").strip())
+    first = int(
+        first_replica_first_shard.query(
+            """SELECT count(*) FROM insert_select_replicated_local"""
+        ).strip()
+    )
+    second = int(
+        second_replica_first_shard.query(
+            """SELECT count(*) FROM insert_select_replicated_local"""
+        ).strip()
+    )
 
     assert first != 0
     assert second != 0
