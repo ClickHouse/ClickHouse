@@ -50,12 +50,18 @@ RUN apt-get update \
         pigz \
         rename \
         software-properties-common \
+        tzdata \
+        nasm \
         --yes --no-install-recommends \
     && apt-get clean
 
 # Rust toolchain and libraries
+ENV RUSTUP_HOME=/rust/rustup
+ENV CARGO_HOME=/rust/cargo
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+RUN chmod 777 -R /rust
+ENV PATH="/rust/cargo/env:${PATH}"
+ENV PATH="/rust/cargo/bin:${PATH}"
 RUN rustup target add aarch64-unknown-linux-gnu && \
         rustup target add x86_64-apple-darwin && \
         rustup target add x86_64-unknown-freebsd && \
@@ -112,15 +118,41 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
-ARG NFPM_VERSION=2.15.1
+ARG NFPM_VERSION=2.16.0
 
 RUN arch=${TARGETARCH:-amd64} \
   && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
   && dpkg -i /tmp/nfpm.deb \
   && rm /tmp/nfpm.deb
 
+ARG GO_VERSION=1.18.3
+# We need go for clickhouse-diagnostics
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /tmp/go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+  && tar -xzf /tmp/go.tgz -C /usr/local/ \
+  && rm /tmp/go.tgz
+
+ENV PATH="$PATH:/usr/local/go/bin"
+ENV GOPATH=/workdir/go
+ENV GOCACHE=/workdir/
+
 RUN mkdir /workdir && chmod 777 /workdir
 WORKDIR /workdir
+
+# FIXME: thread sanitizer is broken in clang-14, we have to build it with clang-13
+# https://github.com/ClickHouse/ClickHouse/pull/39450
+# https://github.com/google/sanitizers/issues/1540
+# https://github.com/google/sanitizers/issues/1552
+
+RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
+    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-13 main" >> \
+        /etc/apt/sources.list.d/clang.list \
+    && apt-get update \
+    && apt-get install \
+        clang-13 \
+        clang-tidy-13 \
+        --yes --no-install-recommends \
+    && apt-get clean
 
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]

@@ -33,6 +33,7 @@
 #include <Parsers/queryNormalization.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/toOneLineQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -41,18 +42,19 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/QueryLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/TransactionLog.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/executeQuery.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -67,6 +69,7 @@
 #include <base/EnumReflection.h>
 #include <base/demangle.h>
 
+#include <memory>
 #include <random>
 
 
@@ -104,38 +107,6 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 }
 
 
-static String joinLines(const String & query)
-{
-    /// Care should be taken. We don't join lines inside non-whitespace tokens (e.g. multiline string literals)
-    ///  and we don't join line after comment (because it can be single-line comment).
-    /// All other whitespaces replaced to a single whitespace.
-
-    String res;
-    const char * begin = query.data();
-    const char * end = begin + query.size();
-
-    Lexer lexer(begin, end);
-    Token token = lexer.nextToken();
-    for (; !token.isEnd(); token = lexer.nextToken())
-    {
-        if (token.type == TokenType::Whitespace)
-        {
-            res += ' ';
-        }
-        else if (token.type == TokenType::Comment)
-        {
-            res.append(token.begin, token.end);
-            if (token.end < end && *token.end == '\n')
-                res += '\n';
-        }
-        else
-            res.append(token.begin, token.end);
-    }
-
-    return res;
-}
-
-
 static String prepareQueryForLogging(const String & query, ContextPtr context)
 {
     String res = query;
@@ -162,7 +133,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 {
     if (internal)
     {
-        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", joinLines(query), QueryProcessingStage::toString(stage));
+        LOG_DEBUG(&Poco::Logger::get("executeQuery"), "(internal) {} (stage: {})", toOneLineQuery(query), QueryProcessingStage::toString(stage));
     }
     else
     {
@@ -191,7 +162,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
-            joinLines(query),
+            toOneLineQuery(query),
             QueryProcessingStage::toString(stage));
 
         if (client_info.client_trace_context.trace_id != UUID())
@@ -209,7 +180,8 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     try
     {
@@ -237,7 +209,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            joinLines(elem.query));
+            toOneLineQuery(elem.query));
     else
         LOG_ERROR(
             &Poco::Logger::get("executeQuery"),
@@ -246,7 +218,7 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
-            joinLines(elem.query),
+            toOneLineQuery(elem.query),
             elem.stack_trace);
 }
 
@@ -330,28 +302,15 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         span.operation_name = "query";
         span.start_time_us = current_time_us;
         span.finish_time_us = time_in_microseconds(std::chrono::system_clock::now());
-
-        /// Keep values synchronized to type enum in QueryLogElement::createBlock.
-        span.attribute_names.push_back("clickhouse.query_status");
-        span.attribute_values.push_back("ExceptionBeforeStart");
-
-        span.attribute_names.push_back("db.statement");
-        span.attribute_values.push_back(elem.query);
-
-        span.attribute_names.push_back("clickhouse.query_id");
-        span.attribute_values.push_back(elem.client_info.current_query_id);
-
-        span.attribute_names.push_back("clickhouse.exception");
-        span.attribute_values.push_back(elem.exception);
-
-        span.attribute_names.push_back("clickhouse.exception_code");
-        span.attribute_values.push_back(elem.exception_code);
-
+        span.attributes.reserve(6);
+        span.attributes.push_back(Tuple{"clickhouse.query_status", "ExceptionBeforeStart"});
+        span.attributes.push_back(Tuple{"db.statement", elem.query});
+        span.attributes.push_back(Tuple{"clickhouse.query_id", elem.client_info.current_query_id});
+        span.attributes.push_back(Tuple{"clickhouse.exception", elem.exception});
+        span.attributes.push_back(Tuple{"clickhouse.exception_code", toString(elem.exception_code)});
         if (!context->query_trace_context.tracestate.empty())
         {
-            span.attribute_names.push_back("clickhouse.tracestate");
-            span.attribute_values.push_back(
-                context->query_trace_context.tracestate);
+            span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
         }
 
         opentelemetry_span_log->add(span);
@@ -447,7 +406,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
             chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
-                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Cannot execute query because current transaction failed. Expecting ROLLBACK statement.");
+                throw Exception(
+                    ErrorCodes::INVALID_TRANSACTION,
+                    "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
@@ -529,6 +490,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
 
     String query_for_logging;
+    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
 
     try
     {
@@ -652,11 +614,37 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (!table_id.empty())
                 context->setInsertionTable(table_id);
 
-            if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+            if (context->getCurrentTransaction() && settings.throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
+            if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
         }
         else
         {
+            /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
+            if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
+            {
+                try
+                {
+                    if (context->isGlobalContext())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
+
+                    /// If there is no session (which is the default for the HTTP Handler), set up one just for this as it is necessary
+                    /// to control the transaction lifetime
+                    if (!context->hasSessionContext())
+                        context->makeSessionContext();
+
+                    auto tc = std::make_shared<InterpreterTransactionControlQuery>(ast, context);
+                    tc->executeBegin(context->getSessionContext());
+                    implicit_txn_control = std::move(tc);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("while starting a transaction with 'implicit_transaction'");
+                    throw;
+                }
+            }
+
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
             if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
@@ -844,15 +832,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             };
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem, context, ast,
-                 log_queries,
-                 log_queries_min_type = settings.log_queries_min_type,
-                 log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                 log_processors_profiles = settings.log_processors_profiles,
-                 status_info_to_query_log,
-                 pulling_pipeline = pipeline.pulling()
-            ]
-                (QueryPipeline & query_pipeline) mutable
+            auto finish_callback = [elem,
+                                    context,
+                                    ast,
+                                    log_queries,
+                                    log_queries_min_type = settings.log_queries_min_type,
+                                    log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                                    log_processors_profiles = settings.log_processors_profiles,
+                                    status_info_to_query_log,
+                                    implicit_txn_control,
+                                    pulling_pipeline = pipeline.pulling()](QueryPipeline & query_pipeline) mutable
             {
                 QueryStatus * process_list_elem = context->getProcessListElement();
 
@@ -875,11 +864,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.event_time_microseconds = time_in_microseconds(finish_time);
                 status_info_to_query_log(elem, info, ast, context);
 
-                auto progress_callback = context->getProgressCallback();
-
-                if (progress_callback)
-                    progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
-
                 if (pulling_pipeline)
                 {
                     query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
@@ -888,7 +872,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     auto progress_out = process_list_elem->getProgressOut();
                     elem.result_rows = progress_out.written_rows;
-                    elem.result_bytes = progress_out.written_rows;
+                    elem.result_bytes = progress_out.written_bytes;
+                }
+
+                auto progress_callback = context->getProgressCallback();
+                if (progress_callback)
+                {
+                    Progress p(WriteProgress{info.written_rows, info.written_bytes});
+                    p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+                    progress_callback(p);
                 }
 
                 if (elem.read_rows != 0)
@@ -955,33 +947,51 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     span.start_time_us = elem.query_start_time_microseconds;
                     span.finish_time_us = time_in_microseconds(finish_time);
 
-                    /// Keep values synchronized to type enum in QueryLogElement::createBlock.
-                    span.attribute_names.push_back("clickhouse.query_status");
-                    span.attribute_values.push_back("QueryFinish");
-
-                    span.attribute_names.push_back("db.statement");
-                    span.attribute_values.push_back(elem.query);
-
-                    span.attribute_names.push_back("clickhouse.query_id");
-                    span.attribute_values.push_back(elem.client_info.current_query_id);
+                    span.attributes.reserve(4);
+                    span.attributes.push_back(Tuple{"clickhouse.query_status", "QueryFinish"});
+                    span.attributes.push_back(Tuple{"db.statement", elem.query});
+                    span.attributes.push_back(Tuple{"clickhouse.query_id", elem.client_info.current_query_id});
                     if (!context->query_trace_context.tracestate.empty())
                     {
-                        span.attribute_names.push_back("clickhouse.tracestate");
-                        span.attribute_values.push_back(
-                            context->query_trace_context.tracestate);
+                    span.attributes.push_back(Tuple{"clickhouse.tracestate", context->query_trace_context.tracestate});
                     }
 
                     opentelemetry_span_log->add(span);
                 }
+
+                if (implicit_txn_control)
+                {
+                    try
+                    {
+                        implicit_txn_control->executeCommit(context->getSessionContext());
+                        implicit_txn_control.reset();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
+                        /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
+                        implicit_txn_control.reset();
+                        throw;
+                    }
+                }
             };
 
-            auto exception_callback = [elem, context, ast,
-                 log_queries,
-                 log_queries_min_type = settings.log_queries_min_type,
-                 log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                 quota(quota), status_info_to_query_log] () mutable
+            auto exception_callback = [elem,
+                                       context,
+                                       ast,
+                                       log_queries,
+                                       log_queries_min_type = settings.log_queries_min_type,
+                                       log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
+                                       quota(quota),
+                                       status_info_to_query_log,
+                                       implicit_txn_control]() mutable
             {
-                if (auto txn = context->getCurrentTransaction())
+                if (implicit_txn_control)
+                {
+                    implicit_txn_control->executeRollback(context->getSessionContext());
+                    implicit_txn_control.reset();
+                }
+                else if (auto txn = context->getCurrentTransaction())
                     txn->onException();
 
                 if (quota)
@@ -1031,7 +1041,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
                 }
-
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -1040,8 +1049,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
-        if (auto txn = context->getCurrentTransaction())
+        if (implicit_txn_control)
+        {
+            implicit_txn_control->executeRollback(context->getSessionContext());
+            implicit_txn_control.reset();
+        }
+        else if (auto txn = context->getCurrentTransaction())
+        {
             txn->onException();
+        }
 
         if (!internal)
         {

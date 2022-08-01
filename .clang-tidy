@@ -176,6 +176,8 @@ CheckOptions:
     value: CamelCase
   - key: modernize-loop-convert.UseCxx20ReverseRanges
     value: false
+  - key: performance-move-const-arg.CheckTriviallyCopyableMove
+    value: false
     # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
   - key: readability-identifier-naming.TypeTemplateParameterIgnoredRegexp
     value: expr-type

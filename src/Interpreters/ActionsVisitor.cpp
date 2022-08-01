@@ -467,6 +467,15 @@ public:
     }
 
     bool contains(const std::string & name) const { return map.contains(name); }
+
+    std::vector<std::string_view> getAllNames() const
+    {
+        std::vector<std::string_view> result;
+        result.reserve(map.size());
+        for (auto const & e : map)
+            result.emplace_back(e.first);
+        return result;
+    }
 };
 
 ActionsMatcher::Data::Data(
@@ -481,7 +490,8 @@ ActionsMatcher::Data::Data(
     bool no_makeset_,
     bool only_consts_,
     bool create_source_for_in_,
-    AggregationKeysInfo aggregation_keys_info_)
+    AggregationKeysInfo aggregation_keys_info_,
+    bool build_expression_with_window_functions_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -495,6 +505,7 @@ ActionsMatcher::Data::Data(
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
+    , build_expression_with_window_functions(build_expression_with_window_functions_)
     , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
 {
 }
@@ -502,6 +513,12 @@ ActionsMatcher::Data::Data(
 bool ActionsMatcher::Data::hasColumn(const String & column_name) const
 {
     return actions_stack.getLastActionsIndex().contains(column_name);
+}
+
+std::vector<std::string_view> ActionsMatcher::Data::getAllColumnNames() const
+{
+    const auto & index = actions_stack.getLastActionsIndex();
+    return index.getAllNames();
 }
 
 ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_) : WithContext(context_)
@@ -803,8 +820,9 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
         {
             if (column_name_type.name == column_name)
             {
-                throw Exception("Column " + backQuote(column_name) + " is not under aggregate function and not in GROUP BY",
-                                ErrorCodes::NOT_AN_AGGREGATE);
+                throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                    "Column {} is not under aggregate function and not in GROUP BY. Have columns: {}",
+                    backQuote(column_name), toString(data.getAllColumnNames()));
             }
         }
 
@@ -921,6 +939,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
+    // Now we need to correctly process window functions and any expression which depend on them.
     if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
@@ -928,7 +947,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             visit(node.window_definition, data);
         }
-
         // Also manually add columns for arguments of the window function itself.
         // ActionVisitor is written in such a way that this method must itself
         // descend into all needed function children. Window functions can't have
@@ -947,19 +965,57 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // aggregate functions.
         return;
     }
+    else if (node.compute_after_window_functions)
+    {
+        if (!data.build_expression_with_window_functions)
+        {
+            for (const auto & arg : node.arguments->children)
+            {
+                if (auto const * function = arg->as<ASTFunction>();
+                    function && function->name == "lambda")
+                {
+                    // Lambda function is a special case. It shouldn't be visited here.
+                    continue;
+                }
+                visit(arg, data);
+            }
+            return;
+        }
+    }
 
     // An aggregate function can also be calculated as a window function, but we
     // checked for it above, so no need to do anything more.
-    if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
+    if (AggregateUtils::isAggregateFunction(node))
         return;
 
-    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
+    FunctionOverloadResolverPtr function_builder;
+
+    auto current_context = data.getContext();
+
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
+    {
+        Array parameters;
+        if (node.parameters)
+        {
+            auto & node_parameters = node.parameters->children;
+            size_t parameters_size = node_parameters.size();
+            parameters.resize(parameters_size);
+
+            for (size_t i = 0; i < parameters_size; ++i)
+            {
+                ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
+                parameters[i] = literal->as<ASTLiteral>()->value;
+            }
+        }
+
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
+    }
 
     if (!function_builder)
     {
         try
         {
-            function_builder = FunctionFactory::instance().get(node.name, data.getContext());
+            function_builder = FunctionFactory::instance().get(node.name, current_context);
         }
         catch (Exception & e)
         {

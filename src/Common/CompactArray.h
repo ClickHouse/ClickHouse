@@ -130,7 +130,7 @@ public:
 private:
     ReadBuffer & in;
     /// The physical location of the current cell.
-    Locus locus;
+    Locus locus{};
     /// The current position in the file as a cell number.
     BucketIndex current_bucket_index = 0;
     /// The number of bytes read.

@@ -25,6 +25,7 @@ struct DivideName { static constexpr auto name = "divide"; };
 
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
+struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
 
@@ -521,10 +522,10 @@ public:
 using FunctionL1Norm = FunctionLNorm<L1Label>;
 
 template <>
-class FunctionLNorm<L2Label> : public ITupleFunction
+class FunctionLNorm<L2SquaredLabel> : public ITupleFunction
 {
 public:
-    static constexpr auto name = "L2Norm";
+    static constexpr auto name = "L2SquaredNorm";
 
     explicit FunctionLNorm(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
@@ -579,8 +580,7 @@ public:
             }
         }
 
-        auto sqrt = FunctionFactory::instance().get("sqrt", context);
-        return sqrt->build({ColumnWithTypeAndName{res_type, {}}})->getResultType();
+        return res_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -618,9 +618,56 @@ public:
             }
         }
 
+        return res.column;
+    }
+};
+using FunctionL2SquaredNorm = FunctionLNorm<L2SquaredLabel>;
+
+template <>
+class FunctionLNorm<L2Label> : public FunctionL2SquaredNorm
+{
+private:
+    using Base =  FunctionL2SquaredNorm;
+public:
+    static constexpr auto name = "L2Norm";
+
+    explicit FunctionLNorm(ContextPtr context_) : Base(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLNorm>(context_); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        const auto * cur_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+
+        if (!cur_tuple)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0 of function {} should be tuple, got {}",
+                            getName(), arguments[0].type->getName());
+
+        const auto & cur_types = cur_tuple->getElements();
+        size_t tuple_size = cur_types.size();
+        if (tuple_size == 0)
+            return std::make_shared<DataTypeUInt8>();
+
         auto sqrt = FunctionFactory::instance().get("sqrt", context);
-        auto sqrt_elem = sqrt->build({res});
-        return sqrt_elem->execute({res}, sqrt_elem->getResultType(), input_rows_count);
+        return sqrt->build({ColumnWithTypeAndName{Base::getReturnTypeImpl(arguments), {}}})->getResultType();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto cur_elements = getTupleElements(*arguments[0].column);
+
+        size_t tuple_size = cur_elements.size();
+        if (tuple_size == 0)
+            return DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count);
+
+        ColumnWithTypeAndName squared_res;
+        squared_res.type = Base::getReturnTypeImpl(arguments);
+        squared_res.column = Base::executeImpl(arguments, squared_res.type, input_rows_count);
+
+        auto sqrt = FunctionFactory::instance().get("sqrt", context);
+        auto sqrt_elem = sqrt->build({squared_res});
+        return sqrt_elem->execute({squared_res}, sqrt_elem->getResultType(), input_rows_count);
     }
 };
 using FunctionL2Norm = FunctionLNorm<L2Label>;
@@ -930,6 +977,8 @@ using FunctionL1Distance = FunctionLDistance<L1Label>;
 
 using FunctionL2Distance = FunctionLDistance<L2Label>;
 
+using FunctionL2SquaredDistance = FunctionLDistance<L2SquaredLabel>;
+
 using FunctionLinfDistance = FunctionLDistance<LinfLabel>;
 
 using FunctionLpDistance = FunctionLDistance<LpLabel>;
@@ -1075,7 +1124,7 @@ template <class Traits>
 class TupleOrArrayFunction : public IFunction
 {
 public:
-    static inline String name = Traits::name;
+    static constexpr auto name = Traits::name;
 
     explicit TupleOrArrayFunction(ContextPtr context_)
         : IFunction()
@@ -1111,18 +1160,20 @@ private:
 
 extern FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
+extern FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 
 extern FunctionPtr createFunctionArrayL1Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Distance(ContextPtr context_);
+extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
 
 struct L1NormTraits
 {
-    static inline String name = "L1Norm";
+    static constexpr auto name = "L1Norm";
 
     static constexpr auto CreateTupleFunction = FunctionL1Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Norm;
@@ -1130,15 +1181,23 @@ struct L1NormTraits
 
 struct L2NormTraits
 {
-    static inline String name = "L2Norm";
+    static constexpr auto name = "L2Norm";
 
     static constexpr auto CreateTupleFunction = FunctionL2Norm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Norm;
 };
 
+struct L2SquaredNormTraits
+{
+    static constexpr auto name = "L2SquaredNorm";
+
+    static constexpr auto CreateTupleFunction = FunctionL2SquaredNorm::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredNorm;
+};
+
 struct LpNormTraits
 {
-    static inline String name = "LpNorm";
+    static constexpr auto name = "LpNorm";
 
     static constexpr auto CreateTupleFunction = FunctionLpNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpNorm;
@@ -1146,7 +1205,7 @@ struct LpNormTraits
 
 struct LinfNormTraits
 {
-    static inline String name = "LinfNorm";
+    static constexpr auto name = "LinfNorm";
 
     static constexpr auto CreateTupleFunction = FunctionLinfNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfNorm;
@@ -1154,7 +1213,7 @@ struct LinfNormTraits
 
 struct L1DistanceTraits
 {
-    static inline String name = "L1Distance";
+    static constexpr auto name = "L1Distance";
 
     static constexpr auto CreateTupleFunction = FunctionL1Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL1Distance;
@@ -1162,15 +1221,23 @@ struct L1DistanceTraits
 
 struct L2DistanceTraits
 {
-    static inline String name = "L2Distance";
+    static constexpr auto name = "L2Distance";
 
     static constexpr auto CreateTupleFunction = FunctionL2Distance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayL2Distance;
 };
 
+struct L2SquaredDistanceTraits
+{
+    static constexpr auto name = "L2SquaredDistance";
+
+    static constexpr auto CreateTupleFunction = FunctionL2SquaredDistance::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredDistance;
+};
+
 struct LpDistanceTraits
 {
-    static inline String name = "LpDistance";
+    static constexpr auto name = "LpDistance";
 
     static constexpr auto CreateTupleFunction = FunctionLpDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLpDistance;
@@ -1178,7 +1245,7 @@ struct LpDistanceTraits
 
 struct LinfDistanceTraits
 {
-    static inline String name = "LinfDistance";
+    static constexpr auto name = "LinfDistance";
 
     static constexpr auto CreateTupleFunction = FunctionLinfDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfDistance;
@@ -1186,7 +1253,7 @@ struct LinfDistanceTraits
 
 struct CosineDistanceTraits
 {
-    static inline String name = "cosineDistance";
+    static constexpr auto name = "cosineDistance";
 
     static constexpr auto CreateTupleFunction = FunctionCosineDistance::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistance;
@@ -1194,11 +1261,13 @@ struct CosineDistanceTraits
 
 using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
 using TupleOrArrayFunctionL2Norm = TupleOrArrayFunction<L2NormTraits>;
+using TupleOrArrayFunctionL2SquaredNorm = TupleOrArrayFunction<L2SquaredNormTraits>;
 using TupleOrArrayFunctionLpNorm = TupleOrArrayFunction<LpNormTraits>;
 using TupleOrArrayFunctionLinfNorm = TupleOrArrayFunction<LinfNormTraits>;
 
 using TupleOrArrayFunctionL1Distance = TupleOrArrayFunction<L1DistanceTraits>;
 using TupleOrArrayFunctionL2Distance = TupleOrArrayFunction<L2DistanceTraits>;
+using TupleOrArrayFunctionL2SquaredDistance = TupleOrArrayFunction<L2SquaredDistanceTraits>;
 using TupleOrArrayFunctionLpDistance = TupleOrArrayFunction<LpDistanceTraits>;
 using TupleOrArrayFunctionLinfDistance = TupleOrArrayFunction<LinfDistanceTraits>;
 using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTraits>;
@@ -1221,21 +1290,25 @@ void registerVectorFunctions(FunctionFactory & factory)
 
     factory.registerFunction<TupleOrArrayFunctionL1Norm>();
     factory.registerFunction<TupleOrArrayFunctionL2Norm>();
+    factory.registerFunction<TupleOrArrayFunctionL2SquaredNorm>();
     factory.registerFunction<TupleOrArrayFunctionLinfNorm>();
     factory.registerFunction<TupleOrArrayFunctionLpNorm>();
 
     factory.registerAlias("normL1", TupleOrArrayFunctionL1Norm::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("normL2", TupleOrArrayFunctionL2Norm::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("normL2Squared", TupleOrArrayFunctionL2SquaredNorm::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("normLinf", TupleOrArrayFunctionLinfNorm::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("normLp", FunctionLpNorm::name, FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<TupleOrArrayFunctionL1Distance>();
     factory.registerFunction<TupleOrArrayFunctionL2Distance>();
+    factory.registerFunction<TupleOrArrayFunctionL2SquaredDistance>();
     factory.registerFunction<TupleOrArrayFunctionLinfDistance>();
     factory.registerFunction<TupleOrArrayFunctionLpDistance>();
 
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::CaseInsensitive);
 

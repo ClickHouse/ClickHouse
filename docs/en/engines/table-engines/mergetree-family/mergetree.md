@@ -60,57 +60,120 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
 ### Query Clauses {#mergetree-query-clauses}
 
--   `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
+#### ENGINE
 
--   `ORDER BY` — The sorting key.
+`ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine does not have parameters.
 
-    A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
+#### ORDER_BY
 
-    ClickHouse uses the sorting key as a primary key if the primary key is not defined obviously by the `PRIMARY KEY` clause.
+`ORDER BY` — The sorting key.
 
-    Use the `ORDER BY tuple()` syntax, if you do not need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
+A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 
--   `PARTITION BY` — The [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases you don't need partition key, and in most other cases you don't need partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead make client identifier or name the first column in the ORDER BY expression).
+ClickHouse uses the sorting key as a primary key if the primary key is not defined explicitly by the `PRIMARY KEY` clause.
 
-    For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../../sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+Use the `ORDER BY tuple()` syntax, if you do not need sorting. See [Selecting the Primary Key](#selecting-the-primary-key).
 
--   `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
+#### PARTITION BY
 
-    By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
+`PARTITION BY` — The [partitioning key](../../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases you don't need partition key, and in most other cases you don't need partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead make client identifier or name the first column in the ORDER BY expression).
 
--   `SAMPLE BY` — An expression for sampling. Optional.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../../sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
-    If a sampling expression is used, the primary key must contain it. The result of a sampling expression must be an unsigned integer. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+#### PRIMARY KEY
 
--   `TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
+`PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
 
-    Expression must have one `Date` or `DateTime` column as a result. Example:
-    `TTL date + INTERVAL 1 DAY`
+By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
-    Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can be specified, but there should be no more than one `DELETE` rule.
+#### SAMPLE BY
 
-    For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
+`SAMPLE BY` — An expression for sampling. Optional.
 
--   `SETTINGS` — Additional parameters that control the behavior of the `MergeTree` (optional):
+If a sampling expression is used, the primary key must contain it. The result of a sampling expression must be an unsigned integer. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-    -   `index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
-    -   `index_granularity_bytes` — Maximum size of data granules in bytes. Default value: 10Mb. To restrict the granule size only by number of rows, set to 0 (not recommended). See [Data Storage](#mergetree-data-storage).
-    -   `min_index_granularity_bytes` — Min allowed size of data granules in bytes. Default value: 1024b. To provide a safeguard against accidentally creating tables with very low index_granularity_bytes. See [Data Storage](#mergetree-data-storage).
-    -   `enable_mixed_granularity_parts` — Enables or disables transitioning to control the granule size with the `index_granularity_bytes` setting. Before version 19.11, there was only the `index_granularity` setting for restricting granule size. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from tables with big rows (tens and hundreds of megabytes). If you have tables with big rows, you can enable this setting for the tables to improve the efficiency of `SELECT` queries.
-    -   `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in “Server configuration parameters”.
-    -   `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
-        <a name="mergetree_setting-merge_with_ttl_timeout"></a>
-    -   `merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with delete TTL. Default value: `14400` seconds (4 hours).
-    -   `merge_with_recompression_ttl_timeout` — Minimum delay in seconds before repeating a merge with recompression TTL. Default value: `14400` seconds (4 hours).
-    -   `try_fetch_recompressed_part_timeout` — Timeout (in seconds) before starting merge with recompression. During this time ClickHouse tries to fetch recompressed part from replica which assigned this merge with recompression. Default value: `7200` seconds (2 hours).
-    -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
-    -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
-    -   `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
-    -   `min_bytes_for_wide_part`, `min_rows_for_wide_part` — Minimum number of bytes/rows in a data part that can be stored in `Wide` format. You can set one, both or none of these settings. See [Data Storage](#mergetree-data-storage).
-    -   `max_parts_in_total` — Maximum number of parts in all partitions.
-	-   `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. You can also specify this setting in the global settings (see [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
-	-   `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark. You can also specify this setting in the global settings (see [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
-    -   `max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) in the global setting.
+####  TTL
+
+`TTL` — A list of rules specifying storage duration of rows and defining logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
+
+Expression must have one `Date` or `DateTime` column as a result. Example:
+```
+TTL date + INTERVAL 1 DAY
+```
+
+Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can be specified, but there should be no more than one `DELETE` rule.
+
+For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
+
+### SETTINGS
+Additional parameters that control the behavior of the `MergeTree` (optional):
+
+#### index_granularity
+
+`index_granularity` — Maximum number of data rows between the marks of an index. Default value: 8192. See [Data Storage](#mergetree-data-storage).
+
+#### index_granularity_bytes
+
+`index_granularity_bytes` — Maximum size of data granules in bytes. Default value: 10Mb. To restrict the granule size only by number of rows, set to 0 (not recommended). See [Data Storage](#mergetree-data-storage).
+
+#### min_index_granularity_bytes
+
+`min_index_granularity_bytes` — Min allowed size of data granules in bytes. Default value: 1024b. To provide a safeguard against accidentally creating tables with very low index_granularity_bytes. See [Data Storage](#mergetree-data-storage).
+
+#### enable_mixed_granularity_parts
+
+`enable_mixed_granularity_parts` — Enables or disables transitioning to control the granule size with the `index_granularity_bytes` setting. Before version 19.11, there was only the `index_granularity` setting for restricting granule size. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from tables with big rows (tens and hundreds of megabytes). If you have tables with big rows, you can enable this setting for the tables to improve the efficiency of `SELECT` queries.
+
+#### use_minimalistic_part_header_in_zookeeper
+
+`use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information, see the [setting description](../../../operations/server-configuration-parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in “Server configuration parameters”.
+
+#### min_merge_bytes_to_use_direct_io
+
+`min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation that is required for using direct I/O access to the storage disk. When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option). If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
+
+#### merge_with_ttl_timeout
+
+`merge_with_ttl_timeout` — Minimum delay in seconds before repeating a merge with delete TTL. Default value: `14400` seconds (4 hours).
+#### merge_with_recompression_ttl_timeout
+
+`merge_with_recompression_ttl_timeout` — Minimum delay in seconds before repeating a merge with recompression TTL. Default value: `14400` seconds (4 hours).
+
+#### try_fetch_recompressed_part_timeout
+
+`try_fetch_recompressed_part_timeout` — Timeout (in seconds) before starting merge with recompression. During this time ClickHouse tries to fetch recompressed part from replica which assigned this merge with recompression. Default value: `7200` seconds (2 hours).
+
+#### write_final_mark
+
+`write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
+
+#### merge_max_block_size
+
+`merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
+
+#### storage_policy
+
+`storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
+
+#### min_bytes_for_wide_part
+
+`min_bytes_for_wide_part`, `min_rows_for_wide_part` — Minimum number of bytes/rows in a data part that can be stored in `Wide` format. You can set one, both or none of these settings. See [Data Storage](#mergetree-data-storage).
+
+#### max_parts_in_total
+
+`max_parts_in_total` — Maximum number of parts in all partitions.
+
+#### max_compress_block_size
+
+`max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table. You can also specify this setting in the global settings (see [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
+
+#### min_compress_block_size
+
+`min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark. You can also specify this setting in the global settings (see [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size) setting). The value specified when table is created overrides the global value for this setting.
+
+#### max_partitions_to_read
+
+`max_partitions_to_read` — Limits the maximum number of partitions that can be accessed in one query. You can also specify setting [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) in the global setting.
 
 **Example of Sections Setting**
 
@@ -243,15 +306,29 @@ For `SELECT` queries, ClickHouse analyzes whether an index can be used. An index
 Thus, it is possible to quickly run queries on one or many ranges of the primary key. In this example, queries will be fast when run for a specific tracking tag, for a specific tag and date range, for a specific tag and date, for multiple tags with a date range, and so on.
 
 Let’s look at the engine configured as follows:
-
-      ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity=8192
+```sql
+ENGINE MergeTree()
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate)
+SETTINGS index_granularity=8192
+```
 
 In this case, in queries:
 
 ``` sql
-SELECT count() FROM table WHERE EventDate = toDate(now()) AND CounterID = 34
-SELECT count() FROM table WHERE EventDate = toDate(now()) AND (CounterID = 34 OR CounterID = 42)
-SELECT count() FROM table WHERE ((EventDate >= toDate('2014-01-01') AND EventDate <= toDate('2014-01-31')) OR EventDate = toDate('2014-05-01')) AND CounterID IN (101500, 731962, 160656) AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
+SELECT count() FROM table
+WHERE EventDate = toDate(now())
+AND CounterID = 34
+
+SELECT count() FROM table
+WHERE EventDate = toDate(now())
+AND (CounterID = 34 OR CounterID = 42)
+
+SELECT count() FROM table
+WHERE ((EventDate >= toDate('2014-01-01')
+AND EventDate <= toDate('2014-01-31')) OR EventDate = toDate('2014-05-01'))
+AND CounterID IN (101500, 731962, 160656)
+AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
 ```
 
 ClickHouse will use the primary key index to trim improper data and the monthly partitioning key to trim partitions that are in improper date ranges.
@@ -310,40 +387,40 @@ SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
-#### Available Types of Indices {#available-types-of-indices}
+### Available Types of Indices {#available-types-of-indices}
 
--   `minmax`
+####   `minmax`
 
-    Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
+Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
 
--   `set(max_rows)`
+####   `set(max_rows)`
 
-    Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means “no limits”). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
+Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means “no limits”). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
 
--   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+####   `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with datatypes: [String](../../../sql-reference/data-types/string.md), [FixedString](../../../sql-reference/data-types/fixedstring.md) and [Map](../../../sql-reference/data-types/map.md). Can be used for optimization of `EQUALS`, `LIKE` and `IN` expressions.
+Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from a block of data. Works only with datatypes: [String](../../../sql-reference/data-types/string.md), [FixedString](../../../sql-reference/data-types/fixedstring.md) and [Map](../../../sql-reference/data-types/map.md). Can be used for optimization of `EQUALS`, `LIKE` and `IN` expressions.
 
-    -   `n` — ngram size,
-    -   `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
-    -   `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
-    -   `random_seed` — The seed for Bloom filter hash functions.
+- `n` — ngram size,
+- `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
+- `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
+- `random_seed` — The seed for Bloom filter hash functions.
 
--   `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+####   `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-    The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
+The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
--   `bloom_filter([false_positive])` — Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
+####   `bloom_filter([false_positive])` — Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
 
-    The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
+The optional `false_positive` parameter is the probability of receiving a false positive response from the filter. Possible values: (0, 1). Default value: 0.025.
 
-    Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID`, `Map`.
+Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID`, `Map`.
 
-    For `Map` data type client can specify if index should be created for keys or values using [mapKeys](../../../sql-reference/functions/tuple-map-functions.md#mapkeys) or [mapValues](../../../sql-reference/functions/tuple-map-functions.md#mapvalues) function.
+For `Map` data type client can specify if index should be created for keys or values using [mapKeys](../../../sql-reference/functions/tuple-map-functions.md#mapkeys) or [mapValues](../../../sql-reference/functions/tuple-map-functions.md#mapvalues) function.
 
-    The following functions can use the filter: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions), [notIn](../../../sql-reference/functions/in-functions), [has](../../../sql-reference/functions/array-functions#hasarr-elem), [hasAny](../../../sql-reference/functions/array-functions#hasany), [hasAll](../../../sql-reference/functions/array-functions#hasall).
+The following functions can use the filter: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions), [notIn](../../../sql-reference/functions/in-functions), [has](../../../sql-reference/functions/array-functions#hasarr-elem), [hasAny](../../../sql-reference/functions/array-functions#hasany), [hasAll](../../../sql-reference/functions/array-functions#hasall).
 
-    Example of index creation for `Map` data type
+Example of index creation for `Map` data type
 
 ```
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter GRANULARITY 1
@@ -357,7 +434,7 @@ INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100
 INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 ```
 
-#### Functions Support {#functions-support}
+### Functions Support {#functions-support}
 
 Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
 
@@ -405,9 +482,9 @@ For example:
 
 ## Projections {#projections}
 Projections are like [materialized views](../../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
-
-Projections are an experimental feature. To enable them you must set the [allow_experimental_projection_optimization](../../../operations/settings/settings.md#allow-experimental-projection-optimization) to `1`. See also the [force_optimize_projection](../../../operations/settings/settings.md#force-optimize-projection) setting.
-
+::: note
+When you are implementing projections you should also consider the [force_optimize_projection](../../../operations/settings/settings.md#force-optimize-projection) setting.
+:::
 Projections are not supported in the `SELECT` statements with the [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 ### Projection Query {#projection-query}
@@ -466,7 +543,7 @@ The `TTL` clause can’t be used for key columns.
 
 **Examples**
 
-Creating a table with `TTL`:
+#### Creating a table with `TTL`:
 
 ``` sql
 CREATE TABLE example_table
@@ -481,7 +558,7 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d;
 ```
 
-Adding TTL to a column of an existing table
+#### Adding TTL to a column of an existing table
 
 ``` sql
 ALTER TABLE example_table
@@ -489,7 +566,7 @@ ALTER TABLE example_table
     c String TTL d + INTERVAL 1 DAY;
 ```
 
-Altering TTL of the column
+#### Altering TTL of the column
 
 ``` sql
 ALTER TABLE example_table
@@ -524,7 +601,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 
 **Examples**
 
-Creating a table with `TTL`:
+#### Creating a table with `TTL`:
 
 ``` sql
 CREATE TABLE example_table
@@ -540,7 +617,7 @@ TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-Altering `TTL` of the table:
+#### Altering `TTL` of the table:
 
 ``` sql
 ALTER TABLE example_table
@@ -561,7 +638,7 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
 
-Creating a table, where expired rows are recompressed:
+#### Creating a table, where expired rows are recompressed:
 
 ```sql
 CREATE TABLE table_for_recompression
