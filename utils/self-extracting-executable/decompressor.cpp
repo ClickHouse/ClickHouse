@@ -242,7 +242,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         {
             strcat(file_name, ".decompressed.XXXXXX");
             int fd = mkstemp(file_name);
-            if(fd == -1)
+            if (fd == -1)
             {
                 perror(nullptr);
                 return 1;
@@ -362,14 +362,14 @@ int main(int/* argc*/, char* argv[])
         char delete_name[delete_name_len + 1];
         delete_name_len = snprintf(delete_name, delete_name_len + 1, delete_name_fmt, argv[0]);
         int fd = mkstemp(delete_name);
-        if(fd == -1)
+        if (fd == -1)
         {
             perror(nullptr);
             return 1;
         }
         close(fd);
 
-        if(rename(argv[0], delete_name))
+        if (rename(argv[0], delete_name))
         {
             perror(nullptr);
             return 1;
@@ -387,7 +387,7 @@ int main(int/* argc*/, char* argv[])
             std::cerr << ec.message() << std::endl;
             return 1;
         }
-        
+
         if (chmod(argv[0], decompressed_umask))
         {
             perror(nullptr);
