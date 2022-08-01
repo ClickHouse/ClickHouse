@@ -477,6 +477,42 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
+static inline UInt64 blsr(UInt64 mask)
+{
+#ifdef __BMI__
+    return _blsr_u64(mask);
+#else
+    return mask & (mask-1);
+#endif
+}
+
+DECLARE_DEFAULT_CODE(
+template <typename T, typename Container, size_t SIMD_BYTES>
+inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+{
+    while (filt_pos < filt_end_aligned)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
+        {
+            res_data.insert(data_pos, data_pos + SIMD_BYTES);
+        }
+        else
+        {
+            while (mask)
+            {
+                size_t index = std::countr_zero(mask);
+                res_data.push_back(data_pos[index]);
+                mask = blsr(mask);
+            }
+        }
+
+        filt_pos += SIMD_BYTES;
+        data_pos += SIMD_BYTES;
+    }
+}
+)
 
 DECLARE_AVX512VBMI2_SPECIFIC_CODE(
 template <size_t ELEMENT_WIDTH>
@@ -576,38 +612,12 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
 #if USE_MULTITARGET_CODE
-    if constexpr (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
-    {
-        if (isArchSupported(TargetArch::AVX512VBMI2))
-            TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
-    }
+    static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
+    if (VBMI2_CAPABLE && isArchSupported(TargetArch::AVX512VBMI2))
+        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
+    else
 #endif
-
-    while (filt_pos < filt_end_aligned)
-    {
-        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-
-        if (0xffffffffffffffff == mask)
-        {
-            res_data.insert(data_pos, data_pos + SIMD_BYTES);
-        }
-        else
-        {
-            while (mask)
-            {
-                size_t index = __builtin_ctzll(mask);
-                res_data.push_back(data_pos[index]);
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
-            }
-        }
-
-        filt_pos += SIMD_BYTES;
-        data_pos += SIMD_BYTES;
-    }
+        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
 
     while (filt_pos < filt_end)
     {
