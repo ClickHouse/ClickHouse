@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <filesystem>
 
 #if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
 #   include <machine/endian.h>
@@ -26,6 +27,9 @@
 #endif
 
 #include "types.h"
+
+char decompressed_suffix[7] = {0};
+uint64_t decompressed_umask = 0;
 
 /// decompress part
 int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
@@ -221,7 +225,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         files_pointer += sizeof(FileData);
 
         size_t file_name_len =
-            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13);
+            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13 + 7);
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
 
@@ -236,7 +240,16 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         files_pointer += le64toh(file_info.name_length);
         if (file_name_len != le64toh(file_info.name_length))
         {
-            strcat(file_name, ".decompressed");
+            strcat(file_name, ".decompressed.XXXXXX");
+            int fd = mkstemp(file_name);
+            if(fd == -1)
+            {
+                perror(nullptr);
+                return 1;
+            }
+            close(fd);
+            strncpy(decompressed_suffix, file_name + strlen(file_name) - 6, 6);
+            decompressed_umask = le64toh(file_info.umask);
             have_compressed_analoge = true;
         }
 
@@ -295,44 +308,6 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     return 0;
 }
 
-int do_system(const char * cmd)
-{
-    pid_t pid = fork();
-    if (pid == -1)
-        return 1;
-
-    if (pid == 0)
-    {
-        execlp("sh" , "sh", "-c", cmd, NULL);
-
-        perror(nullptr);
-        exit(127);
-    }
-
-    int ret = 0;
-    int status = 0;
-    while ((ret = waitpid(pid, &status, 0)) == -1)
-    {
-        if (errno != EINTR)
-        {
-            perror(nullptr);
-            return 1;
-        }
-    }
-
-    if (WIFEXITED(status) && WEXITSTATUS(status))
-    {
-        std::cerr << "Command [" << cmd << "] exited with code " << WEXITSTATUS(status) << std::endl;
-        return 1;
-    }
-    else if (WIFSIGNALED(status))
-    {
-        std::cerr << "Command [" << cmd << "] killed by signal " << WTERMSIG(status) << std::endl;
-        return 1;
-    }
-
-    return 0;
-}
 
 int main(int/* argc*/, char* argv[])
 {
@@ -382,14 +357,50 @@ int main(int/* argc*/, char* argv[])
     }
     else
     {
-        const char * const cmd_fmt = "mv %s %s.delete && cp %s.decompressed %s && rm %s.delete %s.decompressed";
-        int cmd_len = snprintf(nullptr, 0, cmd_fmt, argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
-        char command[cmd_len + 1];
-        cmd_len = snprintf(command, cmd_len + 1, cmd_fmt, argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
-        if (do_system(command))
+        const char * const delete_name_fmt = "%s.delete.XXXXXX";
+        int delete_name_len = snprintf(nullptr, 0, delete_name_fmt, argv[0]);
+        char delete_name[delete_name_len + 1];
+        delete_name_len = snprintf(delete_name, delete_name_len + 1, delete_name_fmt, argv[0]);
+        int fd = mkstemp(delete_name);
+        if(fd == -1)
+        {
+            perror(nullptr);
             return 1;
+        }
+        close(fd);
 
-        execvp(argv[0], argv);
+        if(rename(argv[0], delete_name))
+        {
+            perror(nullptr);
+            return 1;
+        }
+
+        const char * const decompressed_name_fmt = "%s.decompressed.%s";
+        int decompressed_name_len = snprintf(nullptr, 0, decompressed_name_fmt, argv[0], decompressed_suffix);
+        char decompressed_name[decompressed_name_len + 1];
+        decompressed_name_len = snprintf(decompressed_name, decompressed_name_len + 1, decompressed_name_fmt, argv[0], decompressed_suffix);
+
+        std::error_code ec;
+        std::filesystem::copy_file(static_cast<char *>(decompressed_name), argv[0], ec);
+        if (ec)
+        {
+            std::cerr << ec.message() << std::endl;
+            return 1;
+        }
+        
+        if (chmod(argv[0], decompressed_umask))
+        {
+            perror(nullptr);
+            return 1;
+        }
+
+        if (unlink(delete_name) || unlink(decompressed_name))
+        {
+            perror(nullptr);
+            return 1;
+        }
+
+        execv(argv[0], argv);
 
         /// This part of code will be reached only if error happened
         perror(nullptr);
