@@ -20,7 +20,7 @@ struct FunctionCountMatchesCaseInsensitive
 namespace DB
 {
 
-void registerFunctionCountMatches(FunctionFactory & factory)
+REGISTER_FUNCTION(CountMatches)
 {
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseSensitive>>(FunctionFactory::CaseSensitive);
     factory.registerFunction<FunctionCountMatches<FunctionCountMatchesCaseInsensitive>>(FunctionFactory::CaseSensitive);

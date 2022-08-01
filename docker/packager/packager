@@ -134,6 +134,7 @@ def parse_env_variables(
     result = []
     result.append("OUTPUT_DIR=/output")
     cmake_flags = ["$CMAKE_FLAGS"]
+    build_target = "clickhouse-bundle"
 
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
@@ -236,7 +237,11 @@ def parse_env_variables(
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
-        result.append("CCACHE_MAXSIZE=15G")
+        cache_maxsize = "15G"
+        if clang_tidy:
+            # 15G is not enough for tidy build
+            cache_maxsize = "25G"
+        result.append(f"CCACHE_MAXSIZE={cache_maxsize}")
         # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
@@ -261,21 +266,25 @@ def parse_env_variables(
 
     if split_binary:
         cmake_flags.append(
-            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 "
-            "-DCLICKHOUSE_SPLIT_BINARY=1"
+            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1"
         )
         # We can't always build utils because it requires too much space, but
         # we have to build them at least in some way in CI. The split build is
         # probably the least heavy disk-wise.
         cmake_flags.append("-DENABLE_UTILS=1")
+        # utils are not included into clickhouse-bundle, so build everything
+        build_target = "all"
 
     if clang_tidy:
         cmake_flags.append("-DENABLE_CLANG_TIDY=1")
-        cmake_flags.append("-DENABLE_UTILS=1")
         cmake_flags.append("-DENABLE_TESTS=1")
         cmake_flags.append("-DENABLE_EXAMPLES=1")
         # Don't stop on first error to find more clang-tidy errors in one run.
         result.append("NINJA_FLAGS=-k0")
+
+        cmake_flags.append("-DENABLE_UTILS=1")
+        # utils are not included into clickhouse-bundle, so build everything
+        build_target = "all"
 
     if with_coverage:
         cmake_flags.append("-DWITH_COVERAGE=1")
@@ -290,6 +299,7 @@ def parse_env_variables(
         cmake_flags.append("-DCLICKHOUSE_OFFICIAL_BUILD=1")
 
     result.append('CMAKE_FLAGS="' + " ".join(cmake_flags) + '"')
+    result.append(f"BUILD_TARGET={build_target}")
 
     return result
 
