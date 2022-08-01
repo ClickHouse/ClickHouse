@@ -36,6 +36,7 @@ data_types/uuid.md sql-reference/data-types/uuid.md
 database_engines/index.md engines/database-engines/index.md
 database_engines/lazy.md engines/database-engines/lazy.md
 database_engines/mysql.md engines/database-engines/mysql.md
+development/browse_code.md development/browse-code.md
 development/build_cross_arm.md development/build-cross-arm.md
 development/build_cross_osx.md development/build-cross-osx.md
 development/build_osx.md development/build-osx.md
