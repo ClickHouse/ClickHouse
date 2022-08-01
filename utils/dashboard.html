@@ -57,6 +57,7 @@
         html, body {
             color: var(--color);
             height: 100%;
+            overflow: auto;
             margin: 0;
         }
         body {
@@ -364,17 +365,17 @@ let charts = document.getElementById('charts');
 const query_param_regexp = /\{(\w+):[^}]+\}/g;
 
 /// Automatically parse more parameters from the queries.
-function findParamsInQuery(query) {
+function findParamsInQuery(query, new_params) {
     for (let match of query.matchAll(query_param_regexp)) {
         const name = match[1];
-        if (!params[name]) {
-            params[name] = '';
-        };
+        new_params[name] = params[name] || '';
     }
 }
 
 function findParamsInQueries() {
-    queries.forEach(q => findParamsInQuery(q.query));
+    let new_params = {}
+    queries.forEach(q => findParamsInQuery(q.query, new_params));
+    params = new_params;
 }
 
 function insertParam(name, value) {
@@ -471,7 +472,7 @@ function insertChart(i) {
         q.title = query_editor_title.value;
         q.query = query_editor_textarea.value;
         title_text.data = '';
-        findParamsInQuery(q.query);
+        findParamsInQuery(q.query, params);
         buildParams();
         draw(i, chart, getParamsForURL(), q.query);
         saveState();
@@ -726,6 +727,7 @@ function regenerate() {
     findParamsInQueries();
     buildParams();
 
+    plots.forEach(elem => elem.destroy());
     plots = queries.map(e => null);
 
     while (charts.firstChild) {
