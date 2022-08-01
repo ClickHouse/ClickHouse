@@ -21,6 +21,20 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+def check_expected_result_or_fail(seconds, expected):
+    ok = False
+    for i in range(int(seconds) * 2):
+        result = TSV(
+            node.query(
+                "SELECT count(*) FROM system.parts where table='test' and active=1"
+            )
+        )
+        if result == expected:
+            ok = True
+            break
+        else:
+            time.sleep(0.5)
+    assert(ok)
 
 def test_without_auto_optimize_merge_tree(start_cluster):
     node.query("CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i;")
@@ -28,17 +42,9 @@ def test_without_auto_optimize_merge_tree(start_cluster):
     node.query("INSERT INTO test SELECT 2")
     node.query("INSERT INTO test SELECT 3")
 
-    time.sleep(5)
 
     expected = TSV("""3\n""")
-    assert (
-        TSV(
-            node.query(
-                "SELECT count(*) FROM system.parts where table='test' and active=1"
-            )
-        )
-        == expected
-    )
+    check_expected_result_or_fail(5, expected)
 
     node.query("DROP TABLE test;")
 
@@ -51,17 +57,8 @@ def test_auto_optimize_merge_tree(start_cluster):
     node.query("INSERT INTO test SELECT 2")
     node.query("INSERT INTO test SELECT 3")
 
-    time.sleep(10)
-
     expected = TSV("""1\n""")
-    assert (
-        TSV(
-            node.query(
-                "SELECT count(*) FROM system.parts where table='test' and active=1"
-            )
-        )
-        == expected
-    )
+    check_expected_result_or_fail(10, expected)
 
     node.query("DROP TABLE test;")
 
@@ -74,16 +71,7 @@ def test_auto_optimize_replicated_merge_tree(start_cluster):
     node.query("INSERT INTO test SELECT 2")
     node.query("INSERT INTO test SELECT 3")
 
-    time.sleep(10)
-
     expected = TSV("""1\n""")
-    assert (
-        TSV(
-            node.query(
-                "SELECT count(*) FROM system.parts where table='test' and active=1"
-            )
-        )
-        == expected
-    )
+    check_expected_result_or_fail(10, expected)
 
     node.query("DROP TABLE test;")
