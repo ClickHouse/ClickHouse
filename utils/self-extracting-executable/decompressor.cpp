@@ -357,19 +357,7 @@ int main(int/* argc*/, char* argv[])
     }
     else
     {
-        const char * const delete_name_fmt = "%s.delete.XXXXXX";
-        int delete_name_len = snprintf(nullptr, 0, delete_name_fmt, argv[0]);
-        char delete_name[delete_name_len + 1];
-        delete_name_len = snprintf(delete_name, delete_name_len + 1, delete_name_fmt, argv[0]);
-        int fd = mkstemp(delete_name);
-        if (fd == -1)
-        {
-            perror(nullptr);
-            return 1;
-        }
-        close(fd);
-
-        if (rename(argv[0], delete_name))
+        if (unlink(argv[0]))
         {
             perror(nullptr);
             return 1;
@@ -394,7 +382,7 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 
-        if (unlink(delete_name) || unlink(decompressed_name))
+        if (unlink(decompressed_name))
         {
             perror(nullptr);
             return 1;
