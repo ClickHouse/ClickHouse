@@ -303,7 +303,7 @@ int do_system(const char * cmd)
 
     if (pid == 0)
     {
-        execlp( "sh" , "sh", "-c", cmd, NULL);
+        execlp("sh" , "sh", "-c", cmd, NULL);
 
         perror(nullptr);
         exit(127);
@@ -313,7 +313,7 @@ int do_system(const char * cmd)
     int status = 0;
     while ((ret = waitpid(pid, &status, 0)) == -1)
     {
-        if ( errno != EINTR)
+        if (errno != EINTR)
         {
             perror(nullptr);
             return 1;
