@@ -430,7 +430,8 @@ function getParamsForURL() {
 
 let charts = document.getElementById('charts');
 
-function insertChart(q) {
+function insertChart(i) {
+    let q = queries[i];
     let chart = document.createElement('div');
     chart.className = 'chart';
 
@@ -539,12 +540,12 @@ function insertChart(q) {
 };
 
 for (let i = 0; i < queries.length; ++i) {
-    insertChart(queries[i]);
+    insertChart(i);
 }
 
 document.getElementById('add').addEventListener('click', e => {
     queries.push({ title: '', query: '' });
-    insertChart('');
+    insertChart(plots.length);
     plots.push(null);
     resize();
 });
