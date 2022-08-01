@@ -327,7 +327,6 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
         /// Check settings specific for JSON formats.
 
         /// If we have numbers and strings, convert numbers to strings.
-        /// (Actually numbers could not be parsed from
         if (settings.json.try_infer_numbers_from_strings)
         {
             bool have_strings = false;
