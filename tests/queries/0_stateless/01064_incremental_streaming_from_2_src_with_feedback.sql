@@ -23,6 +23,8 @@ AS
 FROM numbers(50000)
 GROUP BY id;
 
+OPTIMIZE TABLE target_table FINAL;
+
 -- source table #1
 
 CREATE TABLE logins (
