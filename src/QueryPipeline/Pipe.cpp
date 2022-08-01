@@ -770,7 +770,7 @@ void Pipe::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
     header.clear();
 }
 
-void Pipe::transform(const Transformer & transformer)
+void Pipe::transform(const Transformer & transformer, bool check_ports)
 {
     if (output_ports.empty())
         throw Exception("Cannot transform empty Pipe", ErrorCodes::LOGICAL_ERROR);
@@ -799,6 +799,9 @@ void Pipe::transform(const Transformer & transformer)
     {
         for (const auto & port : processor->getInputs())
         {
+            if (!check_ports)
+                break;
+
             if (!port.isConnected())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,

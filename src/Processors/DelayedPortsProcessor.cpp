@@ -170,4 +170,132 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
     return Status::PortFull;
 }
 
+
+NotifyProcessor::NotifyProcessor(const Block & header, size_t num_ports)
+    : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header))
+    , aux_in_port(Block(), this)
+    , aux_out_port(Block(), this)
+{
+    port_pairs.resize(num_ports);
+
+    auto input_it = inputs.begin();
+    auto output_it = outputs.begin();
+    for (size_t i = 0; i < num_ports; ++i)
+    {
+        port_pairs[i].input_port = &*input_it;
+        ++input_it;
+
+        port_pairs[i].output_port = &*output_it;
+        ++output_it;
+    }
+
+}
+
+void NotifyProcessor::finishPair(PortsPair & pair)
+{
+    if (!pair.is_finished)
+    {
+        pair.output_port->finish();
+        pair.input_port->close();
+
+        pair.is_finished = true;
+        ++num_finished_pairs;
+    }
+}
+
+bool NotifyProcessor::processPair(PortsPair & pair)
+{
+    if (pair.output_port->isFinished())
+    {
+        finishPair(pair);
+        return false;
+    }
+
+    if (pair.input_port->isFinished())
+    {
+        finishPair(pair);
+        return false;
+    }
+
+    if (!pair.output_port->canPush())
+    {
+        pair.input_port->setNotNeeded();
+        return false;
+    }
+
+    pair.input_port->setNeeded();
+    if (pair.input_port->hasData())
+    {
+        Chunk chunk = pair.input_port->pull(true);
+        dataCallback(chunk);
+        pair.output_port->push(std::move(chunk));
+    }
+
+    return true;
+}
+
+IProcessor::Status NotifyProcessor::processRegularPorts(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+{
+    bool need_data = false;
+
+    for (const auto & output_number : updated_outputs)
+        need_data = processPair(port_pairs[output_number]) || need_data;
+    for (const auto & input_number : updated_inputs)
+        need_data = processPair(port_pairs[input_number]) || need_data;
+
+    if (num_finished_pairs == port_pairs.size())
+        return Status::Finished;
+
+    if (need_data)
+        return Status::NeedData;
+
+    return Status::PortFull;
+}
+
+IProcessor::Status NotifyProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+{
+    auto status = processRegularPorts(updated_inputs, updated_outputs);
+    if (status != Status::Ready)
+        return status;
+
+    if (ready == AuxPortState::NotInitialized && isReady())
+        ready = AuxPortState::Triggered;
+
+    if (ready == AuxPortState::Triggered)
+    {
+        if (aux_out_port.canPush())
+        {
+            aux_out_port.push({});
+            ready = AuxPortState::Finished;
+            return Status::Ready;
+        }
+        return Status::PortFull;
+    }
+
+    if (waiting == AuxPortState::NotInitialized && isWaiting())
+    {
+        aux_in_port.setNeeded();
+        waiting = AuxPortState::Triggered;
+    }
+
+    if (waiting == AuxPortState::Triggered)
+    {
+        if (aux_in_port.hasData())
+        {
+            aux_in_port.pull(true);
+            waiting = AuxPortState::Finished;
+            return Status::Ready;
+        }
+        return Status::PortFull;
+    }
+
+    return Status::Ready;
+}
+
+std::pair<InputPort *, OutputPort *> NotifyProcessor::getAuxPorts()
+{
+    return std::make_pair(&aux_in_port, &aux_out_port);
+}
+
+
 }

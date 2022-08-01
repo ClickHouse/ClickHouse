@@ -1,5 +1,7 @@
 #pragma once
 #include <Processors/IProcessor.h>
+#include <base/unit.h>
+#include <Processors/Chunk.h>
 
 namespace DB
 {
@@ -37,6 +39,78 @@ private:
 
     bool processPair(PortsPair & pair);
     void finishPair(PortsPair & pair);
+};
+
+
+class NotifyProcessor : public IProcessor
+{
+public:
+    NotifyProcessor(const Block & header, size_t num_ports);
+
+    String getName() const override { return "NotifyProcessor"; }
+
+    Status prepare(const PortNumbers &, const PortNumbers &) override;
+
+    std::pair<InputPort *, OutputPort *> getAuxPorts();
+
+    virtual bool isReady() const { return true; }
+    virtual bool isWaiting() const { return false; }
+
+    virtual void dataCallback(const Chunk & chunk) { UNUSED(chunk); }
+
+private:
+
+    enum class AuxPortState
+    {
+        NotInitialized,
+        Triggered,
+        Finished,
+    };
+
+    struct PortsPair
+    {
+        InputPort * input_port = nullptr;
+        OutputPort * output_port = nullptr;
+        bool is_finished = false;
+    };
+
+    bool processPair(PortsPair & pair);
+    void finishPair(PortsPair & pair);
+    Status processRegularPorts(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs);
+
+    std::vector<PortsPair> port_pairs;
+    size_t num_finished_pairs = 0;
+
+    InputPort aux_in_port;
+    OutputPort aux_out_port;
+
+    AuxPortState ready = AuxPortState::NotInitialized;
+    AuxPortState waiting = AuxPortState::NotInitialized;
+};
+
+
+class NotifyProcessor2 : public NotifyProcessor
+{
+public:
+    using NotifyProcessor::NotifyProcessor;
+
+    bool isReady() const override
+    {
+        return data_consumed > 10_MiB;
+    }
+
+    bool isWaiting() const override
+    {
+        return data_consumed < 10_MiB;
+    }
+
+    void dataCallback(const Chunk & chunk) override
+    {
+        data_consumed += chunk.allocatedBytes();
+    }
+
+private:
+    size_t data_consumed = 0;
 };
 
 }
