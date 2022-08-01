@@ -519,7 +519,7 @@ function insertChart(i) {
     trash.appendChild(trash_text);
     trash.addEventListener('click', e => {
         /// Indices may change after deletion of other element, hence captured "i" may become incorrect.
-        let idx = plots.findIndex(plot => plot && chart == plot.over.closest('.chart'));
+        let idx = [...charts.querySelectorAll('.chart')].findIndex(child => chart == child);
         plots[idx].destroy();
         plots[idx] = null;
         plots.splice(idx, 1);
