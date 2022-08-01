@@ -385,7 +385,7 @@ int main(int/* argc*/, char* argv[])
         const char * const cmd_fmt = "mv %s %s.delete && cp %s.decompressed %s && rm %s.delete %s.decompressed";
         int cmd_len = snprintf(nullptr, 0, cmd_fmt, argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
         char command[cmd_len + 1];
-        snprintf(command, cmd_len + 1, cmd_fmt, argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+        cmd_len = snprintf(command, cmd_len + 1, cmd_fmt, argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
         if (do_system(command))
             return 1;
 
