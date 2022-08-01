@@ -174,7 +174,7 @@ private:
             String * out_disable_reason = nullptr,
             bool optimize_skip_merged_partitions = false);
 
-    /** Determines what parts which within one partition should be merged.
+    /** Determines what part within one partition should be merged.
     */
     std::shared_ptr<MergeMutateSelectedEntry> selectOnePartitionToOptimize(
         const StorageMetadataPtr & metadata_snapshot,
