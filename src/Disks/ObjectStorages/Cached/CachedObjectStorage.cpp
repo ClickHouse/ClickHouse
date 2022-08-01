@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_USE_CACHE;
-    extern const int CANNOT_STAT;
 }
 
 CachedObjectStorage::CachedObjectStorage(

@@ -589,13 +589,16 @@ def test_big_insert(cluster):
 
 def test_cache_with_full_disk_space(cluster):
     node = cluster.instances["node_with_limited_disk"]
-    settings = {"storage_policy":"cache_on_jbod"}
+    settings = {"storage_policy": "cache_on_jbod"}
     create_table(node, TABLE_NAME, **settings)
     azure_query(
         node,
         f"INSERT INTO {TABLE_NAME} select '2020-01-03', number, toString(number) from numbers(500000)",
     )
-    azure_query(node, f"SELECT * FROM {TABLE_NAME} WHERE value LIKE '%abc%' ORDER BY value FORMAT Null")
+    azure_query(
+        node,
+        f"SELECT * FROM {TABLE_NAME} WHERE value LIKE '%abc%' ORDER BY value FORMAT Null",
+    )
 
     assert node.contains_in_log(
         "Insert into cache is skipped due to insufficient disk space"

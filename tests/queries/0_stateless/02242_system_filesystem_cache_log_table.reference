@@ -12,6 +12,7 @@ INSERT INTO test SELECT number, toString(number) FROM numbers(100000);
 SELECT 2240, 's3_cache', * FROM test FORMAT Null;
 SYSTEM FLUSH LOGS;
 SELECT file_segment_range, read_type FROM system.filesystem_cache_log WHERE query_id = (SELECT query_id from system.query_log where query LIKE '%SELECT 2240%s3_cache%' AND current_database = currentDatabase() AND type = 'QueryFinish' ORDER BY event_time desc LIMIT 1);
+(0,519)	READ_FROM_FS_AND_DOWNLOADED_TO_CACHE
 (0,808110)	READ_FROM_FS_AND_DOWNLOADED_TO_CACHE
 SELECT 2241, 's3_cache', * FROM test FORMAT Null;
 SYSTEM FLUSH LOGS;
@@ -32,6 +33,7 @@ INSERT INTO test SELECT number, toString(number) FROM numbers(100000);
 SELECT 2240, 'local_cache', * FROM test FORMAT Null;
 SYSTEM FLUSH LOGS;
 SELECT file_segment_range, read_type FROM system.filesystem_cache_log WHERE query_id = (SELECT query_id from system.query_log where query LIKE '%SELECT 2240%local_cache%' AND current_database = currentDatabase() AND type = 'QueryFinish' ORDER BY event_time desc LIMIT 1);
+(0,519)	READ_FROM_FS_AND_DOWNLOADED_TO_CACHE
 (0,808110)	READ_FROM_FS_AND_DOWNLOADED_TO_CACHE
 SELECT 2241, 'local_cache', * FROM test FORMAT Null;
 SYSTEM FLUSH LOGS;
