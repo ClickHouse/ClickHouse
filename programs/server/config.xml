@@ -1386,4 +1386,13 @@
         <lru_cache_size>268435456</lru_cache_size>
         <continue_if_corrupted>true</continue_if_corrupted>
     </merge_tree_metadata_cache-->
+
+    <!-- This allows to disable exposing addresses in stack traces for security reasons.
+         Please be aware that it does not improve security much, but makes debugging much harder.
+         The addresses that are small offsets from zero will be displayed nevertheless to show nullptr dereferences.
+         Regardless of this configuration, the addresses are visible in the system.stack_trace and system.trace_log tables
+         if the user has access to these tables.
+         I don't recommend to change this setting.
+    -->
+    <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
 </clickhouse>
