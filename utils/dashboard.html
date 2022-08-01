@@ -271,8 +271,8 @@
 <div class="inputs">
     <form id="params">
         <div id="connection-params">
-            <input spellcheck="false" id="url" type="text" value="https://play.clickhouse.com/" placeholder="URL" />
-            <input spellcheck="false" id="user" type="text" value="play" placeholder="user" />
+            <input spellcheck="false" id="url" type="text" value="" placeholder="URL" />
+            <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
             <input spellcheck="false" id="password" type="password" placeholder="password" />
         </div>
         <div>
@@ -286,7 +286,9 @@
 </body>
 <script>
 
-let host, user, password;
+let host = 'https://play.clickhouse.com/';
+let user = 'explorer';
+let password = '';
 
 let queries = [
     { title: "Weekly Unique Comment Authors", query:
@@ -520,8 +522,10 @@ function insertChart(i) {
     trash.addEventListener('click', e => {
         /// Indices may change after deletion of other element, hence captured "i" may become incorrect.
         let idx = [...charts.querySelectorAll('.chart')].findIndex(child => chart == child);
-        plots[idx].destroy();
-        plots[idx] = null;
+        if (plots[idx]) {
+            plots[idx].destroy();
+            plots[idx] = null;
+        }
         plots.splice(idx, 1);
         charts.removeChild(chart);
         queries.splice(idx, 1);
@@ -662,6 +666,8 @@ async function draw(idx, chart, url_params, query) {
 
     let sync = uPlot.sync("sync");
 
+    const max_value = Math.max(...data[1]);
+
     const opts = {
         width: chart.clientWidth,
         height: chart.clientHeight,
@@ -673,7 +679,7 @@ async function draw(idx, chart, url_params, query) {
                   ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
         series: [ { label: "x" },
                   { label: "y", stroke: line_color, fill: fill_color } ],
-        padding: [ null, null, null, (Math.floor(Math.log10(Math.max(...data[1]))) + Math.floor(Math.log10(Math.max(...data[1])) / 3)) * 6 - 10 ],
+        padding: [ null, null, null, (Math.round(max_value * 100) / 100).toString().length * 6 - 10 ],
         plugins: [ legendAsTooltipPlugin() ],
         cursor: {
             sync: {
@@ -724,10 +730,14 @@ function saveState() {
 }
 
 function regenerate() {
+    document.getElementById('url').value = host;
+    document.getElementById('user').value = user;
+    document.getElementById('password').value = password;
+
     findParamsInQueries();
     buildParams();
 
-    plots.forEach(elem => elem.destroy());
+    plots.forEach(elem => elem && elem.destroy());
     plots = queries.map(e => null);
 
     while (charts.firstChild) {
