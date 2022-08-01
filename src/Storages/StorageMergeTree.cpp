@@ -781,17 +781,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectOnePartitionTo
         if (part->modification_time < base)
             partition_parts_sum_diff[part->info.partition_id] += (base - part->modification_time);
     }
-    String best_partition_id;
-    Int32 max_diff = 0;
-    for (auto [partition_id, diff] : partition_parts_sum_diff)
-    {
-        if (diff > max_diff)
-        {
-           best_partition_id = partition_id;
-           max_diff = diff;
-        }
-    }
-    if (best_partition_id.empty())
+    auto best_partition_it = std::max_element(partition_parts_sum_diff.begin(), partition_parts_sum_diff.end(), [](const auto & e1, const auto & e2) { return e1.second < e2.second; });
+    if (best_partition_it == partition_parts_sum_diff.end())
     {
         return nullptr;
     }
@@ -801,7 +792,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectOnePartitionTo
     auto merge_entry = selectPartsToMerge(
         metadata_snapshot,
         true,
-        best_partition_id,
+        best_partition_it->first,
         true,
         &disable_reason,
         table_lock_holder,
