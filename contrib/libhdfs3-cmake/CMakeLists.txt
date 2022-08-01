@@ -88,6 +88,8 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/server/NamenodeInfo.cpp"
     "${HDFS3_SOURCE_DIR}/common/WritableUtils.cpp"
     "${HDFS3_SOURCE_DIR}/common/ExceptionInternal.cpp"
+    "${HDFS3_SOURCE_DIR}/common/IntelAsmCrc32c.cpp"
+    "${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp"
     "${HDFS3_SOURCE_DIR}/common/SessionConfig.cpp"
     "${HDFS3_SOURCE_DIR}/common/StackPrinter.cpp"
     "${HDFS3_SOURCE_DIR}/common/Exception.cpp"
