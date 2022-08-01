@@ -494,6 +494,47 @@ If the ‘s’ string is non-empty and does not contain the ‘c’ character at
 
 Returns the string ‘s’ that was converted from the encoding in ‘from’ to the encoding in ‘to’.
 
+## Base58Encode(plaintext), Base58Decode(encoded_text)
+
+Accepts a String and encodes/decodes it using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding scheme using "Bitcoin" alphabet.
+
+**Syntax**
+
+```sql
+base58Encode(decoded)
+base58Decode(encoded)
+```
+
+**Arguments**
+
+- `decoded` — [String](../../sql-reference/data-types/string.md) column or constant.
+- `encoded` — [String](../../sql-reference/data-types/string.md) column or constant. If the string is not a valid base58-encoded value, an exception is thrown.
+
+**Returned value**
+
+-   A string containing encoded/decoded value of 1st argument.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT base58Encode('Encoded');
+SELECT base58Encode('3dc8KtHrwM');
+```
+
+Result:
+```text
+┌─encodeBase58('Encoded')─┐
+│ 3dc8KtHrwM                         │
+└──────────────────────────────────┘
+┌─decodeBase58('3dc8KtHrwM')─┐
+│ Encoded                             │
+└────────────────────────────────────┘
+```
+
 ## base64Encode(s)
 
 Encodes ‘s’ string into base64

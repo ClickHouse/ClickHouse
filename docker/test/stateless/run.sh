@@ -115,6 +115,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
     fi
 
+    if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
+    fi
+
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
             --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \

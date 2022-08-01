@@ -74,7 +74,6 @@ void DiskWebServer::initialize(const String & uri_path) const
             if (file_data.type == FileType::Directory)
             {
                 directories_to_load.push_back(file_path);
-                // file_path = fs::path(file_path) / "";
             }
 
             file_path = file_path.substr(url.size());
@@ -170,10 +169,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     auto remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
     remote_path = remote_path.string().substr(url.size());
 
-    std::vector<BlobPathWithSize> blobs_to_read;
-    blobs_to_read.emplace_back(remote_path, iter->second.size);
+    StoredObjects objects;
+    objects.emplace_back(remote_path, iter->second.size);
 
-    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, path, blobs_to_read, getContext(), read_settings);
+    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, objects, getContext(), read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {

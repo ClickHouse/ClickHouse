@@ -66,14 +66,8 @@ struct SelectQueryInfo;
 using NameDependencies = std::unordered_map<String, std::vector<String>>;
 using DatabaseAndTableName = std::pair<String, String>;
 
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
-class IBackupEntry;
-using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
-class IRestoreTask;
-using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
-struct StorageRestoreSettings;
-class IRestoreCoordination;
+class BackupEntriesCollector;
+class RestorerFromBackup;
 
 struct ColumnSize
 {
@@ -225,18 +219,27 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
-    /// Returns true if the backup is hollow, which means it doesn't contain any data.
-    virtual bool hasDataToBackup() const { return false; }
-
-    /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backupData(ContextPtr context, const ASTs & partitions);
-
-    /// Extract data from the backup and put it to the storage.
-    virtual RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination);
-
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
+
+    /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
+    virtual void adjustCreateQueryForBackup(ASTPtr & create_query) const;
+
+    /// Makes backup entries to backup the data of this storage.
+    virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+
+    /// Extracts data from the backup and put it to the storage.
+    virtual void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+
+    /// Returns true if the storage supports backup/restore for specific partitions.
+    virtual bool supportsBackupPartition() const { return false; }
+
+    /// Return true if there is at least one part containing lightweight deleted mask.
+    virtual bool hasLightweightDeletedMask() const { return false; }
+
+    /// Return true if storage can execute lightweight delete mutations.
+    virtual bool supportsLightweightDelete() const { return false; }
 
 private:
 
@@ -400,7 +403,7 @@ public:
       */
     virtual void drop() {}
 
-    virtual void dropInnerTableIfAny(bool /* no_delay */, ContextPtr /* context */) {}
+    virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).

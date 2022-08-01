@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        DiskPtr disk_,
+        DataPartStoragePtr data_part_storage_,
         const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges_,
         const MergeTreeReaderSettings & settings_,
@@ -30,7 +30,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , all_mark_ranges(all_mark_ranges_)
     , file_size(file_size_)
     , uncompressed_cache(uncompressed_cache_)
-    , disk(std::move(disk_))
+    , data_part_storage(std::move(data_part_storage_))
     , path_prefix(path_prefix_)
     , data_file_extension(data_file_extension_)
     , is_low_cardinality_dictionary(is_low_cardinality_dictionary_)
@@ -38,7 +38,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , mark_cache(mark_cache_)
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
-    , marks_loader(disk, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
+    , marks_loader(data_part_storage, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
         marks_count, *index_granularity_info, save_marks_in_cache) {}
 
 void MergeTreeReaderStream::init()
@@ -79,13 +79,13 @@ void MergeTreeReaderStream::init()
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            fullPath(disk, path_prefix + data_file_extension),
+            std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
             {
-                return disk->readFile(
+                return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes);
+                    estimated_sum_mark_range_bytes, std::nullopt);
             },
             uncompressed_cache);
 
@@ -102,10 +102,11 @@ void MergeTreeReaderStream::init()
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            disk->readFile(
+            data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes));
+                estimated_sum_mark_range_bytes,
+                std::nullopt));
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -158,9 +159,22 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
         /// So, that's why we have to read one extra granule to the right,
         /// while reading dictionary of LowCardinality.
 
-        size_t right_mark_included = is_low_cardinality_dictionary
-            ? right_mark_non_included
-            : right_mark_non_included - 1;
+        /// If right_mark_non_included has non-zero offset in decompressed block, we have to
+        /// read its compressed block in a whole, because it may consist data from previous granule.
+        ///
+        /// For example:
+        /// Mark 10: (758287, 0)      <--- right_mark_included
+        /// Mark 11: (908457, 53477)  <--- right_mark_non_included
+        /// Mark 12: (1064746, 20742) <--- what we are looking for
+        /// Mark 13: (2009333, 40123)
+        ///
+        /// Since mark 11 starts from offset in decompressed block 53477,
+        /// it has some data from mark 10 and we have to read
+        /// compressed block  [908457; 1064746 in a whole.
+
+        size_t right_mark_included = right_mark_non_included - 1;
+        if (is_low_cardinality_dictionary || marks_loader.getMark(right_mark_non_included).offset_in_decompressed_block != 0)
+            ++right_mark_included;
 
         auto indices = collections::range(right_mark_included, marks_count);
         auto it = std::upper_bound(indices.begin(), indices.end(), right_mark_included,

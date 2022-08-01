@@ -9,11 +9,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
+#include <Common/noexcept_scope.h>
 
-
-/// It's used in critical places to exit on unexpected exceptions.
-/// SIGABRT is usually better that broken state in memory with unpredictable consequences.
-#define NOEXCEPT_SCOPE SCOPE_EXIT({ if (std::uncaught_exceptions()) { tryLogCurrentException("NOEXCEPT_SCOPE"); abort(); } })
 
 namespace DB
 {
@@ -46,16 +43,13 @@ catch (...)
 
 
 TransactionLog::TransactionLog()
-    : log(&Poco::Logger::get("TransactionLog"))
+    : global_context(Context::getGlobalContextInstance())
+    , log(&Poco::Logger::get("TransactionLog"))
+    , zookeeper_path(global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn"))
+    , zookeeper_path_log(zookeeper_path + "/log")
+    , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
+    , fault_probability_after_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0))
 {
-    global_context = Context::getGlobalContextInstance();
-    global_context->checkTransactionsAreAllowed();
-
-    zookeeper_path = global_context->getConfigRef().getString("transaction_log.zookeeper_path", "/clickhouse/txn");
-    zookeeper_path_log = zookeeper_path + "/log";
-    fault_probability_before_commit = global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0);
-    fault_probability_after_commit = global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0);
-
     loadLogFromZooKeeper();
 
     updating_thread = ThreadFromGlobalPool(&TransactionLog::runUpdatingThread, this);
@@ -131,7 +125,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     LOG_TRACE(log, "Loading {} entries from {}: {}..{}", entries_count, zookeeper_path_log, *beg, last_entry);
     futures.reserve(entries_count);
     for (auto it = beg; it != end; ++it)
-        futures.emplace_back(zookeeper->asyncGet(fs::path(zookeeper_path_log) / *it));
+        futures.emplace_back(TSA_READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
 
     std::vector<std::pair<TIDHash, CSNEntry>> loaded;
     loaded.reserve(entries_count);
@@ -146,9 +140,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     }
     futures.clear();
 
-    NOEXCEPT_SCOPE;
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-    {
+    NOEXCEPT_SCOPE_STRICT({
         std::lock_guard lock{mutex};
         for (const auto & entry : loaded)
         {
@@ -158,7 +150,8 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
             tid_to_csn.emplace(entry.first, entry.second);
         }
         last_loaded_entry = last_entry;
-    }
+    });
+
     {
         std::lock_guard lock{running_list_mutex};
         latest_snapshot = loaded.back().second.csn;
@@ -217,7 +210,7 @@ void TransactionLog::runUpdatingThread()
         try
         {
             /// Do not wait if we have some transactions to finalize
-            if (unknown_state_list_loaded.empty())
+            if (TSA_READ_ONE_THREAD(unknown_state_list_loaded).empty())
                 log_updated_event->wait();
 
             if (stop_flag.load())
@@ -233,9 +226,8 @@ void TransactionLog::runUpdatingThread()
                 }
 
                 /// It's possible that we connected to different [Zoo]Keeper instance
-                /// so we may read a bit stale state. Run some writing request before loading log entries
-                /// to make that instance up-to-date.
-                zookeeper->set(zookeeper_path_log, "");
+                /// so we may read a bit stale state.
+                TSA_READ_ONE_THREAD(zookeeper)->sync(zookeeper_path_log);
             }
 
             loadNewEntries();
@@ -260,13 +252,13 @@ void TransactionLog::runUpdatingThread()
 
 void TransactionLog::loadNewEntries()
 {
-    Strings entries_list = zookeeper->getChildren(zookeeper_path_log, nullptr, log_updated_event);
+    Strings entries_list = TSA_READ_ONE_THREAD(zookeeper)->getChildren(zookeeper_path_log, nullptr, log_updated_event);
     chassert(!entries_list.empty());
     ::sort(entries_list.begin(), entries_list.end());
-    auto it = std::upper_bound(entries_list.begin(), entries_list.end(), last_loaded_entry);
+    auto it = std::upper_bound(entries_list.begin(), entries_list.end(), TSA_READ_ONE_THREAD(last_loaded_entry));
     loadEntries(it, entries_list.end());
-    chassert(last_loaded_entry == entries_list.back());
-    chassert(latest_snapshot == deserializeCSN(last_loaded_entry));
+    chassert(TSA_READ_ONE_THREAD(last_loaded_entry) == entries_list.back());
+    chassert(latest_snapshot == deserializeCSN(TSA_READ_ONE_THREAD(last_loaded_entry)));
     latest_snapshot.notify_all();
 }
 
@@ -286,7 +278,7 @@ void TransactionLog::removeOldEntries()
 
     /// TODO we will need a bit more complex logic for multiple hosts
     Coordination::Stat stat;
-    CSN old_tail_ptr = deserializeCSN(zookeeper->get(zookeeper_path + "/tail_ptr", &stat));
+    CSN old_tail_ptr = deserializeCSN(TSA_READ_ONE_THREAD(zookeeper)->get(zookeeper_path + "/tail_ptr", &stat));
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
@@ -295,7 +287,7 @@ void TransactionLog::removeOldEntries()
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
     LOG_TRACE(log, "Updating tail_ptr from {} to {}", old_tail_ptr, new_tail_ptr);
-    zookeeper->set(zookeeper_path + "/tail_ptr", serializeCSN(new_tail_ptr), stat.version);
+    TSA_READ_ONE_THREAD(zookeeper)->set(zookeeper_path + "/tail_ptr", serializeCSN(new_tail_ptr), stat.version);
     tail_ptr.store(new_tail_ptr);
 
     /// Now we can find and remove old entries
@@ -319,7 +311,7 @@ void TransactionLog::removeOldEntries()
             continue;
 
         LOG_TEST(log, "Removing entry {} -> {}", elem.second.tid, elem.second.csn);
-        auto code = zookeeper->tryRemove(zookeeper_path_log + "/" + serializeCSN(elem.second.csn));
+        auto code = TSA_READ_ONE_THREAD(zookeeper)->tryRemove(zookeeper_path_log + "/" + serializeCSN(elem.second.csn));
         if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
             removed_entries.push_back(elem.first);
     }
@@ -381,11 +373,11 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
         std::lock_guard lock{running_list_mutex};
         CSN snapshot = latest_snapshot.load();
         LocalTID ltid = 1 + local_tid_counter.fetch_add(1);
-        txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, ServerUUID::get());
+        auto snapshot_lock = snapshots_in_use.insert(snapshots_in_use.end(), snapshot);
+        txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, ServerUUID::get(), snapshot_lock);
         bool inserted = running_list.try_emplace(txn->tid.getHash(), txn).second;
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);
-        txn->snapshot_in_use_it = snapshots_in_use.insert(snapshots_in_use.end(), snapshot);
     }
 
     LOG_TEST(log, "Beginning transaction {} ({})", txn->tid, txn->tid.getHash());
@@ -453,10 +445,11 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 
         /// Do not allow exceptions between commit point and the and of transaction finalization
         /// (otherwise it may stuck in COMMITTING state holding snapshot).
-        NOEXCEPT_SCOPE;
-        /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
-        /// (overflow is possible in a several weeks/months of active usage)
-        allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
+        NOEXCEPT_SCOPE_STRICT({
+            /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
+            /// (overflow is possible in a several weeks/months of active usage)
+            allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
+        });
     }
 
     return finalizeCommittedTransaction(txn.get(), allocated_csn, state_guard);
@@ -464,6 +457,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 
 CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {
@@ -509,6 +503,7 @@ bool TransactionLog::waitForCSNLoaded(CSN csn) const
 
 void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     LOG_TRACE(log, "Rolling back transaction {}{}", txn->tid,
               std::uncaught_exceptions() ? fmt::format(" due to uncaught exception (code: {})", getCurrentExceptionCode()) : "");
 
@@ -600,7 +595,7 @@ TransactionLog::TransactionsList TransactionLog::getTransactionsList() const
 
 void TransactionLog::sync() const
 {
-    Strings entries_list = zookeeper->getChildren(zookeeper_path_log);
+    Strings entries_list = getZooKeeper()->getChildren(zookeeper_path_log);
     chassert(!entries_list.empty());
     ::sort(entries_list.begin(), entries_list.end());
     CSN newest_csn = deserializeCSN(entries_list.back());

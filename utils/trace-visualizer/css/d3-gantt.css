@@ -8,7 +8,6 @@
 }
 
 rect.zoom-panel {
-    /*cursor: ew-resize;*/
     fill: none;
     pointer-events: all;
 }
@@ -20,18 +19,18 @@ rect.zoom-panel {
 }
 
 .axis.y {
-    font-size: 16px;
+    font-size: 9px;
     cursor: ns-resize;
 }
 
 .axis.x {
-    font-size: 16px;
+    font-size: 9px;
 }
 
 #ruler {
     text-anchor: middle;
     alignment-baseline: before-edge;
-    font-size: 16px;
+    font-size: 9px;
     font-family: sans-serif;
     pointer-events: none;
 }

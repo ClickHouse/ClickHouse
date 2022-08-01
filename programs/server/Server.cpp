@@ -29,6 +29,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -1124,6 +1125,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
+            if (config->has("concurrent_threads_soft_limit"))
+            {
+                auto concurrent_threads_soft_limit = config->getInt("concurrent_threads_soft_limit", 0);
+                if (concurrent_threads_soft_limit == -1)
+                {
+                    // Based on tests concurrent_threads_soft_limit has an optimal value when it's about 3 times of logical CPU cores
+                    constexpr size_t thread_factor = 3;
+                    concurrent_threads_soft_limit = std::thread::hardware_concurrency() * thread_factor;
+                }
+                if (concurrent_threads_soft_limit)
+                    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
+                else
+                    ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+            }
+            else
+                ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
 
@@ -1488,6 +1506,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
+        maybeConvertOrdinaryDatabaseToAtomic(global_context, DatabaseCatalog::instance().getSystemDatabase());
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();

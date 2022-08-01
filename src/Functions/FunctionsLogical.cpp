@@ -22,7 +22,7 @@
 namespace DB
 {
 
-void registerFunctionsLogical(FunctionFactory & factory)
+REGISTER_FUNCTION(Logical)
 {
     factory.registerFunction<FunctionAnd>();
     factory.registerFunction<FunctionOr>();
@@ -544,6 +544,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    executeColumnIfNeeded(arguments[0]);
 
     /// Let's denote x_i' = maskedExecute(x_i, mask).
     /// 1) AND(x_0, x_1, x_2, ..., x_n)

@@ -123,12 +123,10 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
 - **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
-  - `clickhouse-client_XXX_all.deb`
+  - `clickhouse-client_XXX_amd64.deb`
   - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
   - `clickhouse-common-staticXXX_amd64.deb`
-  - `clickhouse-server_XXX_all.deb`
-  - `clickhouse_XXX_amd64.buildinfo`
-  - `clickhouse_XXX_amd64.changes`
+  - `clickhouse-server_XXX_amd64.deb`
   - `clickhouse`: Main built binary.
   - `clickhouse-odbc-bridge`
   - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
@@ -173,11 +171,11 @@ concurrency-related errors. If it fails:
 
 ## Split Build Smoke Test
 
-Checks that the server build in [split build](../development/build.md#split-build)
+Checks that the server build in [split build](../development/developer-instruction.md#split-build)
 configuration can start and run simple queries.  If it fails:
 
     * Fix other test errors first;
-    * Build the server in [split build](../development/build.md#split-build) configuration
+    * Build the server in [split build](../development/developer-instruction.md#split-build) configuration
       locally and check whether it can start and run `select 1`.
 
 

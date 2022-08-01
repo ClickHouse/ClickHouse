@@ -18,56 +18,83 @@ def get_options(i, backward_compatibility_check):
         options.append("--db-engine=Ordinary")
 
     if i % 3 == 2 and not backward_compatibility_check:
-        options.append('''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i))
-        client_options.append('allow_experimental_database_replicated=1')
+        options.append(
+            '''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
+        )
+        client_options.append("allow_experimental_database_replicated=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
     if i % 2 == 1:
         options.append(" --database=test_{}".format(i))
 
-    if i % 5 == 1:
+    if i % 3 == 1:
         client_options.append("join_use_nulls=1")
 
-    if i % 15 == 1:
-        client_options.append("join_algorithm='parallel_hash'")
-
-    if i % 15 == 6:
-        client_options.append("join_algorithm='partial_merge'")
-
-    if i % 15 == 11:
-        client_options.append("join_algorithm='auto'")
-        client_options.append('max_rows_in_join=1000')
+    if i % 2 == 1:
+        join_alg_num = i // 2
+        if join_alg_num % 4 == 0:
+            client_options.append("join_algorithm='parallel_hash'")
+        if join_alg_num % 4 == 1:
+            client_options.append("join_algorithm='partial_merge'")
+        if join_alg_num % 4 == 2:
+            client_options.append("join_algorithm='full_sorting_merge'")
+        if join_alg_num % 4 == 3:
+            client_options.append("join_algorithm='auto'")
+            client_options.append('max_rows_in_join=1000')
 
     if i == 13:
-        client_options.append('memory_tracker_fault_probability=0.001')
+        client_options.append("memory_tracker_fault_probability=0.001")
+
+    if i % 2 == 1 and not backward_compatibility_check:
+        client_options.append("group_by_use_nulls=1")
 
     if client_options:
-        options.append(" --client-option " + ' '.join(client_options))
+        options.append(" --client-option " + " ".join(client_options))
 
-    return ' '.join(options)
+    return " ".join(options)
 
 
-def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit, backward_compatibility_check):
-    backward_compatibility_check_option = '--backward-compatibility-check' if backward_compatibility_check else ''
-    global_time_limit_option = ''
+def run_func_test(
+    cmd,
+    output_prefix,
+    num_processes,
+    skip_tests_option,
+    global_time_limit,
+    backward_compatibility_check,
+):
+    backward_compatibility_check_option = (
+        "--backward-compatibility-check" if backward_compatibility_check else ""
+    )
+    global_time_limit_option = ""
     if global_time_limit:
         global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
 
-    output_paths = [os.path.join(output_prefix, "stress_test_run_{}.txt".format(i)) for i in range(num_processes)]
+    output_paths = [
+        os.path.join(output_prefix, "stress_test_run_{}.txt".format(i))
+        for i in range(num_processes)
+    ]
     pipes = []
     for i in range(0, len(output_paths)):
-        f = open(output_paths[i], 'w')
-        full_command = "{} {} {} {} {}".format(cmd, get_options(i, backward_compatibility_check), global_time_limit_option, skip_tests_option, backward_compatibility_check_option)
+        f = open(output_paths[i], "w")
+        full_command = "{} {} {} {} {}".format(
+            cmd,
+            get_options(i, backward_compatibility_check),
+            global_time_limit_option,
+            skip_tests_option,
+            backward_compatibility_check_option,
+        )
         logging.info("Run func tests '%s'", full_command)
         p = Popen(full_command, shell=True, stdout=f, stderr=f)
         pipes.append(p)
         time.sleep(0.5)
     return pipes
 
+
 def compress_stress_logs(output_path, files_prefix):
     cmd = f"cd {output_path} && tar -zcf stress_run_logs.tar.gz {files_prefix}* && rm {files_prefix}*"
     check_output(cmd, shell=True)
+
 
 def call_with_retry(query, timeout=30, retry_count=5):
     for i in range(retry_count):
@@ -76,6 +103,7 @@ def call_with_retry(query, timeout=30, retry_count=5):
             time.sleep(i)
         else:
             break
+
 
 def make_query_command(query):
     return f"""clickhouse client -q "{query}" --max_untracked_memory=1Gi --memory_profiler_step=1Gi --max_memory_usage_for_user=0"""
@@ -93,28 +121,34 @@ def prepare_for_hung_check(drop_databases):
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'")
 
-    call_with_retry(make_query_command('SELECT 1 FORMAT Null'))
+    call_with_retry(make_query_command("SELECT 1 FORMAT Null"))
 
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
     # Possibly we should fix tests and forbid to use such queries without specifying table.
-    call_with_retry(make_query_command('SYSTEM START MERGES'))
-    call_with_retry(make_query_command('SYSTEM START DISTRIBUTED SENDS'))
-    call_with_retry(make_query_command('SYSTEM START TTL MERGES'))
-    call_with_retry(make_query_command('SYSTEM START MOVES'))
-    call_with_retry(make_query_command('SYSTEM START FETCHES'))
-    call_with_retry(make_query_command('SYSTEM START REPLICATED SENDS'))
-    call_with_retry(make_query_command('SYSTEM START REPLICATION QUEUES'))
-    call_with_retry(make_query_command('SYSTEM DROP MARK CACHE'))
+    call_with_retry(make_query_command("SYSTEM START MERGES"))
+    call_with_retry(make_query_command("SYSTEM START DISTRIBUTED SENDS"))
+    call_with_retry(make_query_command("SYSTEM START TTL MERGES"))
+    call_with_retry(make_query_command("SYSTEM START MOVES"))
+    call_with_retry(make_query_command("SYSTEM START FETCHES"))
+    call_with_retry(make_query_command("SYSTEM START REPLICATED SENDS"))
+    call_with_retry(make_query_command("SYSTEM START REPLICATION QUEUES"))
+    call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
     # Issue #21004, live views are experimental, so let's just suppress it
     call_with_retry(make_query_command("KILL QUERY WHERE upper(query) LIKE 'WATCH %'"))
 
     # Kill other queries which known to be slow
     # It's query from 01232_preparing_sets_race_condition_long, it may take up to 1000 seconds in slow builds
-    call_with_retry(make_query_command("KILL QUERY WHERE query LIKE 'insert into tableB select %'"))
+    call_with_retry(
+        make_query_command("KILL QUERY WHERE query LIKE 'insert into tableB select %'")
+    )
     # Long query from 00084_external_agregation
-    call_with_retry(make_query_command("KILL QUERY WHERE query LIKE 'SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u %'"))
+    call_with_retry(
+        make_query_command(
+            "KILL QUERY WHERE query LIKE 'SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u %'"
+        )
+    )
 
     if drop_databases:
         for i in range(5):
@@ -123,23 +157,35 @@ def prepare_for_hung_check(drop_databases):
                 # Otherwise we will get rid of queries which wait for background pool. It can take a long time on slow builds (more than 900 seconds).
                 #
                 # Also specify max_untracked_memory to allow 1GiB of memory to overcommit.
-                databases = check_output(make_query_command('SHOW DATABASES'), shell=True, timeout=30).decode('utf-8').strip().split()
+                databases = (
+                    check_output(
+                        make_query_command("SHOW DATABASES"), shell=True, timeout=30
+                    )
+                    .decode("utf-8")
+                    .strip()
+                    .split()
+                )
                 for db in databases:
                     if db == "system":
                         continue
-                    command = make_query_command(f'DROP DATABASE {db}')
+                    command = make_query_command(f"DROP DATABASE {db}")
                     # we don't wait for drop
                     Popen(command, shell=True)
                 break
             except Exception as ex:
-                logging.error("Failed to SHOW or DROP databasese, will retry %s", str(ex))
+                logging.error(
+                    "Failed to SHOW or DROP databasese, will retry %s", str(ex)
+                )
                 time.sleep(i)
         else:
-            raise Exception("Cannot drop databases after stress tests. Probably server consumed too much memory and cannot execute simple queries")
-
+            raise Exception(
+                "Cannot drop databases after stress tests. Probably server consumed too much memory and cannot execute simple queries"
+            )
 
     # Wait for last queries to finish if any, not longer than 300 seconds
-    call(make_query_command("""
+    call(
+        make_query_command(
+            """
     select sleepEachRow((
         select maxOrDefault(300 - elapsed) + 1
         from system.processes
@@ -147,39 +193,58 @@ def prepare_for_hung_check(drop_databases):
     ) / 300)
     from numbers(300)
     format Null
-    """), shell=True, stderr=STDOUT, timeout=330)
+    """
+        ),
+        shell=True,
+        stderr=STDOUT,
+        timeout=330,
+    )
 
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
         query = """clickhouse client -q "SELECT count() FROM system.processes where where elapsed > 300" """
-        output = check_output(query, shell=True, stderr=STDOUT, timeout=30).decode('utf-8').strip()
+        output = (
+            check_output(query, shell=True, stderr=STDOUT, timeout=30)
+            .decode("utf-8")
+            .strip()
+        )
         if int(output) == 0:
             return False
     except:
         pass
     return True
 
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    parser = argparse.ArgumentParser(description="ClickHouse script for running stresstest")
-    parser.add_argument("--test-cmd", default='/usr/bin/clickhouse-test')
-    parser.add_argument("--skip-func-tests", default='')
-    parser.add_argument("--client-cmd", default='clickhouse-client')
-    parser.add_argument("--server-log-folder", default='/var/log/clickhouse-server')
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    parser = argparse.ArgumentParser(
+        description="ClickHouse script for running stresstest"
+    )
+    parser.add_argument("--test-cmd", default="/usr/bin/clickhouse-test")
+    parser.add_argument("--skip-func-tests", default="")
+    parser.add_argument("--client-cmd", default="clickhouse-client")
+    parser.add_argument("--server-log-folder", default="/var/log/clickhouse-server")
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
     parser.add_argument("--num-parallel", type=int, default=cpu_count())
-    parser.add_argument('--backward-compatibility-check', action='store_true')
-    parser.add_argument('--hung-check', action='store_true', default=False)
+    parser.add_argument("--backward-compatibility-check", action="store_true")
+    parser.add_argument("--hung-check", action="store_true", default=False)
     # make sense only for hung check
-    parser.add_argument('--drop-databases', action='store_true', default=False)
+    parser.add_argument("--drop-databases", action="store_true", default=False)
 
     args = parser.parse_args()
     if args.drop_databases and not args.hung_check:
         raise Exception("--drop-databases only used in hung check (--hung-check)")
     func_pipes = []
-    func_pipes = run_func_test(args.test_cmd, args.output_folder, args.num_parallel, args.skip_func_tests, args.global_time_limit, args.backward_compatibility_check)
+    func_pipes = run_func_test(
+        args.test_cmd,
+        args.output_folder,
+        args.num_parallel,
+        args.skip_func_tests,
+        args.global_time_limit,
+        args.backward_compatibility_check,
+    )
 
     logging.info("Will wait functests to finish")
     while True:
@@ -205,32 +270,41 @@ if __name__ == "__main__":
             have_long_running_queries = True
             logging.error("Failed to prepare for hung check %s", str(ex))
         logging.info("Checking if some queries hung")
-        cmd = ' '.join([args.test_cmd,
-            # Do not track memory allocations up to 1Gi,
-            # this will allow to ignore server memory limit (max_server_memory_usage) for this query.
-            #
-            # NOTE: memory_profiler_step should be also adjusted, because:
-            #
-            #     untracked_memory_limit = min(settings.max_untracked_memory, settings.memory_profiler_step)
-            #
-            # NOTE: that if there will be queries with GROUP BY, this trick
-            # will not work due to CurrentMemoryTracker::check() from
-            # Aggregator code.
-            # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
-            "--client-option", "max_untracked_memory=1Gi",
-            "--client-option", "max_memory_usage_for_user=0",
-            "--client-option", "memory_profiler_step=1Gi",
-            # Use system database to avoid CREATE/DROP DATABASE queries
-            "--database=system",
-            "--hung-check",
-            "00001_select_1"
-        ])
+        cmd = " ".join(
+            [
+                args.test_cmd,
+                # Do not track memory allocations up to 1Gi,
+                # this will allow to ignore server memory limit (max_server_memory_usage) for this query.
+                #
+                # NOTE: memory_profiler_step should be also adjusted, because:
+                #
+                #     untracked_memory_limit = min(settings.max_untracked_memory, settings.memory_profiler_step)
+                #
+                # NOTE: that if there will be queries with GROUP BY, this trick
+                # will not work due to CurrentMemoryTracker::check() from
+                # Aggregator code.
+                # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
+                "--client-option",
+                "max_untracked_memory=1Gi",
+                "--client-option",
+                "max_memory_usage_for_user=0",
+                "--client-option",
+                "memory_profiler_step=1Gi",
+                # Use system database to avoid CREATE/DROP DATABASE queries
+                "--database=system",
+                "--hung-check",
+                "--stress",
+                "00001_select_1",
+            ]
+        )
         res = call(cmd, shell=True, stderr=STDOUT)
         hung_check_status = "No queries hung\tOK\n"
         if res != 0 and have_long_running_queries:
             logging.info("Hung check failed with exit code {}".format(res))
             hung_check_status = "Hung check failed\tFAIL\n"
-        with open(os.path.join(args.output_folder, "test_results.tsv"), 'w+') as results:
+        with open(
+            os.path.join(args.output_folder, "test_results.tsv"), "w+"
+        ) as results:
             results.write(hung_check_status)
 
     logging.info("Stress test finished")

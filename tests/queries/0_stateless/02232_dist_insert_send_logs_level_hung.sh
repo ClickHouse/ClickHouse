@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-backward-compatibility-check
+# Tags: disabled
 # Tag: no-parallel - to heavy
 # Tag: long        - to heavy
 

@@ -5,6 +5,8 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include <Storages/LightweightDeleteDescription.h>
+#include <Storages/MergeTree/DataPartStorageOnDisk.h>
 
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -15,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
@@ -120,12 +123,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     ctx->disk = global_ctx->space_reservation->getDisk();
 
-    String local_part_path = global_ctx->data->relative_data_path;
     String local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
-    String local_new_part_tmp_path = local_part_path + local_tmp_part_basename + "/";
 
-    if (ctx->disk->exists(local_new_part_tmp_path))
-        throw Exception("Directory " + fullPath(ctx->disk, local_new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    if (global_ctx->parent_path_storage_builder)
+    {
+        global_ctx->data_part_storage_builder = global_ctx->parent_path_storage_builder->getProjection(local_tmp_part_basename);
+    }
+    else
+    {
+        auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
+
+        global_ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
+            local_single_disk_volume,
+            global_ctx->data->relative_data_path,
+            local_tmp_part_basename);
+    }
+
+    if (global_ctx->data_part_storage_builder->exists())
+        throw Exception("Directory " + global_ctx->data_part_storage_builder->getFullPath() + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     global_ctx->data->temporary_parts.add(local_tmp_part_basename);
     SCOPE_EXIT(
@@ -149,13 +164,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         global_ctx->merging_column_names);
 
-    auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, ctx->disk, 0);
+    auto data_part_storage = global_ctx->data_part_storage_builder->getStorage();
+
     global_ctx->new_data_part = global_ctx->data->createPart(
         global_ctx->future_part->name,
         global_ctx->future_part->type,
         global_ctx->future_part->part_info,
-        local_single_disk_volume,
-        local_tmp_part_basename,
+        data_part_storage,
         global_ctx->parent_part);
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
@@ -289,6 +304,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
+        global_ctx->data_part_storage_builder,
         global_ctx->metadata_snapshot,
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
@@ -479,6 +495,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->executor = std::make_unique<PullingPipelineExecutor>(ctx->column_parts_pipeline);
 
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
+        global_ctx->data_part_storage_builder,
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
         ctx->executor->getHeader(),
@@ -581,7 +598,6 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
 
 
     const auto & projections = global_ctx->metadata_snapshot->getProjections();
-    // tasks_for_projections.reserve(projections.size());
 
     for (const auto & projection : projections)
     {
@@ -632,6 +648,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->deduplicate_by_columns,
             projection_merging_params,
             global_ctx->new_data_part.get(),
+            global_ctx->data_part_storage_builder.get(),
             ".proj",
             NO_TRANSACTION_PTR,
             global_ctx->data,
@@ -794,10 +811,27 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     for (const auto & part : global_ctx->future_part->parts)
     {
+        auto columns = global_ctx->merging_column_names;
+
+        /// The part might have some rows masked by lightweight deletes
+        const auto lightweight_delete_filter_column = LightweightDeleteDescription::FILTER_COLUMN.name;
+        const bool need_to_filter_deleted_rows = part->hasLightweightDelete();
+        if (need_to_filter_deleted_rows)
+            columns.emplace_back(lightweight_delete_filter_column);
+
         auto input = std::make_unique<MergeTreeSequentialSource>(
-            *global_ctx->data, global_ctx->storage_snapshot, part, global_ctx->merging_column_names, ctx->read_with_direct_io, true);
+            *global_ctx->data, global_ctx->storage_snapshot, part, columns, ctx->read_with_direct_io, true);
 
         Pipe pipe(std::move(input));
+
+        /// Add filtering step that discards deleted rows
+        if (need_to_filter_deleted_rows)
+        {
+            pipe.addSimpleTransform([lightweight_delete_filter_column](const Block & header)
+            {
+                return std::make_shared<FilterTransform>(header, nullptr, lightweight_delete_filter_column, true);
+            });
+        }
 
         if (global_ctx->metadata_snapshot->hasSortingKey())
         {
@@ -839,7 +873,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_shared<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, SortingQueueStrategy::Default, 0, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:

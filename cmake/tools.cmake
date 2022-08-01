@@ -178,3 +178,17 @@ if (STRIP_PATH)
 else ()
     message (FATAL_ERROR "Cannot find strip.")
 endif ()
+
+if (OS_DARWIN AND NOT CMAKE_TOOLCHAIN_FILE)
+    # utils/list-licenses/list-licenses.sh (which generates system table system.licenses) needs the GNU versions of find and grep. These are
+    # not available out-of-the-box on Mac. As a special case, Darwin builds in CI are cross-compiled from x86 Linux where the GNU userland is
+    # available.
+    find_program(GFIND_PATH NAMES "gfind")
+    if (NOT GFIND_PATH)
+        message (FATAL_ERROR "GNU find not found. You can install it with 'brew install findutils'.")
+    endif()
+    find_program(GGREP_PATH NAMES "ggrep")
+    if (NOT GGREP_PATH)
+        message (FATAL_ERROR "GNU grep not found. You can install it with 'brew install grep'.")
+    endif()
+endif ()
