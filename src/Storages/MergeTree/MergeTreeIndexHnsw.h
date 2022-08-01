@@ -8,55 +8,49 @@
 #include <method/hnsw.h>
 #include <knnqueue.h>
 
-namespace similarity
-{
-EfficientDistFunc getDistFunc(DistFuncType funcType);
-}
-
-namespace HnswWrapper
+namespace DB
 {
 
-
-using namespace similarity;
+namespace ApproximateNearestNeighbor
+{
 
 template <typename Dist>
-struct IndexWrap
+class HNSWIndex
 {
-    explicit IndexWrap(const std::string & space_type_, const AnyParams & space_params = AnyParams());
+public:
+    HNSWIndex(const std::string & space_type_, const similarity::AnyParams & space_params = similarity::AnyParams());
 
-    void createIndex(const AnyParams & params = AnyParams());
+    void createIndex(const similarity::AnyParams & params = similarity::AnyParams());
 
-    void loadIndex(DB::ReadBuffer & istr, bool load_data = true);
+    void loadIndex(DB::ReadBuffer & istr);
 
-    void saveIndex(DB::WriteBuffer & ostr, bool save_data = true);
+    void saveIndex(DB::WriteBuffer & ostr);
 
-    KNNQueue<Dist> * knnQuery(const Object & obj, size_t k);
+    similarity::KNNQueue<Dist> * knnQuery(const similarity::Object & obj, size_t k);
 
-    void addBatchUnsafe(ObjectVector && new_data);
-
-    void freeAndClearObjectVector();
+    void replaceDataWith(similarity::ObjectVector && new_data);
 
     size_t dataSize() const;
 
-    ~IndexWrap();
+    ~HNSWIndex();
 
 private:
+    /// remove data before reading index and in destructor
+    void freeAndClearObjectVector();
+
     std::string space_type;
     std::unique_ptr<similarity::Space<Dist>> space;
-    ObjectVector data;
-    std::unique_ptr<Hnsw<Dist>> index;
+    similarity::ObjectVector data;
+    std::unique_ptr<similarity::Hnsw<Dist>> index;
 };
 
 }
-
-namespace DB
-{
 
 struct MergeTreeIndexGranuleHnsw final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleHnsw(const String & index_name_, const Block & index_sample_block_);
     MergeTreeIndexGranuleHnsw(
-        const String & index_name_, const Block & index_sample_block_, std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl_);
+        const String & index_name_, const Block & index_sample_block_, std::unique_ptr<ApproximateNearestNeighbor::HNSWIndex<float>> index_impl_);
 
     ~MergeTreeIndexGranuleHnsw() override = default;
 
@@ -67,7 +61,7 @@ struct MergeTreeIndexGranuleHnsw final : public IMergeTreeIndexGranule
 
     String index_name;
     Block index_sample_block;
-    std::unique_ptr<HnswWrapper::IndexWrap<float>> index_impl;
+    std::unique_ptr<ApproximateNearestNeighbor::HNSWIndex<float>> index_impl;
 };
 
 struct MergeTreeIndexAggregatorHnsw final : IMergeTreeIndexAggregator

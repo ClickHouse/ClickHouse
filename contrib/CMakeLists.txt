@@ -129,6 +129,7 @@ if (ENABLE_CURL_BUILD)
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()
 
+add_contrib (nmslib-cmake nmslib)
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
@@ -157,8 +158,6 @@ endif()
 add_contrib (sqlite-cmake sqlite-amalgamation)
 add_contrib (s2geometry-cmake s2geometry)
 add_contrib (base-x-cmake base-x)
-
-add_contrib (nmslib-cmake nmslib)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

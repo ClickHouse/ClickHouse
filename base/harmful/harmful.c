@@ -111,7 +111,7 @@ TRAP(l64a)
 TRAP(lcong48)
 TRAP(lgammafNx)
 TRAP(localeconv)
-// TRAP(localtime) // using by nmslib for hnsw index
+TRAP(localtime)
 TRAP(login)
 TRAP(login_tty)
 TRAP(logout)
