@@ -1456,9 +1456,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         return set;
                     };
 
-                    auto add_filter_by_set = [](QueryPlan & plan, const Names & key_names, auto set, bool is_right)
+                    auto add_filter_by_set = [](QueryPlan & plan, const Names & key_names, auto set, auto ports_state, bool is_right)
                     {
-                        auto filter_by_set_step = std::make_unique<FilterBySetOnTheFlyStep>(plan.getCurrentDataStream(), key_names, set);
+                        auto filter_by_set_step = std::make_unique<FilterBySetOnTheFlyStep>(plan.getCurrentDataStream(), key_names, set, ports_state);
                         filter_by_set_step->setStepDescription(fmt::format("Filter {} stream by set", is_right ? "right" : "left"));
                         plan.addStep(std::move(filter_by_set_step));
                     };
@@ -1472,8 +1472,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             auto left_set = add_create_set(query_plan, join_clause.key_names_left, false);
                             auto right_set = add_create_set(*joined_plan, join_clause.key_names_right, true);
 
-                            add_filter_by_set(query_plan, join_clause.key_names_left, right_set, false);
-                            add_filter_by_set(*joined_plan, join_clause.key_names_right, left_set, true);
+                            auto ports_state = std::make_shared<FilterBySetOnTheFlyStep::PortsState>();
+                            add_filter_by_set(query_plan, join_clause.key_names_left, right_set, ports_state, false);
+                            add_filter_by_set(*joined_plan, join_clause.key_names_right, left_set, ports_state, true);
                         }
 
                         add_sorting(query_plan, join_clause.key_names_left, false);
