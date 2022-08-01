@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionToMonday = FunctionDateOrDateTimeToSomething<DataTypeDate, ToMondayImpl>;
 
-void registerFunctionToMonday(FunctionFactory & factory)
+REGISTER_FUNCTION(ToMonday)
 {
     factory.registerFunction<FunctionToMonday>();
 }
