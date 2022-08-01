@@ -433,7 +433,7 @@ private:
 
 }
 
-void registerFunctionsMakeDate(FunctionFactory & factory)
+REGISTER_FUNCTION(MakeDate)
 {
     factory.registerFunction<FunctionMakeDate<MakeDateTraits>>();
     factory.registerFunction<FunctionMakeDate<MakeDate32Traits>>();
