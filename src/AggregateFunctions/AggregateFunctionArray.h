@@ -54,9 +54,9 @@ public:
         return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
     }
 
-    DataTypePtr getNormalizedStateType() const override
+    DataTypePtr getStateType() const override
     {
-        return nested_func->getNormalizedStateType();
+        return nested_func->getStateType();
     }
 
     bool isVersioned() const override
