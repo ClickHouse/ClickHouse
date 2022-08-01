@@ -126,7 +126,7 @@ public:
 
 }
 
-void registerFunctionNow(FunctionFactory & factory)
+REGISTER_FUNCTION(Now)
 {
     factory.registerFunction<NowOverloadResolver>(FunctionFactory::CaseInsensitive);
 }

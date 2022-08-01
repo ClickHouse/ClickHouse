@@ -352,6 +352,9 @@ try
 {
     UseSSL use_ssl;
     ThreadStatus thread_status;
+
+    StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
+
     setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
