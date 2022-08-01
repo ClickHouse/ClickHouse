@@ -430,8 +430,9 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     SortDescription sort_description;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        block_to_sort.insert({ordered_set[i], nullptr, ordered_set[i]->getName()});
-        sort_description.emplace_back(ordered_set[i]->getName(), 1, 1);
+        String column_name = "_" + toString(i);
+        block_to_sort.insert({ordered_set[i], nullptr, column_name});
+        sort_description.emplace_back(column_name, 1, 1);
     }
 
     sortBlock(block_to_sort, sort_description);
