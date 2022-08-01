@@ -295,45 +295,30 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     return 0;
 }
 
-/// Copy particular part of command and update shift
-void fill(char * dest, char * source, size_t length, size_t& shift)
+int do_system(const char * cmd)
 {
-    memcpy(dest + shift, source, length);
-    shift += length;
-}
-
-/// Set command to `mv filename.decompressed filename && filename agrs...`
-void fillCommand(char command[], int argc, char * argv[], size_t length)
-{
-    memset(command, '\0', 3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc);
-
-    /// position in command
-    size_t shift = 0;
-
-    /// Support variables to create command
-    char mv[] = "mv ";
-    char decompressed[] = ".decompressed ";
-    char add_command[] = " && ";
-    char space[] = " ";
-
-    fill(command, mv, 3, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, decompressed, 14, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, add_command, 4, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, space, 1, shift);
-
-    /// forward all arguments
-    for (int i = 1; i < argc; ++i)
+    int ret = system(cmd);
+    if (ret == -1)
     {
-        fill(command, argv[i], strlen(argv[i]), shift);
-        if (i != argc - 1)
-            fill(command, space, 1, shift);
+        perror(nullptr);
+        return 1;
     }
+
+    if (WIFEXITED(ret) && WEXITSTATUS(ret))
+    {
+        std::cerr << "Command [" << cmd << "] exited with code " << WEXITSTATUS(ret) << std::endl;
+        return 1;
+    }
+    else if (WIFSIGNALED(ret))
+    {
+        std::cerr << "Command [" << cmd << "] killed by signal " << WTERMSIG(ret) << std::endl;
+        return 1;
+    }
+
+    return 0;
 }
 
-int main(int argc, char* argv[])
+int main(int/* argc*/, char* argv[])
 {
     char file_path[strlen(argv[0]) + 1];
     memset(file_path, 0, sizeof(file_path));
@@ -371,12 +356,6 @@ int main(int argc, char* argv[])
     if (0 != close(input_fd))
         perror(nullptr);
 
-    /// According to documentation `mv` will rename file if it
-    /// doesn't move to other directory.
-    /// Sometimes `rename` doesn't exist by default and
-    /// `rename.ul` is set instead. It will lead to errors
-    /// that can be easily avoided with help of `mv`
-
     if (!have_compressed_analoge)
     {
         printf("No target executable - decompression only was performed.\n");
@@ -387,22 +366,14 @@ int main(int argc, char* argv[])
     }
     else
     {
-        /// move decompressed file instead of this binary and apply command
-        char bash[] = "sh";
-        char executable[] = "-c";
+        const char * const cmd_fmt = "mv %s %s.delete && cp %s.decompressed %s && rm %s.delete %s.decompressed";
+        int cmd_len = snprintf(nullptr, 0, cmd_fmt, argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+        char command[cmd_len + 1];
+        snprintf(command, cmd_len + 1, cmd_fmt, argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
+        if (do_system(command))
+            return 1;
 
-        /// length of forwarded args
-        size_t length = 0;
-        for (int i = 1; i < argc; ++i)
-            length += strlen(argv[i]);
-
-        /// mv filename.decompressed filename && filename agrs...
-        char command[3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc];
-        fillCommand(command, argc, argv, length);
-
-        /// replace file and call executable
-        char * newargv[] = { bash, executable, command, nullptr };
-        execvp(bash, newargv);
+        execvp(argv[0], argv);
 
         /// This part of code will be reached only if error happened
         perror(nullptr);
