@@ -28,7 +28,9 @@ struct FillColumnDescription
     /// All missed values in range [FROM, TO) will be filled
     /// Range [FROM, TO) respects sorting direction
     Field fill_from;        /// Fill value >= FILL_FROM
+    DataTypePtr fill_from_type;
     Field fill_to;          /// Fill value + STEP < FILL_TO
+    DataTypePtr fill_to_type;
     Field fill_step;        /// Default = +1 or -1 according to direction
     std::optional<IntervalKind> step_kind;
 
@@ -107,7 +109,7 @@ public:
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.
   */
-void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attemps);
+void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts);
 
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out);

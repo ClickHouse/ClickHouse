@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -q "explain json = 1, description = 0, header = 1 select 1, 2
 echo "--------"
 $CLICKHOUSE_CLIENT -q "EXPLAIN json = 1, actions = 1, header = 1, description = 0
                        SELECT quantile(0.2)(number), sumIf(number, number > 0) from numbers(2) group by number, number + 1 FORMAT TSVRaw
-                      " | grep Aggregating -A 42
+                      " | grep Aggregating -A 40
 
 echo "--------"
 $CLICKHOUSE_CLIENT -q "EXPLAIN json = 1, actions = 1, description = 0

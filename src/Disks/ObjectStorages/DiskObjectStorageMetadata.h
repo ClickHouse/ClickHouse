@@ -1,30 +1,31 @@
 #pragma once
 
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Core/Types.h>
 
 namespace DB
 {
 
+
 /// Metadata for DiskObjectStorage, stored on local disk
 struct DiskObjectStorageMetadata
 {
-    using Updater = std::function<bool(DiskObjectStorageMetadata & metadata)>;
+private:
     /// Metadata file version.
-    static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
-    static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
-    static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
+    static constexpr uint32_t VERSION_ABSOLUTE_PATHS = 1;
+    static constexpr uint32_t VERSION_RELATIVE_PATHS = 2;
+    static constexpr uint32_t VERSION_READ_ONLY_FLAG = 3;
 
-    /// Remote FS objects paths and their sizes.
-    std::vector<BlobPathWithSize> remote_fs_objects;
+    const std::string & common_metadata_path;
 
-    /// URI
-    const String & remote_fs_root_path;
+    /// Relative paths of blobs.
+    RelativePathsWithSize storage_objects;
+
+    const std::string object_storage_root_path;
 
     /// Relative path to metadata file on local FS.
-    const String metadata_file_path;
-
-    DiskPtr metadata_disk;
+    const std::string metadata_file_path;
 
     /// Total size of all remote FS (S3, HDFS) objects.
     size_t total_size = 0;
@@ -33,36 +34,73 @@ struct DiskObjectStorageMetadata
     ///
     /// FIXME: Why we are tracking it explicetly, without
     /// info from filesystem????
-    UInt32 ref_count = 0;
+    uint32_t ref_count = 0;
 
     /// Flag indicates that file is read only.
     bool read_only = false;
 
+public:
+
     DiskObjectStorageMetadata(
-        const String & remote_fs_root_path_,
-        DiskPtr metadata_disk_,
-        const String & metadata_file_path_);
+        const std::string & common_metadata_path_,
+        const std::string & object_storage_root_path_,
+        const std::string & metadata_file_path_);
 
-    void addObject(const String & path, size_t size);
+    void addObject(const std::string & path, size_t size);
 
-    static DiskObjectStorageMetadata readMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_);
-    static DiskObjectStorageMetadata readUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static void readUpdateStoreMetadataAndRemove(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
+    void deserialize(ReadBuffer & buf);
+    void deserializeFromString(const std::string & data);
 
-    static DiskObjectStorageMetadata createAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync);
-    static DiskObjectStorageMetadata createUpdateAndStoreMetadata(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, Updater updater);
-    static DiskObjectStorageMetadata createAndStoreMetadataIfNotExists(const String & remote_fs_root_path_, DiskPtr metadata_disk_, const String & metadata_file_path_, bool sync, bool overwrite);
+    void serialize(WriteBuffer & buf, bool sync) const;
+    std::string serializeToString() const;
 
-    /// Serialize metadata to string (very same with saveToBuffer)
-    std::string serializeToString();
+    std::string getBlobsCommonPrefix() const
+    {
+        return object_storage_root_path;
+    }
 
-private:
-    /// Fsync metadata file if 'sync' flag is set.
-    void save(bool sync = false);
-    void saveToBuffer(WriteBuffer & buffer, bool sync);
-    void load();
+    RelativePathsWithSize getBlobsRelativePaths() const
+    {
+        return storage_objects;
+    }
+
+    bool isReadOnly() const
+    {
+        return read_only;
+    }
+
+    uint32_t getRefCount() const
+    {
+        return ref_count;
+    }
+
+    uint64_t getTotalSizeBytes() const
+    {
+        return total_size;
+    }
+
+    void incrementRefCount()
+    {
+        ++ref_count;
+    }
+
+    void decrementRefCount()
+    {
+        --ref_count;
+    }
+
+    void resetRefCount()
+    {
+        ref_count = 0;
+    }
+
+    void setReadOnly()
+    {
+        read_only = true;
+    }
+
 };
 
-using DiskObjectStorageMetadataUpdater = std::function<bool(DiskObjectStorageMetadata & metadata)>;
+using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;
 
 }

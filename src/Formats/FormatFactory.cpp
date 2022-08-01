@@ -56,6 +56,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
     format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
     format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
+    format_settings.avro.null_as_default = settings.input_format_avro_null_as_default;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
@@ -109,6 +110,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.pretty.output_format_pretty_row_numbers = settings.output_format_pretty_row_numbers;
     format_settings.protobuf.input_flatten_google_wrappers = settings.input_format_protobuf_flatten_google_wrappers;
     format_settings.protobuf.output_nullables_with_google_wrappers = settings.output_format_protobuf_nullables_with_google_wrappers;
+    format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
     format_settings.regexp.regexp = settings.format_regexp;
     format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
@@ -150,6 +152,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.orc.output_string_as_string = settings.output_format_orc_string_as_string;
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
+    format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.seekable_read = settings.input_format_allow_seeks;
     format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
@@ -157,6 +160,11 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
+    format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
+    format_settings.sql_insert.include_column_names = settings.output_format_sql_insert_include_column_names;
+    format_settings.sql_insert.table_name = settings.output_format_sql_insert_table_name;
+    format_settings.sql_insert.use_replace = settings.output_format_sql_insert_use_replace;
+    format_settings.sql_insert.quote_names = settings.output_format_sql_insert_quote_names;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -499,7 +507,7 @@ String FormatFactory::getFormatFromFileDescriptor(int fd)
     if (readlink(proc_path.c_str(), file_path, sizeof(file_path) - 1) != -1)
         return getFormatFromFileName(file_path, false);
     return "";
-#elif defined(__APPLE__)
+#elif defined(OS_DARWIN)
     char file_path[PATH_MAX] = {'\0'};
     if (fcntl(fd, F_GETPATH, file_path) != -1)
         return getFormatFromFileName(file_path, false);

@@ -9,7 +9,7 @@ CREATE TABLE t2 (a Int16, b Nullable(Int64)) ENGINE = TinyLog;
 INSERT INTO t1 SELECT number as a, 100 + number as b FROM system.numbers LIMIT 1, 10;
 INSERT INTO t2 SELECT number - 5 as a, 200 + number - 5 as b FROM system.numbers LIMIT 1, 10;
 
-{% for join_type in ['hash', 'partial_merge', 'auto'] -%}
+{% for join_type in ['hash', 'partial_merge', 'full_sorting_merge', 'auto'] -%}
 
 SELECT '=== {{ join_type }} ===';
 SET join_algorithm = '{{ join_type }}';
@@ -98,7 +98,6 @@ SET max_bytes_in_join = 0;
 SELECT '=== join use nulls ===';
 
 SET join_use_nulls = 1;
-
 
 SELECT '= full =';
 SELECT a, b, t2.b FROM t1 FULL JOIN t2 USING (a) ORDER BY (a);

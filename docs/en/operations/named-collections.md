@@ -34,7 +34,7 @@ Example of configuration:
     <named_collections>
         <s3_mydata>
             <access_key_id>AKIAIOSFODNN7EXAMPLE</access_key_id>
-            <secret_access_key> wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</secret_access_key>
+            <secret_access_key>wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</secret_access_key>
             <format>CSV</format>
             <url>https://s3.us-east-1.amazonaws.com/yourbucket/mydata/</url>
         </s3_mydata>

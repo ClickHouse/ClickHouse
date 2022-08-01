@@ -28,7 +28,7 @@ IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
 MAX_GLIBC_VERSION = "2.4"
 DOWNLOAD_RETRIES_COUNT = 5
-CHECK_NAME = "Compatibility check (actions)"
+CHECK_NAME = "Compatibility check"
 
 
 def process_os_check(log_path):

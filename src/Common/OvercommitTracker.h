@@ -86,8 +86,6 @@ protected:
     // overcommit tracker is in SELECTED state.
     MemoryTracker * picked_tracker;
 
-    virtual Poco::Logger * getLogger() = 0;
-
 private:
 
     void pickQueryToExclude()
@@ -104,14 +102,16 @@ private:
         picked_tracker = nullptr;
         cancellation_state = QueryCancellationState::NONE;
         freed_memory = 0;
+
+        next_id = 0;
+        id_to_release = 0;
+
         allow_release = true;
     }
 
     void releaseThreads();
 
     QueryCancellationState cancellation_state;
-
-    std::unordered_map<MemoryTracker *, Int64> required_per_thread;
 
     // Global mutex which is used in ProcessList to synchronize
     // insertion and deletion of queries.
@@ -121,6 +121,9 @@ private:
     std::mutex & global_mutex;
     Int64 freed_memory;
     Int64 required_memory;
+
+    size_t next_id; // Id provided to the next thread to come in OvercommitTracker
+    size_t id_to_release; // We can release all threads with id smaller than this
 
     bool allow_release;
 };
@@ -140,10 +143,8 @@ struct UserOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override;
 
-    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessListForUser * user_process_list;
-    Poco::Logger * logger = &Poco::Logger::get("UserOvercommitTracker");
 };
 
 struct GlobalOvercommitTracker : OvercommitTracker
@@ -155,10 +156,8 @@ struct GlobalOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override;
 
-    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessList * process_list;
-    Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
 };
 
 // This class is used to disallow tracking during logging to avoid deadlocks.

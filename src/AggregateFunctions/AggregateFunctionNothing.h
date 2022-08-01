@@ -33,11 +33,11 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    void create(AggregateDataPtr) const override
+    void create(AggregateDataPtr __restrict) const override
     {
     }
 
-    void destroy(AggregateDataPtr) const noexcept override
+    void destroy(AggregateDataPtr __restrict) const noexcept override
     {
     }
 
@@ -56,11 +56,11 @@ public:
         return 1;
     }
 
-    void add(AggregateDataPtr, const IColumn **, size_t, Arena *) const override
+    void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override
     {
     }
 
-    void merge(AggregateDataPtr, ConstAggregateDataPtr, Arena *) const override
+    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
     {
     }
 
@@ -69,14 +69,14 @@ public:
         writeChar('\0', buf);
     }
 
-    void deserialize(AggregateDataPtr, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
         [[maybe_unused]] char symbol;
         readChar(symbol, buf);
         assert(symbol == '\0');
     }
 
-    void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override
     {
         to.insertDefault();
     }

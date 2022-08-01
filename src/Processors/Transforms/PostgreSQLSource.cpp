@@ -1,4 +1,5 @@
 #include "PostgreSQLSource.h"
+#include "Common/Exception.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
@@ -22,6 +23,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_COLUMNS;
+}
 
 template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
@@ -122,6 +127,11 @@ Chunk PostgreSQLSource<T>::generate()
         /// row is nullptr if pqxx::stream_from is finished
         if (!row)
             break;
+
+        if (row->size() > description.sample_block.columns())
+            throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
+                            "Row has too many columns: {}, expected structure: {}",
+                            row->size(), description.sample_block.dumpStructure());
 
         for (const auto idx : collections::range(0, row->size()))
         {

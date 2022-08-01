@@ -10,5 +10,4 @@
 #cmakedefine01 USE_FASTOPS
 #cmakedefine01 USE_BLAKE3
 #cmakedefine01 USE_NLP
-#cmakedefine01 USE_HYPERSCAN
-
+#cmakedefine01 USE_VECTORSCAN

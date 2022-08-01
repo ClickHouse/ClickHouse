@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS
+/** Query SHOW TABLES or SHOW DATABASES or SHOW CLUSTERS or SHOW CACHES
   */
 class ASTShowTablesQuery : public ASTQueryWithOutput
 {
@@ -21,6 +21,7 @@ public:
     bool m_settings{false};
     bool changed{false};
     bool temporary{false};
+    bool caches{false};
 
     String cluster_str;
     String from;

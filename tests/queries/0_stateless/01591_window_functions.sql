@@ -20,9 +20,8 @@ select number, quantileExact(number) over (partition by intDiv(number, 3) AS val
 -- can add an alias after window spec
 select number, quantileExact(number) over (partition by intDiv(number, 3) AS value order by number rows unbounded preceding) q from numbers(10);
 
--- can't reference it yet -- the window functions are calculated at the
--- last stage of select, after all other functions.
-select q * 10, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10); -- { serverError 47 }
+-- now we should be able to compute expressions with window functions
+select number, q * 10, quantileExact(number) over (partition by intDiv(number, 3) order by number rows unbounded preceding) q from numbers(10) order by number;
 
 -- must work in WHERE if you wrap it in a subquery
 select * from (select count(*) over (rows unbounded preceding) c from numbers(3)) where c > 0;

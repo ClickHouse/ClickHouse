@@ -5,12 +5,14 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/DiskRestartProxy.h>
-#include <Disks/DiskCacheWrapper.h>
+
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -72,9 +74,7 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
     {
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        /// FIXME Cache currently unsupported :(
         ObjectStoragePtr azure_object_storage = std::make_unique<AzureObjectStorage>(
-            nullptr,
             name,
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context));
@@ -82,11 +82,13 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
         bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
 
+        auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "");
+
         std::shared_ptr<IDisk> azure_blob_storage_disk = std::make_shared<DiskObjectStorage>(
             name,
             /* no namespaces */"",
             "DiskAzureBlobStorage",
-            metadata_disk,
+            std::move(metadata_storage),
             std::move(azure_object_storage),
             DiskType::AzureBlobStorage,
             send_metadata,
@@ -101,6 +103,8 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
             checkRemoveAccess(*azure_blob_storage_disk);
         }
 
+        azure_blob_storage_disk->startup(context);
+
 #ifdef NDEBUG
         bool use_cache = true;
 #else
@@ -108,17 +112,14 @@ void registerDiskAzureBlobStorage(DiskFactory & factory)
         /// read buffer.
         bool use_cache = false;
 #endif
-
-        azure_blob_storage_disk->startup(context);
-
         if (config.getBool(config_prefix + ".cache_enabled", use_cache))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
             azure_blob_storage_disk = wrapWithCache(azure_blob_storage_disk, "azure-blob-storage-cache", cache_path, metadata_path);
         }
-
         return std::make_shared<DiskRestartProxy>(azure_blob_storage_disk);
     };
+
     factory.registerDiskType("azure_blob_storage", creator);
 }
 
