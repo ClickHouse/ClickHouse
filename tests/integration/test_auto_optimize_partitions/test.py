@@ -21,6 +21,7 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
+
 def check_expected_result_or_fail(seconds, expected):
     ok = False
     for i in range(int(seconds) * 2):
@@ -34,14 +35,14 @@ def check_expected_result_or_fail(seconds, expected):
             break
         else:
             time.sleep(0.5)
-    assert(ok)
+    assert ok
+
 
 def test_without_auto_optimize_merge_tree(start_cluster):
     node.query("CREATE TABLE test (i Int64) ENGINE = MergeTree ORDER BY i;")
     node.query("INSERT INTO test SELECT 1")
     node.query("INSERT INTO test SELECT 2")
     node.query("INSERT INTO test SELECT 3")
-
 
     expected = TSV("""3\n""")
     check_expected_result_or_fail(5, expected)
