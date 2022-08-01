@@ -167,7 +167,7 @@ private:
     GinIndexPostingsBuilderContainer current_postings;
 
     /// The following is for segmentation of Gin index
-    GinIndexSegment current_segment;
+    GinIndexSegment current_segment{};
     UInt64 current_size{0};
     UInt64 max_digestion_size{0};
 
