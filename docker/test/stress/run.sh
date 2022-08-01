@@ -218,6 +218,8 @@ clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
                        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
 
+stop
+
 [ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
 [ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"
 
@@ -278,7 +280,6 @@ mkdir previous_release_package_folder
 echo $previous_release_tag | download_release_packets && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
-stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
 
 # Check if we cloned previous release repository successfully
