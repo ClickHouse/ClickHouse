@@ -116,7 +116,7 @@ public:
             && this->haveEqualArgumentTypes(rhs);
     }
 
-    DataTypePtr getNormalizedStateType() const override
+    DataTypePtr getStateType() const override
     {
         /// Return normalized state type: quantiles*(1)(...)
         Array params{1};
