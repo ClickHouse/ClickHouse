@@ -62,6 +62,8 @@ ORDER BY expr
 
 - `PARTITION BY` — [分区键](custom-partitioning-key.md) ，可选项。
 
+     大多数情况下，不需要分使用区键。即使需要使用，也不需要使用比月更细粒度的分区键。分区不会加快查询（这与 ORDER BY 表达式不同）。永远也别使用过细粒度的分区键。不要使用客户端指定分区标识符或分区字段名称来对数据进行分区（而是将分区字段标识或名称作为 ORDER BY 表达式的第一列来指定分区）。
+
      要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../../engines/table-engines/mergetree-family/mergetree.md) 类型的列。分区名的格式会是 `"YYYYMM"` 。
 
 - `PRIMARY KEY` - 如果要 [选择与排序键不同的主键](#choosing-a-primary-key-that-differs-from-the-sorting-key)，在这里指定，可选项。
