@@ -144,8 +144,8 @@ endif ()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp Functions/FunctionsLogical.cpp)
-list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
+list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/FunctionsLogical.cpp)
+list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/FunctionsLogical.h)
 
 list (APPEND dbms_sources
     AggregateFunctions/IAggregateFunction.cpp
@@ -346,6 +346,12 @@ set_source_files_properties(
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
+if (ENABLE_QPL)
+set_source_files_properties(
+        Compression/CompressionCodecDeflateQpl.cpp
+        PROPERTIES COMPILE_FLAGS "-mwaitpkg")
+endif ()
+
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
 
@@ -381,7 +387,7 @@ if (TARGET ch_contrib::rdkafka)
 endif()
 
 if (TARGET ch_contrib::nats_io)
-    dbms_target_link_libraries(PRIVATE ch_contrib::nats_io)
+    dbms_target_link_libraries(PRIVATE ch_contrib::nats_io ch_contrib::uv)
 endif()
 
 if (TARGET ch_contrib::sasl2)
@@ -451,6 +457,9 @@ endif ()
 if (TARGET ch_contrib::avrocpp)
     dbms_target_link_libraries(PRIVATE ch_contrib::avrocpp)
 endif ()
+
+set_source_files_properties(Common/CaresPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
 
 if (TARGET OpenSSL::Crypto)
     dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)
@@ -531,6 +540,10 @@ if (TARGET ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
+
+if (TARGET ch_contrib::qpl)
+dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
+endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 

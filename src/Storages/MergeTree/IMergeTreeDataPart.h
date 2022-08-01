@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
@@ -456,6 +457,11 @@ public:
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
 
+    /// True if the part supports lightweight delete mutate.
+    bool supportLightweightDeleteMutate() const;
+
+    /// True if here is lightweight deleted mask file in part.
+    bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
 
 protected:
 

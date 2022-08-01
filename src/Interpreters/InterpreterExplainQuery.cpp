@@ -146,14 +146,14 @@ namespace
 struct QueryASTSettings
 {
     bool graph = false;
-    bool rewrite = false;
+    bool optimize = false;
 
     constexpr static char name[] = "AST";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"graph", graph},
-        {"rewrite", rewrite}
+        {"optimize", optimize}
     };
 };
 
@@ -280,7 +280,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
-            if (settings.rewrite)
+            if (settings.optimize)
             {
                 ExplainAnalyzedSyntaxVisitor::Data data(getContext());
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
