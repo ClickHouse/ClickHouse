@@ -20,6 +20,8 @@ public:
 
     virtual ClusterPtr getCluster(ContextPtr context) const = 0;
     virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) const = 0;
+
+    bool isRemote() const override { return true; }
 };
 
 

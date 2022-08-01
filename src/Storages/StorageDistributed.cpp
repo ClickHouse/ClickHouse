@@ -780,7 +780,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
         select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
 
-        auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(query.clone());
+        auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.at(0)->as<ASTSelectQuery>();
+        auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(select->clone());
         select_with_union_query->list_of_selects->children.push_back(new_select_query);
 
         new_select_query->replaceDatabaseAndTable(src_distributed.getRemoteDatabaseName(), src_distributed.getRemoteTableName());
@@ -954,10 +955,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     if (!src_storage)
         return {};
 
-
-    std::cout << "src_storage " << src_storage->getName() <<  ' ' << std::endl;
-
-
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))
     {
         return distributedWriteBetweenDistributedTables(*src_distributed, query, local_context);
@@ -966,10 +963,13 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     {
         return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
     }
-    else
+    else if (local_context->getClientInfo().distributed_depth == 0)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. Reason: distributed reading is supported only from Distributed engine or *Cluster table functions");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. "\
+            "Reason: distributed reading is supported only from Distributed engine or *Cluster table functions, but got {} storage", src_storage->getName());
     }
+
+    return {};
 }
 
 

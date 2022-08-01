@@ -4548,10 +4548,13 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const 
     {
         return distributedWriteFromClusterStorage(src_distributed, query, local_context);
     }
-    else
+    else if (local_context->getClientInfo().distributed_depth == 0)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. Reason: distributed reading into Replicated table is supported only from *Cluster table functions");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. Reason: distributed "\
+            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage", src_storage->getName());
     }
+
+    return {};
 }
 
 
