@@ -268,16 +268,18 @@
 </head>
 <body>
 <div class="inputs">
-    <div id="connection-params">
-        <input id="url" type="text" value="https://play.clickhouse.com/" placeholder="URL" />
-        <input id="user" type="text" value="play" placeholder="user" />
-        <input id="password" type="password" placeholder="password" />
-    </div>
-    <div id="chart-params">
-        <input id="add" type="button" value="Add chart">
-        <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
-        <form id="params"></form>
-    </div>
+    <form id="params">
+        <div id="connection-params">
+            <input spellcheck="false" id="url" type="text" value="https://play.clickhouse.com/" placeholder="URL" />
+            <input spellcheck="false" id="user" type="text" value="play" placeholder="user" />
+            <input spellcheck="false" id="password" type="password" placeholder="password" />
+        </div>
+        <div>
+            <input id="add" type="button" value="Add chart">
+            <span class="nowrap themes"><span id="toggle-dark">🌚</span><span id="toggle-light">🌞</span></span>
+            <div id="chart-params"></div>
+        </div>
+    </form>
 </div>
 <div id="charts">
 </div>
@@ -286,7 +288,7 @@
 
 let queries = [
     { title: "Weekly Unique Comment Authors", query:
-    `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
+    `SELECT toMonday(created_at)::DateTime::INT AS t, exponentialMovingAverage({smooth:UInt32})(uniq(actor_login), t::Date::INT) OVER (ORDER BY t) AS authors
 FROM github_events
 WHERE repo_name = {repo:String}
 AND created_at >= {start:Date}
@@ -295,7 +297,7 @@ AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
 GROUP BY t
 ORDER BY t`},
     { title: "Weekly Unique Comments", query:
-    `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
+    `SELECT toMonday(created_at)::DateTime::INT AS t, exponentialMovingAverage({smooth:UInt32})(count(), t::Date::INT) OVER (ORDER BY t) AS events
 FROM github_events
 WHERE repo_name = {repo:String}
 AND created_at >= {start:Date}
@@ -304,7 +306,7 @@ AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
 GROUP BY t
 ORDER BY t`},
     { title: "Weekly Unique PR Authors", query:
-    `SELECT toMonday(created_at)::DateTime::INT AS t, uniq(actor_login) AS authors
+    `SELECT toMonday(created_at)::DateTime::INT AS t, exponentialMovingAverage({smooth:UInt32})(uniq(actor_login), t::Date::INT) OVER (ORDER BY t) AS authors
 FROM github_events
 WHERE repo_name = {repo:String}
 AND created_at >= {start:Date}
@@ -313,7 +315,7 @@ AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
 GROUP BY t
 ORDER BY t`},
     { title: "Weekly Unique PRs", query:
-    `SELECT toMonday(created_at)::DateTime::INT AS t, count() AS events
+    `SELECT toMonday(created_at)::DateTime::INT AS t, exponentialMovingAverage({smooth:UInt32})(count(), t::Date::INT) OVER (ORDER BY t) AS events
 FROM github_events
 WHERE repo_name = {repo:String}
 AND created_at >= {start:Date}
@@ -322,7 +324,7 @@ AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
 GROUP BY t
 ORDER BY t`},
     { title: "{repo} Daily Stars", query:
-    `SELECT toStartOfDay(created_at)::INT AS t, count() AS events
+    `SELECT toStartOfDay(created_at)::INT AS t, exponentialMovingAverage({smooth:UInt32})(count(), t::Date::INT) OVER (ORDER BY t) AS events
 FROM github_events
 WHERE repo_name = {repo:String}
 AND created_at >= {start:Date}
@@ -337,6 +339,7 @@ ORDER BY t`},
 let params = {
     start: '2015-01-01',
     repo: 'ClickHouse/ClickHouse',
+    smooth: 7
 };
 
 let theme = 'light';
@@ -389,11 +392,11 @@ function insertParam(name, value) {
 
     param_wrapper.appendChild(param_name);
     param_wrapper.appendChild(param_value);
-    document.getElementById('params').appendChild(param_wrapper);
+    document.getElementById('chart-params').appendChild(param_wrapper);
 }
 
 function buildParams() {
-    let params_elem = document.getElementById('params');
+    let params_elem = document.getElementById('chart-params');
     while (params_elem.firstChild) {
         params_elem.removeChild(params_elem.lastChild);
     }
@@ -407,7 +410,7 @@ function buildParams() {
     run.type = 'submit';
     run.value = 'Ok';
 
-    document.getElementById('params').appendChild(run);
+    document.getElementById('chart-params').appendChild(run);
 }
 
 function updateParams() {
@@ -515,9 +518,13 @@ function insertChart(i) {
     let trash_text = document.createTextNode('✕');
     trash.appendChild(trash_text);
     trash.addEventListener('click', e => {
-        chart.style.display = 'none';
-        queries.splice(i, 1);
-        plots.splice(i, 1);
+        /// Indices may change after deletion of other element, hence captured "i" may become incorrect.
+        let idx = plots.findIndex(plot => plot && chart == plot.over.closest('.chart'));
+        plots[idx].destroy();
+        plots[idx] = null;
+        plots.splice(idx, 1);
+        charts.removeChild(chart);
+        queries.splice(idx, 1);
         resize();
     });
 
@@ -608,7 +615,7 @@ async function draw(idx, chart, url_params, query) {
         url += `&user=${encodeURIComponent(user)}`;
     }
     if (password) {
-        password += `&password=${encodeURIComponent(password)}`;
+        url += `&password=${encodeURIComponent(password)}`;
     }
 
     let response, data, error;
