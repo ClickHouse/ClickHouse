@@ -64,6 +64,29 @@ CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(const Block & heade
 IProcessor::Status CreatingSetsOnTheFlyTransform::prepare()
 {
     auto status = ISimpleTransform::prepare();
+
+    if (status == Status::Finished && set)
+    {
+        if (input.isFinished())
+        {
+            set->finishInsert();
+            set->state = SetWithState::State::Finished;
+            LOG_DEBUG(log, "{}: finish building set for [{}] with {} rows, set size is {}",
+                getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
+        }
+        else
+        {
+            /// Should not happen because processor places before join that reads all the data
+            /// But let's hanlde this case just for safety.
+            set->state = SetWithState::State::Suspended;
+            LOG_DEBUG(log, "{}: Processor finished, but not all input was read, cancelling building set after using {}",
+                getDescription(), formatBytesHumanReadable(set->getTotalByteCount()));
+        }
+
+        /// Release pointer to make it possible destroy it by consumer
+        set.reset();
+    }
+
     return status;
 }
 
@@ -74,27 +97,16 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
 
     if (chunk.getNumRows())
     {
-        Columns key_cols = getColumnsByIndices(chunk, key_column_indices);
-        bool limit_exceeded = !set->insertFromBlock(key_cols);
+        Columns key_columns = getColumnsByIndices(chunk, key_column_indices);
+        bool limit_exceeded = !set->insertFromBlock(key_columns);
         if (limit_exceeded)
         {
             LOG_DEBUG(log, "{}: set limit exceeded, give up building set, after using {}",
                 getDescription(), formatBytesHumanReadable(set->getTotalByteCount()));
-            // set->clear();
+            // TODO(@vdimir): set->clear() ?
             set->state = SetWithState::State::Suspended;
             set.reset();
         }
-    }
-
-    if (input.isFinished())
-    {
-        set->finishInsert();
-        set->state = SetWithState::State::Finished;
-        LOG_DEBUG(log, "{}: finish building set for [{}] with {} rows, set size is {}",
-            getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
-
-        /// Release pointer to make it possible destroy it by consumer
-        set.reset();
     }
 }
 
