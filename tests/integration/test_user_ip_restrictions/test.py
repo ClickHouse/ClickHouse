@@ -11,10 +11,16 @@ node_ipv4 = cluster.add_instance(
     ipv4_address="10.5.172.77",  # Never copy-paste this line
 )
 client_ipv4_ok = cluster.add_instance(
-    "client_ipv4_ok", main_configs=[], user_configs=[], ipv4_address="10.5.172.10"  # Never copy-paste this line
+    "client_ipv4_ok",
+    main_configs=[],
+    user_configs=[],
+    ipv4_address="10.5.172.10",  # Never copy-paste this line
 )
 client_ipv4_ok_direct = cluster.add_instance(
-    "client_ipv4_ok_direct", main_configs=[], user_configs=[], ipv4_address="10.5.173.1"  # Never copy-paste this line
+    "client_ipv4_ok_direct",
+    main_configs=[],
+    user_configs=[],
+    ipv4_address="10.5.173.1",  # Never copy-paste this line
 )
 client_ipv4_ok_full_mask = cluster.add_instance(
     "client_ipv4_ok_full_mask",
@@ -23,7 +29,10 @@ client_ipv4_ok_full_mask = cluster.add_instance(
     ipv4_address="10.5.175.77",  # Never copy-paste this line
 )
 client_ipv4_bad = cluster.add_instance(
-    "client_ipv4_bad", main_configs=[], user_configs=[], ipv4_address="10.5.173.10"  # Never copy-paste this line
+    "client_ipv4_bad",
+    main_configs=[],
+    user_configs=[],
+    ipv4_address="10.5.173.10",  # Never copy-paste this line
 )
 
 node_ipv6 = cluster.add_instance(
