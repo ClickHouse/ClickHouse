@@ -119,16 +119,9 @@ On CentOS, RedHat run `sudo yum install cmake ninja-build`.
 
 If you use Arch or Gentoo, you probably know it yourself how to install CMake.
 
-For installing CMake and Ninja on Mac OS X first install Homebrew and then install everything else via brew:
-
-    /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-    brew install cmake ninja
-
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
-
 ## C++ Compiler {#c-compiler}
 
-Compilers Clang starting from version 11 is supported for building ClickHouse.
+Compilers Clang starting from version 12 is supported for building ClickHouse.
 
 Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
@@ -137,9 +130,6 @@ On Ubuntu/Debian you can use the automatic installation script (check [official 
 ```bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
-
-Mac OS X build is also supported. Just run `brew install llvm`
-
 
 ## The Building Process {#the-building-process}
 
@@ -279,16 +269,10 @@ Most probably some of the builds will fail at first times. This is due to the fa
 
 ## Faster builds for development: Split build configuration {#split-build}
 
-ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
+ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries, allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
 ```
--DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1
 ```
-
-Note that the split build has several drawbacks:
-* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
-* Risk of segfault if you run any of the programs while rebuilding the project.
-* You cannot run the integration tests since they only work a single complete binary.
-* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
 
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```

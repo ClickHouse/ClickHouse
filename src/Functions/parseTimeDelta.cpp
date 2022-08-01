@@ -18,7 +18,8 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::unordered_map<std::string_view, Float64> time_unit_to_float = {
+    const std::unordered_map<std::string_view, Float64> time_unit_to_float =
+    {
         {"years", 365 * 24 * 3600},
         {"year", 365 * 24 * 3600},
         {"yr", 365 * 24 * 3600},
@@ -50,6 +51,22 @@ namespace
         {"second", 1},
         {"sec", 1},
         {"s", 1},
+
+        {"milliseconds", 1e-3},
+        {"millisecond", 1e-3},
+        {"millisec", 1e-3},
+        {"ms", 1e-3},
+
+        {"microseconds", 1e-6},
+        {"microsecond", 1e-6},
+        {"microsec", 1e-6},
+        {"μs", 1e-6},
+        {"us", 1e-6},
+
+        {"nanoseconds", 1e-9},
+        {"nanosecond", 1e-9},
+        {"nanosec", 1e-9},
+        {"ns", 1e-9},
     };
 
     /** Prints amount of seconds in form of:
@@ -248,7 +265,7 @@ namespace
         static bool scanUnit(std::string_view & str, Int64 & index, Int64 last_pos)
         {
             int64_t begin_index = index;
-            while (index <= last_pos && isalpha(str[index]))
+            while (index <= last_pos && !isdigit(str[index]) && !isSeparator(str[index]))
             {
                 index++;
             }
@@ -271,19 +288,23 @@ namespace
             scanSpaces(str, index, last_pos);
 
             /// ignore separator
-            if (index <= last_pos
-                && (str[index] == ';' || str[index] == '-' || str[index] == '+' || str[index] == ',' || str[index] == ':'))
+            if (index <= last_pos && isSeparator(str[index]))
             {
                 index++;
             }
 
             scanSpaces(str, index, last_pos);
         }
+
+        static bool isSeparator(char symbol)
+        {
+            return symbol == ';' || symbol == '-' || symbol == '+' || symbol == ',' || symbol == ':' || symbol == ' ';
+        }
     };
 
 }
 
-void registerFunctionParseTimeDelta(FunctionFactory & factory)
+REGISTER_FUNCTION(ParseTimeDelta)
 {
     factory.registerFunction<FunctionParseTimeDelta>();
 }

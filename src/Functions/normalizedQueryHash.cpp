@@ -97,7 +97,7 @@ public:
 
 }
 
-void registerFunctionNormalizedQueryHash(FunctionFactory & factory)
+REGISTER_FUNCTION(NormalizedQueryHash)
 {
     factory.registerFunction<FunctionNormalizedQueryHash<true>>();
     factory.registerFunction<FunctionNormalizedQueryHash<false>>();

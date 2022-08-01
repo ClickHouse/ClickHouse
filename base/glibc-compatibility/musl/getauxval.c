@@ -10,6 +10,14 @@
 
 #define ARRAY_SIZE(a) sizeof((a))/sizeof((a[0]))
 
+/// Suppress TSan since it is possible for this code to be called from multiple threads,
+/// and initialization is safe to be done multiple times from multiple threads.
+#if defined(__clang__)
+#    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
+#else
+#    define NO_SANITIZE_THREAD
+#endif
+
 // We don't have libc struct available here.
 // Compute aux vector manually (from /proc/self/auxv).
 //
@@ -44,7 +52,7 @@ ssize_t __retry_read(int fd, void * buf, size_t count)
         return ret;
     }
 }
-unsigned long __getauxval_procfs(unsigned long type)
+unsigned long NO_SANITIZE_THREAD __getauxval_procfs(unsigned long type)
 {
     if (type == AT_SECURE)
     {
@@ -59,7 +67,7 @@ unsigned long __getauxval_procfs(unsigned long type)
 
     return __auxv_procfs[type];
 }
-static unsigned long __auxv_init_procfs(unsigned long type)
+static unsigned long NO_SANITIZE_THREAD __auxv_init_procfs(unsigned long type)
 {
     // For debugging:
     // - od -t dL /proc/self/auxv
@@ -82,6 +90,15 @@ static unsigned long __auxv_init_procfs(unsigned long type)
     _Static_assert(sizeof(aux) < 4096, "Unexpected sizeof(aux)");
     while (__retry_read(fd, &aux, sizeof(aux)) == sizeof(aux))
     {
+        if (aux.a_type == AT_NULL)
+        {
+            break;
+        }
+        if (aux.a_type == AT_IGNORE || aux.a_type == AT_IGNOREPPC)
+        {
+            continue;
+        }
+
         if (aux.a_type >= ARRAY_SIZE(__auxv_procfs))
         {
             fprintf(stderr, "AT_* is out of range: %li (maximum allowed is %zu)\n", aux.a_type, ARRAY_SIZE(__auxv_procfs));
@@ -89,8 +106,7 @@ static unsigned long __auxv_init_procfs(unsigned long type)
         }
         if (__auxv_procfs[aux.a_type])
         {
-            fprintf(stderr, "AUXV already has value (%zu)\n", __auxv_procfs[aux.a_type]);
-            abort();
+            /// It is possible due to race on initialization.
         }
         __auxv_procfs[aux.a_type] = aux.a_un.a_val;
     }
@@ -114,7 +130,7 @@ static unsigned long __auxv_init_procfs(unsigned long type)
 // LSan will not work with __auxv_init_environ(),
 // since it needs getauxval() before.
 //
-static size_t __find_auxv(unsigned long type)
+static size_t NO_SANITIZE_THREAD __find_auxv(unsigned long type)
 {
     size_t i;
     for (i = 0; __auxv_environ[i]; i += 2)
@@ -126,7 +142,7 @@ static size_t __find_auxv(unsigned long type)
     }
     return (size_t) -1;
 }
-unsigned long __getauxval_environ(unsigned long type)
+unsigned long NO_SANITIZE_THREAD __getauxval_environ(unsigned long type)
 {
     if (type == AT_SECURE)
         return __auxv_secure;
@@ -141,7 +157,7 @@ unsigned long __getauxval_environ(unsigned long type)
     errno = ENOENT;
     return 0;
 }
-static unsigned long  __auxv_init_environ(unsigned long type)
+static unsigned long NO_SANITIZE_THREAD __auxv_init_environ(unsigned long type)
 {
     if (!__environ)
     {

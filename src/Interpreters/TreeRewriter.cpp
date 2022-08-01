@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Common/checkStackSize.h>
+#include <Core/SettingsEnums.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
@@ -28,6 +29,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/RewriteOrderByVisitor.hpp>
+#include <Interpreters/replaceForPositionalArguments.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
@@ -611,13 +613,13 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
     auto & table_join = const_cast<ASTTablesInSelectQueryElement *>(node)->table_join->as<ASTTableJoin &>();
 
-    if (table_join.strictness == ASTTableJoin::Strictness::Unspecified &&
-        table_join.kind != ASTTableJoin::Kind::Cross)
+    if (table_join.strictness == JoinStrictness::Unspecified &&
+        table_join.kind != JoinKind::Cross)
     {
-        if (join_default_strictness == JoinStrictness::ANY)
-            table_join.strictness = ASTTableJoin::Strictness::Any;
-        else if (join_default_strictness == JoinStrictness::ALL)
-            table_join.strictness = ASTTableJoin::Strictness::All;
+        if (join_default_strictness == JoinStrictness::Any)
+            table_join.strictness = JoinStrictness::Any;
+        else if (join_default_strictness == JoinStrictness::All)
+            table_join.strictness = JoinStrictness::All;
         else
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty",
                             DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
@@ -625,19 +627,19 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
     if (old_any)
     {
-        if (table_join.strictness == ASTTableJoin::Strictness::Any &&
-            table_join.kind == ASTTableJoin::Kind::Inner)
+        if (table_join.strictness == JoinStrictness::Any &&
+            table_join.kind == JoinKind::Inner)
         {
-            table_join.strictness = ASTTableJoin::Strictness::Semi;
-            table_join.kind = ASTTableJoin::Kind::Left;
+            table_join.strictness = JoinStrictness::Semi;
+            table_join.kind = JoinKind::Left;
         }
 
-        if (table_join.strictness == ASTTableJoin::Strictness::Any)
-            table_join.strictness = ASTTableJoin::Strictness::RightAny;
+        if (table_join.strictness == JoinStrictness::Any)
+            table_join.strictness = JoinStrictness::RightAny;
     }
     else
     {
-        if (table_join.strictness == ASTTableJoin::Strictness::Any && table_join.kind == ASTTableJoin::Kind::Full)
+        if (table_join.strictness == JoinStrictness::Any && table_join.kind == JoinKind::Full)
             throw Exception("ANY FULL JOINs are not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
@@ -683,7 +685,7 @@ bool tryJoinOnConst(TableJoin & analyzed_join, ASTPtr & on_expression, ContextPt
     else
         return false;
 
-    if (!analyzed_join.forceHashJoin())
+    if (!analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "JOIN ON constant ({}) supported only with join algorithm 'hash'",
                         queryToString(on_expression));
@@ -719,7 +721,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
     else if (table_join.on_expression)
     {
-        bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
+        bool is_asof = (table_join.strictness == JoinStrictness::Asof);
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
         if (auto * or_func = table_join.on_expression->as<ASTFunction>(); or_func && or_func->name == "or")
@@ -770,7 +772,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                 data.asofToJoinKeys();
             }
 
-            if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
+            if (!analyzed_join.oneDisjunct() && !analyzed_join.isEnabledAlgorithm(JoinAlgorithm::HASH))
                 throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
         }
     }
@@ -1250,6 +1252,26 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     }
 
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
+
+
+    if (getContext()->getSettingsRef().enable_positional_arguments)
+    {
+        if (select_query->groupBy())
+        {
+            for (auto & expr : select_query->groupBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::GROUP_BY);
+        }
+        if (select_query->orderBy())
+        {
+            for (auto & expr : select_query->orderBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::ORDER_BY);
+        }
+        if (select_query->limitBy())
+        {
+            for (auto & expr : select_query->limitBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
+        }
+    }
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
