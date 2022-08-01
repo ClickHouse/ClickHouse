@@ -814,10 +814,10 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectOnePartitionTo
         return nullptr;
     if (!merge_entry)
     {
-        constexpr const char * message = "Cannot OPTIMIZE table: {} in background";
+        static constexpr const char * message = "Cannot OPTIMIZE table in background: {}";
         if (disable_reason.empty())
             disable_reason = "unknown reason";
-        LOG_INFO(log, fmt::runtime(message), disable_reason);
+        LOG_INFO(log, message, disable_reason);
     }
     return merge_entry;
 }
