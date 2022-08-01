@@ -16,9 +16,10 @@ option (ENABLE_SSE41 "Use SSE4.1 instructions on x86_64" 1)
 option (ENABLE_SSE42 "Use SSE4.2 instructions on x86_64" 1)
 option (ENABLE_PCLMULQDQ "Use pclmulqdq instructions on x86_64" 1)
 option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
-option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
+option (ENABLE_AVX "Use AVX instructions on x86_64" 1)
 option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 0)
 option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
+option (ENABLE_AVX512_VBMI "Use AVX512_VBMI instruction on x86_64 (depends on ENABLE_AVX512)" 0)
 option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
 option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
 option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
@@ -29,9 +30,13 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
 elseif (ARCH_AARCH64)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc+simd+crypto+dotprod+ssbs")
 
-else ()
+elseif (ARCH_PPC64LE)
+    # Note that gcc and clang have support for x86 SSE2 intrinsics when building for PowerPC
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+
+elseif (ARCH_AMD64)
     set (TEST_FLAG "-mssse3")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
@@ -58,10 +63,6 @@ else ()
     " HAVE_SSE41)
     if (HAVE_SSE41 AND ENABLE_SSE41)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
-
-    if (ARCH_PPC64LE)
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
     endif ()
 
     set (TEST_FLAG "-msse4.2")
@@ -93,7 +94,6 @@ else ()
     endif ()
 
     set (TEST_FLAG "-mpopcnt")
-
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
         int main() {
@@ -152,6 +152,20 @@ else ()
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 
+    set (TEST_FLAG "-mavx512vbmi")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            auto a = _mm512_permutexvar_epi8(__m512i(), __m512i());
+            (void)a;
+            return 0;
+        }
+    " HAVE_AVX512_VBMI)
+    if (HAVE_AVX512 AND ENABLE_AVX512 AND HAVE_AVX512_VBMI AND ENABLE_AVX512_VBMI)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()
+
     set (TEST_FLAG "-mbmi")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
@@ -186,6 +200,8 @@ else ()
             set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
         endif ()
     endif ()
+else ()
+    # RISC-V + exotic platforms
 endif ()
 
 cmake_pop_check_state ()

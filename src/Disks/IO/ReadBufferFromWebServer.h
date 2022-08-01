@@ -19,7 +19,8 @@ class ReadBufferFromWebServer : public SeekableReadBuffer
 {
 public:
     explicit ReadBufferFromWebServer(
-        const String & url_, ContextPtr context_,
+        const String & url_,
+        ContextPtr context_,
         const ReadSettings & settings_ = {},
         bool use_external_buffer_ = false,
         size_t read_until_position = 0);

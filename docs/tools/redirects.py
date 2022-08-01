@@ -27,45 +27,6 @@ def write_redirect_html(out_path, to_url):
         )
 
 
-def build_redirect_html(args, base_prefix, lang, output_dir, from_path, to_path):
-    out_path = os.path.join(
-        output_dir,
-        lang,
-        from_path.replace("/index.md", "/index.html").replace(".md", "/index.html"),
-    )
-    target_path = to_path.replace("/index.md", "/").replace(".md", "/")
-
-    if target_path[0:7] != "http://" and target_path[0:8] != "https://":
-        to_url = f"/{base_prefix}/{lang}/{target_path}"
-    else:
-        to_url = target_path
-
-    to_url = to_url.strip()
-    write_redirect_html(out_path, to_url)
-
-
-def build_docs_redirects(args):
-    with open(os.path.join(args.docs_dir, "redirects.txt"), "r") as f:
-        for line in f:
-            for lang in args.lang.split(","):
-                from_path, to_path = line.split(" ", 1)
-                build_redirect_html(
-                    args, "docs", lang, args.docs_output_dir, from_path, to_path
-                )
-
-
-def build_blog_redirects(args):
-    for lang in args.blog_lang.split(","):
-        redirects_path = os.path.join(args.blog_dir, lang, "redirects.txt")
-        if os.path.exists(redirects_path):
-            with open(redirects_path, "r") as f:
-                for line in f:
-                    from_path, to_path = line.split(" ", 1)
-                    build_redirect_html(
-                        args, "blog", lang, args.blog_output_dir, from_path, to_path
-                    )
-
-
 def build_static_redirects(args):
     for static_redirect in [
         ("benchmark.html", "/benchmark/dbms/"),

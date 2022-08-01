@@ -700,8 +700,8 @@ ColumnPtr FunctionArrayElement::executeArgument(
         || (res = executeConst<IndexType>(arguments, result_type, index_data, builder, input_rows_count))
         || (res = executeString<IndexType>(arguments, index_data, builder))
         || (res = executeGeneric<IndexType>(arguments, index_data, builder))))
-    throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Illegal column " + arguments[0].column->getName()
+                    + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     return res;
 }
@@ -1203,7 +1203,7 @@ ColumnPtr FunctionArrayElement::perform(const ColumnsWithTypeAndName & arguments
 }
 
 
-void registerFunctionArrayElement(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayElement)
 {
     factory.registerFunction<FunctionArrayElement>();
 }

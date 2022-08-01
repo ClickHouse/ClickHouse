@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class ReadProgressCallback;
+
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
 {
@@ -25,6 +27,9 @@ private:
     /// Exception from executing thread itself.
     std::exception_ptr exception;
 
+    /// Callback for read progress.
+    ReadProgressCallback * read_progress_callback = nullptr;
+
 public:
 #ifndef NDEBUG
     /// Time for different processing stages.
@@ -36,6 +41,7 @@ public:
 
     const size_t thread_number;
     const bool profile_processors;
+    const bool trace_processors;
 
     void wait(std::atomic_bool & finished);
     void wakeUp();
@@ -53,12 +59,14 @@ public:
 
     std::unique_lock<std::mutex> lockStatus() const { return std::unique_lock(node->status_mutex); }
 
-    void setException(std::exception_ptr exception_) { exception = std::move(exception_); }
+    void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_)
-        : thread_number(thread_number_)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback)
+        : read_progress_callback(callback)
+        , thread_number(thread_number_)
         , profile_processors(profile_processors_)
+        , trace_processors(trace_processors_)
     {}
 };
 

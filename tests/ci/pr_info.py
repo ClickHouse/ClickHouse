@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+from typing import Set
 
 from unidiff import PatchSet  # type: ignore
 
@@ -14,6 +15,7 @@ from env_helper import (
 )
 
 FORCE_TESTS_LABEL = "force tests"
+SKIP_SIMPLE_CHECK_LABEL = "skip simple check"
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -81,8 +83,10 @@ class PRInfo:
             else:
                 github_event = PRInfo.default_event.copy()
         self.event = github_event
-        self.changed_files = set()
+        self.changed_files = set()  # type: Set[str]
         self.body = ""
+        self.diff_urls = []
+        self.release_pr = ""
         ref = github_event.get("ref", "refs/head/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
@@ -148,7 +152,7 @@ class PRInfo:
                     response_json = user_orgs_response.json()
                     self.user_orgs = set(org["id"] for org in response_json)
 
-            self.diff_url = github_event["pull_request"]["diff_url"]
+            self.diff_urls.append(github_event["pull_request"]["diff_url"])
         elif "commits" in github_event:
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
@@ -165,7 +169,7 @@ class PRInfo:
                 self.base_name = self.repo_full_name
                 self.head_ref = ref
                 self.head_name = self.repo_full_name
-                self.diff_url = (
+                self.diff_urls.append(
                     f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
                     f"compare/{github_event['before']}...{self.sha}"
                 )
@@ -179,13 +183,33 @@ class PRInfo:
                 self.head_name = pull_request["head"]["repo"]["full_name"]
                 self.pr_html_url = pull_request["html_url"]
                 if "pr-backport" in self.labels:
-                    self.diff_url = (
+                    # head1...head2 gives changes in head2 since merge base
+                    # Thag's why we need {self.head_ref}...master to get
+                    # files changed in upstream AND master...{self.head_ref}
+                    # to get files, changed in current HEAD
+                    self.diff_urls.append(
                         f"https://github.com/{GITHUB_REPOSITORY}/"
                         f"compare/master...{self.head_ref}.diff"
                     )
+                    self.diff_urls.append(
+                        f"https://github.com/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master.diff"
+                    )
+                    # Get release PR number.
+                    self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
+                        "number"
+                    ]
                 else:
-                    self.diff_url = pull_request["diff_url"]
+                    self.diff_urls.append(pull_request["diff_url"])
+                if "release" in self.labels:
+                    # For release PRs we must get not only files changed in the PR
+                    # itself, but as well files changed since we branched out
+                    self.diff_urls.append(
+                        f"https://github.com/{GITHUB_REPOSITORY}/"
+                        f"compare/{self.head_ref}...master.diff"
+                    )
         else:
+            print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv("GITHUB_SHA")
             self.number = 0
@@ -204,23 +228,24 @@ class PRInfo:
             self.fetch_changed_files()
 
     def fetch_changed_files(self):
-        if not self.diff_url:
-            raise Exception("Diff URL cannot be find for event")
+        if not getattr(self, "diff_urls", False):
+            raise TypeError("The event does not have diff URLs")
 
-        response = get_with_retries(
-            self.diff_url,
-            sleep=RETRY_SLEEP,
-        )
-        response.raise_for_status()
-        if "commits" in self.event and self.number == 0:
-            diff = response.json()
+        for diff_url in self.diff_urls:
+            response = get_with_retries(
+                diff_url,
+                sleep=RETRY_SLEEP,
+            )
+            response.raise_for_status()
+            if "commits" in self.event and self.number == 0:
+                diff = response.json()
 
-            if "files" in diff:
-                self.changed_files = [f["filename"] for f in diff["files"]]
-        else:
-            diff_object = PatchSet(response.text)
-            self.changed_files = {f.path for f in diff_object}
-        print("Fetched info about %d changed files" % len(self.changed_files))
+                if "files" in diff:
+                    self.changed_files = {f["filename"] for f in diff["files"]}
+            else:
+                diff_object = PatchSet(response.text)
+                self.changed_files.update({f.path for f in diff_object})
+        print(f"Fetched info about {len(self.changed_files)} changed files")
 
     def get_dict(self):
         return {
@@ -252,7 +277,7 @@ class PRInfo:
             return True
 
         for f in self.changed_files:
-            if "contrib" in f:
+            if "contrib/" in f:
                 return True
         return False
 

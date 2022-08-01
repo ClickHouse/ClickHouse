@@ -92,9 +92,9 @@ value vs value
 0	1	1	UInt64	Decimal(18, 0)	Decimal(38, 0)
 0	1	1	UInt64	Decimal(38, 0)	Decimal(38, 0)
 1970-01-01	1970-01-02	1970-01-02	Date	Date	Date
-2000-01-01	2000-01-01 00:00:01	2000-01-01 00:00:01	Date	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')
-2000-01-01 00:00:00	2000-01-02	2000-01-02 00:00:00	DateTime(\'Europe/Moscow\')	Date	DateTime(\'Europe/Moscow\')
-1970-01-01 03:00:00	1970-01-01 03:00:01	1970-01-01 03:00:01	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')
+2000-01-01	2000-01-01 00:00:01	2000-01-01 00:00:01	Date	DateTime(\'Asia/Istanbul\')	DateTime(\'Asia/Istanbul\')
+2000-01-01 00:00:00	2000-01-02	2000-01-02 00:00:00	DateTime(\'Asia/Istanbul\')	Date	DateTime(\'Asia/Istanbul\')
+1970-01-01 02:00:00	1970-01-01 02:00:01	1970-01-01 02:00:01	DateTime(\'Asia/Istanbul\')	DateTime(\'Asia/Istanbul\')	DateTime(\'Asia/Istanbul\')
 column vs value
 0	1	1	Int8	Int8	Int8
 0	1	1	Int8	Int16	Int16
@@ -189,6 +189,6 @@ column vs value
 0	1	1	UInt64	Decimal(18, 0)	Decimal(38, 0)
 0	1	1	UInt64	Decimal(38, 0)	Decimal(38, 0)
 1970-01-01	1970-01-02	1970-01-02	Date	Date	Date
-2000-01-01	2000-01-01 00:00:01	2000-01-01 00:00:01	Date	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')
-2000-01-01 00:00:00	2000-01-02	2000-01-02 00:00:00	DateTime(\'Europe/Moscow\')	Date	DateTime(\'Europe/Moscow\')
-1970-01-01 03:00:00	1970-01-01 03:00:01	1970-01-01 03:00:01	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')	DateTime(\'Europe/Moscow\')
+2000-01-01	2000-01-01 00:00:01	2000-01-01 00:00:01	Date	DateTime(\'Asia/Istanbul\')	DateTime(\'Asia/Istanbul\')
+2000-01-01 00:00:00	2000-01-02	2000-01-02 00:00:00	DateTime(\'Asia/Istanbul\')	Date	DateTime(\'Asia/Istanbul\')
+1970-01-01 02:00:00	1970-01-01 02:00:01	1970-01-01 02:00:01	DateTime(\'Asia/Istanbul\')	DateTime(\'Asia/Istanbul\')	DateTime(\'Asia/Istanbul\')

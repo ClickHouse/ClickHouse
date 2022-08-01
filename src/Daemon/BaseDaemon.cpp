@@ -10,12 +10,12 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/resource.h>
-#if defined(__linux__)
+#if defined(OS_LINUX)
     #include <sys/prctl.h>
 #endif
-#include <errno.h>
-#include <string.h>
-#include <signal.h>
+#include <cerrno>
+#include <cstring>
+#include <csignal>
 #include <unistd.h>
 
 #include <typeinfo>
@@ -68,6 +68,15 @@
 
 namespace fs = std::filesystem;
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_SET_SIGNAL_HANDLER;
+        extern const int CANNOT_SEND_SIGNAL;
+    }
+}
+
 DB::PipeFDs signal_pipe;
 
 
@@ -76,8 +85,11 @@ DB::PipeFDs signal_pipe;
   */
 static void call_default_signal_handler(int sig)
 {
-    signal(sig, SIG_DFL);
-    raise(sig);
+    if (SIG_ERR == signal(sig, SIG_DFL))
+        DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+
+    if (0 != raise(sig))
+        DB::throwFromErrno("Cannot send signal.", DB::ErrorCodes::CANNOT_SEND_SIGNAL);
 }
 
 static const size_t signal_pipe_buf_size =
@@ -286,11 +298,11 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = thread_ptr->getQueryId().toString();
+            query_id = std::string(thread_ptr->getQueryId());
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
-                query = thread_group->query;
+                query = thread_group->one_line_query;
             }
 
             if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
@@ -340,26 +352,27 @@ private:
 
 #if defined(OS_LINUX)
         /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
+        /// Please keep the below log messages in-sync with the ones in programs/server/Server.cpp
         String calculated_binary_hash = getHashOfLoadedBinaryHex();
         if (daemon.stored_binary_hash.empty())
         {
-            LOG_FATAL(log, "Calculated checksum of the binary: {}."
-                " There is no information about the reference checksum.", calculated_binary_hash);
+            LOG_FATAL(log, "Integrity check of the executable skipped because the reference checksum could not be read."
+                " (calculated checksum: {})", calculated_binary_hash);
         }
         else if (calculated_binary_hash == daemon.stored_binary_hash)
         {
-            LOG_FATAL(log, "Checksum of the binary: {}, integrity check passed.", calculated_binary_hash);
+            LOG_FATAL(log, "Integrity check of the executable successfully passed (checksum: {})", calculated_binary_hash);
         }
         else
         {
-            LOG_FATAL(log, "Calculated checksum of the ClickHouse binary ({0}) does not correspond"
-                " to the reference checksum stored in the binary ({1})."
-                " It may indicate one of the following:"
-                " - the file was changed just after startup;"
-                " - the file is damaged on disk due to faulty hardware;"
-                " - the loaded executable is damaged in memory due to faulty hardware;"
+            LOG_FATAL(log, "Calculated checksum of the executable ({0}) does not correspond"
+                " to the reference checksum stored in the executable ({1})."
+                " This may indicate one of the following:"
+                " - the executable was changed just after startup;"
+                " - the executable was corrupted on disk due to faulty hardware;"
+                " - the loaded executable was corrupted in memory due to faulty hardware;"
                 " - the file was intentionally modified;"
-                " - logical error in code."
+                " - a logical error in the code."
                 , calculated_binary_hash, daemon.stored_binary_hash);
         }
 #endif
@@ -382,8 +395,14 @@ private:
 #if defined(SANITIZER)
 extern "C" void __sanitizer_set_death_callback(void (*)());
 
-static void sanitizerDeathCallback()
+/// Sanitizers may not expect some function calls from death callback.
+/// Let's try to disable instrumentation to avoid possible issues.
+/// However, this callback may call other functions that are still instrumented.
+/// We can try [[clang::always_inline]] attribute for statements in future (available in clang-15)
+/// See https://github.com/google/sanitizers/issues/1543 and https://github.com/google/sanitizers/issues/1549.
+static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     /// Also need to send data via pipe. Otherwise it may lead to deadlocks or failures in printing diagnostic info.
 
     char buf[signal_pipe_buf_size];
@@ -451,7 +470,7 @@ static std::string createDirectory(const std::string & file)
         return "";
     fs::create_directories(path);
     return path;
-};
+}
 
 
 static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
@@ -498,9 +517,8 @@ BaseDaemon::~BaseDaemon()
     signal_listener_thread.join();
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
-    {
-        signal(sig, SIG_DFL);
-    }
+        if (SIG_ERR == signal(sig, SIG_DFL))
+            DB::throwFromErrno("Cannot set signal handler.", DB::ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
     signal_pipe.close();
 }
 
@@ -794,7 +812,7 @@ static void addSignalHandler(const std::vector<int> & signals, signal_function h
 
     if (out_handled_signals)
         std::copy(signals.begin(), signals.end(), std::back_inserter(*out_handled_signals));
-};
+}
 
 
 static void blockSignals(const std::vector<int> & signals)
@@ -816,7 +834,7 @@ static void blockSignals(const std::vector<int> & signals)
 
     if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         throw Poco::Exception("Cannot block signal.");
-};
+}
 
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
@@ -847,7 +865,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     signal_listener = std::make_unique<SignalListener>(*this);
     signal_listener_thread.start(*signal_listener);
 
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
     String build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
     if (build_id_hex.empty())
         build_id_info = "no build id";
@@ -857,11 +875,11 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id_info = "no build id";
 #endif
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
 
     if (!executable_path.empty())
-        stored_binary_hash = DB::Elf(executable_path).getBinaryHash();
+        stored_binary_hash = DB::Elf(executable_path).getStoredBinaryHash();
 #endif
 }
 
@@ -912,7 +930,7 @@ void BaseDaemon::handleSignal(int signal_id)
         signal_id == SIGQUIT ||
         signal_id == SIGTERM)
     {
-        std::unique_lock<std::mutex> lock(signal_handler_mutex);
+        std::lock_guard lock(signal_handler_mutex);
         {
             ++terminate_signals_counter;
             sigint_signals_counter += signal_id == SIGINT;
@@ -975,7 +993,7 @@ void BaseDaemon::setupWatchdog()
         if (0 == pid)
         {
             logger().information("Forked a child process to watch");
-#if defined(__linux__)
+#if defined(OS_LINUX)
             if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
                 logger().warning("Cannot do prctl to ask termination with parent.");
 #endif

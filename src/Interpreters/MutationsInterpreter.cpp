@@ -28,6 +28,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
+#include <Storages/LightweightDeleteDescription.h>
 
 
 namespace DB
@@ -349,6 +350,14 @@ static void validateUpdateColumns(
             }
         }
 
+        /// Allow to override value of lightweight delete filter virtual column
+        if (!found && column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
+        {
+            if (!storage->supportsLightweightDelete())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
+            found = true;
+        }
+
         if (!found)
         {
             for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
@@ -502,7 +511,14 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 ///
                 /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
 
-                const auto & type = columns_desc.getPhysical(column).type;
+                DataTypePtr type;
+                if (auto physical_column = columns_desc.tryGetPhysical(column))
+                    type = physical_column->type;
+                else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
+                    type = LightweightDeleteDescription::FILTER_COLUMN.type;
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
+
                 auto type_literal = std::make_shared<ASTLiteral>(type->getName());
 
                 const auto & update_expr = kv.second;
@@ -740,7 +756,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto source = std::make_shared<NullSource>(first_stage_header);
                 plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source))));
                 auto pipeline = addStreamsForLaterStages(stages_copy, plan);
-                updated_header = std::make_unique<Block>(pipeline->getHeader());
+                updated_header = std::make_unique<Block>(pipeline.getHeader());
             }
 
             /// Special step to recalculate affected indices, projections and TTL expressions.
@@ -758,7 +774,16 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
 ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & prepared_stages, bool dry_run)
 {
-    NamesAndTypesList all_columns = metadata_snapshot->getColumns().getAllPhysical();
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    auto all_columns = storage_snapshot->getColumns(options);
+
+    /// Add _row_exists column if it is present in the part
+    if (auto part_storage = dynamic_pointer_cast<DB::StorageFromMergeTreeDataPart>(storage))
+    {
+        if (part_storage->hasLightweightDeletedMask())
+            all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
+    }
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
@@ -773,11 +798,11 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         if (i > 0)
             prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
 
-        if (prepared_stages[i].output_columns.size() < all_columns.size())
-        {
-            for (const auto & kv : prepared_stages[i].column_to_updated)
-                prepared_stages[i].output_columns.insert(kv.first);
-        }
+        /// Make sure that all updated columns are included into output_columns set.
+        /// This is important for a "hidden" column like _row_exists gets because it is a virtual column
+        /// and so it is not in the list of AllPhysical columns.
+        for (const auto & kv : prepared_stages[i].column_to_updated)
+            prepared_stages[i].output_columns.insert(kv.first);
     }
 
     /// Now, calculate `expressions_chain` for each stage except the first.
@@ -802,7 +827,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         /// e.g. ALTER referencing the same table in scalar subquery
         bool execute_scalar_subqueries = !dry_run;
         auto syntax_result = TreeRewriter(context).analyze(
-            all_asts, all_columns, storage, storage->getStorageSnapshot(metadata_snapshot, context),
+            all_asts, all_columns, storage, storage_snapshot,
             false, true, execute_scalar_subqueries);
 
         if (execute_scalar_subqueries && context->hasQueryContext())
@@ -888,7 +913,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
     return select;
 }
 
-QueryPipelineBuilderPtr MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
+QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (size_t i_stage = 1; i_stage < prepared_stages.size(); ++i_stage)
     {
@@ -922,11 +947,11 @@ QueryPipelineBuilderPtr MutationsInterpreter::addStreamsForLaterStages(const std
     QueryPlanOptimizationSettings do_not_optimize_plan;
     do_not_optimize_plan.optimize_plan = false;
 
-    auto pipeline = plan.buildQueryPipeline(
+    auto pipeline = std::move(*plan.buildQueryPipeline(
         do_not_optimize_plan,
-        BuildQueryPipelineSettings::fromContext(context));
+        BuildQueryPipelineSettings::fromContext(context)));
 
-    pipeline->addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<MaterializingTransform>(header);
     });
@@ -964,13 +989,24 @@ void MutationsInterpreter::validate()
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
-QueryPipeline MutationsInterpreter::execute()
+QueryPipelineBuilder MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
     if (!select_interpreter)
-        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
+    {
+        /// Skip to apply deleted mask for MutateSomePartColumn cases when part has lightweight delete.
+        if (!apply_deleted_mask)
+        {
+            auto context_for_reading = Context::createCopy(context);
+            context_for_reading->setApplyDeletedMask(apply_deleted_mask);
+            select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context_for_reading, storage, metadata_snapshot, select_limits);
+        }
+        else
+            select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
+    }
+
 
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);
@@ -979,20 +1015,18 @@ QueryPipeline MutationsInterpreter::execute()
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder->getHeader()))
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
     {
-        builder->addSimpleTransform([&](const Block & header)
+        builder.addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<CheckSortedTransform>(header, *sort_desc);
         });
     }
 
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-
     if (!updated_header)
-        updated_header = std::make_unique<Block>(pipeline.getHeader());
+        updated_header = std::make_unique<Block>(builder.getHeader());
 
-    return pipeline;
+    return builder;
 }
 
 Block MutationsInterpreter::getUpdatedHeader() const

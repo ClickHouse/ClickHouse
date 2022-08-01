@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/PerformanceAdaptors.h>
+#include <Interpreters/castColumn.h>
 #include <Common/TargetSpecific.h>
 #include <base/range.h>
 #include <cmath>
@@ -14,9 +15,11 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /** Calculates the distance between two geographical locations.
@@ -262,23 +265,47 @@ private:
         return std::make_shared<DataTypeFloat32>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto dst = ColumnVector<Float32>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        const IColumn & col_lon1 = *arguments[0].column;
-        const IColumn & col_lat1 = *arguments[1].column;
-        const IColumn & col_lon2 = *arguments[2].column;
-        const IColumn & col_lat2 = *arguments[3].column;
+        auto arguments_copy = arguments;
+        for (auto & argument : arguments_copy)
+        {
+            argument.column = argument.column->convertToFullColumnIfConst();
+            argument.column = castColumn(argument, result_type);
+            argument.type = result_type;
+        }
+
+        const auto * col_lon1 = convertArgumentColumnToFloat32(arguments_copy, 0);
+        const auto * col_lat1 = convertArgumentColumnToFloat32(arguments_copy, 1);
+        const auto * col_lon2 = convertArgumentColumnToFloat32(arguments_copy, 2);
+        const auto * col_lat2 = convertArgumentColumnToFloat32(arguments_copy, 3);
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+        {
             dst_data[row_num] = distance<method>(
-                col_lon1.getFloat32(row_num), col_lat1.getFloat32(row_num),
-                col_lon2.getFloat32(row_num), col_lat2.getFloat32(row_num));
+                col_lon1->getData()[row_num], col_lat1->getData()[row_num],
+                col_lon2->getData()[row_num], col_lat2->getData()[row_num]);
+        }
 
         return dst;
+    }
+
+    const ColumnFloat32 * convertArgumentColumnToFloat32(const ColumnsWithTypeAndName & arguments, size_t argument_index) const
+    {
+        const auto * column_typed = checkAndGetColumn<ColumnFloat32>(arguments[argument_index].column.get());
+        if (!column_typed)
+            throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal type {} of argument {} of function {}. Must be Float32.",
+                    arguments[argument_index].type->getName(),
+                    argument_index + 1,
+                    getName());
+
+        return column_typed;
     }
 };
 
@@ -317,7 +344,7 @@ private:
     ImplementationSelector<IFunction> selector;
 };
 
-void registerFunctionGeoDistance(FunctionFactory & factory)
+REGISTER_FUNCTION(GeoDistance)
 {
     geodistInit();
     factory.registerFunction<FunctionGeoDistance<Method::SPHERE_DEGREES>>();

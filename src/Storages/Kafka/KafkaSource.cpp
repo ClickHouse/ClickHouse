@@ -35,7 +35,7 @@ KafkaSource::KafkaSource(
     Poco::Logger * log_,
     size_t max_block_size_,
     bool commit_in_suffix_)
-    : SourceWithProgress(storage_snapshot_->getSampleBlockForColumns(columns))
+    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -58,6 +58,19 @@ KafkaSource::~KafkaSource()
         buffer->unsubscribe();
 
     storage.pushReadBuffer(buffer);
+}
+
+bool KafkaSource::checkTimeLimit() const
+{
+    if (max_execution_time != 0)
+    {
+        auto elapsed_ns = total_stopwatch.elapsed();
+
+        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+            return false;
+    }
+
+    return true;
 }
 
 Chunk KafkaSource::generateImpl()

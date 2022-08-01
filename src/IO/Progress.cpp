@@ -61,6 +61,10 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(this->written_bytes, out);
     writeCString("\",\"total_rows_to_read\":\"", out);
     writeText(this->total_rows_to_read, out);
+    writeCString("\",\"result_rows\":\"", out);
+    writeText(this->result_rows, out);
+    writeCString("\",\"result_bytes\":\"", out);
+    writeText(this->result_bytes, out);
     writeCString("\"}", out);
 }
 
@@ -68,13 +72,15 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
 {
     read_rows += rhs.read_rows;
     read_bytes += rhs.read_bytes;
-    read_raw_bytes += rhs.read_raw_bytes;
 
     total_rows_to_read += rhs.total_rows_to_read;
-    total_raw_bytes_to_read += rhs.total_raw_bytes_to_read;
+    total_bytes_to_read += rhs.total_bytes_to_read;
 
     written_rows += rhs.written_rows;
     written_bytes += rhs.written_bytes;
+
+    result_rows += rhs.result_rows;
+    result_bytes += rhs.result_bytes;
 
     return rhs.read_rows || rhs.written_rows;
 }
@@ -83,13 +89,15 @@ void Progress::reset()
 {
     read_rows = 0;
     read_bytes = 0;
-    read_raw_bytes = 0;
 
     total_rows_to_read = 0;
-    total_raw_bytes_to_read = 0;
+    total_bytes_to_read = 0;
 
     written_rows = 0;
     written_bytes = 0;
+
+    result_rows = 0;
+    result_bytes = 0;
 }
 
 ProgressValues Progress::getValues() const
@@ -98,30 +106,53 @@ ProgressValues Progress::getValues() const
 
     res.read_rows = read_rows.load(std::memory_order_relaxed);
     res.read_bytes = read_bytes.load(std::memory_order_relaxed);
-    res.read_raw_bytes = read_raw_bytes.load(std::memory_order_relaxed);
 
     res.total_rows_to_read = total_rows_to_read.load(std::memory_order_relaxed);
-    res.total_raw_bytes_to_read = total_raw_bytes_to_read.load(std::memory_order_relaxed);
+    res.total_bytes_to_read = total_bytes_to_read.load(std::memory_order_relaxed);
 
     res.written_rows = written_rows.load(std::memory_order_relaxed);
     res.written_bytes = written_bytes.load(std::memory_order_relaxed);
 
+    res.result_rows = result_rows.load(std::memory_order_relaxed);
+    res.result_bytes = result_bytes.load(std::memory_order_relaxed);
+
     return res;
 }
 
-ProgressValues Progress::fetchAndResetPiecewiseAtomically()
+ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
 {
     ProgressValues res;
 
     res.read_rows = read_rows.fetch_and(0);
     res.read_bytes = read_bytes.fetch_and(0);
-    res.read_raw_bytes = read_raw_bytes.fetch_and(0);
 
     res.total_rows_to_read = total_rows_to_read.fetch_and(0);
-    res.total_raw_bytes_to_read = total_raw_bytes_to_read.fetch_and(0);
+    res.total_bytes_to_read = total_bytes_to_read.fetch_and(0);
 
     res.written_rows = written_rows.fetch_and(0);
     res.written_bytes = written_bytes.fetch_and(0);
+
+    res.result_rows = result_rows.fetch_and(0);
+    res.result_bytes = result_bytes.fetch_and(0);
+
+    return res;
+}
+
+Progress Progress::fetchAndResetPiecewiseAtomically()
+{
+    Progress res;
+
+    res.read_rows = read_rows.fetch_and(0);
+    res.read_bytes = read_bytes.fetch_and(0);
+
+    res.total_rows_to_read = total_rows_to_read.fetch_and(0);
+    res.total_bytes_to_read = total_bytes_to_read.fetch_and(0);
+
+    res.written_rows = written_rows.fetch_and(0);
+    res.written_bytes = written_bytes.fetch_and(0);
+
+    res.result_rows = result_rows.fetch_and(0);
+    res.result_bytes = result_bytes.fetch_and(0);
 
     return res;
 }
@@ -130,13 +161,15 @@ Progress & Progress::operator=(Progress && other) noexcept
 {
     read_rows = other.read_rows.load(std::memory_order_relaxed);
     read_bytes = other.read_bytes.load(std::memory_order_relaxed);
-    read_raw_bytes = other.read_raw_bytes.load(std::memory_order_relaxed);
 
     total_rows_to_read = other.total_rows_to_read.load(std::memory_order_relaxed);
-    total_raw_bytes_to_read = other.total_raw_bytes_to_read.load(std::memory_order_relaxed);
+    total_bytes_to_read = other.total_bytes_to_read.load(std::memory_order_relaxed);
 
     written_rows = other.written_rows.load(std::memory_order_relaxed);
     written_bytes = other.written_bytes.load(std::memory_order_relaxed);
+
+    result_rows = other.result_rows.load(std::memory_order_relaxed);
+    result_bytes = other.result_bytes.load(std::memory_order_relaxed);
 
     return *this;
 }
@@ -149,6 +182,7 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
     read_rows.store(values.read_rows, std::memory_order_relaxed);
     read_bytes.store(values.read_bytes, std::memory_order_relaxed);
     total_rows_to_read.store(values.total_rows_to_read, std::memory_order_relaxed);
+
     written_rows.store(values.written_rows, std::memory_order_relaxed);
     written_bytes.store(values.written_bytes, std::memory_order_relaxed);
 }

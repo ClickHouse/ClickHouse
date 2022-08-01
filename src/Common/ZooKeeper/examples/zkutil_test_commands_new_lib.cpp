@@ -100,6 +100,7 @@ try
     std::cout << "list\n";
 
     zk.list("/",
+        Coordination::ListRequestType::ALL,
         [&](const ListResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)
