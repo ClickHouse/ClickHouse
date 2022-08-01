@@ -30,8 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using JoinKind = ASTTableJoin::Kind;
-
 namespace
 {
 
@@ -281,7 +279,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
 
     auto strictness = table_join->getTableJoin().strictness();
-    if (strictness != ASTTableJoin::Strictness::Any && strictness != ASTTableJoin::Strictness::All)
+    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for strictness {}", strictness);
 
     auto kind = table_join->getTableJoin().kind();
@@ -826,10 +824,10 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
     auto strictness = table_join->getTableJoin().strictness();
 
-    if (strictness == ASTTableJoin::Strictness::Any)
+    if (strictness == JoinStrictness::Any)
         return anyJoin(kind);
 
-    if (strictness == ASTTableJoin::Strictness::All)
+    if (strictness == JoinStrictness::All)
         return allJoin(kind);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported strictness '{}'", strictness);
@@ -855,7 +853,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    algorithm.logElapsed(total_stopwatch.elapsedSeconds(), true);
+    algorithm.logElapsed(total_stopwatch.elapsedSeconds());
 }
 
 }

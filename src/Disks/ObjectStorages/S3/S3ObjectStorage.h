@@ -11,6 +11,7 @@
 #include <aws/s3/model/HeadObjectResult.h>
 #include <aws/s3/model/ListObjectsV2Result.h>
 #include <Storages/StorageS3Settings.h>
+#include <Common/MultiVersion.h>
 
 
 namespace DB
@@ -142,6 +143,8 @@ public:
     String getCacheBasePath() const override;
 
 private:
+    ReadSettings patchSettings(const ReadSettings & read_settings) const;
+
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
     void setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_);

@@ -13,8 +13,8 @@
 
 #include <fcntl.h>
 #include <poll.h>
-#include <stdlib.h>
-#include <time.h>
+#include <cstdlib>
+#include <ctime>
 #include <unistd.h>
 
 #if defined (OS_LINUX)
@@ -101,7 +101,7 @@ int mainImpl(int argc, char ** argv)
     size_t ops = 0;
     while (ops < count)
     {
-        if (poll(&polls[0], descriptors, -1) <= 0)
+        if (poll(polls.data(), descriptors, -1) <= 0)
             throwFromErrno("poll failed", ErrorCodes::SYSTEM_ERROR);
         for (size_t i = 0; i < descriptors; ++i)
         {
@@ -123,12 +123,12 @@ int mainImpl(int argc, char ** argv)
 
             if (mode == MODE_READ)
             {
-                if (static_cast<int>(block_size) != pread(fds[i], &buf[0], block_size, offset))
+                if (static_cast<int>(block_size) != pread(fds[i], buf.data(), block_size, offset))
                     throwFromErrno("Cannot read", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
             }
             else
             {
-                if (static_cast<int>(block_size) != pwrite(fds[i], &buf[0], block_size, offset))
+                if (static_cast<int>(block_size) != pwrite(fds[i], buf.data(), block_size, offset))
                     throwFromErrno("Cannot write", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
             }
         }
