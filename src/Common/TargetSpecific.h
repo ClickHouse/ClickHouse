@@ -31,7 +31,7 @@
  * int funcImpl() {
  *     return 2;
  * }
- * ) // DECLARE_DEFAULT_CODE
+ * ) // DECLARE_AVX2_SPECIFIC_CODE
  *
  * int func() {
  * #if USE_MULTITARGET_CODE

@@ -479,17 +479,17 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 
 
 DECLARE_AVX512VBMI2_SPECIFIC_CODE(
-template <size_t ELEMENT_SIZE>
+template <size_t ELEMENT_WIDTH>
 inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
 {
     __m512i vsrc = _mm512_loadu_si512(src);
-    if (ELEMENT_SIZE == 1)
+    if constexpr (ELEMENT_WIDTH == 1)
         _mm512_mask_compressstoreu_epi8(dst, static_cast<__mmask64>(mask), vsrc);
-    else if (ELEMENT_SIZE == 2)
+    else if constexpr (ELEMENT_WIDTH == 2)
         _mm512_mask_compressstoreu_epi16(dst, static_cast<__mmask32>(mask), vsrc);
-    else if (ELEMENT_SIZE == 4)
+    else if constexpr (ELEMENT_WIDTH == 4)
         _mm512_mask_compressstoreu_epi32(dst, static_cast<__mmask16>(mask), vsrc);
-    else if (ELEMENT_SIZE == 8)
+    else if constexpr (ELEMENT_WIDTH == 8)
         _mm512_mask_compressstoreu_epi64(dst, static_cast<__mmask8>(mask), vsrc);
 }
 
@@ -497,9 +497,9 @@ template <typename T, typename Container, size_t SIMD_BYTES>
 inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
 {
     static constexpr size_t VEC_LEN = 64;   /// AVX512 vector length - 64 bytes
-    static constexpr size_t ELEMENT_SIZE = sizeof(T);
-    static constexpr size_t ELEMENT_PER_VEC = VEC_LEN / ELEMENT_SIZE;
-    static constexpr UInt64 kmask = 0xffffffffffffffff >> (64 - ELEMENT_PER_VEC);
+    static constexpr size_t ELEMENT_WIDTH = sizeof(T);
+    static constexpr size_t ELEMENTS_PER_VEC = VEC_LEN / ELEMENT_WIDTH;
+    static constexpr UInt64 KMASK = 0xffffffffffffffff >> (64 - ELEMENTS_PER_VEC);
 
     size_t current_offset = res_data.size();
     size_t reserve_size = res_data.size();
@@ -519,7 +519,7 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
         if (0xffffffffffffffff == mask)
         {
-            for (size_t i = 0; i < SIMD_BYTES; i += ELEMENT_PER_VEC)
+            for (size_t i = 0; i < SIMD_BYTES; i += ELEMENTS_PER_VEC)
                 _mm512_storeu_si512(reinterpret_cast<void *>(&res_data[current_offset + i]),
                         _mm512_loadu_si512(reinterpret_cast<const void *>(data_pos + i)));
             current_offset += SIMD_BYTES;
@@ -528,15 +528,15 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
         {
             if (mask)
             {
-                for (size_t i = 0; i < SIMD_BYTES; i += ELEMENT_PER_VEC)
+                for (size_t i = 0; i < SIMD_BYTES; i += ELEMENTS_PER_VEC)
                 {
-                    compressStoreAVX512<ELEMENT_SIZE>(reinterpret_cast<const void *>(data_pos + i),
-                            reinterpret_cast<void *>(&res_data[current_offset]), mask & kmask);
-                    current_offset += std::popcount(mask & kmask);
-                    /// prepare mask for next iter, if ELEMENT_PER_VEC = 64, no next iter
-                    if (ELEMENT_PER_VEC < 64)
+                    compressStoreAVX512<ELEMENT_WIDTH>(reinterpret_cast<const void *>(data_pos + i),
+                            reinterpret_cast<void *>(&res_data[current_offset]), mask & KMASK);
+                    current_offset += std::popcount(mask & KMASK);
+                    /// prepare mask for next iter, if ELEMENTS_PER_VEC = 64, no next iter
+                    if (ELEMENTS_PER_VEC < 64)
                     {
-                        mask >>= ELEMENT_PER_VEC;
+                        mask >>= ELEMENTS_PER_VEC;
                     }
                 }
             }
@@ -576,7 +576,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
 #if USE_MULTITARGET_CODE
-    if (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
+    if constexpr (sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8)
     {
         if (isArchSupported(TargetArch::AVX512VBMI2))
             TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_BYTES>(filt_pos, filt_end_aligned, data_pos, res_data);
