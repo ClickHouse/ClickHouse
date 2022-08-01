@@ -281,10 +281,11 @@
         </div>
     </form>
 </div>
-<div id="charts">
-</div>
+<div id="charts"></div>
 </body>
 <script>
+
+let host, user, password;
 
 let queries = [
     { title: "Weekly Unique Comment Authors", query:
@@ -355,7 +356,9 @@ document.getElementById('toggle-light').addEventListener('click', e => setTheme(
 document.getElementById('toggle-dark').addEventListener('click', e => setTheme('dark'));
 
 /// uPlot objects will go here.
-let plots = queries.map(e => null);
+let plots = [];
+/// chart div's will be here.
+let charts = document.getElementById('charts');
 
 /// This is not quite correct (we cannot really parse SQL with regexp) but tolerable.
 const query_param_regexp = /\{(\w+):[^}]+\}/g;
@@ -417,9 +420,6 @@ function updateParams() {
     [...document.getElementsByClassName('param')].forEach(e => { params[e.name] = e.value });
 }
 
-findParamsInQueries();
-buildParams();
-
 function getParamsForURL() {
     let url = '';
     for (let [name, value] of Object.entries(params)) {
@@ -427,8 +427,6 @@ function getParamsForURL() {
     };
     return url;
 }
-
-let charts = document.getElementById('charts');
 
 function insertChart(i) {
     let q = queries[i];
@@ -476,6 +474,7 @@ function insertChart(i) {
         findParamsInQuery(q.query);
         buildParams();
         draw(i, chart, getParamsForURL(), q.query);
+        saveState();
     }
 
     query_editor_confirm.addEventListener('click', editConfirm);
@@ -525,7 +524,10 @@ function insertChart(i) {
         plots.splice(idx, 1);
         charts.removeChild(chart);
         queries.splice(idx, 1);
+        findParamsInQueries();
+        buildParams();
         resize();
+        saveState();
     });
 
     edit_buttons.appendChild(edit);
@@ -538,10 +540,6 @@ function insertChart(i) {
 
     charts.appendChild(chart);
 };
-
-for (let i = 0; i < queries.length; ++i) {
-    insertChart(i);
-}
 
 document.getElementById('add').addEventListener('click', e => {
     queries.push({ title: '', query: '' });
@@ -606,9 +604,9 @@ async function draw(idx, chart, url_params, query) {
         plots[idx] = null;
     }
 
-    const host = document.getElementById('url').value;
-    const user = document.getElementById('user').value;
-    const password = document.getElementById('password').value;
+    host = document.getElementById('url').value;
+    user = document.getElementById('user').value;
+    password = document.getElementById('password').value;
 
     let url = `${host}?default_format=JSONCompactColumns`
     if (user) {
@@ -713,8 +711,47 @@ new ResizeObserver(resize).observe(document.body);
 document.getElementById('params').onsubmit = function(event) {
     updateParams();
     drawAll();
+    saveState();
     event.preventDefault();
 }
+
+
+function saveState() {
+    const state = { host: host, user: user, queries: queries, params: params };
+    history.pushState(state, '',
+        window.location.pathname + (window.location.search || '') + '#' + btoa(JSON.stringify(state)));
+}
+
+function regenerate() {
+    findParamsInQueries();
+    buildParams();
+
+    plots = queries.map(e => null);
+
+    while (charts.firstChild) {
+        charts.removeChild(charts.lastChild);
+    }
+
+    for (let i = 0; i < queries.length; ++i) {
+        insertChart(i);
+    }
+}
+
+window.onpopstate = function(event) {
+    if (!event.state) { return; }
+    ({host, user, queries, params} = event.state);
+
+    regenerate();
+    drawAll();
+};
+
+if (window.location.hash) {
+    try {
+        ({host, user, queries, params} = JSON.parse(atob(window.location.hash.substring(1))));
+    } catch {}
+}
+
+regenerate();
 
 let new_theme = window.localStorage.getItem('theme');
 if (new_theme && new_theme != theme) {
