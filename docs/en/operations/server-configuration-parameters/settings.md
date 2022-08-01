@@ -438,6 +438,18 @@ For more information, see the section “[Configuration files](../../operations/
 <include_from>/etc/metrica.xml</include_from>
 ```
 
+## interserver_listen_host {#interserver-listen-host}
+
+Restriction on hosts that can exchange data between ClickHouse servers.
+The default value equals to `listen_host` setting.
+
+Examples:
+
+``` xml
+<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
+<interserver_listen_host>10.0.0.1</interserver_listen_host>
+```
+
 ## interserver_http_port {#interserver-http-port}
 
 Port for exchanging data between ClickHouse servers.
