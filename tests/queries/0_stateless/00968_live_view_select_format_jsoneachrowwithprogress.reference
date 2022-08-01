@@ -1,4 +1,4 @@
 {"row":{"a":1}}
 {"row":{"a":2}}
 {"row":{"a":3}}
-{"progress":{"read_rows":"3","read_bytes":"36","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}}
+{"progress":{"read_rows":"3","read_bytes":"36","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","result_rows":"0","result_bytes":"0"}}
