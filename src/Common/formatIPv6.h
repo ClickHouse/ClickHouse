@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <string.h>
+#include <cstring>
 #include <algorithm>
 #include <utility>
 #include <base/range.h>

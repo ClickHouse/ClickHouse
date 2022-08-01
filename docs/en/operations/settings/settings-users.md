@@ -3,7 +3,7 @@ sidebar_position: 63
 sidebar_label: User Settings
 ---
 
-# User Settings {#user-settings}
+# User Settings
 
 The `users` section of the `user.xml` configuration file contains user settings.
 
@@ -29,7 +29,7 @@ Structure of the `users` section:
         <profile>profile_name</profile>
 
         <quota>default</quota>
-        <default_database>default<default_database>
+        <default_database>default</default_database>
         <databases>
             <database_name>
                 <table_name>

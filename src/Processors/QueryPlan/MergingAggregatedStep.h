@@ -1,4 +1,5 @@
 #pragma once
+#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 
@@ -14,10 +15,12 @@ class MergingAggregatedStep : public ITransformingStep
 public:
     MergingAggregatedStep(
         const DataStream & input_stream_,
-        AggregatingTransformParamsPtr params_,
+        Aggregator::Params params_,
+        bool final_,
         bool memory_efficient_aggregation_,
         size_t max_threads_,
-        size_t memory_efficient_merge_threads_);
+        size_t memory_efficient_merge_threads_,
+        bool should_produce_results_in_order_of_bucket_number_);
 
     String getName() const override { return "MergingAggregated"; }
 
@@ -27,10 +30,17 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    AggregatingTransformParamsPtr params;
+    void updateOutputStream() override;
+
+    Aggregator::Params params;
+    bool final;
     bool memory_efficient_aggregation;
     size_t max_threads;
     size_t memory_efficient_merge_threads;
+
+    /// It determines if we should resize pipeline to 1 at the end.
+    /// Needed in case of distributed memory efficient aggregation over distributed table.
+    const bool should_produce_results_in_order_of_bucket_number;
 };
 
 }

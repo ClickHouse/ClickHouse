@@ -12,11 +12,11 @@ struct NameNotLike
     static constexpr auto name = "notLike";
 };
 
-using FunctionNotLike = FunctionsStringSearch<MatchImpl<NameNotLike, true, true>>;
+using FunctionNotLike = FunctionsStringSearch<MatchImpl<NameNotLike, MatchTraits::Syntax::Like, MatchTraits::Case::Sensitive, MatchTraits::Result::Negate>>;
 
 }
 
-void registerFunctionNotLike(FunctionFactory & factory)
+REGISTER_FUNCTION(NotLike)
 {
     factory.registerFunction<FunctionNotLike>();
 }

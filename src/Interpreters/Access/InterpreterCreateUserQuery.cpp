@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-
 }
 namespace
 {
@@ -33,8 +32,8 @@ namespace
     {
         if (override_name)
             user.setName(override_name->toString());
-        else if (!query.new_name.empty())
-            user.setName(query.new_name);
+        else if (query.new_name)
+            user.setName(*query.new_name);
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 

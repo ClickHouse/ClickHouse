@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 set -ex
 
-BASE_DIR=$(dirname $(readlink -f $0))
+BASE_DIR=$(dirname "$(readlink -f "$0")")
 BUILD_DIR="${BASE_DIR}/../build"
 PUBLISH_DIR="${BASE_DIR}/../publish"
 BASE_DOMAIN="${BASE_DOMAIN:-content.clickhouse.com}"
-GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse-com-content.git}"
-GIT_PROD_URI="git@github.com:ClickHouse/clickhouse-website-content.git"
+GIT_PROD_URI="${GIT_PROD_URI:-git@github.com:ClickHouse/clickhouse-com-content.git}"
 EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---verbose}"
 
 if [[ -z "$1" ]]
 then
     source "${BASE_DIR}/venv/bin/activate"
+    # shellcheck disable=2086
     python3 "${BASE_DIR}/build.py" ${EXTRA_BUILD_ARGS}
     rm -rf "${PUBLISH_DIR}"
     mkdir "${PUBLISH_DIR}" && cd "${PUBLISH_DIR}"
 
     # Will make a repository with website content as the only commit.
     git init
-    git remote add origin "${GIT_TEST_URI}"
+    git remote add origin "${GIT_PROD_URI}"
     git config user.email "robot-clickhouse@clickhouse.com"
     git config user.name "robot-clickhouse"
 
@@ -28,7 +28,7 @@ then
     echo -n "" > README.md
     echo -n "" > ".nojekyll"
     cp "${BASE_DIR}/../../LICENSE" .
-    git add *
+    git add ./*
     git add ".nojekyll"
 
     git commit --quiet -m "Add new release at $(date)"
@@ -40,7 +40,7 @@ then
     # Turn off logging.
     set +x
 
-    if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
+    if [[ -n "${CLOUDFLARE_TOKEN}" ]]
     then
         sleep 1m
         # https://api.cloudflare.com/#zone-purge-files-by-cache-tags,-host-or-prefix

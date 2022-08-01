@@ -9,7 +9,7 @@ namespace DB
 
 using FunctiontimezoneOffset = FunctionDateOrDateTimeToSomething<DataTypeInt32, TimezoneOffsetImpl>;
 
-void registerFunctiontimezoneOffset(FunctionFactory & factory)
+REGISTER_FUNCTION(timezoneOffset)
 {
     factory.registerFunction<FunctiontimezoneOffset>();
     factory.registerAlias("timeZoneOffset", "timezoneOffset");

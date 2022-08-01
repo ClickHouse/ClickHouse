@@ -987,6 +987,8 @@ private:
         if (last_short_circuit_argument_index == -1)
             return;
 
+        executeColumnIfNeeded(arguments[0]);
+
         /// Check if condition is const or null to not create full mask from it.
         if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
         {
@@ -1118,7 +1120,7 @@ public:
 
 }
 
-void registerFunctionIf(FunctionFactory & factory)
+REGISTER_FUNCTION(If)
 {
     factory.registerFunction<FunctionIf>(FunctionFactory::CaseInsensitive);
 }

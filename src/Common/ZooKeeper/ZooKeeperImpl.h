@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
@@ -7,6 +8,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Coordination/KeeperConstants.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -160,6 +162,7 @@ public:
 
     void list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) override;
 
@@ -168,9 +171,15 @@ public:
         int32_t version,
         CheckCallback callback) override;
 
+    void sync(
+         const String & path,
+         SyncCallback callback) override;
+
     void multi(
         const Requests & requests,
         MultiCallback callback) override;
+
+    DB::KeeperApiVersion getApiVersion() override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -226,13 +235,13 @@ private:
 
     using Operations = std::map<XID, RequestInfo>;
 
-    Operations operations;
+    Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
     using WatchCallbacks = std::vector<WatchCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
-    Watches watches;
+    Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
     ThreadFromGlobalPool send_thread;
@@ -265,10 +274,14 @@ private:
     template <typename T>
     void read(T &);
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false);
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
+
+    void initApiVersion();
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
+
+    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
 };
 
 }

@@ -15,8 +15,7 @@
 
 namespace DB
 {
-namespace JoinStuff
-{
+
 /**
  * Can run addJoinedBlock() parallelly to speedup the join process. On test, it almose linear speedup by
  * the degree of parallelism.
@@ -33,6 +32,7 @@ namespace JoinStuff
  */
 class ConcurrentHashJoin : public IJoin
 {
+
 public:
     explicit ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, size_t slots_, const Block & right_sample_block, bool any_take_last_row_ = false);
     ~ConcurrentHashJoin() override = default;
@@ -49,6 +49,7 @@ public:
     bool supportParallelJoin() const override { return true; }
     std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+
 private:
     struct InternalHashJoin
     {
@@ -61,15 +62,12 @@ private:
     size_t slots;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
 
-    std::mutex finished_add_joined_blocks_tasks_mutex;
-    std::condition_variable finished_add_joined_blocks_tasks_cond;
-    std::atomic<UInt32> finished_add_joined_blocks_tasks = 0;
-
-    mutable std::mutex totals_mutex;
+    std::mutex totals_mutex;
     Block totals;
 
+    IColumn::Selector selectDispatchBlock(const Strings & key_columns_names, const Block & from_block);
     Blocks dispatchBlock(const Strings & key_columns_names, const Block & from_block);
 
 };
-}
+
 }

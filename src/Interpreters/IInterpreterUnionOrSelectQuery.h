@@ -8,12 +8,18 @@
 
 namespace DB
 {
+
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
+        : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
+    {
+    }
+
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
         : query_ptr(query_ptr_)
-        , context(Context::createCopy(context_))
+        , context(context_)
         , options(options_)
         , max_streams(context->getSettingsRef().max_threads)
     {
@@ -32,7 +38,7 @@ public:
 
     virtual void ignoreWithTotals() = 0;
 
-    virtual ~IInterpreterUnionOrSelectQuery() override = default;
+    ~IInterpreterUnionOrSelectQuery() override = default;
 
     Block getSampleBlock() { return result_header; }
 
@@ -49,15 +55,26 @@ public:
     /// You can find more details about this under ExecuteScalarSubqueriesMatcher::visit
     bool usesViewSource() const { return uses_view_source; }
 
+    /// Add limits from external query.
+    void addStorageLimits(const StorageLimitsList & limits);
+
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;
     Block result_header;
     SelectQueryOptions options;
+    StorageLimitsList storage_limits;
+
     size_t max_streams = 1;
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
     bool uses_view_source = false;
+
+    /// Set quotas to query pipeline.
+    void setQuota(QueryPipeline & pipeline) const;
+    /// Add filter from additional_post_filter setting.
+    void addAdditionalPostFilter(QueryPlan & plan) const;
+
+    static StorageLimits getStorageLimits(const Context & context, const SelectQueryOptions & options);
 };
 }
-

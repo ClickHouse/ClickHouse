@@ -13,7 +13,7 @@
 #include <IO/BitHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <string.h>
+#include <cstring>
 #include <algorithm>
 #include <cstdlib>
 #include <type_traits>

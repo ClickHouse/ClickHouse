@@ -15,6 +15,8 @@ CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecon
 CREATE TABLE test_01048.`.inner.wv`\n(\n    `b` Int32,\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (b, `windowID(timestamp, toIntervalSecond(\'1\'))`)\nSETTINGS index_granularity = 8192
 ||---JOIN---
 CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32),\n    `count(mt_2.b)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'))`\nSETTINGS index_granularity = 8192
+||---POPULATE JOIN---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32),\n    `count(mt_2.b)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'))`\nSETTINGS index_granularity = 8192
 ---HOP---
 ||---WINDOW COLUMN NAME---
 CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(1), toIntervalSecond(3))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(1), toIntervalSecond(3))`\nSETTINGS index_granularity = 8192
@@ -31,4 +33,6 @@ CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecon
 ||---DATA COLUMN ALIAS---
 CREATE TABLE test_01048.`.inner.wv`\n(\n    `b` Int32,\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY (b, `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`)\nSETTINGS index_granularity = 8192
 ||---JOIN---
+CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32),\n    `count(mt_2.b)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`\nSETTINGS index_granularity = 8192
+||---POPULATE JOIN---
 CREATE TABLE test_01048.`.inner.wv`\n(\n    `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))` UInt32,\n    `count(a)` AggregateFunction(count, Int32),\n    `count(mt_2.b)` AggregateFunction(count, Int32)\n)\nENGINE = AggregatingMergeTree\nORDER BY `windowID(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\'))`\nSETTINGS index_granularity = 8192

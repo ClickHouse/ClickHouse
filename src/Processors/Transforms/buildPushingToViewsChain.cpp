@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -314,7 +315,7 @@ Chain buildPushingToViewsChain(
             runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
             query = window_view->getMergeableQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
-                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
+                dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms);
         }
         else
             out = buildPushingToViewsChain(
@@ -392,7 +393,7 @@ Chain buildPushingToViewsChain(
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
     {
-        auto sink = std::make_shared<PushingToWindowViewSink>(live_view_header, *window_view, storage, context);
+        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }
@@ -429,6 +430,7 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
     InterpreterSelectQuery select(view.query, local_context, SelectQueryOptions());
     auto pipeline = select.buildQueryPipeline();
     pipeline.resize(1);
+    pipeline.dropTotalsAndExtremes();
 
     /// Squashing is needed here because the materialized view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
