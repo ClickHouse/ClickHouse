@@ -347,22 +347,16 @@ int main(int/* argc*/, char* argv[])
     if (0 != close(input_fd))
         perror(nullptr);
 
-    if (!have_compressed_analoge)
+    if (unlink(argv[0]))
     {
-        printf("No target executable - decompression only was performed.\n");
-        /// remove file
-        execlp("rm", "rm", argv[0], NULL);
         perror(nullptr);
         return 1;
     }
+
+    if (!have_compressed_analoge)
+        printf("No target executable - decompression only was performed.\n");
     else
     {
-        if (unlink(argv[0]))
-        {
-            perror(nullptr);
-            return 1;
-        }
-
         const char * const decompressed_name_fmt = "%s.decompressed.%s";
         int decompressed_name_len = snprintf(nullptr, 0, decompressed_name_fmt, argv[0], decompressed_suffix);
         char decompressed_name[decompressed_name_len + 1];
