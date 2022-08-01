@@ -256,10 +256,6 @@
 [submodule "contrib/azure"]
 	path = contrib/azure
 	url = https://github.com/ClickHouse/azure-sdk-for-cpp.git
-[submodule "contrib/BLAKE3"]
-	path = contrib/BLAKE3
-	url = https://github.com/BoloniniD/BLAKE3.git
-	branch = RustFFI-compat
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
