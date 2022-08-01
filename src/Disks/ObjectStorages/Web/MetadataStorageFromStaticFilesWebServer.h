@@ -3,6 +3,7 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
+#include <Disks/IDisk.h>
 
 
 namespace DB
