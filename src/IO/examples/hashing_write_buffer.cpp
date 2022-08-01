@@ -29,6 +29,8 @@ static void test(size_t data_size)
             pos += len;
         }
 
+        buf.finalize();
+
         if (buf.getHash() != reference)
             FAIL("failed on data size " << data_size << " writing rngom chunks of up to 10000 bytes");
     }
@@ -43,6 +45,8 @@ static void test(size_t data_size)
             buf.next();
             pos += len;
         }
+
+        buf.finalize();
 
         if (buf.getHash() != reference)
             FAIL("failed on data size " << data_size << " writing rngom chunks of up to 5 bytes");
@@ -59,6 +63,8 @@ static void test(size_t data_size)
             pos += len;
         }
 
+        buf.finalize();
+
         if (buf.getHash() != reference)
             FAIL("failed on data size " << data_size << " writing rngom chunks of 2048 +-1 bytes");
     }
@@ -68,9 +74,13 @@ static void test(size_t data_size)
 
         buf.write(data, data_size);
 
+        buf.finalize();
+
         if (buf.getHash() != reference)
             FAIL("failed on data size " << data_size << " writing all at once");
     }
+
+    sink.finalize();
 }
 
 int main()

@@ -88,6 +88,12 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
         addStreams(it, columns.getCodecDescOrDefault(it.name, default_codec));
 }
 
+MergeTreeDataPartWriterWide::~MergeTreeDataPartWriterWide()
+{
+    for (auto & stream : column_streams)
+        stream.second->finalize();
+}
+
 void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & column,
     const ASTPtr & effective_codec_desc)

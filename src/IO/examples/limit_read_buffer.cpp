@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
 #include <IO/WriteHelpers.h>
+#include <base/scope_guard.h>
 
 
 int main(int argc, char ** argv)
@@ -21,6 +22,7 @@ int main(int argc, char ** argv)
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    SCOPE_EXIT(out.finalize());
 
     writeCString("--- first ---\n", out);
     {

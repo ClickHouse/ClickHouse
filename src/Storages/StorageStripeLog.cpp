@@ -216,16 +216,31 @@ public:
 
     void consume(Chunk chunk) override
     {
+        std::lock_guard lock_cancel(cancel_mutex);
         block_out->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    }
+
+    void onException() override
+    {
+        std::lock_guard lock_cancel(cancel_mutex);
+        data_out->finalize();
+        data_out_compressed->finalize();
+    }
+
+    void onCancel() override
+    {
+        std::lock_guard lock_cancel(cancel_mutex);
+        data_out->finalize();
+        data_out_compressed->finalize();
     }
 
     void onFinish() override
     {
+        std::lock_guard lock_cancel(cancel_mutex);
         if (done)
             return;
 
-        data_out->next();
-        data_out_compressed->next();
+        data_out->finalize();
         data_out_compressed->finalize();
 
         /// Save the new indices.
@@ -254,6 +269,8 @@ private:
     std::unique_ptr<NativeWriter> block_out;
 
     bool done = false;
+
+    std::mutex cancel_mutex;
 };
 
 
@@ -472,8 +489,7 @@ void StorageStripeLog::saveIndices(const WriteLock & /* already locked for writi
     for (size_t i = start; i != num_indices; ++i)
         indices.blocks[i].write(*index_out);
 
-    index_out->next();
-    index_out_compressed->next();
+    index_out->finalize();
     index_out_compressed->finalize();
 
     num_indices_saved = num_indices;
@@ -625,6 +641,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
             copyData(*in, *out);
+            out->finalize();
         }
 
         /// Append the index.

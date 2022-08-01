@@ -333,6 +333,7 @@ int main(int argc, char ** argv)
             slave.startBinlogDumpGTID(slave_id, replicate_db, {}, gtid_sets, binlog_checksum);
 
             WriteBufferFromOStream cerr(std::cerr);
+            SCOPE_EXIT(cerr.finalize());
 
             /// Read one binlog event on by one.
             while (true)

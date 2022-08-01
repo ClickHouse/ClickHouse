@@ -229,6 +229,7 @@ QueryPipeline LibraryBridgeHelper::loadKeys(const Block & requested_block)
         WriteBufferFromOStream out_buffer(os);
         auto output_format = getContext()->getOutputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
         formatBlock(output_format, requested_block);
+        out_buffer.finalize();
     };
     return QueryPipeline(loadBase(uri, out_stream_callback));
 }

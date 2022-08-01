@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
 
+#include <base/scope_guard.h>
+
 /** This example shows how we can proxy stdin to ShellCommand and obtain stdout in streaming fashion. */
 
 int main(int argc, char ** argv)
@@ -25,6 +27,7 @@ try
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
     WriteBufferFromFileDescriptor err(STDERR_FILENO);
+    SCOPE_EXIT(out.finalize(); err.finalize());
 
     /// Background thread sends data and foreground thread receives result.
 

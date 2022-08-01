@@ -5,7 +5,7 @@
 namespace DB
 {
 
-WriteBuffer LazyOutputFormat::out(nullptr, 0);
+WriteBufferWithoutFinalize LazyOutputFormat::out(nullptr, 0);
 
 Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
 {

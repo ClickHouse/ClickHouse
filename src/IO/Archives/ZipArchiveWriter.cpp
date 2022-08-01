@@ -112,17 +112,6 @@ public:
             /* zip64= */ true));
     }
 
-    ~WriteBufferFromZipArchive() override
-    {
-        try
-        {
-            finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException("ZipArchiveWriter");
-        }
-    }
 
     void sync() override { next(); }
     std::string getFileName() const override { return filename; }

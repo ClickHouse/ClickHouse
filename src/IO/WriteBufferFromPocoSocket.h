@@ -11,7 +11,7 @@ namespace DB
 
 /** Works with the ready Poco::Net::Socket. Blocking operations.
   */
-class WriteBufferFromPocoSocket : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromPocoSocket : public BufferWithOwnMemory<WriteBufferWithoutFinalize>
 {
 public:
     explicit WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);

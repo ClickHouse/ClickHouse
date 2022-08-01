@@ -130,6 +130,14 @@ public:
         return start_index;
     }
 
+    void finalize()
+    {
+        if (compressed_buffer)
+            compressed_buffer->finalize();
+        else
+            file_buf->finalize();
+    }
+
 private:
     WriteBuffer & getBuffer()
     {
@@ -753,6 +761,9 @@ void Changelog::flush()
 
 void Changelog::shutdown()
 {
+    if (current_writer)
+        current_writer->finalize();
+
     if (!log_files_to_delete_queue.isFinished())
         log_files_to_delete_queue.finish();
 

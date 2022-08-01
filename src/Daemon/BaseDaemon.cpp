@@ -109,7 +109,7 @@ static void writeSignalIDtoSignalPipe(int sig)
     char buf[signal_pipe_buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
     DB::writeBinary(sig, out);
-    out.next();
+    out.finalize();
 
     errno = saved_errno;
 }
@@ -148,7 +148,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     DB::writeBinary(static_cast<UInt32>(getThreadId()), out);
     DB::writePODBinary(DB::current_thread, out);
 
-    out.next();
+    out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
@@ -416,7 +416,7 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     DB::writeBinary(UInt32(getThreadId()), out);
     DB::writePODBinary(DB::current_thread, out);
 
-    out.next();
+    out.finalize();
 
     /// The time that is usually enough for separate thread to print info into log.
     sleepForSeconds(20);
@@ -457,7 +457,7 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
     DB::writeBinary(static_cast<UInt32>(getThreadId()), out);
     DB::writeBinary(log_message, out);
-    out.next();
+    out.finalize();
 
     abort();
 }

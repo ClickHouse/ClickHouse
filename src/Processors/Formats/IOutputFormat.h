@@ -57,6 +57,8 @@ public:
 
     void finalize();
 
+    virtual void finalizeBuffers() {}
+
     virtual bool expectMaterializedColumns() const { return true; }
 
     void setTotals(const Block & totals)

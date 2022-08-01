@@ -270,7 +270,11 @@ public:
 };
 
 
-ClientBase::~ClientBase() = default;
+ClientBase::~ClientBase()
+{
+    std_out.finalize();
+}
+
 ClientBase::ClientBase() = default;
 
 
@@ -328,7 +332,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
         std::cout << std::endl;
         WriteBufferFromOStream res_buf(std::cout, 4096);
         formatAST(*res, res_buf);
-        res_buf.next();
+        res_buf.finalize();
         std::cout << std::endl << std::endl;
     }
 
@@ -1023,13 +1027,13 @@ void ClientBase::resetOutput()
 
     if (out_file_buf)
     {
-        out_file_buf->next();
+        out_file_buf->finalize();
         out_file_buf.reset();
     }
 
     if (out_logs_buf)
     {
-        out_logs_buf->next();
+        out_logs_buf->finalize();
         out_logs_buf.reset();
     }
 

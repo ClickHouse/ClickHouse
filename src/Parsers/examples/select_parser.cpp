@@ -28,6 +28,7 @@ try
     std::cout << "Success." << std::endl;
     WriteBufferFromOStream out(std::cerr, 4096);
     formatAST(*ast, out);
+    out.finalize();
     std::cout << std::endl;
 
     return 0;

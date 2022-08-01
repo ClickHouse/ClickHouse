@@ -41,11 +41,6 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
             ErrorCodes::LZ4_ENCODER_FAILED);
 }
 
-Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()
-{
-    finalize();
-}
-
 void Lz4DeflatingWriteBuffer::nextImpl()
 {
     if (!offset())

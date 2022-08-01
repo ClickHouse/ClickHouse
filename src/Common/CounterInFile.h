@@ -106,6 +106,7 @@ public:
                 DB::writeIntText(res, wb);
                 DB::writeChar('\n', wb);
                 wb.sync();
+                wb.finalize();
             }
 
             locked_callback(res);
@@ -176,6 +177,7 @@ public:
                 DB::writeIntText(value, wb);
                 DB::writeChar('\n', wb);
                 wb.sync();
+                wb.finalize();
             }
         }
         catch (...)

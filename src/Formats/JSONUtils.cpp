@@ -593,6 +593,7 @@ namespace JSONUtils
             {
                 WriteBufferValidUTF8 validating_buf(buf);
                 writeJSONString(field.name, validating_buf, settings);
+                validating_buf.finalize();
             }
             field.name = buf.str().substr(1, buf.str().size() - 2);
         }

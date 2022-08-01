@@ -38,6 +38,20 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
 }
 
+MergeTreeDataPartWriterCompact::~MergeTreeDataPartWriterCompact()
+{
+    for (auto & [_, stream] : compressed_streams)
+    {
+        stream->hashing_buf.finalize();
+        stream->compressed_buf.finalize();
+    }
+
+    plain_hashing.finalize();
+    plain_file->finalize();
+    marks.finalize();
+    marks_file->finalize();
+}
+
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
@@ -260,7 +274,15 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(IMergeTreeDataPart::Check
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 {
+    for (auto & [_, stream] : compressed_streams)
+    {
+        stream->hashing_buf.finalize();
+        stream->compressed_buf.finalize();
+    }
+
+    plain_hashing.finalize();
     plain_file->finalize();
+    marks.finalize();
     marks_file->finalize();
     if (sync)
     {

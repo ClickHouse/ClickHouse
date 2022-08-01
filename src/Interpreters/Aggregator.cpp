@@ -1526,8 +1526,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     }
 
     block_out.flush();
-    compressed_buf.next();
-    file_buf.next();
+    compressed_buf.finalize();
+    file_buf.finalize();
 
     double elapsed_seconds = watch.elapsedSeconds();
     double compressed_bytes = file_buf.count();

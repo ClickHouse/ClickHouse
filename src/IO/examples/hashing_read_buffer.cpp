@@ -27,7 +27,8 @@ static void test(size_t data_size)
         DB::WriteBufferFromOStream out_impl(io);
         DB::HashingWriteBuffer out(out_impl);
         out.write(data, data_size);
-        out.next();
+        out.finalize();
+        out_impl.finalize();
 
         DB::ReadBufferFromIStream source(io, read_buffer_block_size);
         DB::HashingReadBuffer buf(source);

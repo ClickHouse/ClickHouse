@@ -52,9 +52,10 @@ protected:
     virtual void onConsume(Chunk chunk) = 0;
     virtual GenerateResult onGenerate() = 0;
     virtual void onFinish() {}
-    virtual void onException() {}
 
 public:
+    virtual void onException() {}
+
     ExceptionKeepingTransform(const Block & in_header, const Block & out_header, bool ignore_on_start_and_finish_ = true);
 
     Status prepare() override;

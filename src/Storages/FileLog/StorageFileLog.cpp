@@ -237,6 +237,7 @@ void StorageFileLog::serialize() const
         writeIntText(inode, out);
         writeChar('\n', out);
         writeIntText(meta.last_writen_position, out);
+        out.finalize();
     }
 }
 
@@ -259,6 +260,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
     writeIntText(inode, out);
     writeChar('\n', out);
     writeIntText(file_meta.last_writen_position, out);
+    out.finalize();
 }
 
 void StorageFileLog::deserialize()

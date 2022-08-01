@@ -59,7 +59,11 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
 }
 
-Connection::~Connection() = default;
+Connection::~Connection()
+{
+    if (maybe_compressed_out && is_compressed)
+        maybe_compressed_out->finalize();
+}
 
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
@@ -199,10 +203,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
 void Connection::disconnect()
 {
+    if (maybe_compressed_out && is_compressed)
+        maybe_compressed_out->finalize();
     maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
-    out = nullptr; // can write to socket
+    if (out)
+        out->finalize(); // can write to socket
+    out = nullptr;
     if (socket)
         socket->close();
     socket = nullptr;
@@ -559,6 +567,8 @@ void Connection::sendQuery(
     writeStringBinary(query, *out);
 
     maybe_compressed_in.reset();
+    if (is_compressed && maybe_compressed_out)
+        maybe_compressed_out->finalize();
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();
@@ -590,7 +600,10 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
+        {
             maybe_compressed_out = std::make_unique<CompressedWriteBuffer>(*out, compression_codec);
+            is_compressed = true;
+        }
         else
             maybe_compressed_out = out;
 

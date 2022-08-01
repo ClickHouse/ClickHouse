@@ -13,12 +13,12 @@ namespace DB
   *
   * While using this object, no other allocations in arena are possible.
   */
-class WriteBufferFromArena final : public WriteBuffer
+class WriteBufferFromArena final : public WriteBufferWithoutFinalize
 {
 public:
     /// begin_ - start of previously used contiguous memory segment or nullptr (see Arena::allocContinue method).
     WriteBufferFromArena(Arena & arena_, const char *& begin_)
-        : WriteBuffer(nullptr, 0), arena(arena_), begin(begin_)
+        : WriteBufferWithoutFinalize(nullptr, 0), arena(arena_), begin(begin_)
     {
         nextImpl();
         pos = working_buffer.begin();

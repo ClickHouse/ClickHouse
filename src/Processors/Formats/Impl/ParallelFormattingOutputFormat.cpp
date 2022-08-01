@@ -168,48 +168,46 @@ namespace DB
             unit.segment.resize(DBMS_DEFAULT_BUFFER_SIZE);
 
             unit.actual_memory_size = 0;
-            BufferWithOutsideMemory<WriteBuffer> out_buffer(unit.segment);
+            BufferWithOutsideMemory<WriteBufferWithoutFinalize> out_buffer(unit.segment);
 
             /// The second invocation won't release memory, only set size equals to 0.
             unit.segment.resize(0);
 
             auto formatter = internal_formatter_creator(out_buffer);
-            formatter->setRowsReadBefore(first_row_num);
 
-            switch (unit.type)
             {
-                case ProcessingUnitType::START:
+                formatter->setRowsReadBefore(first_row_num);
+                SCOPE_EXIT(formatter->finalizeBuffers());
+
+                switch (unit.type)
                 {
-                    formatter->writePrefix();
-                    break;
-                }
-                case ProcessingUnitType::PLAIN:
-                {
-                    formatter->consume(std::move(unit.chunk));
-                    break;
-                }
-                case ProcessingUnitType::PLAIN_FINISH:
-                {
-                    formatter->writeSuffix();
-                    break;
-                }
-                case ProcessingUnitType::TOTALS:
-                {
-                    formatter->consumeTotals(std::move(unit.chunk));
-                    break;
-                }
-                case ProcessingUnitType::EXTREMES:
-                {
-                    if (are_totals_written)
-                        formatter->setTotalsAreWritten();
-                    formatter->consumeExtremes(std::move(unit.chunk));
-                    break;
-                }
-                case ProcessingUnitType::FINALIZE:
-                {
-                    formatter->setOutsideStatistics(std::move(unit.statistics));
-                    formatter->finalizeImpl();
-                    break;
+                    case ProcessingUnitType::START: {
+                        formatter->writePrefix();
+                        break;
+                    }
+                    case ProcessingUnitType::PLAIN: {
+                        formatter->consume(std::move(unit.chunk));
+                        break;
+                    }
+                    case ProcessingUnitType::PLAIN_FINISH: {
+                        formatter->writeSuffix();
+                        break;
+                    }
+                    case ProcessingUnitType::TOTALS: {
+                        formatter->consumeTotals(std::move(unit.chunk));
+                        break;
+                    }
+                    case ProcessingUnitType::EXTREMES: {
+                        if (are_totals_written)
+                            formatter->setTotalsAreWritten();
+                        formatter->consumeExtremes(std::move(unit.chunk));
+                        break;
+                    }
+                    case ProcessingUnitType::FINALIZE: {
+                        formatter->setOutsideStatistics(std::move(unit.statistics));
+                        formatter->finalizeImpl();
+                        break;
+                    }
                 }
             }
 

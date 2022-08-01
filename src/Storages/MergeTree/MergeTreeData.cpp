@@ -312,6 +312,7 @@ MergeTreeData::MergeTreeData(
             writeIntText(format_version.toUnderType(), *buf);
             if (getContext()->getSettingsRef().fsync_metadata)
                 buf->sync();
+            buf->finalize();
         }
     }
     else

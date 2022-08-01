@@ -161,6 +161,7 @@ DiskCacheWrapper::readFile(
 
                     auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite, write_settings);
                     copyData(*src_buffer, *dst_buffer);
+                    dst_buffer->finalize();
                 }
                 cache_disk->moveFile(tmp_path, path);
 

@@ -40,5 +40,5 @@ TEST(CreateTableParser, SS)
     ASTPtr ast = parseQuery(p_create_query, input.data(), input.data() + input.size(), "", 0, 0);
     WriteBufferFromOStream buf(std::cerr, 4096);
     ast->dumpTree(buf);
-
+    buf.finalize();
 }

@@ -92,11 +92,6 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 }
 
 
-WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
-{
-    finalize();
-}
-
 void WriteBufferFromFileDescriptor::finalizeImpl()
 {
     if (fd < 0)

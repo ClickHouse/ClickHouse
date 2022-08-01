@@ -52,6 +52,15 @@ void CascadeWriteBuffer::nextImpl()
     set(curr_buffer->position(), curr_buffer->buffer().end() - curr_buffer->position());
 }
 
+void CascadeWriteBuffer::finalizeImpl()
+{
+    for (auto & buf : prepared_sources)
+    {
+        if (buf)
+            buf->finalize();
+    }
+}
+
 
 void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
 {
@@ -59,6 +68,11 @@ void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
     curr_buffer->position() = position();
 
     res = std::move(prepared_sources);
+    for (auto & buf : res)
+    {
+        if (buf)
+            buf->finalize();
+    }
 
     curr_buffer = nullptr;
     curr_buffer_num = num_sources = 0;

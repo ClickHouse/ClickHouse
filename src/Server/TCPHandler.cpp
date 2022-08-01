@@ -97,7 +97,7 @@ TCPHandler::~TCPHandler()
     {
         state.reset();
         if (out)
-            out->next();
+            out->finalize();
     }
     catch (...)
     {
@@ -1557,8 +1557,9 @@ void TCPHandler::initBlockOutput(const Block & block)
             {
                 CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs);
 
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
+                state.maybe_compressed_out = std::make_unique<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));
+                state.is_compresesed = true;
             }
             else
                 state.maybe_compressed_out = out;

@@ -39,6 +39,7 @@ void TemporaryFileStream::write(const std::string & path, const Block & header, 
         output.write(block);
 
     compressed_buf.finalize();
+    file_buf.finalize();
 }
 
 }

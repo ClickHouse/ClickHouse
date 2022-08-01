@@ -1,6 +1,7 @@
 #include <map>
 #include <Parsers/Lexer.h>
 #include <base/types.h>
+#include <base/scope_guard.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
@@ -67,6 +68,7 @@ int main(int, char **)
     String query;
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    SCOPE_EXIT(out.finalize());
     readStringUntilEOF(query, in);
 
     Lexer lexer(query.data(), query.data() + query.size());

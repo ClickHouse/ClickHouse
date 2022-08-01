@@ -74,6 +74,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
     writePODBinary(size, out);
 
     out.next();
+    out.finalize();
 }
 
 }

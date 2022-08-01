@@ -39,6 +39,7 @@ int main(int argc, char ** argv)
             {
                 DB::WriteBufferValidUTF8 utf_buf(simple_buf);
                 utf_buf.write(text.data(), text.size());
+                utf_buf.finalize();
             }
         }
         t = timer.elapsedSeconds();

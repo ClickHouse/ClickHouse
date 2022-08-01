@@ -43,15 +43,22 @@ public:
 
     void consume(Chunk chunk) override
     {
+        std::lock_guard lock(cancel_mutex);
+        if (cancelled)
+            return;
         out_stream->write(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     Chunk generate() override
     {
+        std::lock_guard lock(cancel_mutex);
+        if (cancelled)
+            return {};
+
         if (out_stream)
         {
-            compressed_buf_out.next();
-            file_buf_out.next();
+            compressed_buf_out.finalize();
+            file_buf_out.finalize();
             LOG_INFO(log, "Done writing part of data into temporary file {}", path);
 
             out_stream.reset();
@@ -75,6 +82,16 @@ public:
         return Chunk(block.getColumns(), num_rows);
     }
 
+    void onCancel() override
+    {
+        std::lock_guard lock(cancel_mutex);
+        if (out_stream)
+        {
+            compressed_buf_out.finalize();
+            file_buf_out.finalize();
+        }
+    }
+
 private:
     Poco::Logger * log;
     std::string path;
@@ -85,6 +102,9 @@ private:
     std::unique_ptr<ReadBufferFromFile> file_in;
     std::unique_ptr<CompressedReadBuffer> compressed_in;
     std::unique_ptr<NativeReader> block_in;
+
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 MergeSortingTransform::MergeSortingTransform(

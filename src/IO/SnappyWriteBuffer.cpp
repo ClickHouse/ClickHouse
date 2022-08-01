@@ -16,13 +16,8 @@ namespace ErrorCodes
 }
 
 SnappyWriteBuffer::SnappyWriteBuffer(std::unique_ptr<WriteBuffer> out_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
 {
-}
-
-SnappyWriteBuffer::~SnappyWriteBuffer()
-{
-    finish();
 }
 
 void SnappyWriteBuffer::nextImpl()
@@ -37,27 +32,7 @@ void SnappyWriteBuffer::nextImpl()
     uncompress_buffer.append(in_data, in_available);
 }
 
-void SnappyWriteBuffer::finish()
-{
-    if (finished)
-        return;
-
-    try
-    {
-        finishImpl();
-        out->finalize();
-        finished = true;
-    }
-    catch (...)
-    {
-        /// Do not try to flush next time after exception.
-        out->position() = out->buffer().begin();
-        finished = true;
-        throw;
-    }
-}
-
-void SnappyWriteBuffer::finishImpl()
+void SnappyWriteBuffer::finalizeBefore()
 {
     next();
 

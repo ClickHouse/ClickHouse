@@ -557,6 +557,8 @@ void finalizeMutatedPart(
         auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         writeUUIDText(new_data_part->uuid, out_hashing);
+        out_hashing.finalize();
+        out->finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
     }
@@ -567,6 +569,8 @@ void finalizeMutatedPart(
         auto out_ttl = data_part_storage_builder->writeFile("ttl.txt", 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_ttl);
         new_data_part->ttl_infos.write(out_hashing);
+        out_hashing.finalize();
+        out_ttl->finalize();
         new_data_part->checksums.files["ttl.txt"].file_size = out_hashing.count();
         new_data_part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
     }
@@ -576,26 +580,25 @@ void finalizeMutatedPart(
         auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out);
         new_data_part->getSerializationInfos().writeJSON(out_hashing);
+        out_hashing.finalize();
+        out->finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
     }
 
-    {
-        /// Write file with checksums.
-        auto out_checksums = data_part_storage_builder->writeFile("checksums.txt", 4096, context->getWriteSettings());
-        new_data_part->checksums.write(*out_checksums);
-    } /// close fd
+    /// Write file with checksums.
+    auto out_checksums = data_part_storage_builder->writeFile("checksums.txt", 4096, context->getWriteSettings());
+    new_data_part->checksums.write(*out_checksums);
+    out_checksums->finalize(); /// close fd
 
-    {
-        auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
-        DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
-    }
+    auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
+    DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
+    out->finalize();
 
-    {
-        /// Write a file with a description of columns.
-        auto out_columns = data_part_storage_builder->writeFile("columns.txt", 4096, context->getWriteSettings());
-        new_data_part->getColumns().writeText(*out_columns);
-    } /// close fd
+    /// Write a file with a description of columns.
+    auto out_columns = data_part_storage_builder->writeFile("columns.txt", 4096, context->getWriteSettings());
+    new_data_part->getColumns().writeText(*out_columns);
+    out_columns->finalize(); /// close fd
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;

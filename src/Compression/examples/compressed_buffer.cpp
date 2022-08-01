@@ -32,6 +32,7 @@ int main(int, char **)
                 DB::writeIntText(i, compressed_buf);
                 DB::writeChar('\t', compressed_buf);
             }
+            compressed_buf.finalize();
             stopwatch.stop();
             std::cout << "Writing done (1). Elapsed: " << stopwatch.elapsedSeconds()
                 << ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"

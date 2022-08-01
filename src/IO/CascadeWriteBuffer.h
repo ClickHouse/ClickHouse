@@ -45,6 +45,8 @@ public:
 
     ~CascadeWriteBuffer() override;
 
+    void finalizeImpl() override;
+
 private:
 
     WriteBuffer * setNextBuffer();

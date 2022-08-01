@@ -131,7 +131,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         HashingWriteBuffer out_hashing(*out);
         serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
         serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
-        out_hashing.next();
+        out_hashing.finalize();
         out_checksums.files[file_name].file_size = out_hashing.count();
         out_checksums.files[file_name].file_hash = out_hashing.getHash();
         out->preFinalize();

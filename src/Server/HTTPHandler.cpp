@@ -887,7 +887,10 @@ try
     {
         /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
         if (used_output.hasDelayed())
+        {
+            used_output.out_maybe_delayed_and_compressed->finalize();
             used_output.out_maybe_delayed_and_compressed.reset();
+        }
 
         /// Send the error message into already used (and possibly compressed) stream.
         /// Note that the error message will possibly be sent after some data.

@@ -11,6 +11,7 @@ try
     DB::ReadBufferFromMemory in(data, size);
     DB::MergeTreeDataPartChecksums res;
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    SCOPE_EXIT(out.finalize());
 
     if (!res.read(in))
         return 1;

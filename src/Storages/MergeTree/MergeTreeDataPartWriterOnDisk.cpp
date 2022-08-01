@@ -29,7 +29,11 @@ void MergeTreeDataPartWriterOnDisk::Stream::finalize()
     if (!is_prefinalized)
         preFinalize();
 
+    compressed.finalize();
+    compressed_buf.finalize();
+    plain_hashing.finalize();
     plain_file->finalize();
+    marks.finalize();
     marks_file->finalize();
 }
 
@@ -101,6 +105,15 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
     initSkipIndices();
+}
+
+MergeTreeDataPartWriterOnDisk::~MergeTreeDataPartWriterOnDisk()
+{
+    if (index_stream)
+    {
+        index_stream->finalize();
+        index_file_stream->finalize();
+    }
 }
 
 // Implementation is split into static functions for ability
@@ -288,6 +301,7 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(bool sync)
 {
     if (index_stream)
     {
+        index_stream->finalize();
         index_file_stream->finalize();
         if (sync)
             index_file_stream->sync();

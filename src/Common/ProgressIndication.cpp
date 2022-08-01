@@ -309,7 +309,7 @@ void ProgressIndication::writeProgress()
     message << CLEAR_TO_END_OF_LINE;
     ++increment;
 
-    message.next();
+    message.finalize();
 }
 
 }

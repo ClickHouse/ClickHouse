@@ -32,7 +32,17 @@ constexpr size_t test_str_size = 4;
 void checkWriteAccess(IDisk & disk)
 {
     auto file = disk.writeFile(test_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    file->write(test_str, test_str_size);
+    try
+    {
+        file->write(test_str, test_str_size);
+    }
+    catch (...)
+    {
+        /// Log current exception, because finalize() can throw a different exception.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        file->finalize();
+        throw;
+    }
 }
 
 void checkReadAccess(IDisk & disk)

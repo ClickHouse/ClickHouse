@@ -48,6 +48,11 @@ public:
         set(reinterpret_cast<Position>(vector.data() + old_size), (size - old_size) * sizeof(typename VectorType::value_type));
     }
 
+    ~WriteBufferFromVector() override
+    {
+        finalize();
+    }
+
     bool isFinished() const { return finalized; }
 
     void restart()

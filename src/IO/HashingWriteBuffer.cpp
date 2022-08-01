@@ -50,5 +50,4 @@ void IHashingBuffer<Buffer>::calculateHash(DB::BufferBase::Position data, size_t
 
 template class IHashingBuffer<DB::ReadBuffer>;
 template class IHashingBuffer<DB::WriteBuffer>;
-
 }

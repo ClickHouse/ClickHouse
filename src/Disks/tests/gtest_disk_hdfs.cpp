@@ -49,6 +49,7 @@ TEST(DiskTestHDFS, WriteReadHDFS)
     {
         auto out = disk.writeFile(file_name, 1024, DB::WriteMode::Rewrite);
         writeString("Test write to file", *out);
+        out->finalize();
     }
 
     {
@@ -72,6 +73,7 @@ TEST(DiskTestHDFS, RewriteFileHDFS)
     {
         std::unique_ptr<DB::WriteBuffer> out = disk.writeFile(file_name, 1024, DB::WriteMode::Rewrite);
         writeString("Text" + DB::toString(i), *out);
+        out->finalize()
     }
 
     {
@@ -100,6 +102,7 @@ TEST(DiskTestHDFS, AppendFileHDFS)
         {
             writeIntText(i, *out);
         }
+        out->finalize();
     }
 
     {
@@ -126,6 +129,7 @@ TEST(DiskTestHDFS, SeekHDFS)
     {
         std::unique_ptr<DB::WriteBuffer> out = disk.writeFile(file_name, 1024, DB::WriteMode::Rewrite);
         writeString("test data", *out);
+        out->finalize();
     }
 
     /// Test SEEK_SET

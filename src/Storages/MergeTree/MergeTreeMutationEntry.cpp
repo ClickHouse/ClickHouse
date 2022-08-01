@@ -74,6 +74,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
             *out << "\n";
         }
         out->sync();
+        out->finalize();
     }
     catch (...)
     {

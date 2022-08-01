@@ -123,6 +123,7 @@ void IOutputFormat::finalize()
     writePrefixIfNot();
     writeSuffixIfNot();
     finalizeImpl();
+    finalizeBuffers();
 }
 
 }

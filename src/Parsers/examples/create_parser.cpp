@@ -17,6 +17,7 @@ int main(int, char **)
 
     WriteBufferFromOStream out(std::cerr, 4096);
     formatAST(*ast, out);
+    out.finalize();
     std::cerr << std::endl;
 
     return 0;

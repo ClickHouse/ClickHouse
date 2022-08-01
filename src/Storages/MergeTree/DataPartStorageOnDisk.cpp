@@ -488,10 +488,9 @@ void DataPartStorageOnDisk::writeChecksums(const MergeTreeDataPartChecksums & ch
 
     try
     {
-        {
-            auto out = volume->getDisk()->writeFile(path + ".tmp", 4096, WriteMode::Rewrite, settings);
-            checksums.write(*out);
-        }
+        auto out = volume->getDisk()->writeFile(path + ".tmp", 4096, WriteMode::Rewrite, settings);
+        SCOPE_EXIT(out->finalize());
+        checksums.write(*out);
 
         volume->getDisk()->moveFile(path + ".tmp", path);
     }

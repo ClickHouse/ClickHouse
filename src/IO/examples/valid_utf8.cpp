@@ -21,6 +21,7 @@ int main(int, char **)
             {
                 DB::WriteBufferValidUTF8 utf_buf(str_buf, true, "-");
                 DB::writeEscapedString(test1, utf_buf);
+                utf_buf.finalize();
             }
         }
         std::cout << str << std::endl;
@@ -31,6 +32,7 @@ int main(int, char **)
             {
                 DB::WriteBufferValidUTF8 utf_buf(str_buf, true, "-");
                 DB::writeEscapedString(test2, utf_buf);
+                utf_buf.finalize();
             }
         }
         std::cout << str << std::endl;

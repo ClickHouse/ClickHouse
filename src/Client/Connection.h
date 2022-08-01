@@ -215,6 +215,7 @@ private:
 
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
+    bool is_compressed = false;
     std::unique_ptr<NativeWriter> block_out;
 
     /// Logger is created lazily, for avoid to run DNS request in constructor.

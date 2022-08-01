@@ -441,6 +441,8 @@ namespace
                 for (const auto & block : *blocks)
                     block_out.write(block);
                 backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, data_file_path)};
+                data_out.finalize();
+                data_out_compressed->finalize();
             }
 
             /// Writing index.mrk
@@ -450,6 +452,8 @@ namespace
                 CompressedWriteBuffer index_mrk_out{*index_mrk_out_compressed};
                 index.write(index_mrk_out);
                 backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromImmutableFile>(temp_disk, index_mrk_path)};
+                index_mrk_out.finalize();
+                index_mrk_out_compressed->finalize();
             }
 
             /// Writing columns.txt

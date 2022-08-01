@@ -98,6 +98,7 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
         writeString(std::string_view{"Some text"}, *buf);
+        buf->finalize();
     }
 
     /// Now we have one file.
@@ -124,6 +125,7 @@ TEST_F(DiskEncryptedTest, Append)
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
         writeString(std::string_view{"Some text"}, *buf);
+        buf->finalize();
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 9);
@@ -134,6 +136,7 @@ TEST_F(DiskEncryptedTest, Append)
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
         writeString(std::string_view{" Another text"}, *buf);
+        buf->finalize();
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 22);
@@ -150,6 +153,7 @@ TEST_F(DiskEncryptedTest, Truncate)
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
         writeString(std::string_view{"Some text"}, *buf);
+        buf->finalize();
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 9);
@@ -179,6 +183,7 @@ TEST_F(DiskEncryptedTest, ZeroFileSize)
     /// Write nothing to a file.
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        buf->finalize();
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 0);
@@ -188,6 +193,7 @@ TEST_F(DiskEncryptedTest, ZeroFileSize)
     /// Append the file with nothing.
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+        buf->finalize();
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 0);
@@ -213,6 +219,7 @@ TEST_F(DiskEncryptedTest, AnotherFolder)
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
         writeString(std::string_view{"Some text"}, *buf);
+        buf->finalize();
     }
 
     /// Now we have one file.
@@ -233,10 +240,12 @@ TEST_F(DiskEncryptedTest, RandomIV)
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
         writeString(std::string_view{"Some text"}, *buf);
+        buf->finalize();
     }
     {
         auto buf = encrypted_disk->writeFile("b.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
         writeString(std::string_view{"Some text"}, *buf);
+        buf->finalize();
     }
 
     /// Now we have two files.

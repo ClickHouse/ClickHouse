@@ -414,6 +414,7 @@ void BackupImpl::createLockFile()
     assert(uuid);
     auto out = writer->writeFile(lock_file_name);
     writeUUIDText(*uuid, *out);
+    out->finalize();
 }
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const

@@ -29,6 +29,7 @@ std::ostream & operator<<(std::ostream & stream, const IAST & what)
     buf << "IAST{";
     what.dumpTree(buf);
     buf << "}";
+    buf.finalize();
     return stream;
 }
 

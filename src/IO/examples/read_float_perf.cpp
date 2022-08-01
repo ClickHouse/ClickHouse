@@ -4,6 +4,7 @@
 #include <fstream>
 
 #include <base/types.h>
+#include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <IO/readFloatText.h>
@@ -70,6 +71,7 @@ try
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    SCOPE_EXIT(out.finalize());
 
     if (method == 1) loop<T, readFloatTextPrecise>(in, out);
     if (method == 2) loop<T, readFloatTextFast>(in, out);

@@ -96,6 +96,8 @@ public:
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
+    ~MergeTreeDataPartWriterOnDisk() override;
+
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
         written_offset_columns = written_offset_columns_;

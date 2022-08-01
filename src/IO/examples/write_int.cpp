@@ -24,5 +24,6 @@ int main(int, char **)
 {
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
     write(out, 80);
+    out.finalize();
     return 0;
 }

@@ -311,12 +311,20 @@ public:
 
     void consume(Chunk chunk) override;
     void onFinish() override;
+    void onException() override;
+    void onCancel() override;
+
 
 private:
+    void finalizeStreams();
+
     StorageLog & storage;
     StorageMetadataPtr metadata_snapshot;
     WriteLock lock;
     bool done = false;
+
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 
     struct Stream
     {
@@ -338,8 +346,8 @@ private:
 
         void finalize()
         {
-            compressed.next();
-            plain->next();
+            compressed.finalize();
+            plain->finalize();
         }
     };
 
@@ -358,6 +366,10 @@ private:
 
 void LogSink::consume(Chunk chunk)
 {
+    std::lock_guard cancel_lock(cancel_mutex);
+    if (cancelled)
+        return;
+
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     metadata_snapshot->check(block, true);
 
@@ -377,6 +389,8 @@ void LogSink::onFinish()
     if (done)
         return;
 
+    std::lock_guard cancel_lock(cancel_mutex);
+
     for (auto & stream : streams | boost::adaptors::map_values)
         stream.written = false;
 
@@ -393,8 +407,7 @@ void LogSink::onFinish()
     }
 
     /// Finish write.
-    for (auto & stream : streams | boost::adaptors::map_values)
-        stream.finalize();
+    finalizeStreams();
     streams.clear();
 
     storage.saveMarks(lock);
@@ -407,6 +420,24 @@ void LogSink::onFinish()
     /// called from different thread, so it should be done here (at least in
     /// case of no exceptions occurred)
     lock.unlock();
+}
+
+void LogSink::onException()
+{
+    std::lock_guard cancel_lock(cancel_mutex);
+    finalizeStreams();
+}
+
+void LogSink::onCancel()
+{
+    std::lock_guard cancel_lock(cancel_mutex);
+    finalizeStreams();
+}
+
+void LogSink::finalizeStreams()
+{
+    for (auto & stream : streams | boost::adaptors::map_values)
+        stream.finalize();
 }
 
 
@@ -1031,6 +1062,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             auto in = backup_entry->getReadBuffer();
             auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
             copyData(*in, *out);
+            out->finalize();
         }
 
         if (use_marks_file)

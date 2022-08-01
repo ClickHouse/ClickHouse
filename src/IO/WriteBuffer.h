@@ -65,7 +65,8 @@ public:
       */
     virtual ~WriteBuffer()
     {
-        assert(finalized);
+        if (count() && is_finalize_required && !finalized)
+            std::terminate();
     }
 
     inline void nextIfAtEnd()
@@ -152,10 +153,22 @@ protected:
     bool finalized = false;
 
 private:
+    WriteBuffer(Position ptr, size_t size, bool is_finalize_required_) : BufferBase(ptr, size, 0), is_finalize_required(is_finalize_required_) {}
+
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
     virtual void nextImpl() { throw Exception("Cannot write after end of buffer.", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER); }
+
+    bool is_finalize_required = true;
+
+    friend class WriteBufferWithoutFinalize;
+};
+
+class WriteBufferWithoutFinalize : public WriteBuffer
+{
+public:
+    WriteBufferWithoutFinalize(Position ptr, size_t size) : WriteBuffer(ptr, size, false) {}
 };
 
 

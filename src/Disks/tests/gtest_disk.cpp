@@ -80,6 +80,7 @@ TYPED_TEST(DiskTest, writeFile)
     {
         std::unique_ptr<DB::WriteBuffer> out = this->disk->writeFile("test_file");
         writeString("test data", *out);
+        out->finalize();
     }
 
     DB::String data;
@@ -98,6 +99,7 @@ TYPED_TEST(DiskTest, readFile)
     {
         std::unique_ptr<DB::WriteBuffer> out = this->disk->writeFile("test_file");
         writeString("test data", *out);
+        out->finalize();
     }
 
     // Test SEEK_SET

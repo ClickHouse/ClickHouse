@@ -430,8 +430,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_column_names.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
-    ctx->rows_sources_write_buf->next();
-    ctx->rows_sources_uncompressed_write_buf->next();
+    ctx->rows_sources_write_buf->finalize();
     /// Ensure data has written to disk.
     ctx->rows_sources_uncompressed_write_buf->finalize();
 

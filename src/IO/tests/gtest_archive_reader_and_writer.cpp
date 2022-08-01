@@ -90,6 +90,7 @@ TEST_P(ArchiveReaderAndWriterTest, SingleFileInArchive)
         {
             auto out = writer->writeFile("a.txt");
             writeString(contents, *out);
+            out->finalize();
         }
     }
 
@@ -156,10 +157,12 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
         {
             auto out = writer->writeFile("a.txt");
             writeString(a_contents, *out);
+            out->finalize();
         }
         {
             auto out = writer->writeFile("b/c.txt");
             writeString(c_contents, *out);
+            out->finalize();
         }
     }
 

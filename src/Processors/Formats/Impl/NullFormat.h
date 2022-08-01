@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Formats/IOutputFormat.h>
+#include <IO/WriteBuffer.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ protected:
     void consume(Chunk) override {}
 
 private:
-    static WriteBuffer empty_buffer;
+    static WriteBufferWithoutFinalize empty_buffer;
 };
 
 }

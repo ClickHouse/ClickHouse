@@ -34,6 +34,8 @@ int main(int, char **)
             DB::writeQuotedString(d, out);
             DB::writeChar('\n', out);
         }
+
+        out.finalize();
     }
     catch (const DB::Exception & e)
     {

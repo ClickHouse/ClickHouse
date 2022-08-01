@@ -5,7 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-
+#include <base/scope_guard.h>
 
 using namespace DB;
 
@@ -17,6 +17,7 @@ try
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    SCOPE_EXIT(out.finalize());
 
     time_t res;
     parseDateTimeBestEffort(res, in, local_time_zone, utc_time_zone);

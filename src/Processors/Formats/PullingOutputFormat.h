@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/Formats/IOutputFormat.h>
 #include <QueryPipeline/ProfileInfo.h>
+#include <IO/WriteBuffer.h>
 
 namespace DB
 {
@@ -41,7 +42,7 @@ private:
     ProfileInfo info;
 
     /// Is not used.
-    static WriteBuffer out;
+    static WriteBufferWithoutFinalize out;
 };
 
 }
