@@ -208,8 +208,8 @@ private:
 
     void delayInsertOrThrowIfNeeded() const;
 
-    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
-    std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const std::shared_ptr<StorageDistributed> & src_distributed, const ASTInsertQuery & query, ContextPtr context);
+    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
+    std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context);
 
 
     String remote_database;

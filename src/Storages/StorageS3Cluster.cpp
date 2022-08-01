@@ -165,7 +165,7 @@ QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
 }
 
 
-void StorageS3Cluster::createIteratorAndCallback(ASTPtr query, ContextPtr context)
+void StorageS3Cluster::createIteratorAndCallback(ASTPtr query, ContextPtr context) const
 {
     cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
     iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(
@@ -174,14 +174,14 @@ void StorageS3Cluster::createIteratorAndCallback(ASTPtr query, ContextPtr contex
 }
 
 
-RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ContextPtr context)
+RemoteQueryExecutor::Extension StorageS3Cluster::getTaskIteratorExtension(ContextPtr context) const
 {
     createIteratorAndCallback(/*query=*/nullptr, context);
     return RemoteQueryExecutor::Extension{.task_iterator = callback};
 }
 
 
-ClusterPtr StorageS3Cluster::getCluster(ContextPtr context)
+ClusterPtr StorageS3Cluster::getCluster(ContextPtr context) const
 {
     createIteratorAndCallback(/*query=*/nullptr, context);
     return cluster;

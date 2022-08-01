@@ -134,7 +134,7 @@ QueryProcessingStage::Enum StorageHDFSCluster::getQueryProcessingStage(
 }
 
 
-void StorageHDFSCluster::createIteratorAndCallback(ContextPtr context)
+void StorageHDFSCluster::createIteratorAndCallback(ContextPtr context) const
 {
     cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
@@ -143,14 +143,14 @@ void StorageHDFSCluster::createIteratorAndCallback(ContextPtr context)
 }
 
 
-RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ContextPtr context)
+RemoteQueryExecutor::Extension StorageHDFSCluster::getTaskIteratorExtension(ContextPtr context) const
 {
     createIteratorAndCallback(context);
     return RemoteQueryExecutor::Extension{.task_iterator = callback};
 }
 
 
-ClusterPtr StorageHDFSCluster::getCluster(ContextPtr context)
+ClusterPtr StorageHDFSCluster::getCluster(ContextPtr context) const
 {
     createIteratorAndCallback(context);
     return cluster;

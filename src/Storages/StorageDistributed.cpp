@@ -761,16 +761,16 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistributedTables(const std::shared_ptr<StorageDistributed> & src_distributed, const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr local_context)
 {
     const auto & settings = local_context->getSettingsRef();
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
 
     /// Unwrap view() function.
-    if (src_distributed->remote_table_function_ptr)
+    if (src_distributed.remote_table_function_ptr)
     {
         const TableFunctionPtr src_table_function =
-            TableFunctionFactory::instance().get(src_distributed->remote_table_function_ptr, local_context);
+            TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
         const TableFunctionView * view_function =
             assert_cast<const TableFunctionView *>(src_table_function.get());
         new_query->select = view_function->getSelectQuery().clone();
@@ -783,12 +783,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(query.clone());
         select_with_union_query->list_of_selects->children.push_back(new_select_query);
 
-        new_select_query->replaceDatabaseAndTable(src_distributed->getRemoteDatabaseName(), src_distributed->getRemoteTableName());
+        new_select_query->replaceDatabaseAndTable(src_distributed.getRemoteDatabaseName(), src_distributed.getRemoteTableName());
 
         new_query->select = select_with_union_query;
     }
 
-    const Cluster::AddressesWithFailover & src_addresses = src_distributed->getCluster()->getShardsAddresses();
+    const Cluster::AddressesWithFailover & src_addresses = src_distributed.getCluster()->getShardsAddresses();
     const Cluster::AddressesWithFailover & dst_addresses = getCluster()->getShardsAddresses();
     /// Compare addresses instead of cluster name, to handle remote()/cluster().
     /// (since for remote()/cluster() the getClusterName() is empty string)
@@ -803,7 +803,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             LOG_WARNING(log,
                 "Parallel distributed INSERT SELECT is not possible "
                 "(source cluster={} ({} addresses), destination cluster={} ({} addresses))",
-                src_distributed->getClusterName(),
+                src_distributed.getClusterName(),
                 src_addresses.size(),
                 getClusterName(),
                 dst_addresses.size());
@@ -864,38 +864,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context)
 {
     const auto & settings = local_context->getSettingsRef();
-    auto extension = src_storage_cluster->getTaskIteratorExtension(local_context);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(local_context);
 
-    auto src_cluster = src_storage_cluster->getCluster(local_context);
     auto dst_cluster = getCluster();
-
-    /// Here we will check not an equality of sourse and destination cluster
-    /// But instead we will check that the source cluster addresses are the subset of the destination cluster
-    const auto & src_addresses = src_cluster->getClusterWithReplicasAsShards(settings)->getShardsAddresses();
-    const auto & dst_addresses = dst_cluster->getClusterWithReplicasAsShards(settings)->getShardsAddresses();
-
-    for (const auto & src_address: src_addresses)
-    {
-        bool found = false;
-        for (const auto & dst_address: dst_addresses)
-        {
-            if (src_address == dst_address)
-            {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-        {
-            /// Maybe better to print the whole clusters there...
-            LOG_WARNING(log, "Parallel distributed INSERT SELECT is not possible. Reason: address of source cluster is not found in destination one");
-            return {};
-        }
-    }
 
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
     if (settings.parallel_distributed_insert_select == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
@@ -918,7 +892,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     ContextMutablePtr query_context = Context::createCopy(local_context);
     ++query_context->getClientInfo().distributed_depth;
 
-    for (const auto & replicas : src_cluster->getShardsAddresses())
+    /// Here we take addresses from destination cluster and assume source table exists on these nodes
+    for (const auto & replicas : getCluster()->getShardsAddresses())
     {
         /// There will be only one replica, because we consider each replica as a shard
         for (const auto & node : replicas)
@@ -979,21 +954,22 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     if (!src_storage)
         return {};
 
+
+    std::cout << "src_storage " << src_storage->getName() <<  ' ' << std::endl;
+
+
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))
     {
-        return distributedWriteBetweenDistributedTables(src_distributed, query, local_context);
+        return distributedWriteBetweenDistributedTables(*src_distributed, query, local_context);
     }
     else if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
-        return distributedWriteFromClusterStorage(src_storage_cluster, query, local_context);
+        return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
     }
     else
     {
-        LOG_WARNING(log, "Parallel distributed INSERT SELECT is not possible. Reason: distributed reading is supported only from Distributed engine or *Cluster table functions");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. Reason: distributed reading is supported only from Distributed engine or *Cluster table functions");
     }
-
-
-    return {};
 }
 
 

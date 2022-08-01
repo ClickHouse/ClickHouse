@@ -326,7 +326,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    if (query.select && settings.parallel_distributed_insert_select)
+    if (query.select && settings.parallel_distributed_insert_select && getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         // Distributed INSERT SELECT
         distributed_pipeline = table->distributedWrite(query, getContext());
 

@@ -18,8 +18,8 @@ public:
 
     explicit IStorageCluster(const StorageID & table_id_) : IStorage(table_id_) {}
 
-    virtual ClusterPtr getCluster(ContextPtr context) = 0;
-    virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) = 0;
+    virtual ClusterPtr getCluster(ContextPtr context) const = 0;
+    virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) const = 0;
 };
 
 

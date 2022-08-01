@@ -40,8 +40,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    ClusterPtr getCluster(ContextPtr context) override;
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) override;
+    ClusterPtr getCluster(ContextPtr context) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) const override;
 
 private:
     String cluster_name;
@@ -49,11 +49,11 @@ private:
     String format_name;
     String compression_method;
 
-    ClusterPtr cluster;
-    std::shared_ptr<HDFSSource::DisclosedGlobIterator> iterator;
-    std::shared_ptr<HDFSSource::IteratorWrapper> callback;
+    mutable ClusterPtr cluster;
+    mutable std::shared_ptr<HDFSSource::DisclosedGlobIterator> iterator;
+    mutable std::shared_ptr<HDFSSource::IteratorWrapper> callback;
 
-    void createIteratorAndCallback(ContextPtr context);
+    void createIteratorAndCallback(ContextPtr context) const;
 };
 
 

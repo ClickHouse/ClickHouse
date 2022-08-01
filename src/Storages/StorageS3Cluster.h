@@ -43,8 +43,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) override;
-    ClusterPtr getCluster(ContextPtr context) override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) const override;
+    ClusterPtr getCluster(ContextPtr context) const override;
 private:
     StorageS3::S3Configuration s3_configuration;
     String filename;
@@ -53,11 +53,12 @@ private:
     String compression_method;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
-    ClusterPtr cluster;
-    std::shared_ptr<StorageS3Source::DisclosedGlobIterator> iterator;
-    std::shared_ptr<StorageS3Source::IteratorWrapper> callback;
 
-    void createIteratorAndCallback(ASTPtr query, ContextPtr context);
+    mutable ClusterPtr cluster;
+    mutable std::shared_ptr<StorageS3Source::DisclosedGlobIterator> iterator;
+    mutable std::shared_ptr<StorageS3Source::IteratorWrapper> callback;
+
+    void createIteratorAndCallback(ASTPtr query, ContextPtr context) const;
 };
 
 

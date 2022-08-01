@@ -282,7 +282,7 @@ def test_distributed_insert_select_with_replicated(started_cluster):
     first_replica_first_shard.query(
         """
     CREATE TABLE insert_select_replicated_local ON CLUSTER 'first_shard' (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select', '{replica}')
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select_with_replicated', '{replica}')
     ORDER BY (a, b);
         """
     )
