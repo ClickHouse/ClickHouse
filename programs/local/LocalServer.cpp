@@ -333,9 +333,8 @@ void LocalServer::setupUsers()
         if (users_config_path.empty() && has_user_directories)
         {
             users_config_path = config().getString("user_directories.users_xml.path");
-            if (fs::path(users_config_path).is_relative()
-                 && fs::exists(fs::path(config_dir) / users_config_path))
-            users_config_path = fs::path(config_dir) / users_config_path;
+            if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
+                users_config_path = fs::path(config_dir) / users_config_path;
         }
 
         if (users_config_path.empty())
