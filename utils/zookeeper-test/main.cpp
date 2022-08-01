@@ -282,11 +282,9 @@ void createConcurrent(zkutil::ZooKeeper & testzk, const std::string & zkhost, si
         asyncs.push_back(std::async(std::launch::async, callback));
     }
 
-    size_t i = 0;
     for (auto & async : asyncs)
     {
         async.wait();
-        i++;
     }
 }
 

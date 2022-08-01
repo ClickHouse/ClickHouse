@@ -229,7 +229,6 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         return false;
 
     size_t num_array_join = 0;
-    size_t num_using = 0;
 
     table_expressions.reserve(num_tables);
     for (size_t i = 0; i < num_tables; ++i)
@@ -256,9 +255,6 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         const auto & join = table->table_join->as<ASTTableJoin &>();
         if (join.kind == ASTTableJoin::Kind::Comma)
             throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
-
-        if (join.using_expression_list)
-            ++num_using;
     }
 
     if (num_tables - num_array_join <= 2)
