@@ -627,6 +627,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     MainThreadStatus::getInstance();
 
+    StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
+
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
