@@ -192,7 +192,6 @@ private:
 
     MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
 
-    ReadFromMergeTree::AnalysisResult & getAnalysisResult();
     const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 
