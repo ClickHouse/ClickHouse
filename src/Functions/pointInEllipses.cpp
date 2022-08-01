@@ -194,7 +194,7 @@ private:
 
 }
 
-void registerFunctionPointInEllipses(FunctionFactory & factory)
+REGISTER_FUNCTION(PointInEllipses)
 {
     factory.registerFunction<FunctionPointInEllipses>();
 }
