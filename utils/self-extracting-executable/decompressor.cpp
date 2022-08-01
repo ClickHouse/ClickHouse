@@ -297,21 +297,37 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 int do_system(const char * cmd)
 {
-    int ret = system(cmd);
-    if (ret == -1)
-    {
-        perror(nullptr);
+    pid_t pid = fork();
+    if (pid == -1)
         return 1;
+
+    if (pid == 0)
+    {
+        execlp( "sh" , "sh", "-c", cmd, NULL);
+
+        perror(nullptr);
+        exit(127);
     }
 
-    if (WIFEXITED(ret) && WEXITSTATUS(ret))
+    int ret = 0;
+    int status = 0;
+    while ((ret = waitpid(pid, &status, 0)) == -1)
     {
-        std::cerr << "Command [" << cmd << "] exited with code " << WEXITSTATUS(ret) << std::endl;
+        if ( errno != EINTR)
+        {
+            perror(nullptr);
+            return 1;
+        }
+    }
+
+    if (WIFEXITED(status) && WEXITSTATUS(status))
+    {
+        std::cerr << "Command [" << cmd << "] exited with code " << WEXITSTATUS(status) << std::endl;
         return 1;
     }
-    else if (WIFSIGNALED(ret))
+    else if (WIFSIGNALED(status))
     {
-        std::cerr << "Command [" << cmd << "] killed by signal " << WTERMSIG(ret) << std::endl;
+        std::cerr << "Command [" << cmd << "] killed by signal " << WTERMSIG(status) << std::endl;
         return 1;
     }
 
