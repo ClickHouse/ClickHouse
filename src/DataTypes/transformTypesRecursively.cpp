@@ -87,9 +87,6 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
 
                 for (size_t i = 0; i != types.size(); ++i)
                     types[i] = std::make_shared<DataTypeTuple>(transposed_nested_types[i]);
-
-                if (transform_complex_types)
-                    transform_complex_types(types);
             }
 
             if (transform_complex_types)
