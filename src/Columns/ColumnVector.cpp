@@ -508,7 +508,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         {
             while (mask)
             {
-                size_t index = __builtin_ctzll(mask);
+                size_t index = std::countr_zero(mask);
                 res_data.push_back(data_pos[index]);
             #ifdef __BMI__
                 mask = _blsr_u64(mask);
