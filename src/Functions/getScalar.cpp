@@ -143,7 +143,7 @@ struct GetShardCount
 
 }
 
-void registerFunctionGetScalar(FunctionFactory & factory)
+REGISTER_FUNCTION(GetScalar)
 {
     factory.registerFunction<FunctionGetScalar>();
     factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>();
