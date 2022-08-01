@@ -124,12 +124,61 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_)
     prefix_description = std::move(prefix_description_);
 }
 
+void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
+{
+    size_t threads = pipeline.getNumThreads();
+    size_t streams = pipeline.getNumStreams();
+
+    if (!partition_by_description.empty() && threads > 1)
+    {
+        Block stream_header = pipeline.getHeader();
+
+        ColumnNumbers key_columns;
+        key_columns.reserve(partition_by_description.size());
+        for (auto & col : partition_by_description)
+        {
+            key_columns.push_back(stream_header.getPositionByName(col.column_name));
+        }
+
+        pipeline.transform([&](OutputPortRawPtrs ports)
+        {
+            Processors processors;
+            for (auto * port : ports)
+            {
+                auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, threads, key_columns);
+                connect(*port, scatter->getInputs().front());
+                processors.push_back(scatter);
+            }
+            return processors;
+        });
+
+        if (streams > 1)
+        {
+            pipeline.transform([&](OutputPortRawPtrs ports)
+            {
+                Processors processors;
+                for (size_t i = 0; i < threads; ++i)
+                {
+                    size_t output_it = i;
+                    auto resize = std::make_shared<ResizeProcessor>(ports[output_it]->getHeader(), streams, 1);
+                    auto & inputs = resize->getInputs();
+
+                    for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += threads, ++input_it)
+                        connect(*ports[output_it], *input_it);
+                    processors.push_back(resize);
+                }
+                return processors;
+            });
+        }
+    }
+}
+
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     if (type == Type::FinishSorting)
     {
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
-        if (pipeline.getNumStreams() > 1)
+        if (pipeline.getNumStreams() > 1 && partition_by_description.empty())
         {
             UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
             auto transform = std::make_shared<MergingSortedTransform>(
@@ -142,6 +191,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
             pipeline.addTransform(std::move(transform));
         }
+
+        scatterByPartitionIfNeeded(pipeline);
 
         if (need_finish_sorting)
         {
@@ -173,51 +224,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     }
     else if (type == Type::Full)
     {
-        size_t threads = pipeline.getNumThreads();
-        size_t streams = pipeline.getNumStreams();
-
-        if (!partition_by_description.empty() && threads > 1)
-        {
-            Block stream_header = pipeline.getHeader();
-
-            ColumnNumbers key_columns;
-            key_columns.reserve(partition_by_description.size());
-            for (auto & col : partition_by_description)
-            {
-                key_columns.push_back(stream_header.getPositionByName(col.column_name));
-            }
-
-            pipeline.transform([&](OutputPortRawPtrs ports)
-            {
-                Processors processors;
-                for (auto * port : ports)
-                {
-                    auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, threads, key_columns);
-                    connect(*port, scatter->getInputs().front());
-                    processors.push_back(scatter);
-                }
-                return processors;
-            });
-
-            if (streams > 1)
-            {
-                pipeline.transform([&](OutputPortRawPtrs ports)
-               {
-                   Processors processors;
-                   for (size_t i = 0; i < threads; ++i)
-                   {
-                       size_t output_it = i;
-                       auto resize = std::make_shared<ResizeProcessor>(ports[output_it]->getHeader(), streams, 1);
-                       auto & inputs = resize->getInputs();
-
-                       for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += threads, ++input_it)
-                           connect(*ports[output_it], *input_it);
-                       processors.push_back(resize);
-                   }
-                   return processors;
-               });
-            }
-        }
+        scatterByPartitionIfNeeded(pipeline);
 
         pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {

@@ -68,6 +68,7 @@ public:
     void convertToFinishSorting(SortDescription prefix_description);
 
 private:
+    void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputStream() override;
 
     enum class Type
