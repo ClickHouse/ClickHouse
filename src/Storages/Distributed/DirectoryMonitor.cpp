@@ -632,7 +632,6 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
                                                                                       distributed_header.client_info.client_trace_context,
                                                                                       this->storage.getContext()->getOpenTelemetrySpanLog());
 
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
             distributed_header.insert_settings,
