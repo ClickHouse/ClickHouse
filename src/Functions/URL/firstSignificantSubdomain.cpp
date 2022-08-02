@@ -10,7 +10,7 @@ struct NameFirstSignificantSubdomain { static constexpr auto name = "firstSignif
 
 using FunctionFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain<true>>, NameFirstSignificantSubdomain>;
 
-void registerFunctionFirstSignificantSubdomain(FunctionFactory & factory)
+REGISTER_FUNCTION(FirstSignificantSubdomain)
 {
     factory.registerFunction<FunctionFirstSignificantSubdomain>();
 }

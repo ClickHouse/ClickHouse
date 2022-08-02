@@ -26,6 +26,39 @@ const char * IAST::hilite_substitution = "\033[1;36m";
 const char * IAST::hilite_none         = "\033[0m";
 
 
+IAST::~IAST()
+{
+    /// If deleter was set, move our children to it.
+    /// Will avoid recursive destruction.
+    if (deleter)
+    {
+        deleter->push_back(std::move(children));
+        return;
+    }
+
+    std::list<ASTs> queue;
+    queue.push_back(std::move(children));
+    while (!queue.empty())
+    {
+        for (auto & node : queue.front())
+        {
+            /// If two threads remove ASTPtr concurrently,
+            /// it is possible that neither thead will see use_count == 1.
+            /// It is ok. Will need one more extra stack frame in this case.
+            if (node.use_count() == 1)
+            {
+                /// Deleter is only set when current thread is the single owner.
+                /// No extra synchronisation is needed.
+                ASTPtr to_delete;
+                node.swap(to_delete);
+                to_delete->deleter = &queue;
+            }
+        }
+
+        queue.pop_front();
+    }
+}
+
 size_t IAST::size() const
 {
     size_t res = 1;

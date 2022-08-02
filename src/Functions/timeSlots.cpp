@@ -375,7 +375,7 @@ public:
 
 }
 
-void registerFunctionTimeSlots(FunctionFactory & factory)
+REGISTER_FUNCTION(TimeSlots)
 {
     factory.registerFunction<FunctionTimeSlots>();
 }
