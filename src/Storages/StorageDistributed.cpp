@@ -761,7 +761,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
     auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
@@ -780,7 +780,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
         select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
 
-        auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.at(0)->as<ASTSelectQuery>();
+        auto * select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.at(0)->as<ASTSelectQuery>();
         auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(select->clone());
         select_with_union_query->list_of_selects->children.push_back(new_select_query);
 
@@ -865,7 +865,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
     auto extension = src_storage_cluster.getTaskIteratorExtension(local_context);
