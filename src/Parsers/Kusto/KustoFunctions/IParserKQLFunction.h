@@ -17,7 +17,7 @@ public:
             pos = begin;
         return res;
     }
-    
+
     struct IncreaseDepthTag
     {
     };
@@ -33,7 +33,7 @@ public:
             pos = begin;
         return res;
     }
-    
+
     bool convert(String & out, IParser::Pos & pos);
     virtual const char * getName() const = 0;
     virtual ~IParserKQLFunction() = default;
@@ -47,8 +47,7 @@ protected:
     static String getArgument(const String & function_name, DB::IParser::Pos & pos);
     static String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
     static std::optional<String> getOptionalArgument(const String & function_name, DB::IParser::Pos & pos);
-    static String kqlCallToExpression(
-        const String & function_name, std::initializer_list<std::reference_wrapper<const String>> params, uint32_t max_depth);
+    static String kqlCallToExpression(const String & function_name, std::initializer_list<std::string_view> params, uint32_t max_depth);
     static void validateEndOfFunction(const String & fn_name, IParser::Pos & pos);
     static String getKQLFunctionName(IParser::Pos & pos);
 };

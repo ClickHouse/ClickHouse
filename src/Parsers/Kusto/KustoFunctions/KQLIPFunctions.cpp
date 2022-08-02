@@ -21,9 +21,25 @@ namespace DB
 {
 bool Ipv4Compare::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto lhs = getArgument(function_name, pos);
+    const auto rhs = getArgument(function_name, pos);
+    const auto mask = getOptionalArgument(function_name, pos);
+
+    out = std::format(
+        "multiIf(length(splitByChar('/', {0}) as lhs) > 2 or length(splitByChar('/', {1}) as rhs) > 2, null, "
+        "isNull(toIPv4OrNull(lhs[1]) as lhs_ip) or length(lhs) = 2 and isNull(toUInt8OrNull(lhs[-1]) as lhs_mask) or "
+        "isNull(toIPv4OrNull(rhs[1]) as rhs_ip) or length(rhs) = 2 and isNull(toUInt8OrNull(rhs[-1]) as rhs_mask), null, "
+        "ignore(toUInt8(min2(32, min2({2}, min2(ifNull(lhs_mask, 32), ifNull(rhs_mask, 32))))) as mask), null, "
+        "sign(toInt32(tupleElement(IPv4CIDRToRange(assumeNotNull(lhs_ip), mask), 1))"
+        "   - toInt32(tupleElement(IPv4CIDRToRange(assumeNotNull(rhs_ip), mask), 1))))",
+        lhs,
+        rhs,
+        mask ? *mask : "32");
+    return true;
 }
 
 bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
@@ -46,9 +62,16 @@ bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
 
 bool Ipv4IsMatch::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto lhs = getArgument(function_name, pos);
+    const auto rhs = getArgument(function_name, pos);
+    const auto mask = getOptionalArgument(function_name, pos);
+
+    out = std::format("{} = 0", kqlCallToExpression("ipv4_compare", {lhs, rhs, mask ? *mask : "32"}, pos.max_depth));
+    return true;
 }
 
 bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
@@ -112,9 +135,18 @@ bool ParseIpv4::convertImpl(String & out, IParser::Pos & pos)
 
 bool ParseIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto ip_address = getArgument(function_name, pos);
+    const auto mask = getArgument(function_name, pos);
+    out = std::format(
+        "if(isNull(toIPv4OrNull({0}) as ip) or isNull(toUInt8OrNull(toString({1})) as mask), null, "
+        "toUInt32(tupleElement(IPv4CIDRToRange(assumeNotNull(ip), toUInt8(max2(0, min2(32, assumeNotNull(mask))))), 1)))",
+        ip_address,
+        mask);
+    return true;
 }
 
 bool Ipv6Compare::convertImpl(String & out, IParser::Pos & pos)
@@ -155,15 +187,35 @@ bool ParseIpv6Mask::convertImpl(String & out, IParser::Pos & pos)
 
 bool FormatIpv4::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto ip_address = getArgument(function_name, pos);
+    const auto mask = getOptionalArgument(function_name, pos);
+    out = std::format(
+        "ifNull(multiIf(isNotNull(toUInt32OrNull(toString({0})) as param_as_uint32) and toTypeName({0}) = 'String' or {1} < 0, null, "
+        "isNull(ifNull(param_as_uint32, {2}) as ip_as_number), null, "
+        "IPv4NumToString(bitAnd(ip_as_number, bitNot(toUInt32(intExp2(32 - {1}) - 1))))), '')",
+        ip_address,
+        mask ? *mask : "32",
+        kqlCallToExpression("parse_ipv4", {"tostring(" + ip_address + ")"}, pos.max_depth));
+    return true;
 }
 
 bool FormatIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto ip_address = getArgument(function_name, pos);
+    const auto mask = getOptionalArgument(function_name, pos);
+    const auto calculated_mask = mask ? *mask : "32";
+    out = std::format(
+        "if(empty({1} as formatted_ip) or not {0} between 0 and 32, '', concat(formatted_ip, '/', toString({0})))",
+        calculated_mask,
+        kqlCallToExpression("format_ipv4", {ip_address, calculated_mask}, pos.max_depth));
+    return true;
 }
 }
