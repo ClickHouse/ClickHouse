@@ -1151,6 +1151,10 @@ void executeQuery(
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
+    SCOPE_EXIT({
+        if (compressed_buffer)
+            compressed_buffer->finalize();
+    });
     try
     {
         if (pipeline.pushing())
@@ -1195,6 +1199,15 @@ void executeQuery(
                 context,
                 {},
                 output_format_settings);
+
+            auto exception_callback = [out, previous_exception_callback = std::move(std::move(streams.exception_callback))]()
+            {
+                if (previous_exception_callback)
+                    previous_exception_callback();
+                out->finalizeBuffers();
+            };
+
+            streams.exception_callback = std::move(exception_callback);
 
             out->setAutoFlush();
 
