@@ -82,7 +82,11 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
 
     writeJSONString("source_file", wb, settings);
     DB::writeChar(':', wb);
-    writeJSONString(msg.getSourceFile(), wb, settings);
+    const char * source_file = msg.getSourceFile();
+    if (source_file != nullptr)
+        writeJSONString(source_file, wb, settings);
+    else
+        writeJSONString("", wb, settings);
     DB::writeChar(',', wb);
 
     writeJSONString("source_line", wb, settings);
