@@ -220,16 +220,16 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * join = typeid_cast<JoinStep *>(child.get()))
     {
-        auto join_push_down = [&](ASTTableJoin::Kind kind) -> size_t
+        auto join_push_down = [&](JoinKind kind) -> size_t
         {
             const auto & table_join = join->getJoin()->getTableJoin();
 
             /// Only inner and left(/right) join are supported. Other types may generate default values for left table keys.
             /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-            if (table_join.kind() != ASTTableJoin::Kind::Inner && table_join.kind() != kind)
+            if (table_join.kind() != JoinKind::Inner && table_join.kind() != kind)
                 return 0;
 
-            bool is_left = kind == ASTTableJoin::Kind::Left;
+            bool is_left = kind == JoinKind::Left;
             const auto & input_header = is_left ? join->getInputStreams().front().header : join->getInputStreams().back().header;
             const auto & res_header = join->getOutputStream().header;
             Names allowed_keys;
@@ -258,13 +258,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
         };
 
-        if (size_t updated_steps = join_push_down(ASTTableJoin::Kind::Left))
+        if (size_t updated_steps = join_push_down(JoinKind::Left))
             return updated_steps;
 
         /// For full sorting merge join we push down both to the left and right tables, because left and right streams are not independent.
         if (join->allowPushDownToRight())
         {
-            if (size_t updated_steps = join_push_down(ASTTableJoin::Kind::Right))
+            if (size_t updated_steps = join_push_down(JoinKind::Right))
                 return updated_steps;
         }
     }

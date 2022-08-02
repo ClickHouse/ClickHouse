@@ -465,7 +465,7 @@ static void appendBlock(const Block & from, Block & to)
 
         /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         /// So ignore any memory limits, even global (since memory tracking has drift).
-        MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+        LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
 
         try
         {
