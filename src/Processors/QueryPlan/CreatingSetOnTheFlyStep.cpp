@@ -57,18 +57,17 @@ void CreatingSetOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline,
 {
     UNUSED(settings);
     size_t num_streams = pipeline.getNumStreams();
+    // pipeline.resize(1);
 
-    pipeline.resize(1);
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
-        auto res = std::make_shared<CreatingSetsOnTheFlyTransform>(header, column_names, set);
+        auto res = std::make_shared<CreatingSetsOnTheFlyTransform>(header, column_names, num_streams, set);
         res->setDescription(this->getStepDescription());
         return res;
     });
-    pipeline.resize(num_streams);
+    // pipeline.resize(num_streams);
 }
 
 void CreatingSetOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -93,10 +92,13 @@ void CreatingSetOnTheFlyStep::updateOutputStream()
 }
 
 
-FilterBySetOnTheFlyStep::FilterBySetOnTheFlyStep(const DataStream & input_stream_, const Names & column_names_,
+FilterBySetOnTheFlyStep::FilterBySetOnTheFlyStep(const DataStream & input_stream_, const Block & rhs_input_stream_header_,
+                                                 const Names & column_names_, size_t buffer_size_,
                                                  SetWithStatePtr set_, PortsStatePtr ports_state_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(true))
     , column_names(column_names_)
+    , buffer_size(buffer_size_)
+    , rhs_input_stream_header(rhs_input_stream_header_.cloneEmpty())
     , set(set_)
     , ports_state(ports_state_)
 {
@@ -105,34 +107,61 @@ FilterBySetOnTheFlyStep::FilterBySetOnTheFlyStep(const DataStream & input_stream
 }
 
 
-static void connectAllInputs(OutputPortRawPtrs ports, InputPorts & inputs)
+static InputPorts::iterator connectAllInputs(OutputPortRawPtrs ports, InputPorts & inputs, size_t num_ports)
 {
     auto input_it = inputs.begin();
-    for (auto & port : ports)
+    for (size_t i = 0; i < num_ports; ++i)
     {
-        connect(*port, *input_it);
+        connect(*ports[i], *input_it);
         input_it++;
     }
-    assert(input_it == inputs.end());
+    return input_it;
 }
 
 void FilterBySetOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     UNUSED(settings);
+    UNUSED(connectAllInputs);
+
+    UNUSED(buffer_size);
 
     Block input_header = pipeline.getHeader();
     pipeline.transform([&input_header, this](OutputPortRawPtrs ports)
     {
-        size_t num_streams = ports.size();
+        Processors transforms;
 
-        auto notifier = std::make_shared<NotifyProcessor>(input_header, num_streams);
+        size_t num_ports = ports.size();
 
-        connectAllInputs(ports, notifier->getInputs());
-        ports_state->tryConnectPorts(notifier->getAuxPorts());
+        auto notifier = std::make_shared<NotifyProcessor2>(input_header, rhs_input_stream_header, num_ports, buffer_size, ports_state->sync_state);
+        notifier->setDescription(getStepDescription());
 
-        return Processors{notifier};
+        auto input_it = connectAllInputs(ports, notifier->getInputs(), num_ports);
+        assert(&*input_it == notifier->getAuxPorts().first);
+        input_it++;
+        assert(input_it == notifier->getInputs().end());
+
+        ports_state->tryConnectPorts(notifier->getAuxPorts(), notifier.get());
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {} / {}", __FILE__, __LINE__,
+            notifier->getAuxPorts().first->isConnected(), notifier->getAuxPorts().second->isConnected());
+
+        auto & outputs = notifier->getOutputs();
+        auto output_it = outputs.begin();
+        for (size_t i = 0; i < outputs.size() - 1; ++i)
+        {
+            auto & port = *output_it++;
+            auto transform = std::make_shared<FilterBySetOnTheFlyTransform>(port.getHeader(), column_names, set);
+            transform->setDescription(this->getStepDescription());
+            connect(port, transform->getInputPort());
+            transforms.emplace_back(std::move(transform));
+        }
+        output_it++;
+        assert(output_it == outputs.end());
+        transforms.emplace_back(std::move(notifier));
+
+        return transforms;
     }, /* check_ports= */ false);
 
+    /*
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -141,6 +170,7 @@ void FilterBySetOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline,
         res->setDescription(this->getStepDescription());
         return res;
     });
+    */
 }
 
 void FilterBySetOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map) const

@@ -1,4 +1,6 @@
 #pragma once
+#include <atomic>
+#include <mutex>
 #include <vector>
 #include <Processors/ISimpleTransform.h>
 #include <Poco/Logger.h>
@@ -21,6 +23,7 @@ public:
     };
 
     std::atomic<State> state = State::Creating;
+    std::atomic_size_t finished_count = 0;
 };
 
 using SetWithStatePtr = std::shared_ptr<SetWithState>;
@@ -35,7 +38,7 @@ class CreatingSetsOnTheFlyTransform : public ISimpleTransform
 {
 public:
     explicit CreatingSetsOnTheFlyTransform(
-        const Block & header_, const Names & column_names_, SetWithStatePtr set_);
+        const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
 
     String getName() const override { return "CreatingSetsOnTheFlyTransform"; }
 
@@ -47,6 +50,8 @@ private:
     Names column_names;
     std::vector<size_t> key_column_indices;
 
+    size_t num_streams;
+
     /// Set to fill
     SetWithStatePtr set;
 
@@ -56,7 +61,7 @@ private:
 
 /*
  * Filter the input chunk by the set.
- * When set building is not comleted, just return the source data.
+ * When set building is not completed, just return the source data.
  */
 class FilterBySetOnTheFlyTransform : public ISimpleTransform
 {

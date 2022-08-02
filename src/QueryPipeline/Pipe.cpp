@@ -784,6 +784,9 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
 
     for (const auto & port : output_ports)
     {
+        if (!check_ports)
+            break;
+
         if (!port->isConnected())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
@@ -809,7 +812,7 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
                     processor->getName());
 
             const auto * connected_processor = &port.getOutputPort().getProcessor();
-            if (!set.contains(connected_processor))
+            if (check_ports && !set.contains(connected_processor))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Transformation of Pipe is not valid because processor {} has input port which is connected with unknown processor {}",
@@ -826,7 +829,7 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
             }
 
             const auto * connected_processor = &port.getInputPort().getProcessor();
-            if (!set.contains(connected_processor))
+            if (check_ports && !set.contains(connected_processor))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Transformation of Pipe is not valid because processor {} has output port which is connected with unknown processor {}",

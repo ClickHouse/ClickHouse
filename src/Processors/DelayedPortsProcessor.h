@@ -2,6 +2,8 @@
 #include <Processors/IProcessor.h>
 #include <base/unit.h>
 #include <Processors/Chunk.h>
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -45,28 +47,29 @@ private:
 class NotifyProcessor : public IProcessor
 {
 public:
-    NotifyProcessor(const Block & header, size_t num_ports);
+    struct State
+    {
+        std::atomic_bool waiting = false;
+        std::atomic_bool can_push = false;
+        std::atomic_size_t idx = 0;
+    };
+    using StatePtr = std::shared_ptr<State>;
+
+    NotifyProcessor(const Block & header, const Block & aux_header, size_t num_ports, StatePtr sync_state_);
 
     String getName() const override { return "NotifyProcessor"; }
 
     Status prepare(const PortNumbers &, const PortNumbers &) override;
+    void work() override;
 
     std::pair<InputPort *, OutputPort *> getAuxPorts();
 
-    virtual bool isReady() const { return true; }
-    virtual bool isWaiting() const { return false; }
+
+    virtual bool canSend() const = 0;
 
     virtual void dataCallback(const Chunk & chunk) { UNUSED(chunk); }
 
-private:
-
-    enum class AuxPortState
-    {
-        NotInitialized,
-        Triggered,
-        Finished,
-    };
-
+protected:
     struct PortsPair
     {
         InputPort * input_port = nullptr;
@@ -74,6 +77,11 @@ private:
         bool is_finished = false;
     };
 
+    bool sendPing();
+    bool recievePing();
+    virtual String log() = 0;
+
+    bool isPairsFinished() const;
     bool processPair(PortsPair & pair);
     void finishPair(PortsPair & pair);
     Status processRegularPorts(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs);
@@ -81,36 +89,49 @@ private:
     std::vector<PortsPair> port_pairs;
     size_t num_finished_pairs = 0;
 
-    InputPort aux_in_port;
-    OutputPort aux_out_port;
+    InputPort & aux_in_port;
+    OutputPort & aux_out_port;
 
-    AuxPortState ready = AuxPortState::NotInitialized;
-    AuxPortState waiting = AuxPortState::NotInitialized;
+    bool is_send = false;
+    bool is_recieved = false;
+
+    bool set_needed_once = false;
+    StatePtr sync_state;
+
+    size_t idx;
 };
 
 
 class NotifyProcessor2 : public NotifyProcessor
 {
 public:
-    using NotifyProcessor::NotifyProcessor;
-
-    bool isReady() const override
+    NotifyProcessor2(const Block & header, const Block & aux_header, size_t num_ports, size_t size_, NotifyProcessor::StatePtr sync_state_)
+        : NotifyProcessor(header, aux_header, num_ports, sync_state_)
+        , size(size_)
     {
-        return data_consumed > 10_MiB;
     }
 
-    bool isWaiting() const override
+    bool canSend() const override
     {
-        return data_consumed < 10_MiB;
+        return isPairsFinished() || data_consumed > size;
     }
+
 
     void dataCallback(const Chunk & chunk) override
     {
-        data_consumed += chunk.allocatedBytes();
+        data_consumed += chunk.getNumRows();
+        // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {}: data_consumed {}", __FILE__, __LINE__, getDescription(), data_consumed);
+    }
+
+    String log() override
+    {
+        return fmt::format("data {} / {} = {:.2f}", data_consumed, size, data_consumed / float(size));
     }
 
 private:
     size_t data_consumed = 0;
+
+    size_t size;
 };
 
 }

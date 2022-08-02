@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <mutex>
 #include <Processors/Transforms/CreatingSetsOnTheFlyTransform.h>
 #include <Interpreters/Set.h>
 
@@ -52,10 +53,12 @@ std::string formatBytesHumanReadable(size_t bytes)
 }
 
 
-CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_)
+CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
+    const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
+    , num_streams(num_streams_)
     , set(set_)
     , log(&Poco::Logger::get(getName()))
 {
@@ -65,14 +68,18 @@ IProcessor::Status CreatingSetsOnTheFlyTransform::prepare()
 {
     auto status = ISimpleTransform::prepare();
 
-    if (status == Status::Finished && set)
+    if (status == Status::Finished && set && set->state == SetWithState::State::Creating)
     {
         if (input.isFinished())
         {
-            set->finishInsert();
-            set->state = SetWithState::State::Finished;
-            LOG_DEBUG(log, "{}: finish building set for [{}] with {} rows, set size is {}",
-                getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
+            set->finished_count++;
+            if (set->finished_count == num_streams)
+            {
+                set->finishInsert();
+                set->state = SetWithState::State::Finished;
+                LOG_DEBUG(log, "{}: finish building set for [{}] with {} rows, set size is {}",
+                    getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
+            }
         }
         else
         {
@@ -82,29 +89,38 @@ IProcessor::Status CreatingSetsOnTheFlyTransform::prepare()
             LOG_DEBUG(log, "{}: Processor finished, but not all input was read, cancelling building set after using {}",
                 getDescription(), formatBytesHumanReadable(set->getTotalByteCount()));
         }
+    }
 
+    if (status == Status::Finished && set && set->state != SetWithState::State::Creating)
         /// Release pointer to make it possible destroy it by consumer
         set.reset();
-    }
 
     return status;
 }
 
 void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
 {
-    if (!set)
+    if (!set || set->state != SetWithState::State::Creating)
+    {
+        if (set)
+            set.reset();
         return;
+    }
 
     if (chunk.getNumRows())
     {
         Columns key_columns = getColumnsByIndices(chunk, key_column_indices);
+        size_t prev_size = set->getTotalByteCount();
         bool limit_exceeded = !set->insertFromBlock(key_columns);
         if (limit_exceeded)
         {
-            LOG_DEBUG(log, "{}: set limit exceeded, give up building set, after using {}",
-                getDescription(), formatBytesHumanReadable(set->getTotalByteCount()));
+            auto prev_state = set->state.exchange(SetWithState::State::Suspended);
+            if (prev_state == SetWithState::State::Creating)
+            {
+                LOG_DEBUG(log, "{}: set limit exceeded, give up building set, after using {} ({} -> {} bytes)",
+                    getDescription(), formatBytesHumanReadable(set->getTotalByteCount()), prev_size, set->getTotalByteCount());
+            }
             // TODO(@vdimir): set->clear() ?
-            set->state = SetWithState::State::Suspended;
             set.reset();
         }
     }
@@ -150,8 +166,9 @@ void FilterBySetOnTheFlyTransform::transform(Chunk & chunk)
 {
     stat.consumed_rows += chunk.getNumRows();
     stat.result_rows += chunk.getNumRows();
-    bool can_filter = set && set->state == SetWithState::State::Finished;
 
+    bool can_filter = set && set->state == SetWithState::State::Finished;
+    // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {} / {} / {}", __FILE__, __LINE__, set->finished_count.load(), set->state.load(), set->getTotalRowCount());
     if (!can_filter)
         stat.consumed_rows_before_set += chunk.getNumRows();
 
