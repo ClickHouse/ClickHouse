@@ -109,7 +109,7 @@ public:
         return this->getName() == rhs.getName();
     }
 
-    DataTypePtr getStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
         /// Return normalized state type: count()
         AggregateFunctionProperties properties;
@@ -260,7 +260,7 @@ public:
         return this->getName() == rhs.getName();
     }
 
-    DataTypePtr getStateType() const override
+    DataTypePtr getNormalizedStateType() const override
     {
         /// Return normalized state type: count()
         AggregateFunctionProperties properties;
