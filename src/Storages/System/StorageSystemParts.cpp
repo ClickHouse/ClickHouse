@@ -13,6 +13,7 @@
 #include <Parsers/queryToString.h>
 #include <Common/hex.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

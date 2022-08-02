@@ -202,8 +202,9 @@ void DatabaseOnDisk::createTable(
         if (create.uuid != create_detached.uuid)
             throw Exception(
                     ErrorCodes::TABLE_ALREADY_EXISTS,
-                    "Table {}.{} already exist (detached permanently). To attach it back "
-                    "you need to use short ATTACH syntax or a full statement with the same UUID",
+                    "Table {}.{} already exist (detached or detached permanently). To attach it back "
+                    "you need to use short ATTACH syntax (ATTACH TABLE {}.{};)",
+                    backQuote(getDatabaseName()), backQuote(table_name),
                     backQuote(getDatabaseName()), backQuote(table_name));
     }
 

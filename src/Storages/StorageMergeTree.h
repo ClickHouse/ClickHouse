@@ -87,6 +87,8 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
+    bool hasLightweightDeletedMask() const override;
+
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
 
@@ -184,6 +186,7 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version);
     void waitForMutation(const String & mutation_id) override;
+    void waitForMutation(Int64 version, const String & mutation_id);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
 

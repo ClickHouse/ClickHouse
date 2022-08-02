@@ -360,6 +360,31 @@ private:
 
     inline static ContextPtr global_context_instance;
 
+    /// A flag, used to mark if reader needs to apply deleted rows mask.
+    bool apply_deleted_mask = true;
+
+public:
+    /// Some counters for current query execution.
+    /// Most of them are workarounds and should be removed in the future.
+    struct KitchenSink
+    {
+        std::atomic<size_t> analyze_counter = 0;
+
+        KitchenSink() = default;
+
+        KitchenSink(const KitchenSink & rhs)
+            : analyze_counter(rhs.analyze_counter.load())
+        {}
+
+        KitchenSink & operator=(const KitchenSink & rhs)
+        {
+            analyze_counter = rhs.analyze_counter.load();
+            return *this;
+        }
+    };
+
+    KitchenSink kitchen_sink;
+
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
@@ -470,13 +495,13 @@ public:
     /// Checks access rights.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id) const;
-    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const;
     void checkAccess(const AccessRightsElement & element) const;
@@ -602,8 +627,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(const StringRef & name, const String & value);
-    void setSetting(const StringRef & name, const Field & value);
+    void setSetting(std::string_view name, const String & value);
+    void setSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -752,6 +777,7 @@ public:
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -814,6 +840,8 @@ public:
 
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
+    ThrottlerPtr getRemoteReadThrottler() const;
+    ThrottlerPtr getRemoteWriteThrottler() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -903,6 +931,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool applyDeletedMask() const { return apply_deleted_mask; }
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
     ActionLocksManagerPtr getActionLocksManager();
 

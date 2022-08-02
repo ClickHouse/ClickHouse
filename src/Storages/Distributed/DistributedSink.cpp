@@ -764,10 +764,10 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             /// And note that it is safe, because we have checksum and size for header.
 
             /// Write the header.
-            const StringRef header = header_buf.stringRef();
+            const std::string_view header = header_buf.stringView();
             writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
-            writeStringBinary(header, out);
-            writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
+            writeStringBinary(StringRef(header), out);
+            writePODBinary(CityHash_v1_0_2::CityHash128(header.data(), header.size()), out);
 
             stream.write(block);
 

@@ -6,28 +6,28 @@ CREATE TABLE t_ab2 (id Nullable(Int32), a Int16, b Nullable(Int64)) ENGINE = Tin
 INSERT INTO t_ab1 VALUES (0, 1, 1), (1, 2, 2);
 INSERT INTO t_ab2 VALUES (2, -1, 1), (3, 1, NULL), (4, 1, 257), (5, 1, -1), (6, 1, 1);
 
-{% for join_type in ['hash', 'partial_merge'] -%}
+{% for join_type in ['hash', 'full_sorting_merge', 'partial_merge'] -%}
 
 SELECT '=== {{ join_type }} ===';
 
 SET join_algorithm = '{{ join_type }}';
 
-SELECT '= full =';
+SELECT '= full using =';
 SELECT a, b FROM t_ab1 FULL JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
-SELECT '= left =';
+SELECT '= left using =';
 SELECT a, b FROM t_ab1 LEFT JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
-SELECT '= right =';
+SELECT '= right using =';
 SELECT a, b FROM t_ab1 RIGHT JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
-SELECT '= inner =';
+SELECT '= inner using =';
 SELECT a, b FROM t_ab1 INNER JOIN t_ab2 USING (a, b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 
-SELECT '= full =';
+SELECT '= full on =';
 SELECT a, b, t_ab2.a, t_ab2.b FROM t_ab1 FULL JOIN t_ab2 ON (t_ab1.a == t_ab2.a AND t_ab1.b == t_ab2.b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
-SELECT '= left =';
+SELECT '= left on =';
 SELECT a, b, t_ab2.a, t_ab2.b FROM t_ab1 LEFT JOIN t_ab2 ON (t_ab1.a == t_ab2.a AND t_ab1.b == t_ab2.b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
-SELECT '= right =';
+SELECT '= right on =';
 SELECT a, b, t_ab2.a, t_ab2.b FROM t_ab1 RIGHT JOIN t_ab2 ON (t_ab1.a == t_ab2.a AND t_ab1.b == t_ab2.b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
-SELECT '= inner =';
+SELECT '= inner on =';
 SELECT a, b, t_ab2.a, t_ab2.b FROM t_ab1 INNER JOIN t_ab2 ON (t_ab1.a == t_ab2.a AND t_ab1.b == t_ab2.b) ORDER BY ifNull(t_ab1.id, t_ab2.id);
 
 SELECT '= agg =';

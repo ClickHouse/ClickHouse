@@ -148,7 +148,7 @@ public:
 
 }
 
-void registerFunctionS2RectUnion(FunctionFactory & factory)
+REGISTER_FUNCTION(S2RectUnion)
 {
     factory.registerFunction<FunctionS2RectUnion>();
 }
