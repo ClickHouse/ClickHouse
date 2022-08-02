@@ -3,15 +3,17 @@
 #include <functional>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <base/terminalColors.h>
-#include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Common/CurrentThread.h>
+#include <base/terminalColors.h>
 
 
-OwnPatternFormatter::OwnPatternFormatter(bool color_) : Poco::PatternFormatter(""), color(color_)
+OwnPatternFormatter::OwnPatternFormatter(bool color_)
+    : Poco::PatternFormatter(""), color(color_)
 {
 }
+
 
 void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const
 {
