@@ -114,6 +114,9 @@ MergeTreeDataPartWriterOnDisk::~MergeTreeDataPartWriterOnDisk()
         index_stream->finalize();
         index_file_stream->finalize();
     }
+
+    for (auto & stream : skip_indices_streams)
+        stream->finalize();
 }
 
 // Implementation is split into static functions for ability
