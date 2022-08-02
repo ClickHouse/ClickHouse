@@ -982,7 +982,7 @@ Default value: 2.
 **Example**
 
 ```xml
-<background_merges_mutations_concurrency_ratio>3</background_pbackground_merges_mutations_concurrency_ratio>
+<background_merges_mutations_concurrency_ratio>3</background_merges_mutations_concurrency_ratio>
 ```
 
 ## background_move_pool_size {#background_move_pool_size}
