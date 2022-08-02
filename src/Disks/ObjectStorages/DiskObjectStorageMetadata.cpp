@@ -141,7 +141,9 @@ std::string DiskObjectStorageMetadata::getIndexPath() const
 
     auto key_str = getHexUIntLowercase(key);
 
-    return fs::path(common_metadata_path) / "metadata" / key_str.substr(0, 3) / key_str;
+    // There are a lot of files in metaindex (one for every object),
+    // so here is two-level folders to avoid multiple files in one folder
+    return fs::path(common_metadata_path) / "metaindex" / key_str.substr(0, 3) / key_str.substr(0, 6) / key_str;
 }
 
 }

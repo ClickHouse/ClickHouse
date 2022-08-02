@@ -65,11 +65,25 @@ UnlinkIndexFileOperation::UnlinkIndexFileOperation(const std::string & path_, co
 
 void UnlinkIndexFileOperation::execute(std::unique_lock<std::shared_mutex> &)
 {
-    disk.removeFile(index_path);
+    // .../metaindex/123/123456/1234567890abcdef1234567890abcdef
+    disk.removeFileIfExists(index_path);
+
+    // clean second-level directory.../metaindex/123/123456
+    auto dir2 = parentPath(index_path);
+    if (disk.isDirectoryEmpty(dir2))
+    {
+        if (disk.exists(dir2))
+            disk.removeDirectory(dir2);
+        // clean first-level directory .../metaindex/123
+        auto dir1 = parentPath(dir2);
+        if (disk.exists(dir1) && disk.isDirectoryEmpty(dir1))
+            disk.removeDirectory(dir1);
+    }
 }
 
 void UnlinkIndexFileOperation::undo()
 {
+    disk.createDirectories(directoryPath(index_path));
     disk.createHardLink(path, index_path);
 }
 
