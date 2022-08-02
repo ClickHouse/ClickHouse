@@ -46,12 +46,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
 
-    for (const auto & name : queried_columns)
-    {
-        auto it = column_sizes.find(name);
-        if (it != column_sizes.end())
-            total_size_of_queried_columns += it->second;
-    }
+    for (const auto & [_, size] : column_sizes)
+        total_size_of_queried_columns += size;
 
     determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
     optimize(query_info.query->as<ASTSelectQuery &>());
