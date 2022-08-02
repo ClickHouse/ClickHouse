@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
+
+struct Settings;
 
 struct OpenTelemetrySpan
 {

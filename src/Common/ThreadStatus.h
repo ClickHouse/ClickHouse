@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
 #include <Common/ConcurrentBoundedQueue.h>
