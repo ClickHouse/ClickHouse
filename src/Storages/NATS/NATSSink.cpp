@@ -41,16 +41,37 @@ void NATSSink::onStart()
 
 void NATSSink::consume(Chunk chunk)
 {
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
     format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 
 void NATSSink::onFinish()
 {
-    format->finalize();
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+}
 
-    if (buffer)
-        buffer->updateMaxWait();
+void NATSSink::onException()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+}
+
+void NATSSink::onCancel()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+    cancelled = true;
+}
+
+void NATSSink::finalize()
+{
+    format->finalize();
+    buffer->updateMaxWait();
+    buffer->finalize();
 }
 
 }

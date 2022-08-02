@@ -41,16 +41,42 @@ void RabbitMQSink::onStart()
 
 void RabbitMQSink::consume(Chunk chunk)
 {
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
     format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 
 void RabbitMQSink::onFinish()
 {
-    format->finalize();
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+}
+
+void RabbitMQSink::onException()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+}
+
+void RabbitMQSink::onCancel()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+    cancelled = true;
+}
+
+void RabbitMQSink::finalize()
+{
+    if (format)
+        format->finalize();
 
     if (buffer)
+    {
         buffer->updateMaxWait();
+        buffer->finalize();
+    }
 }
 
 }

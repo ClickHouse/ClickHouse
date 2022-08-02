@@ -43,8 +43,12 @@ public:
     String getName() const override { return "SetOrJoinSink"; }
     void consume(Chunk chunk) override;
     void onFinish() override;
+    void onException() override;
+    void onCancel() override;
 
 private:
+    void finalize();
+
     StorageSetOrJoinBase & table;
     StorageMetadataPtr metadata_snapshot;
     String backup_path;
@@ -54,6 +58,9 @@ private:
     CompressedWriteBuffer compressed_backup_buf;
     NativeWriter backup_stream;
     bool persistent;
+
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 
@@ -81,6 +88,9 @@ SetOrJoinSink::SetOrJoinSink(
 
 void SetOrJoinSink::consume(Chunk chunk)
 {
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
     /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
     Block sorted_block = getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
 
@@ -91,15 +101,37 @@ void SetOrJoinSink::consume(Chunk chunk)
 
 void SetOrJoinSink::onFinish()
 {
+    std::lock_guard lock(cancel_mutex);
+
     table.finishInsert();
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.finalize();
-        backup_buf->finalize();
+        finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
     }
+}
+
+void SetOrJoinSink::onException()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+}
+
+void SetOrJoinSink::onCancel()
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    finalize();
+    cancelled = true;
+}
+
+void SetOrJoinSink::finalize()
+{
+    compressed_backup_buf.finalize();
+    backup_buf->finalize();
 }
 
 

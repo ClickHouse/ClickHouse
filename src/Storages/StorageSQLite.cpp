@@ -122,6 +122,7 @@ public:
 
         auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
         writer->write(block);
+        writer->finalize();
 
         sqlbuf << ";";
 

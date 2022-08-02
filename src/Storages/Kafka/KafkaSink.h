@@ -20,16 +20,23 @@ public:
     void consume(Chunk chunk) override;
     void onStart() override;
     void onFinish() override;
+    void onException() override;
+    void onCancel() override;
+
     String getName() const override { return "KafkaSink"; }
 
     ///void flush() override;
 
 private:
+    void finalize();
     StorageKafka & storage;
     StorageMetadataPtr metadata_snapshot;
     const ContextPtr context;
     ProducerBufferPtr buffer;
     IOutputFormatPtr format;
+
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 }

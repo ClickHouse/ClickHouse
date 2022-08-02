@@ -36,17 +36,42 @@ void KafkaSink::onStart()
 
 void KafkaSink::consume(Chunk chunk)
 {
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
     format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 void KafkaSink::onFinish()
 {
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+}
+
+void KafkaSink::onException()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+}
+
+void KafkaSink::onCancel()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+    cancelled = true;
+}
+
+void KafkaSink::finalize()
+{
     if (format)
         format->finalize();
-    //flush();
 
     if (buffer)
+    {
         buffer->flush();
+        buffer->finalize();
+    }
 }
+
 
 }

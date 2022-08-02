@@ -316,7 +316,7 @@ public:
 
 
 private:
-    void finalizeStreams();
+    void finalize();
 
     StorageLog & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -407,7 +407,7 @@ void LogSink::onFinish()
     }
 
     /// Finish write.
-    finalizeStreams();
+    finalize();
     streams.clear();
 
     storage.saveMarks(lock);
@@ -425,16 +425,16 @@ void LogSink::onFinish()
 void LogSink::onException()
 {
     std::lock_guard cancel_lock(cancel_mutex);
-    finalizeStreams();
+    finalize();
 }
 
 void LogSink::onCancel()
 {
     std::lock_guard cancel_lock(cancel_mutex);
-    finalizeStreams();
+    finalize();
 }
 
-void LogSink::finalizeStreams()
+void LogSink::finalize()
 {
     for (auto & stream : streams | boost::adaptors::map_values)
         stream.finalize();

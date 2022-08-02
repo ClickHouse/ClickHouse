@@ -223,15 +223,14 @@ public:
     void onException() override
     {
         std::lock_guard lock_cancel(cancel_mutex);
-        data_out->finalize();
-        data_out_compressed->finalize();
+        finalize();
     }
 
     void onCancel() override
     {
         std::lock_guard lock_cancel(cancel_mutex);
-        data_out->finalize();
-        data_out_compressed->finalize();
+        finalize();
+        cancelled = true;
     }
 
     void onFinish() override
@@ -240,8 +239,7 @@ public:
         if (done)
             return;
 
-        data_out->finalize();
-        data_out_compressed->finalize();
+        finalize();
 
         /// Save the new indices.
         storage.saveIndices(lock);
@@ -260,6 +258,12 @@ public:
     }
 
 private:
+    void finalize()
+    {
+        data_out->finalize();
+        data_out_compressed->finalize();
+    }
+
     StorageStripeLog & storage;
     StorageMetadataPtr metadata_snapshot;
     WriteLock lock;
@@ -271,6 +275,7 @@ private:
     bool done = false;
 
     std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 
