@@ -5,6 +5,4 @@ INSERT INTO optimize_sorting SELECT number, number%5, number%2 from numbers(10);
 SELECT a as a from optimize_sorting order by a;
 SELECT sipHash64(a) as a from optimize_sorting order by a;
 -- { echoOff }
-
 DROP TABLE IF EXISTS optimize_sorting;
-
