@@ -578,7 +578,12 @@ namespace JSONUtils
             writeObjectStart(out, 2);
 
             writeTitle<true>("name", out, 3);
-            writeDoubleQuoted(fields[i].name, out);
+
+            /// The field names are pre-escaped to be put into JSON string literal.
+            writeChar('"', out);
+            writeString(fields[i].name, out);
+            writeChar('"', out);
+
             writeFieldDelimiter(out);
             writeTitle<true>("type", out, 3);
             writeJSONString(fields[i].type->getName(), out, settings);
