@@ -61,8 +61,6 @@ public:
             out.next();
     }
 
-
-
 protected:
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
