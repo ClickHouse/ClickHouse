@@ -273,6 +273,12 @@ public:
 ClientBase::~ClientBase()
 {
     std_out.finalize();
+
+    if (out_file_buf)
+        out_file_buf->finalize();
+
+    if (out_logs_buf)
+        out_logs_buf->finalize();
 }
 
 ClientBase::ClientBase() = default;

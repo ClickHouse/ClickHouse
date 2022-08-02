@@ -146,7 +146,7 @@ void WriteBufferValidUTF8::nextImpl()
 void WriteBufferValidUTF8::finalizeImpl()
 {
     /// Write all complete sequences from buffer.
-    nextImpl();
+    next();
 
     /// If unfinished sequence at end, then write replacement.
     if (working_buffer.begin() != memory.data())

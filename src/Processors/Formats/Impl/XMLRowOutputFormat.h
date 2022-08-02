@@ -45,6 +45,12 @@ private:
             out.next();
     }
 
+    void finalizeBuffers() override
+    {
+        if (validating_ostr)
+            validating_ostr->finalize();
+    }
+
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {
         statistics.applied_limit = true;

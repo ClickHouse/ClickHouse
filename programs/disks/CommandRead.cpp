@@ -69,6 +69,7 @@ public:
             auto in = disk->readFile(full_path);
             std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
             copyData(*in, *out);
+            out->finalize();
         }
     }
 };

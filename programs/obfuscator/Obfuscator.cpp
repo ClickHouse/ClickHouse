@@ -1142,6 +1142,7 @@ try
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
+    SCOPE_EXIT(file_out.finalize());
 
     {
         /// stdin must be seekable

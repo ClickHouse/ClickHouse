@@ -577,6 +577,7 @@ private:
         }
 
         json_out << "}\n";
+        json_out.finalize();
     }
 
 public:

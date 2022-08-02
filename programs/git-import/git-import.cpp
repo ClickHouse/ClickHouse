@@ -530,6 +530,13 @@ struct ResultWriter
             }
         }
     }
+
+    ~ResultWriter()
+    {
+        commits.finalize();
+        file_changes.finalize();
+        line_changes.finalize();
+    }
 };
 
 
