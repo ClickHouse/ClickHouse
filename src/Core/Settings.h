@@ -344,7 +344,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, max_temporary_non_const_columns, 0, "", 0) \
     \
     M(UInt64, max_subquery_depth, 100, "", 0) \
-    M(UInt64, max_pipeline_depth, 1000, "", 0) \
+    M(UInt64, max_pipeline_depth, 10000, "", 0) \
     M(UInt64, max_ast_depth, 1000, "Maximum depth of query syntax tree. Checked after parsing.", 0) \
     M(UInt64, max_ast_elements, 50000, "Maximum size of query syntax tree in number of nodes. Checked after parsing.", 0) \
     M(UInt64, max_expanded_ast_elements, 500000, "Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.", 0) \
