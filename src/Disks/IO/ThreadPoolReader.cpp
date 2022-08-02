@@ -73,6 +73,7 @@ namespace ErrorCodes
 
 }
 
+#if defined(OS_LINUX)
 /// According to man, Linux 5.9 and 5.10 have a bug in preadv2() with the RWF_NOWAIT.
 /// https://manpages.debian.org/testing/manpages-dev/preadv2.2.en.html#BUGS
 static bool hasBugInPreadV2()
@@ -80,6 +81,7 @@ static bool hasBugInPreadV2()
     VersionNumber linux_version(Poco::Environment::osVersion());
     return linux_version >= VersionNumber{5, 9, 0} && linux_version < VersionNumber{5, 11, 0};
 }
+#endif
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
     : pool(pool_size, pool_size, queue_size_)
