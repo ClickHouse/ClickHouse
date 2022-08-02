@@ -35,6 +35,8 @@ struct RowPolicy : public IAccessEntity
     void setPermissive(bool permissive_ = true) { setRestrictive(!permissive_); }
     bool isPermissive() const { return !isRestrictive(); }
 
+    RowPolicyOrderType getOrderType() const { return isRestrictive() ? RowPolicyOrderType::Restrictive : RowPolicyOrderType::Permissive; }
+
     /// Sets that the policy is restrictive.
     /// A row is only accessible if at least one of the permissive policies passes,
     /// in addition to all the restrictive policies.

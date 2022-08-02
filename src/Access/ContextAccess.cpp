@@ -379,12 +379,12 @@ std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies()
     return no_row_policies;
 }
 
-ASTPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr) const
+RowPolicyFilter ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const RowPolicyFilter & combine_with_filter) const
 {
     std::lock_guard lock{mutex};
     if (enabled_row_policies)
-        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_expr);
-    return nullptr;
+        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_filter);
+    return combine_with_filter;
 }
 
 std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/EnabledRowPolicies.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
@@ -516,7 +517,7 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
+    RowPolicyFilter getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
     /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
     /// if the initial user exists.

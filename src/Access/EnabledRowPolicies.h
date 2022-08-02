@@ -1,18 +1,31 @@
 #pragma once
 
 #include <Access/Common/RowPolicyDefs.h>
+#include <Access/RowPolicy.h>
 #include <base/types.h>
 #include <Core/UUID.h>
+
 #include <boost/container/flat_set.hpp>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
-#include <unordered_map>
+
 #include <memory>
+#include <unordered_map>
+#include <vector>
 
 
 namespace DB
 {
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
+
+
+struct RowPolicyFilter
+{
+    ASTPtr expression;
+    std::vector<RowPolicyPtr> policies;
+
+    void optimize();
+};
 
 
 /// Provides fast access to row policies' conditions for a specific user and tables.
@@ -39,8 +52,8 @@ public:
     /// Returns prepared filter for a specific table and operations.
     /// The function can return nullptr, that means there is no filters applied.
     /// The returned filter can be a combination of the filters defined by multiple row policies.
-    ASTPtr getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
-    ASTPtr getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr) const;
+    RowPolicyFilter getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
+    RowPolicyFilter getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const RowPolicyFilter & combine_with_filter) const;
 
 private:
     friend class RowPolicyCache;
@@ -61,6 +74,7 @@ private:
     {
         ASTPtr ast;
         std::shared_ptr<const std::pair<String, String>> database_and_table_name;
+        std::vector<RowPolicyPtr> policies;
     };
 
     struct Hash

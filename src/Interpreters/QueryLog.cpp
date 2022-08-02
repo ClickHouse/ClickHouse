@@ -1,4 +1,5 @@
-#include <array>
+#include <Interpreters/QueryLog.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -15,12 +16,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Interpreters/QueryLog.h>
-#include <Poco/Net/IPAddress.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+
+#include <Poco/Net/IPAddress.h>
+
+#include <array>
 
 
 namespace DB
@@ -35,6 +38,13 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
             {"QueryFinish",                 static_cast<Int8>(QUERY_FINISH)},
             {"ExceptionBeforeStart",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
+        });
+
+    auto row_policy_order_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"Restrictive",                 static_cast<Int8>(RowPolicyOrderType::Restrictive)},
+            {"Permissive",                  static_cast<Int8>(RowPolicyOrderType::Permissive)},
         });
 
     return
@@ -118,6 +128,9 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+    
+        {"used_row_policies.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
+        {"used_row_policies.type", std::make_shared<DataTypeArray>(row_policy_order_type)},
 
         {"transaction_id", getTransactionIDDataType()},
     };
@@ -236,13 +249,15 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_row_policies_order_types = typeid_cast<ColumnArray &>(*columns[i++]);
 
-        auto fill_column = [](const std::unordered_set<String> & data, ColumnArray & column)
+        auto fill_column = [](const auto & data, ColumnArray & column)
         {
             size_t size = 0;
-            for (const auto & name : data)
+            for (const auto & value : data)
             {
-                column.getData().insertData(name.data(), name.size());
+                column.getData().insert(value);
                 ++size;
             }
             auto & offsets = column.getOffsets();
@@ -258,6 +273,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_functions, column_function_factory_objects);
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
+        fill_column(row_policies_names, column_row_policies_names);
+        fill_column(row_policies_order_types, column_row_policies_order_types);
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
