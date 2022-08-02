@@ -10,11 +10,11 @@
 namespace DB
 {
 
-static bool isSortingPreserved(const SortDescription& sort_description, const ActionsDAGPtr& actions_dag)
+static bool isSortingPreserved(const SortDescription & sort_description, const ActionsDAGPtr & actions_dag)
 {
-    for(const auto& column_sort_desc: sort_description)
+    for (const auto & column_sort_desc : sort_description)
     {
-        const auto* node = actions_dag->tryFindInIndex(column_sort_desc.column_name);
+        const auto * node = actions_dag->tryFindInIndex(column_sort_desc.column_name);
         if (node && node->type == ActionsDAG::ActionType::ALIAS)
         {
             // todo: check if alias keep order
