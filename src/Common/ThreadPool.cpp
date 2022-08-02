@@ -152,7 +152,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
 
         // this scheduleImpl is called in the parent thread,
         // the tracing context on this thread is used as parent context for the sub-thread that runs the job
-        auto& current_thread_context = DB::OpenTelemetryThreadTraceContext::current();
+        const auto &current_thread_context = DB::OpenTelemetryThreadTraceContext::current();
         jobs.emplace(std::move(job), priority, current_thread_context);
         ++scheduled_jobs;
         new_job_or_shutdown.notify_one();
