@@ -129,7 +129,7 @@ public:
 
 }
 
-void registerFunctionTupleToNameValuePairs(FunctionFactory & factory)
+REGISTER_FUNCTION(TupleToNameValuePairs)
 {
     factory.registerFunction<FunctionTupleToNameValuePairs>();
 }

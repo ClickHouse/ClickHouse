@@ -5,7 +5,8 @@ import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 
 GRPC_PORT = 9100
-NODE_IP = "10.5.172.77"  # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
+# It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
+NODE_IP = "10.5.172.77"  # Never copy-paste this line
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
