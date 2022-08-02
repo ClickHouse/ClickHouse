@@ -28,7 +28,7 @@ struct WindowFunctionDescription
 
 struct WindowFrame
 {
-    enum class FrameType { Rows, Groups, Range };
+    enum class FrameType { ROWS, GROUPS, RANGE };
     enum class BoundaryType { Unbounded, Current, Offset };
 
     // This flag signifies that the frame properties were not set explicitly by
@@ -36,7 +36,7 @@ struct WindowFrame
     // for the default frame of RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
     bool is_default = true;
 
-    FrameType type = FrameType::Range;
+    FrameType type = FrameType::RANGE;
 
     // UNBOUNDED FOLLOWING for the frame end is forbidden by the standard, but for
     // uniformity the begin_preceding still has to be set to true for UNBOUNDED

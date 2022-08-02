@@ -36,7 +36,7 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64)), zero32))) & 0xffffffff)
         | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
         _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64+32)), zero32))) << 32);
-#elif defined(__SSE2__) && defined(__POPCNT__)
+#elif defined(__SSE2__)
     static const __m128i zero16 = _mm_setzero_si128();
     UInt64 res =
         (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
