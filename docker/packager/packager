@@ -215,7 +215,7 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
-    # Create combined output archive for split build and for performance tests.
+    # Create combined output archive for shared library build and for performance tests.
     if package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
@@ -269,8 +269,8 @@ def parse_env_variables(
             "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1"
         )
         # We can't always build utils because it requires too much space, but
-        # we have to build them at least in some way in CI. The split build is
-        # probably the least heavy disk-wise.
+        # we have to build them at least in some way in CI. The shared library
+        # build is probably the least heavy disk-wise.
         cmake_flags.append("-DENABLE_UTILS=1")
         # utils are not included into clickhouse-bundle, so build everything
         build_target = "all"
