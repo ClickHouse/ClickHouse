@@ -73,6 +73,7 @@ private:
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     BackupPtr backup;
     ContextMutablePtr context;
+    std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds create_table_timeout;
     Poco::Logger * log;
 
@@ -100,7 +101,7 @@ private:
 
     DataRestoreTasks getDataRestoreTasks();
 
-    void setStatus(const String & new_status, const String & message = "");
+    void setStage(const String & new_stage, const String & message = "");
 
     struct DatabaseInfo
     {
@@ -124,7 +125,7 @@ private:
 
     std::vector<QualifiedTableName> findTablesWithoutDependencies() const;
 
-    String current_status;
+    String current_stage;
     std::unordered_map<String, DatabaseInfo> database_infos;
     std::map<QualifiedTableName, TableInfo> table_infos;
     std::vector<DataRestoreTask> data_restore_tasks;
