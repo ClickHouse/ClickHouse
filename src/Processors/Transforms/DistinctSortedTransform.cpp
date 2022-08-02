@@ -179,6 +179,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
 
     chunk = std::move(res_chunk);
 }
+
 template <typename Method>
 bool DistinctSortedTransform::buildFilter(
     Method & method,
