@@ -37,7 +37,7 @@ class BuildResult:
         build_type,
         sanitizer,
         bundled,
-        splitted,
+        libraries,
         status,
         elapsed_seconds,
         with_coverage,
@@ -46,7 +46,7 @@ class BuildResult:
         self.build_type = build_type
         self.sanitizer = sanitizer
         self.bundled = bundled
-        self.splitted = splitted
+        self.libraries = libraries
         self.status = status
         self.elapsed_seconds = elapsed_seconds
         self.with_coverage = with_coverage
@@ -91,7 +91,7 @@ def get_failed_report(
         build_type="unknown",
         sanitizer="unknown",
         bundled="unknown",
-        splitted="unknown",
+        libraries="unknown",
         status=message,
         elapsed_seconds=0,
         with_coverage=False,
@@ -108,7 +108,7 @@ def process_report(
         build_type=build_config["build_type"],
         sanitizer=build_config["sanitizer"],
         bundled=build_config["bundled"],
-        splitted=build_config["splitted"],
+        libraries=build_config["libraries"],
         status="success" if build_report["status"] else "failure",
         elapsed_seconds=build_report["elapsed_seconds"],
         with_coverage=False,
