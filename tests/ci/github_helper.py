@@ -176,12 +176,15 @@ class GitHub(github.Github):
         self, cache_file: Path, obj_updated_at: Optional[datetime]
     ) -> Tuple[bool, object]:
         cached_obj = self._get_cached(cache_file)
-        cache_updated = cached_obj.updated_at
+        # We don't want the cache_updated being always old,
+        # for example in cases when the user is not updated for ages
+        cache_updated = max(
+            datetime.fromtimestamp(cache_file.stat().st_mtime), cached_obj.updated_at
+        )
         if obj_updated_at is None:
+            # When we don't know about the object is updated or not,
+            # we update it once per hour
             obj_updated_at = datetime.now() - timedelta(hours=1)
-            cache_updated = max(
-                datetime.fromtimestamp(cache_file.stat().st_mtime), cache_updated
-            )
         if obj_updated_at <= cache_updated:
             return True, cached_obj
         return False, cached_obj
