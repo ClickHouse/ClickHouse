@@ -261,7 +261,7 @@ private:
 
 }
 
-void registerFunctionDateDiff(FunctionFactory & factory)
+REGISTER_FUNCTION(DateDiff)
 {
     factory.registerFunction<FunctionDateDiff>(FunctionFactory::CaseInsensitive);
 }
