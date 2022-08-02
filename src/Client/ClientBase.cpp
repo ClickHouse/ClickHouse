@@ -583,9 +583,14 @@ try
         if (has_vertical_output_suffix)
             current_format = "Vertical";
 
-        /// It is not clear how to write progress intermixed with data with parallel formatting.
+        bool logs_into_stdout = server_logs_file == "-";
+        bool extras_into_stdout = need_render_progress || logs_into_stdout;
+        bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
+
+        /// It is not clear how to write progress and logs
+        /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
-        if (!need_render_progress || (select_into_file && !select_into_file_and_stdout))
+        if (!extras_into_stdout || select_only_into_file)
             output_format = global_context->getOutputFormatParallelIfPossible(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
