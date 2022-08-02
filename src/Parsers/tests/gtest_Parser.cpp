@@ -486,7 +486,43 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "Customers | where Age in ((Customers|project Age|where Age < 30))",
             "SELECT *\nFROM Customers\nWHERE Age IN (\n    SELECT Age\n    FROM Customers\n    WHERE Age < 30\n)"
         },
-{
+        {
+            "print format_ipv4(ip)",
+            "SELECT ifNull(multiIf((((toUInt32OrNull(toString(ip)) AS param_as_uint32) IS NOT NULL) AND (toTypeName(ip) = 'String')) OR (32 < 0), NULL, (ifNull(param_as_uint32, multiIf(length(splitByChar('/', ifNull(toString(ip), '')) AS tokens) = 1, IPv4StringToNumOrNull(tokens[1]) AS ip, (length(tokens) = 2) AND (ip IS NOT NULL) AND ((toUInt8OrNull(tokens[-1]) AS mask) IS NOT NULL), IPv4CIDRToRange(assumeNotNull(ip), assumeNotNull(mask)).1, NULL)) AS ip_as_number) IS NULL, NULL, IPv4NumToString(bitAnd(ip_as_number, bitNot(toUInt32(intExp2(32 - 32) - 1))))), '')"
+        },
+        {
+            "print format_ipv4(ip, mask)",
+            "SELECT ifNull(multiIf((((toUInt32OrNull(toString(ip)) AS param_as_uint32) IS NOT NULL) AND (toTypeName(ip) = 'String')) OR (mask < 0), NULL, (ifNull(param_as_uint32, multiIf(length(splitByChar('/', ifNull(toString(ip), '')) AS tokens) = 1, IPv4StringToNumOrNull(tokens[1]) AS ip, (length(tokens) = 2) AND (ip IS NOT NULL) AND ((toUInt8OrNull(tokens[-1]) AS mask) IS NOT NULL), IPv4CIDRToRange(assumeNotNull(ip), assumeNotNull(mask)).1, NULL)) AS ip_as_number) IS NULL, NULL, IPv4NumToString(bitAnd(ip_as_number, bitNot(toUInt32(intExp2(32 - mask) - 1))))), '')"
+        },
+        {
+            "print format_ipv4_mask(ip)",
+            "SELECT if(empty(ifNull(multiIf((((toUInt32OrNull(toString(ip)) AS param_as_uint32) IS NOT NULL) AND (toTypeName(ip) = 'String')) OR (32 < 0), NULL, (ifNull(param_as_uint32, multiIf(length(splitByChar('/', ifNull(toString(ip), '')) AS tokens) = 1, IPv4StringToNumOrNull(tokens[1]) AS ip, (length(tokens) = 2) AND (ip IS NOT NULL) AND ((toUInt8OrNull(tokens[-1]) AS mask) IS NOT NULL), IPv4CIDRToRange(assumeNotNull(ip), assumeNotNull(mask)).1, NULL)) AS ip_as_number) IS NULL, NULL, IPv4NumToString(bitAnd(ip_as_number, bitNot(toUInt32(intExp2(32 - 32) - 1))))), '') AS formatted_ip) OR (NOT ((32 >= 0) AND (32 <= 32))), '', concat(formatted_ip, '/', toString(32)))"
+        },
+        {
+            "print format_ipv4_mask(ip, mask)",
+            "SELECT if(empty(ifNull(multiIf((((toUInt32OrNull(toString(ip)) AS param_as_uint32) IS NOT NULL) AND (toTypeName(ip) = 'String')) OR (mask < 0), NULL, (ifNull(param_as_uint32, multiIf(length(splitByChar('/', ifNull(toString(ip), '')) AS tokens) = 1, IPv4StringToNumOrNull(tokens[1]) AS ip, (length(tokens) = 2) AND (ip IS NOT NULL) AND ((toUInt8OrNull(tokens[-1]) AS mask) IS NOT NULL), IPv4CIDRToRange(assumeNotNull(ip), assumeNotNull(mask)).1, NULL)) AS ip_as_number) IS NULL, NULL, IPv4NumToString(bitAnd(ip_as_number, bitNot(toUInt32(intExp2(32 - mask) - 1))))), '') AS formatted_ip) OR (NOT ((mask >= 0) AND (mask <= 32))), '', concat(formatted_ip, '/', toString(mask)))"
+        },
+        {
+            "print ipv4_compare(ip1, ip2)",
+            "SELECT multiIf((length(splitByChar('/', ip1) AS lhs) > 2) OR (length(splitByChar('/', ip2) AS rhs) > 2), NULL, ((toIPv4OrNull(lhs[1]) AS lhs_ip) IS NULL) OR ((length(lhs) = 2) AND ((toUInt8OrNull(lhs[-1]) AS lhs_mask) IS NULL)) OR ((toIPv4OrNull(rhs[1]) AS rhs_ip) IS NULL) OR ((length(rhs) = 2) AND ((toUInt8OrNull(rhs[-1]) AS rhs_mask) IS NULL)), NULL, ignore(toUInt8(min2(32, min2(32, min2(ifNull(lhs_mask, 32), ifNull(rhs_mask, 32))))) AS mask), NULL, sign(toInt32(IPv4CIDRToRange(assumeNotNull(lhs_ip), mask).1) - toInt32(IPv4CIDRToRange(assumeNotNull(rhs_ip), mask).1)))"
+        },
+        {
+            "print ipv4_compare(ip1, ip2, mask)",
+            "SELECT multiIf((length(splitByChar('/', ip1) AS lhs) > 2) OR (length(splitByChar('/', ip2) AS rhs) > 2), NULL, ((toIPv4OrNull(lhs[1]) AS lhs_ip) IS NULL) OR ((length(lhs) = 2) AND ((toUInt8OrNull(lhs[-1]) AS lhs_mask) IS NULL)) OR ((toIPv4OrNull(rhs[1]) AS rhs_ip) IS NULL) OR ((length(rhs) = 2) AND ((toUInt8OrNull(rhs[-1]) AS rhs_mask) IS NULL)), NULL, ignore(toUInt8(min2(32, min2(mask, min2(ifNull(lhs_mask, 32), ifNull(rhs_mask, 32))))) AS mask), NULL, sign(toInt32(IPv4CIDRToRange(assumeNotNull(lhs_ip), mask).1) - toInt32(IPv4CIDRToRange(assumeNotNull(rhs_ip), mask).1)))"
+        },
+        {
+            "print ipv4_is_match(ip1, ip2)",
+            "SELECT multiIf((length(splitByChar('/', ip1) AS lhs) > 2) OR (length(splitByChar('/', ip2) AS rhs) > 2), NULL, ((toIPv4OrNull(lhs[1]) AS lhs_ip) IS NULL) OR ((length(lhs) = 2) AND ((toUInt8OrNull(lhs[-1]) AS lhs_mask) IS NULL)) OR ((toIPv4OrNull(rhs[1]) AS rhs_ip) IS NULL) OR ((length(rhs) = 2) AND ((toUInt8OrNull(rhs[-1]) AS rhs_mask) IS NULL)), NULL, ignore(toUInt8(min2(32, min2(32, min2(ifNull(lhs_mask, 32), ifNull(rhs_mask, 32))))) AS mask), NULL, sign(toInt32(IPv4CIDRToRange(assumeNotNull(lhs_ip), mask).1) - toInt32(IPv4CIDRToRange(assumeNotNull(rhs_ip), mask).1))) = 0"
+        },
+        {
+            "print ipv4_is_match(ip1, ip2, mask)",
+            "SELECT multiIf((length(splitByChar('/', ip1) AS lhs) > 2) OR (length(splitByChar('/', ip2) AS rhs) > 2), NULL, ((toIPv4OrNull(lhs[1]) AS lhs_ip) IS NULL) OR ((length(lhs) = 2) AND ((toUInt8OrNull(lhs[-1]) AS lhs_mask) IS NULL)) OR ((toIPv4OrNull(rhs[1]) AS rhs_ip) IS NULL) OR ((length(rhs) = 2) AND ((toUInt8OrNull(rhs[-1]) AS rhs_mask) IS NULL)), NULL, ignore(toUInt8(min2(32, min2(mask, min2(ifNull(lhs_mask, 32), ifNull(rhs_mask, 32))))) AS mask), NULL, sign(toInt32(IPv4CIDRToRange(assumeNotNull(lhs_ip), mask).1) - toInt32(IPv4CIDRToRange(assumeNotNull(rhs_ip), mask).1))) = 0"
+        },
+        {
+            "print parse_ipv4_mask(ip, mask)",
+            "SELECT if(((toIPv4OrNull(ip) AS ip) IS NULL) OR ((toUInt8OrNull(toString(mask)) AS mask) IS NULL), NULL, toUInt32(IPv4CIDRToRange(assumeNotNull(ip), toUInt8(max2(0, min2(32, assumeNotNull(mask))))).1))"
+        },
+        {
             "Customers | project ipv4_is_in_range(FirstName, LastName)",
             "SELECT if(((IPv4StringToNumOrNull(FirstName) AS ip) IS NULL) OR ((multiIf((length(splitByChar('/', LastName) AS tokens) > 2) OR (NOT isIPv4String(tokens[1])), NULL, length(tokens) = 1, 32, (toUInt8OrNull(tokens[-1]) AS mask) IS NULL, NULL, toUInt8(min2(mask, 32))) AS calculated_mask) IS NULL) OR ((toIPv4OrNull(tokens[1]) AS range_prefix_ip) IS NULL), NULL, isIPAddressInRange(IPv4NumToString(assumeNotNull(ip)), concat(IPv4NumToString(assumeNotNull(range_prefix_ip)), '/', toString(assumeNotNull(calculated_mask)))))\nFROM Customers"
         },

@@ -1,4 +1,5 @@
-# KQL implemented features.
+# August XX, 2022
+## KQL implemented features
 The config setting to allow modify dialect setting.
    - Set dialect setting in  server configuration XML at user level(` users.xml `). This sets the ` dialect ` at server startup and CH will do query parsing for all users with ` default ` profile acording to dialect value.
 
@@ -22,7 +23,31 @@ The config setting to allow modify dialect setting.
    OR 
       pass dialect setting with '--'. For example : 
       ` clickhouse-client --dialect='kusto_auto' -q "KQL query" `
-# Augest 1, 2022
+
+## IP functions
+- [format_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-function)
+   `print format_ipv4('192.168.1.255', 24) == '192.168.1.0'`
+   `print format_ipv4(3232236031, 24) == '192.168.1.0'`
+- [format_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-mask-function)
+   `print format_ipv4_mask('192.168.1.255', 24) == '192.168.1.0/24'`
+   `print format_ipv4_mask(3232236031, 24) == '192.168.1.0/24'`
+- [ipv4_compare](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-comparefunction)
+   `print ipv4_compare('127.0.0.1', '127.0.0.1') == 0`
+   `print ipv4_compare('192.168.1.1', '192.168.1.255') < 0`
+   `print ipv4_compare('192.168.1.1/24', '192.168.1.255/24') == 0`
+   `print ipv4_compare('192.168.1.1', '192.168.1.255', 24) == 0`
+- [ipv4_is_match](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-matchfunction)
+   `print ipv4_is_match('127.0.0.1', '127.0.0.1') == true`
+   `print ipv4_is_match('192.168.1.1', '192.168.1.255') == false`
+   `print ipv4_is_match('192.168.1.1/24', '192.168.1.255/24') == true`
+   `print ipv4_is_match('192.168.1.1', '192.168.1.255', 24) == true`
+- [parse_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4-maskfunction)
+   `print parse_ipv4_mask('127.0.0.1', 24) == 2130706432`
+   `print parse_ipv4_mask('192.1.168.2', 31) == 3221334018`
+   `print parse_ipv4_mask('192.1.168.3', 31) == 3221334018`
+   `print parse_ipv4_mask('127.2.3.4', 32) == 2130838276`
+
+# August 1, 2022
 - **strcmp** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/strcmpfunction)  
    `print strcmp('abc','ABC')`
 
