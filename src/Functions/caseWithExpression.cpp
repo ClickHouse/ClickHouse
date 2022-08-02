@@ -107,7 +107,7 @@ private:
 
 }
 
-void registerFunctionCaseWithExpression(FunctionFactory & factory)
+REGISTER_FUNCTION(CaseWithExpression)
 {
     factory.registerFunction<FunctionCaseWithExpression>();
 

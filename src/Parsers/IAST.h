@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <set>
+#include <list>
 
 
 class SipHash;
@@ -34,7 +35,7 @@ class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAS
 public:
     ASTs children;
 
-    virtual ~IAST() = default;
+    virtual ~IAST();
     IAST() = default;
     IAST(const IAST &) = default;
     IAST & operator=(const IAST &) = default;
@@ -273,6 +274,9 @@ public:
 
 private:
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
+
+    /// This deleter is used in ~IAST to avoid possible stack overflow in destructor.
+    std::list<ASTs> * deleter = nullptr;
 };
 
 template <typename AstArray>
