@@ -100,12 +100,12 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(build_type, package_type, sanitizer, split_binary):
+def is_release_build(build_type, package_type, sanitizer, shared_libraries):
     return (
         build_type == ""
         and package_type == "deb"
         and sanitizer == ""
-        and not split_binary
+        and not shared_libraries
     )
 
 
@@ -116,7 +116,7 @@ def parse_env_variables(
     package_type,
     cache,
     distcc_hosts,
-    split_binary,
+    shared_libraries,
     clang_tidy,
     version,
     author,
@@ -202,7 +202,7 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
         cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
-        if is_release_build(build_type, package_type, sanitizer, split_binary):
+        if is_release_build(build_type, package_type, sanitizer, shared_libraries):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -219,7 +219,7 @@ def parse_env_variables(
     if package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
-    elif split_binary:
+    elif shared_libraries:
         result.append("COMBINED_OUTPUT=shared_build")
 
     if sanitizer:
@@ -264,10 +264,9 @@ def parse_env_variables(
         result.append("BINARY_OUTPUT=tests")
         cmake_flags.append("-DENABLE_TESTS=1")
 
-    if split_binary:
+    if shared_libraries:
         cmake_flags.append(
-            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 "
-            "-DCLICKHOUSE_SPLIT_BINARY=1"
+            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1"
         )
         # We can't always build utils because it requires too much space, but
         # we have to build them at least in some way in CI. The split build is
@@ -352,7 +351,7 @@ if __name__ == "__main__":
         default="",
     )
 
-    parser.add_argument("--split-binary", action="store_true")
+    parser.add_argument("--shared-libraries", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
     parser.add_argument(
@@ -405,7 +404,7 @@ if __name__ == "__main__":
         args.package_type,
         args.cache,
         args.distcc_hosts,
-        args.split_binary,
+        args.shared_libraries,
         args.clang_tidy,
         args.version,
         args.author,
