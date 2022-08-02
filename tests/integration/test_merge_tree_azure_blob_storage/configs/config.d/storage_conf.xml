@@ -5,7 +5,6 @@
                 <type>azure_blob_storage</type>
                 <storage_account_url>http://azurite1:10000/devstoreaccount1</storage_account_url>
                 <container_name>cont</container_name>
-                <container_already_exists>true</container_already_exists>
                 <skip_access_check>false</skip_access_check>
                 <!-- default credentials for Azurite storage account -->
                 <account_name>devstoreaccount1</account_name>
