@@ -103,7 +103,7 @@ namespace
         ReadWriteBufferFromHTTP::HTTPHeaderEntries headers(headers_.begin(), headers_.end());
 
         // Propagate OpenTelemetry trace context, if any, downstream.
-        auto& current_trace_context = OpenTelemetryThreadTraceContext::current();
+        const auto &current_trace_context = OpenTelemetryThreadTraceContext::current();
         if (current_trace_context.isTraceEnabled())
         {
             headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
