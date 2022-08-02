@@ -368,7 +368,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
             ASTPtr order_by_ast;
             if (new_sorting_key_expr_list->children.size() == 1)
-                order_by_ast = new_sorting_key_expr_list->children[0];
+                order_by_ast = new_sorting_key_expr_list->children.front();
             else
             {
                 auto tuple = makeASTFunction("tuple");

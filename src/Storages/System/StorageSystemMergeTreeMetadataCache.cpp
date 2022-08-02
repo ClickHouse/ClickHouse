@@ -58,10 +58,10 @@ static bool extractKeyImpl(const IAST & elem, String & res, bool & precise)
             return false;
 
         const ASTIdentifier * ident;
-        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1).get();
-        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0).get();
+        if ((ident = args.children.front()->as<ASTIdentifier>()))
+            value = args.children.back().get();
+        else if ((ident = args.children.back()->as<ASTIdentifier>()))
+            value = args.children.front().get();
         else
             return false;
 

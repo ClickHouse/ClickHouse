@@ -139,17 +139,18 @@ bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunctio
 
     Tuple tuple_lit;
     const ASTFunction * tuple_other = nullptr;
-    if (getAsTupleLiteral(func->arguments->children[0], tuple_lit))
-        tuple_other = getAsTuple(func->arguments->children[1]);
-    else if (getAsTupleLiteral(func->arguments->children[1], tuple_lit))
-        tuple_other = getAsTuple(func->arguments->children[0]);
+    if (getAsTupleLiteral(func->arguments->children.front(), tuple_lit))
+        tuple_other = getAsTuple(func->arguments->children.back());
+    else if (getAsTupleLiteral(func->arguments->children.back(), tuple_lit))
+        tuple_other = getAsTuple(func->arguments->children.front());
 
     if (!tuple_other || tuple_lit.size() != tuple_other->arguments->children.size())
         return false;
 
-    for (size_t i = 0; i < tuple_lit.size(); ++i)
+    auto it = tuple_other->arguments->children.begin();
+    for (size_t i = 0; i < tuple_lit.size(); ++i, ++it)
     {
-        const auto & child = tuple_other->arguments->children[i];
+        const auto & child = *it;
         std::shared_ptr<IAST> fetch_sign_column = nullptr;
         /// tuple in tuple like (a, (b, c)) = (1, (2, 3))
         if (const auto * child_func = getAsTuple(child))
@@ -355,8 +356,8 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
         const auto & first_arg_name = args.front()->getColumnName();
         const auto & second_arg_name = args.back()->getColumnName();
 
-        if ((first_primary_key_column == first_arg_name && isConstant(args[1]))
-            || (first_primary_key_column == second_arg_name && isConstant(args[0]))
+        if ((first_primary_key_column == first_arg_name && isConstant(args.back()))
+            || (first_primary_key_column == second_arg_name && isConstant(args.front()))
             || (first_primary_key_column == first_arg_name && functionIsInOrGlobalInOperator(func->name)))
             return true;
     }

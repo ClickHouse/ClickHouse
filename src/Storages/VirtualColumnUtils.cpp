@@ -43,14 +43,14 @@ bool isValidFunction(const ASTPtr & expression, const std::function<bool(const A
     if (function && functionIsInOrGlobalInOperator(function->name))
     {
         // Second argument of IN can be a scalar subquery
-        return isValidFunction(function->arguments->children[0], is_constant);
+        return isValidFunction(function->arguments->children.front(), is_constant);
     }
     else
         return is_constant(expression);
 }
 
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
-bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, std::vector<ASTPtr> & result)
+bool extractFunctions(const ASTPtr & expression, const std::function<bool(const ASTPtr &)> & is_constant, ASTList & result)
 {
     const auto * function = expression->as<ASTFunction>();
     if (function && (function->name == "and" || function->name == "indexHint"))
@@ -70,12 +70,12 @@ bool extractFunctions(const ASTPtr & expression, const std::function<bool(const 
 }
 
 /// Construct a conjunction from given functions
-ASTPtr buildWhereExpression(const ASTs & functions)
+ASTPtr buildWhereExpression(const ASTList & functions)
 {
     if (functions.empty())
         return nullptr;
     if (functions.size() == 1)
-        return functions[0];
+        return functions.front();
     return makeASTFunction("and", functions);
 }
 
@@ -85,7 +85,7 @@ void buildSets(const ASTPtr & expression, ExpressionAnalyzer & analyzer)
     if (func && functionIsInOrGlobalInOperator(func->name))
     {
         const IAST & args = *func->arguments;
-        const ASTPtr & arg = args.children.at(1);
+        const ASTPtr & arg = args.children.back();
         if (arg->as<ASTSubquery>() || arg->as<ASTTableIdentifier>())
         {
             analyzer.tryMakeSetForIndexFromSubquery(arg);
@@ -173,7 +173,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block
     };
 
     /// Create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
-    std::vector<ASTPtr> functions;
+    ASTList functions;
     if (select.where())
         unmodified &= extractFunctions(select.where(), is_constant, functions);
     if (select.prewhere())

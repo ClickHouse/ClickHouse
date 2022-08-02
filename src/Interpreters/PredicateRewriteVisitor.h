@@ -46,7 +46,7 @@ private:
 
     bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
 
-    void visitInternalSelect(size_t index, ASTSelectQuery & select_node, ASTPtr & node);
+    void visitInternalSelect(bool first, ASTSelectQuery & select_node, ASTPtr & node);
 };
 
 using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, PredicateRewriteVisitorData::needChild>;

@@ -39,30 +39,30 @@ namespace
 
 void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function 'merge' requires exactly 2 arguments"
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     if (args.size() != 2)
         throw Exception("Table function 'merge' requires exactly 2 arguments"
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
+    auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args.front(), context);
 
     database_is_regexp = is_regexp;
 
     if (!is_regexp)
-        args[0] = database_ast;
+        args.front() = database_ast;
     source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
 
-    args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
-    source_table_regexp = checkAndGetLiteralArgument<String>(args[1], "table_name_regexp");
+    args.back() = evaluateConstantExpressionAsLiteral(args.back(), context);
+    source_table_regexp = checkAndGetLiteralArgument<String>(args.back(), "table_name_regexp");
 }
 
 

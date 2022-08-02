@@ -158,7 +158,7 @@ void registerStorageSQLite(StorageFactory & factory)
 {
     factory.registerStorage("SQLite", [](const StorageFactory::Arguments & args) -> StoragePtr
     {
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
 
         if (engine_args.size() != 2)
             throw Exception("SQLite database requires 2 arguments: database path, table name",
@@ -167,8 +167,8 @@ void registerStorageSQLite(StorageFactory & factory)
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-        const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
-        const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
+        const auto database_path = checkAndGetLiteralArgument<String>(engine_args.front(), "database_path");
+        const auto table_name = checkAndGetLiteralArgument<String>(engine_args.back(), "table_name");
 
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
 

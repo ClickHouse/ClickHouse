@@ -23,12 +23,12 @@ namespace ErrorCodes
 void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     // Parse args
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function ({}) must have arguments.", quoteString(getName()));
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     if (args.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function ({}) requires 1 arguments", quoteString(getName()));
@@ -36,7 +36,7 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    dictionary_name = checkAndGetLiteralArgument<String>(args[0], "dictionary_name");
+    dictionary_name = checkAndGetLiteralArgument<String>(args.front(), "dictionary_name");
 }
 
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context) const

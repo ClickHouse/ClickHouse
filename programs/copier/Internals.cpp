@@ -112,13 +112,13 @@ ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
             throw Exception("Expected arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
 
         ASTPtr arguments_ast = engine.arguments->clone();
-        ASTs & arguments = arguments_ast->children;
+        ASTList & arguments = arguments_ast->children;
 
         if (arguments.size() < min_args)
             throw Exception("Expected at least " + toString(min_args) + " arguments in " + storage_str,
                             ErrorCodes::BAD_ARGUMENTS);
 
-        ASTPtr & month_arg = is_replicated ? arguments[2] : arguments[1];
+        ASTPtr & month_arg = *std::next(arguments.begin(), is_replicated ? 2 : 1);
         return makeASTFunction("toYYYYMM", month_arg->clone());
     }
 }
@@ -187,7 +187,7 @@ std::string wrapIdentifiersWithBackticks(const ASTPtr & root)
     {
         Names function_arguments(expression_list->children.size());
         for (size_t i = 0; i < expression_list->children.size(); ++i)
-            function_arguments[i] = wrapIdentifiersWithBackticks(expression_list->children[0]);
+            function_arguments[i] = wrapIdentifiersWithBackticks(expression_list->children.front());
         return boost::algorithm::join(function_arguments, ", ");
     }
 
@@ -217,16 +217,17 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
     Names primary_key_columns;
     NameSet primary_key_columns_set;
 
-    for (size_t i = 0; i < sorting_key_size; ++i)
+    auto it = sorting_key_expr_list->children.begin();
+    for (size_t i = 0; i < sorting_key_size; ++i, ++it)
     {
         /// Column name could be represented as a f_1(f_2(...f_n(column_name))).
         /// Each f_i could take one or more parameters.
         /// We will wrap identifiers with backticks to allow non-standart identifier names.
-        String sorting_key_column = sorting_key_expr_list->children[i]->getColumnName();
+        String sorting_key_column = (*it)->getColumnName();
 
         if (i < primary_key_size)
         {
-            String pk_column = primary_key_expr_list->children[i]->getColumnName();
+            String pk_column = (*it)->getColumnName();
             if (pk_column != sorting_key_column)
                 throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
                                 + toString(i) + " is " + sorting_key_column +", not " + pk_column,
@@ -235,7 +236,7 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
-            primary_key_columns.push_back(wrapIdentifiersWithBackticks(primary_key_expr_list->children[i]));
+            primary_key_columns.push_back(wrapIdentifiersWithBackticks(*it));
         }
     }
 

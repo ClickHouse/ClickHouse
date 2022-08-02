@@ -35,7 +35,7 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
     if (!args_func.arguments)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = args_func.arguments->children;
+    ASTList & args = args_func.arguments->children;
     if (args.size() != 2 && args.size() != 3)
         throw Exception("Table function '" + getName() + "' requires 2 or 3 arguments: " + getName() + "('DSN', table) or " + getName()
                 + "('DSN', schema, table)",
@@ -44,16 +44,17 @@ void ITableFunctionXDBC::parseArguments(const ASTPtr & ast_function, ContextPtr 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
+    auto it = args.begin();
     if (args.size() == 3)
     {
-        connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        schema_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        connection_string = (*it++)->as<ASTLiteral &>().value.safeGet<String>();
+        schema_name = (*it++)->as<ASTLiteral &>().value.safeGet<String>();
+        remote_table_name = (*it++)->as<ASTLiteral &>().value.safeGet<String>();
     }
     else if (args.size() == 2)
     {
-        connection_string = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        connection_string = (*it++)->as<ASTLiteral &>().value.safeGet<String>();
+        remote_table_name = (*it++)->as<ASTLiteral &>().value.safeGet<String>();
     }
 }
 

@@ -64,14 +64,14 @@ private:
             if (operatorFromAST(func, element))
             {
                 auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
-                for (size_t i = 0, size = args.size(); i < size; ++i)
+                for (auto it = args.begin(); it != args.end(); ++it)
                 {
-                    traverseAST(args[i]);
+                    traverseAST(*it);
 
                     /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
                       * - in this case `n - 1` elements are added (where `n` is the number of arguments).
                       */
-                    if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
+                    if (it != args.begin() || element.function == RPNElement::FUNCTION_NOT)
                         rpn.emplace_back(std::move(element));
                 }
 
@@ -92,7 +92,7 @@ private:
         /// Functions AND, OR, NOT.
         /// Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
         /// (or, the same thing - calling the function `and` from one argument).
-        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+        const ASTList & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
         if (func->name == "not")
         {

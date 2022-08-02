@@ -168,7 +168,7 @@ namespace
                 throw Exception("Storage " + name + " requires exactly 3 parameters: " + name + "('DSN', database or schema, table)",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            for (auto & arg = engine_args)
+            for (auto & arg : engine_args)
                 arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, args.getLocalContext());
 
             auto it = engine_args.begin();

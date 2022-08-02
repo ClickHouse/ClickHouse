@@ -24,7 +24,7 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::SelectIntersectExcept; }
 
-    ASTs getListOfSelects() const;
+    ASTList getListOfSelects() const;
 
     /// Final operator after applying visitor.
     Operator final_operator = Operator::UNKNOWN;

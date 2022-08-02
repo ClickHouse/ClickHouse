@@ -334,7 +334,7 @@ bool MergeTreeConditionFullText::traverseAtomAST(const ASTPtr & node, Block & bl
         if (!function->arguments)
             return false;
 
-        const ASTs & arguments = function->arguments->children;
+        const ASTList & arguments = function->arguments->children;
 
         if (arguments.size() != 2)
             return false;
@@ -368,14 +368,14 @@ bool MergeTreeConditionFullText::traverseAtomAST(const ASTPtr & node, Block & bl
         {
             Field const_value;
             DataTypePtr const_type;
-            if (KeyCondition::getConstant(arguments[1], block_with_constants, const_value, const_type))
+            if (KeyCondition::getConstant(arguments.back(), block_with_constants, const_value, const_type))
             {
-                if (traverseASTEquals(function->name, arguments[0], const_type, const_value, out))
+                if (traverseASTEquals(function->name, arguments.front(), const_type, const_value, out))
                     return true;
             }
-            else if (KeyCondition::getConstant(arguments[0], block_with_constants, const_value, const_type) && (function->name == "equals" || function->name == "notEquals"))
+            else if (KeyCondition::getConstant(arguments.front(), block_with_constants, const_value, const_type) && (function->name == "equals" || function->name == "notEquals"))
             {
-                if (traverseASTEquals(function->name, arguments[1], const_type, const_value, out))
+                if (traverseASTEquals(function->name, arguments.back(), const_type, const_value, out))
                     return true;
             }
         }
@@ -415,7 +415,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
             if (value_field == value_type->getDefault())
                 return false;
 
-            const auto * column_ast_identifier = function->arguments.get()->children[0].get()->as<ASTIdentifier>();
+            const auto * column_ast_identifier = function->arguments.get()->children.front().get()->as<ASTIdentifier>();
             if (!column_ast_identifier)
                 return false;
 
@@ -431,7 +431,7 @@ bool MergeTreeConditionFullText::traverseASTEquals(
 
             if (map_keys_exists)
             {
-                auto & argument = function->arguments.get()->children[1];
+                auto & argument = function->arguments.get()->children.back();
 
                 if (const auto * literal = argument->as<ASTLiteral>())
                 {
@@ -567,11 +567,11 @@ bool MergeTreeConditionFullText::traverseASTEquals(
 }
 
 bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
-    const ASTs & args,
+    const ASTList & args,
     RPNElement & out)
 {
-    const ASTPtr & left_arg = args[0];
-    const ASTPtr & right_arg = args[1];
+    const ASTPtr & left_arg = args.front();
+    const ASTPtr & right_arg = args.back();
 
     std::vector<KeyTuplePositionMapping> key_tuple_mapping;
     DataTypes data_types;
@@ -580,10 +580,11 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
-        for (size_t i = 0; i < tuple_elements.size(); ++i)
+        auto it = tuple_elements.begin();
+        for (size_t i = 0; it != tuple_elements.end(); ++i, ++it)
         {
             size_t key = 0;
-            if (getKey(tuple_elements[i]->getColumnName(), key))
+            if (getKey((*it)->getColumnName(), key))
             {
                 key_tuple_mapping.emplace_back(i, key);
                 data_types.push_back(index_data_types[key]);

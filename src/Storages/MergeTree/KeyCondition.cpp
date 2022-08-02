@@ -626,14 +626,14 @@ void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & 
         if (tryParseLogicalOperatorFromAST(func, element))
         {
             auto & args = func->arguments->children;
-            for (size_t i = 0, size = args.size(); i < size; ++i)
+            for (auto it = args.begin(); it != args.end(); ++it)
             {
-                traverseAST(args[i], context, block_with_constants);
+                traverseAST(*it, context, block_with_constants);
 
                 /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
                   * - in this case `n - 1` elements are added (where `n` is the number of arguments).
                   */
-                if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
+                if (it != args.begin() || element.function == RPNElement::FUNCTION_NOT)
                     rpn.emplace_back(element);
             }
 
@@ -840,12 +840,12 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 }
 
 bool KeyCondition::tryPrepareSetIndex(
-    const ASTs & args,
+    const ASTList & args,
     ContextPtr context,
     RPNElement & out,
     size_t & out_key_column_num)
 {
-    const ASTPtr & left_arg = args[0];
+    const ASTPtr & left_arg = args.front();
 
     out_key_column_num = 0;
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
@@ -872,8 +872,9 @@ bool KeyCondition::tryPrepareSetIndex(
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
         left_args_count = tuple_elements.size();
-        for (size_t i = 0; i < left_args_count; ++i)
-            get_key_tuple_position_mapping(tuple_elements[i], i);
+        auto it = tuple_elements.begin();
+        for (size_t i = 0; i < left_args_count; ++i, ++it)
+            get_key_tuple_position_mapping(*it, i);
     }
     else
         get_key_tuple_position_mapping(left_arg, 0);
@@ -881,7 +882,7 @@ bool KeyCondition::tryPrepareSetIndex(
     if (indexes_mapping.empty())
         return false;
 
-    const ASTPtr & right_arg = args[1];
+    const ASTPtr & right_arg = args.back();
 
     SetPtr prepared_set;
     if (right_arg->as<ASTSubquery>() || right_arg->as<ASTTableIdentifier>())
@@ -1029,7 +1030,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
         if (args.size() == 2)
         {
-            if (const auto * arg_left = args[0]->as<ASTLiteral>())
+            if (const auto * arg_left = args.front()->as<ASTLiteral>())
             {
                 auto left_arg_type = applyVisitor(FieldToDataType(), arg_left->value);
                 const_arg = { left_arg_type->createColumnConst(0, arg_left->value), left_arg_type, "" };
@@ -1037,7 +1038,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
                 arguments.push_back({ nullptr, key_column_type, "" });
                 kind = FunctionWithOptionalConstArg::Kind::LEFT_CONST;
             }
-            else if (const auto * arg_right = args[1]->as<ASTLiteral>())
+            else if (const auto * arg_right = args.back()->as<ASTLiteral>())
             {
                 arguments.push_back({ nullptr, key_column_type, "" });
                 auto right_arg_type = applyVisitor(FieldToDataType(), arg_right->value);
@@ -1104,18 +1105,18 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         bool ret = false;
         if (args.size() == 2)
         {
-            if (args[0]->as<ASTLiteral>())
+            if (args.front()->as<ASTLiteral>())
             {
-                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[1], out_key_column_num, out_key_column_type, out_functions_chain);
+                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args.back(), out_key_column_num, out_key_column_type, out_functions_chain);
             }
-            else if (args[1]->as<ASTLiteral>())
+            else if (args.back()->as<ASTLiteral>())
             {
-                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+                ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args.front(), out_key_column_num, out_key_column_type, out_functions_chain);
             }
         }
         else
         {
-            ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
+            ret = isKeyPossiblyWrappedByMonotonicFunctionsImpl(args.front(), out_key_column_num, out_key_column_type, out_functions_chain);
         }
         return ret;
     }
@@ -1150,7 +1151,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
     DataTypePtr const_type;
     if (const auto * func = node->as<ASTFunction>())
     {
-        const ASTs & args = func->arguments->children;
+        const ASTList & args = func->arguments->children;
 
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
@@ -1162,7 +1163,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
 
         if (args.size() == 1)
         {
-            if (!(isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain)))
+            if (!(isKeyPossiblyWrappedByMonotonicFunctions(args.front(), context, key_column_num, key_expr_type, chain)))
                 return false;
 
             if (key_column_num == static_cast<size_t>(-1))
@@ -1201,22 +1202,22 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 else
                     return false;
             }
-            else if (getConstant(args[1], block_with_constants, const_value, const_type))
+            else if (getConstant(args.back(), block_with_constants, const_value, const_type))
             {
-                if (isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+                if (isKeyPossiblyWrappedByMonotonicFunctions(args.front(), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 0;
                 }
                 else if (
                     !strict_condition
-                    && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByMonotonicFunctions(args.front(), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
                 }
                 else if (
                     single_point && func_name == "equals" && !strict_condition
-                    && canConstantBeWrappedByFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByFunctions(args.front(), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
@@ -1224,22 +1225,22 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 else
                     return false;
             }
-            else if (getConstant(args[0], block_with_constants, const_value, const_type))
+            else if (getConstant(args.front(), block_with_constants, const_value, const_type))
             {
-                if (isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+                if (isKeyPossiblyWrappedByMonotonicFunctions(args.back(), context, key_column_num, key_expr_type, chain))
                 {
                     key_arg_pos = 1;
                 }
                 else if (
                     !strict_condition
-                    && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByMonotonicFunctions(args.back(), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 1;
                     is_constant_transformed = true;
                 }
                 else if (
                     single_point && func_name == "equals" && !strict_condition
-                    && canConstantBeWrappedByFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                    && canConstantBeWrappedByFunctions(args.back(), key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
@@ -1379,7 +1380,7 @@ bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNE
     /// Functions AND, OR, NOT.
     /// Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
     /// (or, the same thing - calling the function `and` from one argument).
-    const ASTs & args = func->arguments->children;
+    const ASTList & args = func->arguments->children;
 
     if (func->name == "not")
     {

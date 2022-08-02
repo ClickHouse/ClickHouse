@@ -68,7 +68,7 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
         if (args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, bad_arguments_error_message);
 
-        auto * url_function_args_expr = assert_cast<ASTExpressionList *>(args[0].get());
+        auto * url_function_args_expr = assert_cast<ASTExpressionList *>(args.front().get());
         auto & url_function_args = url_function_args_expr->children;
         auto headers_it = StorageURL::collectHeaders(url_function_args, configuration, context);
         /// ITableFunctionFileLike cannot parse headers argument, so remove it.

@@ -20,8 +20,8 @@ TEST(ParserReference, SimpleReference)
     ASTPtr ast_reference_02 = parseQuery(p_reference, reference_02.data(), reference_02.data() + reference_02.size(), "", 0, 0);
     EXPECT_EQ(ast_reference_02->as<ASTDeclareReference>()->reference_table_name, "table_name");
     ASTPtr arguments = ast_reference_02->as<ASTDeclareReference>()->reference_expression->as<ASTFunction>()->arguments;
-    EXPECT_EQ(arguments->children[0]->as<ASTIdentifier>()->name(), "ref_col_01");
-    EXPECT_EQ(arguments->children[1]->as<ASTIdentifier>()->name(), "ref_col_02");
+    EXPECT_EQ(arguments->children.front()->as<ASTIdentifier>()->name(), "ref_col_01");
+    EXPECT_EQ((*++arguments->children.begin())->as<ASTIdentifier>()->name(), "ref_col_02");
 }
 
 TEST(ParserReference, ReferenceDifferenceKind)

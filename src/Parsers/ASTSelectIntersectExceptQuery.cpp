@@ -36,13 +36,13 @@ void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, 
     }
 }
 
-ASTs ASTSelectIntersectExceptQuery::getListOfSelects() const
+ASTList ASTSelectIntersectExceptQuery::getListOfSelects() const
 {
     /**
      * Because of normalization actual number of selects is 2.
      * But this is checked in InterpreterSelectIntersectExceptQuery.
      */
-    ASTs selects;
+    ASTList selects;
     for (const auto & child : children)
     {
         if (typeid_cast<ASTSelectQuery *>(child.get())

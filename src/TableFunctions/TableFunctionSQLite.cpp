@@ -64,7 +64,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (!func_args.arguments)
         throw Exception("Table function 'sqlite' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    ASTs & args = func_args.arguments->children;
+    ASTList & args = func_args.arguments->children;
 
     if (args.size() != 2)
         throw Exception("SQLite database requires 2 arguments: database path, table name",
@@ -73,8 +73,8 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    database_path = checkAndGetLiteralArgument<String>(args[0], "database_path");
-    remote_table_name = checkAndGetLiteralArgument<String>(args[1], "table_name");
+    database_path = checkAndGetLiteralArgument<String>(args.front(), "database_path");
+    remote_table_name = checkAndGetLiteralArgument<String>(args.back(), "table_name");
 
     sqlite_db = openSQLiteDB(database_path, context);
 }

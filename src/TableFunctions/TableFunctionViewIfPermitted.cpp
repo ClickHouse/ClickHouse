@@ -38,12 +38,12 @@ void TableFunctionViewIfPermitted::parseArguments(const ASTPtr & ast_function, C
             getName());
 
     const auto & arguments = function->arguments->children;
-    auto * select = arguments[0]->as<ASTSelectWithUnionQuery>();
+    auto * select = arguments.front()->as<ASTSelectWithUnionQuery>();
     if (!select)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a SELECT query as its first argument", getName());
     create.set(create.select, select->clone());
 
-    else_ast = arguments[1];
+    else_ast = arguments.back();
     if (!else_ast->as<ASTFunction>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a table function as its second argument", getName());
     else_table_function = TableFunctionFactory::instance().get(else_ast, context);
@@ -80,7 +80,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     try
     {
         /// Will throw ACCESS_DENIED if the current user is not allowed to execute the SELECT query.
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children.front(), context);
     }
     catch (Exception & e)
     {

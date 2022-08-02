@@ -18,5 +18,5 @@ TEST(ParserAlterQuery, AlterQuery)
 
     ASTPtr ast = tryParserQuery(alter_p, "ALTER TABLE test_table_2 ADD COLUMN (f INT, g INT)");
     EXPECT_EQ(ast->as<ASTAlterQuery>()->command_list->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterQuery>()->command_list->children[0]->as<ASTAlterCommand>()->type, ASTAlterCommand::ADD_COLUMN);
+    EXPECT_EQ(ast->as<ASTAlterQuery>()->command_list->children.front()->as<ASTAlterCommand>()->type, ASTAlterCommand::ADD_COLUMN);
 }

@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 /// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
-void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & args, ContextPtr context, StorageS3Configuration & s3_configuration)
+void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTList & args, ContextPtr context, StorageS3Configuration & s3_configuration)
 {
     if (auto named_collection = getURLBasedDataSourceConfiguration(args, context))
     {
@@ -57,7 +57,8 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
         if (args.size() == 4)
         {
-            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
+            auto it = ++args.begin();
+            auto second_arg = checkAndGetLiteralArgument<String>(*it, "format/access_key_id");
             if (FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
 
@@ -69,8 +70,8 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
         /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
         else if (args.size() == 3)
         {
-
-            auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id");
+            auto it = ++args.begin();
+            auto second_arg = checkAndGetLiteralArgument<String>(*it, "format/access_key_id");
             if (FormatFactory::instance().getAllFormats().contains(second_arg))
                 args_to_idx = {{"format", 1}, {"structure", 2}};
             else
@@ -81,23 +82,25 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
             args_to_idx = size_to_args[args.size()];
         }
 
+        ASTs args_arr(args.begin(), args.end());
+
         /// This argument is always the first
-        s3_configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
+        s3_configuration.url = checkAndGetLiteralArgument<String>(args_arr[0], "url");
 
         if (args_to_idx.contains("format"))
-            s3_configuration.format = checkAndGetLiteralArgument<String>(args[args_to_idx["format"]], "format");
+            s3_configuration.format = checkAndGetLiteralArgument<String>(args_arr[args_to_idx["format"]], "format");
 
         if (args_to_idx.contains("structure"))
-            s3_configuration.structure = checkAndGetLiteralArgument<String>(args[args_to_idx["structure"]], "structure");
+            s3_configuration.structure = checkAndGetLiteralArgument<String>(args_arr[args_to_idx["structure"]], "structure");
 
         if (args_to_idx.contains("compression_method"))
-            s3_configuration.compression_method = checkAndGetLiteralArgument<String>(args[args_to_idx["compression_method"]], "compression_method");
+            s3_configuration.compression_method = checkAndGetLiteralArgument<String>(args_arr[args_to_idx["compression_method"]], "compression_method");
 
         if (args_to_idx.contains("access_key_id"))
-            s3_configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(args[args_to_idx["access_key_id"]], "access_key_id");
+            s3_configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(args_arr[args_to_idx["access_key_id"]], "access_key_id");
 
         if (args_to_idx.contains("secret_access_key"))
-            s3_configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
+            s3_configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args_arr[args_to_idx["secret_access_key"]], "secret_access_key");
     }
 
     if (s3_configuration.format == "auto")
@@ -107,7 +110,7 @@ void TableFunctionS3::parseArgumentsImpl(const String & error_message, ASTs & ar
 void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
 
     const auto message = fmt::format(
         "The signature of table function {} could be the following:\n" \
@@ -124,7 +127,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    auto & args = args_func.at(0)->children;
+    auto & args = args_func.front()->children;
 
     parseArgumentsImpl(message, args, context, configuration);
 }

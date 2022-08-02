@@ -150,7 +150,7 @@ bool isCompatible(IAST & node)
 
         /// If the right hand side of IN is a table identifier (example: x IN table), then it's not compatible.
         if ((name == "in" || name == "notIn")
-            && (function->arguments->children.size() != 2 || function->arguments->children[1]->as<ASTTableIdentifier>()))
+            && (function->arguments->children.size() != 2 || function->arguments->children.back()->as<ASTTableIdentifier>()))
             return false;
 
         for (const auto & expr : function->arguments->children)
@@ -171,10 +171,10 @@ bool isCompatible(IAST & node)
 
 bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
 
-void removeUnknownChildren(ASTs & children, const NameSet & known_names)
+void removeUnknownChildren(ASTList & children, const NameSet & known_names)
 {
 
-    ASTs new_children;
+    ASTList new_children;
     for (auto & child : children)
     {
         bool leave_child = removeUnknownSubexpressions(child, known_names);
@@ -201,7 +201,7 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
         if (func->arguments->children.size() == 1)
         {
             /// if only one child left, pull it on top level
-            node = func->arguments->children[0];
+            node = func->arguments->children.front();
             return true;
         }
         return !func->arguments->children.empty();
@@ -295,7 +295,7 @@ String transformQueryForExternalDatabase(
                         new_function_and->arguments->children.push_back(elem);
                 }
                 if (new_function_and->arguments->children.size() == 1)
-                    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and->arguments->children[0]));
+                    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and->arguments->children.front()));
                 else if (new_function_and->arguments->children.size() > 1)
                     select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
             }

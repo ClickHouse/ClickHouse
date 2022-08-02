@@ -165,21 +165,21 @@ namespace
         {
             if (node.name == "windowID" || node.name == "tumble" || node.name == "hop")
             {
-                if (const auto * t = node.arguments->children[0]->as<ASTFunction>();
+                if (const auto * t = node.arguments->children.front()->as<ASTFunction>();
                     t && t->name == "now")
                 {
                     if (!t->children.empty())
                     {
-                        const auto & children = t->children[0]->as<ASTExpressionList>()->children;
+                        const auto & children = t->children.front()->as<ASTExpressionList>()->children;
                         if (!children.empty())
                         {
-                            const auto * timezone_ast = children[0]->as<ASTLiteral>();
+                            const auto * timezone_ast = children.front()->as<ASTLiteral>();
                             if (timezone_ast)
                                 now_timezone = timezone_ast->value.safeGet<String>();
                         }
                     }
                     is_time_column_func_now = true;
-                    node_ptr->children[0]->children[0] = std::make_shared<ASTIdentifier>("____timestamp");
+                    node_ptr->children.front()->children.front() = std::make_shared<ASTIdentifier>("____timestamp");
                     window_id_name = node.getColumnName();
                 }
             }
@@ -369,7 +369,7 @@ static void extractDependentTable(ContextPtr context, ASTPtr & query, String & s
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for WINDOW VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
 
-        auto & inner_select_query = ast_select->list_of_selects->children.at(0);
+        auto & inner_select_query = ast_select->list_of_selects->children.front();
 
         extractDependentTable(context, inner_select_query, select_database_name, select_table_name);
     }
@@ -842,7 +842,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
 
         if (inner_select_query->groupBy()->children.size() == 1) //GROUP BY windowID
         {
-            auto node = visit(inner_select_query->groupBy()->children[0].get());
+            auto node = visit(inner_select_query->groupBy()->children.front().get());
             new_storage->set(new_storage->order_by, std::make_shared<ASTIdentifier>(node->getColumnName()));
         }
         else
@@ -1179,7 +1179,7 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
+    auto inner_query = initInnerQuery(query.select->list_of_selects->children.front()->as<ASTSelectQuery &>(), context_);
 
     if (query.inner_storage)
         inner_table_engine = query.inner_storage->clone();
@@ -1290,11 +1290,11 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*query_info_data.window_function);
     const auto & arguments = window_function.arguments->children;
     extractWindowArgument(
-        arguments.at(1), window_kind, window_num_units,
+        *std::next(arguments.begin()), window_kind, window_num_units,
         "Illegal type of second argument of function " + window_function.name + " should be Interval");
 
     window_id_alias = window_function.alias;
-    if (auto * node = arguments[0]->as<ASTIdentifier>())
+    if (auto * node = arguments.front()->as<ASTIdentifier>())
         timestamp_column_name = node->shortName();
 
     DropTableIdentifierMatcher::Data drop_identifier_data;
@@ -1309,7 +1309,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
         hop_kind = window_kind;
         hop_num_units = window_num_units;
         extractWindowArgument(
-            arguments.at(2), window_kind, window_num_units,
+            *std::next(arguments.begin(), 2), window_kind, window_num_units,
             "Illegal type of third argument of function " + window_function.name + " should be Interval");
         slice_num_units = std::gcd(hop_num_units, window_num_units);
     }
@@ -1318,7 +1318,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
     size_t time_zone_arg_num = is_tumble ? 2 : 3;
     if (arguments.size() > time_zone_arg_num)
     {
-        const auto & ast = arguments.at(time_zone_arg_num);
+        const auto & ast = *std::next(arguments.begin(), time_zone_arg_num);
         const auto * time_zone_ast = ast->as<ASTLiteral>();
         if (!time_zone_ast || time_zone_ast->value.getType() != Field::Types::String)
             throw Exception(

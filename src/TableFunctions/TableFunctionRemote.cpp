@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
     ExternalDataSourceConfiguration configuration;
 
     String cluster_name;
@@ -42,7 +42,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (args_func.size() != 1)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     /**
      * Number of arguments for remote function is 4.
@@ -97,7 +97,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         if (args.size() < 2 || args.size() > max_args)
             throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        size_t arg_num = 0;
+        auto it = args.begin();
         auto get_string_literal = [](const IAST & node, String & res)
         {
             const auto * lit = node.as<ASTLiteral>();
@@ -113,45 +113,45 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         if (is_cluster_function)
         {
-            args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-            cluster_name = checkAndGetLiteralArgument<String>(args[arg_num], "cluster_name");
+            *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, context);
+            cluster_name = checkAndGetLiteralArgument<String>(*it, "cluster_name");
         }
         else
         {
-            if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
+            if (!tryGetIdentifierNameInto(*it, cluster_name))
             {
-                if (!get_string_literal(*args[arg_num], cluster_description))
+                if (!get_string_literal(*(it->get()), cluster_description))
                     throw Exception("Hosts pattern must be string literal (in single quotes).", ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
-        ++arg_num;
-        const auto * function = args[arg_num]->as<ASTFunction>();
+        ++it;
+        const auto * function = (*it)->as<ASTFunction>();
         if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
         {
-            remote_table_function_ptr = args[arg_num];
-            ++arg_num;
+            remote_table_function_ptr = *it;
+            ++it;
         }
         else
         {
-            args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
-            configuration.database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
+            *it = evaluateConstantExpressionForDatabaseName(*it, context);
+            configuration.database = checkAndGetLiteralArgument<String>(*it, "database");
 
-            ++arg_num;
+            ++it;
 
             auto qualified_name = QualifiedTableName::parseFromString(configuration.database);
             if (qualified_name.database.empty())
             {
-                if (arg_num >= args.size())
+                if (it == args.end())
                 {
                     throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
                 }
                 else
                 {
                     std::swap(qualified_name.database, qualified_name.table);
-                    args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                    qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
-                    ++arg_num;
+                    *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, context);
+                    qualified_name.table = checkAndGetLiteralArgument<String>(*it, "table");
+                    ++it;
                 }
             }
 
@@ -159,43 +159,43 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             configuration.table = std::move(qualified_name.table);
 
             /// Cluster function may have sharding key for insert
-            if (is_cluster_function && arg_num < args.size())
+            if (is_cluster_function && it != args.end())
             {
-                sharding_key = args[arg_num];
-                ++arg_num;
+                sharding_key = *it;
+                ++it;
             }
         }
 
         /// Username and password parameters are prohibited in cluster version of the function
         if (!is_cluster_function)
         {
-            if (arg_num < args.size())
+            if (it != args.end())
             {
-                if (!get_string_literal(*args[arg_num], configuration.username))
+                if (!get_string_literal(*(it->get()), configuration.username))
                 {
                     configuration.username = "default";
-                    sharding_key = args[arg_num];
+                    sharding_key = *it;
                 }
-                ++arg_num;
+                ++it;
             }
 
-            if (arg_num < args.size() && !sharding_key)
+            if (it != args.end() && !sharding_key)
             {
-                if (!get_string_literal(*args[arg_num], configuration.password))
+                if (!get_string_literal(*(it->get()), configuration.password))
                 {
-                    sharding_key = args[arg_num];
+                    sharding_key = *it;
                 }
-                ++arg_num;
+                ++it;
             }
 
-            if (arg_num < args.size() && !sharding_key)
+            if (it != args.end() && !sharding_key)
             {
-                sharding_key = args[arg_num];
-                ++arg_num;
+                sharding_key = *it;
+                ++it;
             }
         }
 
-        if (arg_num < args.size())
+        if (it != args.end())
             throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 

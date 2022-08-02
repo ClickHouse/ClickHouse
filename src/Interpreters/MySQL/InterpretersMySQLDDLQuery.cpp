@@ -712,7 +712,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
                     modify_columns.front().name = alter_command->old_name;
 
                 const auto & modify_columns_description = createColumnsDescription(modify_columns, alter_command->additional_columns);
-                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns_description)->children[0];
+                rewritten_command->col_decl = InterpreterCreateQuery::formatColumns(modify_columns_description)->children.front();
 
                 if (!alter_command->column_name.empty())
                 {

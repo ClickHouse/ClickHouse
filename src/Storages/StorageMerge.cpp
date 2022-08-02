@@ -847,11 +847,11 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
         if (func->arguments->children.size() != 1)
             throw Exception("REGEXP in Merge ENGINE takes only one argument", ErrorCodes::BAD_ARGUMENTS);
 
-        auto * literal = func->arguments->children[0]->as<ASTLiteral>();
+        auto * literal = func->arguments->children.front()->as<ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::Which::String || literal->value.safeGet<String>().empty())
             throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
 
-        return {true, func->arguments->children[0]};
+        return {true, func->arguments->children.front()};
     }
 
     auto ast = evaluateConstantExpressionForDatabaseName(node, context_);
@@ -861,28 +861,28 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
 
 void registerStorageMerge(StorageFactory & factory)
 {
-    factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
+    factory.registerStorage("Merge", [](const StorageFactory::Arguments & args) -> StoragePtr
     {
         /** In query, the name of database is specified as table engine argument which contains source tables,
           *  as well as regex for source-table names.
           */
 
-        ASTs & engine_args = args.engine_args;
+        ASTList & engine_args = args.engine_args;
 
         if (engine_args.size() != 2)
             throw Exception("Storage Merge requires exactly 2 parameters"
                 " - name of source database and regexp for table names.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
+        auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args.front(), args.getLocalContext());
 
         if (!is_regexp)
-            engine_args[0] = database_ast;
+            engine_args.front() = database_ast;
 
         String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
 
-        engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-        String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
+        engine_args.back() = evaluateConstantExpressionAsLiteral(engine_args.back(), args.getLocalContext());
+        String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args.back(), "table_name_regexp");
 
         return std::make_shared<StorageMerge>(
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());

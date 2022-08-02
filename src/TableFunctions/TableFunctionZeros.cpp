@@ -37,7 +37,7 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
             throw Exception("Table function '" + getName() + "' requires 'length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 
-        UInt64 length = evaluateArgument(context, arguments[0]);
+        UInt64 length = evaluateArgument(context, arguments.front());
 
         auto res = std::make_shared<StorageSystemZeros>(StorageID(getDatabaseName(), table_name), multithreaded, length);
         res->startup();

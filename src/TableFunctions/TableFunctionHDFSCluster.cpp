@@ -37,12 +37,12 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
 {
     auto ast_copy = ast_function->clone();
     /// Parse args
-    ASTs & args_func = ast_copy->children;
+    ASTList & args_func = ast_copy->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     const auto message = fmt::format(
         "The signature of table function {} shall be the following:\n" \
@@ -59,7 +59,7 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     /// This argument is always the first
-    cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
+    cluster_name = checkAndGetLiteralArgument<String>(args.front(), "cluster_name");
 
     if (!context->tryGetCluster(cluster_name))
         throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", cluster_name);

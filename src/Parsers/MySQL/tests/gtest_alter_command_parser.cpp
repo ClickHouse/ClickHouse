@@ -21,30 +21,30 @@ TEST(ParserAlterCommand, AddAlterCommand)
     ASTPtr ast = tryParserQuery(alter_p, "ADD column_name INT");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::ADD_COLUMN);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "column_name");
 
     ast = tryParserQuery(alter_p, "ADD COLUMN column_name INT");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::ADD_COLUMN);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "column_name");
 
     ast = tryParserQuery(alter_p, "ADD (column_name INT)");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::ADD_COLUMN);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "column_name");
 
     ast = tryParserQuery(alter_p, "ADD COLUMN (column_name INT, column_name_1 INT)");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::ADD_COLUMN);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 2);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "column_name");
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[1]->as<ASTDeclareColumn>()->name, "column_name_1");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "column_name");
+    EXPECT_EQ((*std::next(ast->as<ASTAlterCommand>()->additional_columns->children.begin()))->as<ASTDeclareColumn>()->name, "column_name_1");
 
     ast = tryParserQuery(alter_p, "ADD INDEX (col_01, col_02(100), col_03 DESC) KEY_BLOCK_SIZE 3");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::ADD_INDEX);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->index_decl->index_columns->children.size(), 3);
-    EXPECT_EQ(getIdentifierName(ast->as<ASTAlterCommand>()->index_decl->index_columns->children[0]), "col_01");
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->index_decl->index_columns->children[1]->as<ASTFunction>()->name, "col_02");
-    EXPECT_EQ(getIdentifierName(ast->as<ASTAlterCommand>()->index_decl->index_columns->children[2]), "col_03");
+    EXPECT_EQ(getIdentifierName(ast->as<ASTAlterCommand>()->index_decl->index_columns->children.front()), "col_01");
+    EXPECT_EQ((*std::next(ast->as<ASTAlterCommand>()->index_decl->index_columns->children.begin()))->as<ASTFunction>()->name, "col_02");
+    EXPECT_EQ(getIdentifierName((*std::next(ast->as<ASTAlterCommand>()->index_decl->index_columns->children.begin(), 2))), "col_03");
 }
 
 TEST(ParserAlterCommand, DropAlterCommand)
@@ -179,7 +179,7 @@ TEST(ParserAlterCommand, ModifyAlterCommand)
     EXPECT_EQ(ast->as<ASTAlterCommand>()->old_name, "");
     EXPECT_FALSE(ast->as<ASTAlterCommand>()->first);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "column_name");
 
     ast = tryParserQuery(alter_p, "MODIFY column_name INT FIRST");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::MODIFY_COLUMN);
@@ -187,7 +187,7 @@ TEST(ParserAlterCommand, ModifyAlterCommand)
     EXPECT_EQ(ast->as<ASTAlterCommand>()->old_name, "");
     EXPECT_TRUE(ast->as<ASTAlterCommand>()->first);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "column_name");
 
     ast = tryParserQuery(alter_p, "MODIFY column_name INT AFTER other_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::MODIFY_COLUMN);
@@ -195,7 +195,7 @@ TEST(ParserAlterCommand, ModifyAlterCommand)
     EXPECT_FALSE(ast->as<ASTAlterCommand>()->first);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->column_name, "other_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "column_name");
 
     ast = tryParserQuery(alter_p, "MODIFY COLUMN column_name INT AFTER other_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::MODIFY_COLUMN);
@@ -203,7 +203,7 @@ TEST(ParserAlterCommand, ModifyAlterCommand)
     EXPECT_FALSE(ast->as<ASTAlterCommand>()->first);
     EXPECT_EQ(ast->as<ASTAlterCommand>()->column_name, "other_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "column_name");
 }
 
 TEST(ParserAlterCommand, ChangeAlterCommand)
@@ -216,7 +216,7 @@ TEST(ParserAlterCommand, ChangeAlterCommand)
     EXPECT_EQ(ast->as<ASTAlterCommand>()->column_name, "");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->old_name, "old_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "new_column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "new_column_name");
 
     ast = tryParserQuery(alter_p, "CHANGE old_column_name new_column_name INT FIRST");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::MODIFY_COLUMN);
@@ -224,7 +224,7 @@ TEST(ParserAlterCommand, ChangeAlterCommand)
     EXPECT_EQ(ast->as<ASTAlterCommand>()->column_name, "");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->old_name, "old_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "new_column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "new_column_name");
 
     ast = tryParserQuery(alter_p, "CHANGE old_column_name new_column_name INT AFTER other_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::MODIFY_COLUMN);
@@ -232,7 +232,7 @@ TEST(ParserAlterCommand, ChangeAlterCommand)
     EXPECT_EQ(ast->as<ASTAlterCommand>()->column_name, "other_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->old_name, "old_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "new_column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "new_column_name");
 
     ast = tryParserQuery(alter_p, "CHANGE COLUMN old_column_name new_column_name INT AFTER other_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->type, ASTAlterCommand::MODIFY_COLUMN);
@@ -240,7 +240,7 @@ TEST(ParserAlterCommand, ChangeAlterCommand)
     EXPECT_EQ(ast->as<ASTAlterCommand>()->column_name, "other_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->old_name, "old_column_name");
     EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.size(), 1);
-    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children[0]->as<ASTDeclareColumn>()->name, "new_column_name");
+    EXPECT_EQ(ast->as<ASTAlterCommand>()->additional_columns->children.front()->as<ASTDeclareColumn>()->name, "new_column_name");
 }
 
 TEST(ParserAlterCommand, AlterOptionsCommand)

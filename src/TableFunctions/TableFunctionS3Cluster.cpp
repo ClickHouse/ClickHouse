@@ -38,12 +38,12 @@ namespace ErrorCodes
 void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionAsLiteral(arg, context);
@@ -64,15 +64,14 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
         throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// This arguments are always the first
-    configuration.cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
+    configuration.cluster_name = checkAndGetLiteralArgument<String>(args.front(), "cluster_name");
 
     if (!context->tryGetCluster(configuration.cluster_name))
         throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", configuration.cluster_name);
 
     /// Just cut the first arg (cluster_name) and try to parse s3 table function arguments as is
-    ASTs clipped_args;
-    clipped_args.reserve(args.size());
-    std::copy(args.begin() + 1, args.end(), std::back_inserter(clipped_args));
+    ASTList clipped_args;
+    std::copy(++args.begin(), args.end(), std::back_inserter(clipped_args));
 
     /// StorageS3ClusterConfiguration inherints from StorageS3Configuration, so it is safe to upcast it.
     TableFunctionS3::parseArgumentsImpl(message, clipped_args, context, static_cast<StorageS3Configuration & >(configuration));

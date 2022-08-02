@@ -40,7 +40,7 @@ void TableFunctionInput::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "structure");
+    structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args.front(), context), "structure");
 }
 
 ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr context) const

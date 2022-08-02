@@ -74,12 +74,12 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
                         "SelectIntersectExceptyQuery has not been normalized (number of children: {})",
                         num_children);
 
-    nested_interpreters.resize(num_children);
+    nested_interpreters.reserve(num_children);
 
-    for (size_t i = 0; i < num_children; ++i)
+    for (const auto & child : children)
     {
-        nested_interpreters[i] = buildCurrentChildInterpreter(children.at(i));
-        uses_view_source |= nested_interpreters[i]->usesViewSource();
+        nested_interpreters.emplace_back(buildCurrentChildInterpreter(child));
+        uses_view_source |= nested_interpreters.back()->usesViewSource();
     }
 
     Blocks headers(num_children);

@@ -39,8 +39,8 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
         if (arguments.size() != 1 && arguments.size() != 2)
             throw Exception("Table function '" + getName() + "' requires 'length' or 'offset, length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments[0]) : 0;
-        UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
+        UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments.front()) : 0;
+        UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments.back()) : evaluateArgument(context, arguments.front());
 
         auto res = std::make_shared<StorageSystemNumbers>(StorageID(getDatabaseName(), table_name), multithreaded, length, offset, false);
         res->startup();

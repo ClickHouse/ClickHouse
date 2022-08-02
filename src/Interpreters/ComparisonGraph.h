@@ -17,7 +17,7 @@ class ComparisonGraph
 {
 public:
     /// atomic_formulas are extracted from constraints.
-    explicit ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas);
+    explicit ComparisonGraph(const ASTList & atomic_formulas);
 
     enum class CompareResult
     {

@@ -132,7 +132,7 @@ private:
         RPNElement & out);
 
     bool getKey(const std::string & key_column_name, size_t & key_column_num);
-    bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
+    bool tryPrepareSetBloomFilter(const ASTList & args, RPNElement & out);
 
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenExtractorPtr token_extractor);

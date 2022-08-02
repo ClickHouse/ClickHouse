@@ -450,17 +450,21 @@ void MergeTreeData::checkProperties(
 
         ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
         const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
-        for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
+        auto old_i = old_sorting_key_columns.begin();
+        auto new_i = new_sorting_key_columns.begin();
+        for (const auto & expr : new_sorting_key.expression_list_ast->children)
         {
-            if (old_i < old_sorting_key_columns.size())
+            if (old_i != old_sorting_key_columns.end())
             {
-                if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
-                    added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
+                if (*new_i != *old_i)
+                    added_key_column_expr_list->children.push_back(expr);
                 else
                     ++old_i;
             }
             else
-                added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
+                added_key_column_expr_list->children.push_back(expr);
+
+            ++new_i;
         }
 
         if (!added_key_column_expr_list->children.empty())
@@ -4262,7 +4266,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             assert(tuple->name == "tuple");
             assert(tuple->arguments);
             assert(tuple->arguments->children.size() == 1);
-            partition_value_ast = tuple->arguments->children[0];
+            partition_value_ast = tuple->arguments->children.front();
         }
         /// Simple partition key, need to evaluate and cast
         Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;

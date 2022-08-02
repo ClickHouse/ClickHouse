@@ -56,7 +56,7 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
     if (!func_args.arguments)
         throw Exception("Table function 'mongodb' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    ASTs & args = func_args.arguments->children;
+    ASTList & args = func_args.arguments->children;
 
     if (args.size() < 6 || args.size() > 7)
     {
@@ -64,31 +64,32 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
         "Table function 'mongodb' requires from 6 to 7 parameters: mongodb('host:port', database, collection, 'user', 'password', structure, [, 'options'])");
     }
 
-    ASTs main_arguments(args.begin(), args.begin() + 5);
+    auto it = std::next(args.begin(), 5);
+    ASTList main_arguments(args.begin(), it);
 
-    for (size_t i = 5; i < args.size(); ++i)
+    for (size_t i = 5; it != args.end(); ++i, ++it)
     {
-        if (const auto * ast_func = typeid_cast<const ASTFunction *>(args[i].get()))
+        if (const auto * ast_func = typeid_cast<const ASTFunction *>(it->get()))
         {
             const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_func->arguments.get());
             auto function_args = args_expr->children;
             if (function_args.size() != 2)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
 
-            auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
+            auto arg_name = function_args.front()->as<ASTIdentifier>()->name();
 
             if (arg_name == "structure")
-                structure = checkAndGetLiteralArgument<String>(function_args[1], "structure");
+                structure = checkAndGetLiteralArgument<String>(function_args.back(), "structure");
             else if (arg_name == "options")
-                main_arguments.push_back(function_args[1]);
+                main_arguments.push_back(function_args.back());
         }
         else if (i == 5)
         {
-            structure = checkAndGetLiteralArgument<String>(args[i], "structure");
+            structure = checkAndGetLiteralArgument<String>(*it, "structure");
         }
         else if (i == 6)
         {
-            main_arguments.push_back(args[i]);
+            main_arguments.push_back(*it);
         }
     }
 

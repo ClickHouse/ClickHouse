@@ -43,7 +43,7 @@ bool equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVis
 
 }
 
-ComparisonGraph::ComparisonGraph(const ASTs & atomic_formulas)
+ComparisonGraph::ComparisonGraph(const ASTList & atomic_formulas)
 {
     if (atomic_formulas.empty())
         return;

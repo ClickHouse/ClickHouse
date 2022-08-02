@@ -40,10 +40,13 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
             "Table function '{}' requires minimum 3 arguments: script_name, format, structure, [input_query...]",
             getName());
 
-    for (size_t i = 0; i <= 2; ++i)
-        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
+    auto it = args.begin();
+    *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, context);
+    ++it;
+    *it = evaluateConstantExpressionOrIdentifierAsLiteral(*it, context);
 
-    auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
+    it = args.begin();
+    auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>((*it++), "script_name_with_arguments_value");
 
     std::vector<String> script_name_with_arguments;
     boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c){ return c == ' '; });
@@ -51,12 +54,12 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
     script_name = script_name_with_arguments[0];
     script_name_with_arguments.erase(script_name_with_arguments.begin());
     arguments = std::move(script_name_with_arguments);
-    format = checkAndGetLiteralArgument<String>(args[1], "format");
-    structure = checkAndGetLiteralArgument<String>(args[2], "structure");
+    format = checkAndGetLiteralArgument<String>((*it++), "format");
+    structure = checkAndGetLiteralArgument<String>((*it++), "structure");
 
-    for (size_t i = 3; i < args.size(); ++i)
+    for (; it != args.end(); ++it)
     {
-        ASTPtr query = args[i]->children.at(0);
+        ASTPtr query = (*it)->children.front();
         if (!query->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Table function '{}' argument is invalid input query {}",

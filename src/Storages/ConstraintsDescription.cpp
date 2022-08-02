@@ -107,7 +107,7 @@ std::unique_ptr<ComparisonGraph> ConstraintsDescription::buildGraph() const
 {
     static const NameSet relations = { "equals", "less", "lessOrEquals", "greaterOrEquals", "greater" };
 
-    std::vector<ASTPtr> constraints_for_graph;
+    ASTList constraints_for_graph;
     auto atomic_formulas = getAtomicConstraintData();
     for (const auto & atomic_formula : atomic_formulas)
     {
@@ -216,7 +216,7 @@ void ConstraintsDescription::update()
     {
         cnf_constraints.clear();
         ast_to_atom_ids.clear();
-        graph = std::make_unique<ComparisonGraph>(std::vector<ASTPtr>());
+        graph = std::make_unique<ComparisonGraph>(ASTList());
         return;
     }
 

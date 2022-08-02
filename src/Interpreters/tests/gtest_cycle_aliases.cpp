@@ -17,7 +17,7 @@ TEST(QueryNormalizer, SimpleLoopAlias)
     ASTPtr ast = parseQuery(parser, query, 0, 0);
 
     Aliases aliases;
-    aliases["a"] = parseQuery(parser, "a as a", 0, 0)->children[0];
+    aliases["a"] = parseQuery(parser, "a as a", 0, 0)->children.front();
 
     Settings settings;
     QueryNormalizer::Data normalizer_data(aliases, {}, false, settings, false);
@@ -31,8 +31,8 @@ TEST(QueryNormalizer, SimpleCycleAlias)
     ASTPtr ast = parseQuery(parser, query, 0, 0);
 
     Aliases aliases;
-    aliases["a"] = parseQuery(parser, "b as a", 0, 0)->children[0];
-    aliases["b"] = parseQuery(parser, "a as b", 0, 0)->children[0];
+    aliases["a"] = parseQuery(parser, "b as a", 0, 0)->children.front();
+    aliases["b"] = parseQuery(parser, "a as b", 0, 0)->children.front();
 
     Settings settings;
     QueryNormalizer::Data normalizer_data(aliases, {}, false, settings, true);

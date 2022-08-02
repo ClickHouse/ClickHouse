@@ -88,7 +88,7 @@ void MergeTreeIndexhypothesisMergedCondition::addConstraints(const ConstraintsDe
 /// Replaces < -> <=, > -> >= and assumes that all hypotheses are true then checks if path exists
 bool MergeTreeIndexhypothesisMergedCondition::alwaysUnknownOrTrue() const
 {
-    std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
+    ASTList active_atomic_formulas(atomic_constraints.begin(), atomic_constraints.end());
     for (const auto & hypothesis : index_to_compare_atomic_hypotheses)
     {
         active_atomic_formulas.insert(
@@ -122,8 +122,8 @@ bool MergeTreeIndexhypothesisMergedCondition::alwaysUnknownOrTrue() const
                 const auto * func = atom.ast->as<ASTFunction>();
                 if (func && func->arguments->children.size() == 2)
                 {
-                    const auto left = weak_graph->getComponentId(func->arguments->children[0]);
-                    const auto right = weak_graph->getComponentId(func->arguments->children[1]);
+                    const auto left = weak_graph->getComponentId(func->arguments->children.front());
+                    const auto right = weak_graph->getComponentId(func->arguments->children.back());
                     if (left && right && weak_graph->hasPath(left.value(), right.value()))
                     {
                         useless = false;
@@ -171,7 +171,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
                 if (func && func->arguments->children.size() == 2)
                 {
                     const auto expected = ComparisonGraph::atomToCompareResult(atom);
-                    if (graph->isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]))
+                    if (graph->isPossibleCompare(expected, func->arguments->children.front(), func->arguments->children.back()))
                     {
                         /// If graph failed use matching.
                         /// We don't need to check constraints.
@@ -190,7 +190,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
 
 std::unique_ptr<ComparisonGraph> MergeTreeIndexhypothesisMergedCondition::buildGraph(const std::vector<bool> & values) const
 {
-    std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
+    ASTList active_atomic_formulas(atomic_constraints.begin(), atomic_constraints.end());
     for (size_t i = 0; i < values.size(); ++i)
     {
         if (values[i])

@@ -69,7 +69,7 @@ struct QueryFuzzer
     void fuzzOrderByList(IAST * ast);
     void fuzzColumnLikeExpressionList(IAST * ast);
     void fuzzWindowFrame(ASTWindowDefinition & def);
-    void fuzz(ASTs & asts);
+    void fuzz(ASTList & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);
     void addTableLike(ASTPtr ast);

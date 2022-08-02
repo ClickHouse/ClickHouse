@@ -47,7 +47,7 @@ static Names extractColumnNames(const ASTPtr & node)
 
     if (expr_func && expr_func->name == "tuple")
     {
-        const auto & elements = expr_func->children.at(0)->children;
+        const auto & elements = expr_func->children.front()->children;
         Names res;
         res.reserve(elements.size());
         for (const auto & elem : elements)
@@ -249,11 +249,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
-    ASTs & engine_args = args.engine_args;
-    size_t arg_num = 0;
-    size_t arg_cnt = engine_args.size();
+    ASTList & engine_args = args.engine_args;
+    ASTList::iterator arg_it = engine_args.begin();
+    ASTList::reverse_iterator arg_rit = engine_args.rbegin();
 
-    if (arg_cnt < min_num_params || arg_cnt > max_num_params)
+    if (engine_args.size() < min_num_params || engine_args.size() > max_num_params)
     {
         String msg;
         if (is_extended_storage_def)
@@ -283,9 +283,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         size_t arg_idx = 0;
         try
         {
-            for (; arg_idx < engine_args.size(); ++arg_idx)
+            for (auto it = engine_args.begin(); it != engine_args.end(); ++arg_idx, ++it)
             {
-                auto & arg = engine_args[arg_idx];
+                auto & arg = *it;
                 auto * arg_func = arg->as<ASTFunction>();
                 if (!arg_func)
                     continue;
@@ -322,8 +322,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        bool has_arguments = arg_num + 2 <= arg_cnt;
-        bool has_valid_arguments = has_arguments && engine_args[arg_num]->as<ASTLiteral>() && engine_args[arg_num + 1]->as<ASTLiteral>();
+        bool has_arguments = (arg_it != engine_args.end()) && (std::next(arg_it) != engine_args.end());
+        bool has_valid_arguments = has_arguments && (*arg_it)->as<ASTLiteral>() && (*std::next(arg_it))->as<ASTLiteral>();
 
         ASTLiteral * ast_zk_path;
         ASTLiteral * ast_replica_name;
@@ -331,16 +331,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (has_valid_arguments)
         {
             /// Get path and name from engine arguments
-            ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
+            ast_zk_path = (*arg_it)->as<ASTLiteral>();
             if (ast_zk_path && ast_zk_path->value.getType() == Field::Types::String)
                 zookeeper_path = safeGet<String>(ast_zk_path->value);
             else
                 throw Exception(
                     "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
-            ++arg_num;
+            ++arg_it;
 
-            ast_replica_name = engine_args[arg_num]->as<ASTLiteral>();
+            ast_replica_name = (*arg_it)->as<ASTLiteral>();
             if (ast_replica_name && ast_replica_name->value.getType() == Field::Types::String)
                 replica_name = safeGet<String>(ast_replica_name->value);
             else
@@ -350,12 +350,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (replica_name.empty())
                 throw Exception(
                     "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def), ErrorCodes::NO_REPLICA_NAME_GIVEN);
-            ++arg_num;
+            ++arg_it;
         }
         else if (is_extended_storage_def
-            && (arg_cnt == 0
-                || !engine_args[arg_num]->as<ASTLiteral>()
-                || (arg_cnt == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
+            && (engine_args.empty()
+                || !(*arg_it)->as<ASTLiteral>()
+                || (engine_args.size() == 1 && merging_params.mode == MergeTreeData::MergingParams::Graphite)))
         {
             /// Try use default values if arguments are not specified.
             /// Note: {uuid} macro works for ON CLUSTER queries when database engine is Atomic.
@@ -365,18 +365,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
 
             /// Modify query, so default values will be written to metadata
-            assert(arg_num == 0);
-            ASTs old_args;
-            std::swap(engine_args, old_args);
+            assert(arg_it == engine_args.begin());
             auto path_arg = std::make_shared<ASTLiteral>(zookeeper_path);
             auto name_arg = std::make_shared<ASTLiteral>(replica_name);
             ast_zk_path = path_arg.get();
             ast_replica_name = name_arg.get();
-            engine_args.emplace_back(std::move(path_arg));
-            engine_args.emplace_back(std::move(name_arg));
-            std::move(std::begin(old_args), std::end(old_args), std::back_inserter(engine_args));
-            arg_num = 2;
-            arg_cnt += 2;
+            engine_args.emplace_front(std::move(name_arg));
+            engine_args.emplace_front(std::move(path_arg));
         }
         else
             throw Exception("Expected two string literal arguments: zookeeper_path and replica_name", ErrorCodes::BAD_ARGUMENTS);
@@ -437,31 +432,31 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
-        if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
+        if (!tryGetIdentifierNameInto(*arg_rit, merging_params.sign_column))
             throw Exception(
                 "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
-        --arg_cnt;
+        ++arg_rit;
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
-        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        if (arg_rit != engine_args.rend() && !(*arg_rit)->as<ASTLiteral>())
         {
-            if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
+            if (!tryGetIdentifierNameInto(*arg_rit, merging_params.version_column))
                 throw Exception(
                     "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
-            --arg_cnt;
+            ++arg_rit;
         }
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
-        if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        if (arg_rit != engine_args.rend() && !(*arg_rit)->as<ASTLiteral>())
         {
-            merging_params.columns_to_sum = extractColumnNames(engine_args[arg_cnt - 1]);
-            --arg_cnt;
+            merging_params.columns_to_sum = extractColumnNames(*arg_rit);
+            ++arg_rit;
         }
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
@@ -471,7 +466,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
         error_msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
-        if (const auto * ast = engine_args[arg_cnt - 1]->as<ASTLiteral>())
+        if (const auto * ast = (*arg_rit)->as<ASTLiteral>())
         {
             if (ast->value.getType() != Field::Types::String)
                 throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
@@ -481,24 +476,24 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         else
             throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
 
-        --arg_cnt;
+        ++arg_rit;
         setGraphitePatternsFromConfig(args.getContext(), graphite_config_name, merging_params.graphite_params);
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
-        if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
+        if (!tryGetIdentifierNameInto(*arg_rit, merging_params.version_column))
             throw Exception(
                 "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
 
-        --arg_cnt;
+        ++arg_rit;
 
-        if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.sign_column))
+        if (!tryGetIdentifierNameInto(*arg_rit, merging_params.sign_column))
             throw Exception(
                 "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
 
-        --arg_cnt;
+        ++arg_rit;
         /// Version collapsing is the only engine which add additional column to
         /// sorting key.
         merging_param_key_arg = merging_params.version_column;
@@ -613,7 +608,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         /// Syntax: *MergeTree(..., date, [sample_key], primary_key, index_granularity, ...)
         /// Get date:
-        if (!tryGetIdentifierNameInto(engine_args[arg_num], date_column_name))
+        if (!tryGetIdentifierNameInto(*arg_it, date_column_name))
             throw Exception(
                 "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
@@ -622,13 +617,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, args.getContext());
 
-        ++arg_num;
+        ++arg_it;
 
         /// If there is an expression for sampling
-        if (arg_cnt - arg_num == 3)
+        if (std::distance(arg_it, arg_rit.base()) == 3)
         {
-            metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.getContext());
-            ++arg_num;
+            metadata.sampling_key = KeyDescription::getKeyFromAST(*arg_it, metadata.columns, args.getContext());
+            ++arg_it;
         }
 
         /// Get sorting key from engine arguments.
@@ -637,29 +632,29 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// before storage creation. After that storage will just copy this
         /// column if sorting key will be changed.
         metadata.sorting_key
-            = KeyDescription::getSortingKeyFromAST(engine_args[arg_num], metadata.columns, args.getContext(), merging_param_key_arg);
+            = KeyDescription::getSortingKeyFromAST(*arg_it, metadata.columns, args.getContext(), merging_param_key_arg);
 
         /// In old syntax primary_key always equals to sorting key.
-        metadata.primary_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, args.getContext());
+        metadata.primary_key = KeyDescription::getKeyFromAST(*arg_it, metadata.columns, args.getContext());
         /// But it's not explicitly defined, so we evaluate definition to
         /// nullptr
         metadata.primary_key.definition_ast = nullptr;
 
-        ++arg_num;
+        ++arg_it;
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
             args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
 
-        const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
+        const auto * ast = (*arg_it)->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
             storage_settings->index_granularity = safeGet<UInt64>(ast->value);
         else
             throw Exception(
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
-        ++arg_num;
+        ++arg_it;
 
         if (args.storage_def->ttl_table && !args.attach)
             throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
@@ -674,7 +669,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "Floating point partition key is not supported: {}", metadata.partition_key.column_names[i]);
     }
 
-    if (arg_num != arg_cnt)
+    if (arg_it != arg_rit.base())
         throw Exception("Wrong number of engine arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     if (replicated)

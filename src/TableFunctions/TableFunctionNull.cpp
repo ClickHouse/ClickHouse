@@ -30,7 +30,7 @@ void TableFunctionNull::parseArguments(const ASTPtr & ast_function, ContextPtr c
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!arguments.empty())
-        structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context), "structure");
+        structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(arguments.front(), context), "structure");
 }
 
 ColumnsDescription TableFunctionNull::getActualTableStructure(ContextPtr context) const

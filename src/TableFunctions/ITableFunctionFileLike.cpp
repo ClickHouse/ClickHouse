@@ -37,12 +37,12 @@ String ITableFunctionFileLike::getFormatFromFirstArgument()
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     if (args.empty())
         throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -50,10 +50,11 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    parseFirstArguments(args[0], context);
+    auto it = args.begin();
+    parseFirstArguments((*it++), context);
 
     if (args.size() > 1)
-        format = checkAndGetLiteralArgument<String>(args[1], "format");
+        format = checkAndGetLiteralArgument<String>((*it++), "format");
 
     if (format == "auto")
         format = getFormatFromFirstArgument();
@@ -65,7 +66,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
         throw Exception("Table function '" + getName() + "' requires 1, 2, 3 or 4 arguments: filename, format (default auto), structure (default auto) and compression method (default auto)",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    structure = checkAndGetLiteralArgument<String>(args[2], "structure");
+    structure = checkAndGetLiteralArgument<String>((*it++), "structure");
 
     if (structure.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -73,7 +74,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
             ast_function->formatForErrorMessage());
 
     if (args.size() == 4)
-        compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
+        compression_method = checkAndGetLiteralArgument<String>((*it++), "compression_method");
 }
 
 StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const

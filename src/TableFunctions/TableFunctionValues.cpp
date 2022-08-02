@@ -30,13 +30,13 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
-static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
+static void parseAndInsertValues(MutableColumns & res_columns, const ASTList & args, const Block & sample_block, size_t start, ContextPtr context)
 {
     if (res_columns.size() == 1) /// Parsing arguments as Fields
     {
-        for (size_t i = start; i < args.size(); ++i)
+        for (auto it = std::next(args.begin(), start); it != args.end(); ++it)
         {
-            const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
+            const auto & [value_field, value_type_ptr] = evaluateConstantExpression(*it, context);
 
             Field value = convertFieldToTypeOrThrow(value_field, *sample_block.getByPosition(0).type, value_type_ptr.get());
             res_columns[0]->insert(value);
@@ -44,9 +44,9 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
     else /// Parsing arguments as Tuples
     {
-        for (size_t i = start; i < args.size(); ++i)
+        for (auto it = std::next(args.begin(), start); it != args.end(); ++it)
         {
-            const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
+            const auto & [value_field, value_type_ptr] = evaluateConstantExpression(*it, context);
 
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get());
             if (!type_tuple)
@@ -80,17 +80,17 @@ DataTypes TableFunctionValues::getTypesFromArgument(const ASTPtr & arg, ContextP
 
 void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     if (args.empty())
         throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const auto & literal = args[0]->as<const ASTLiteral>();
+    const auto & literal = args.front()->as<const ASTLiteral>();
     String value;
     if (args.size() > 1 && literal && literal->value.tryGet(value) && tryParseColumnsListFromString(value, structure, context))
     {
@@ -99,10 +99,11 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     }
 
     has_structure_in_arguments = false;
-    DataTypes data_types = getTypesFromArgument(args[0], context);
-    for (size_t i = 1; i < args.size(); ++i)
+    auto it = args.begin();
+    DataTypes data_types = getTypesFromArgument(*(it++), context);
+    for (; it != args.end(); ++it)
     {
-        auto arg_types = getTypesFromArgument(args[i], context);
+        auto arg_types = getTypesFromArgument(*it, context);
         if (data_types.size() != arg_types.size())
             throw Exception(
                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
@@ -133,7 +134,7 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
 
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-    ASTs & args = ast_function->children.at(0)->children;
+    ASTList & args = ast_function->children.front()->children;
 
     /// Parsing other arguments as values and inserting them into columns
     parseAndInsertValues(res_columns, args, sample_block, has_structure_in_arguments ? 1 : 0, context);

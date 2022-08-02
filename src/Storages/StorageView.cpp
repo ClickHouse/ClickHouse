@@ -165,7 +165,7 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     if (!select_query.tables() || select_query.tables()->children.empty())
         throw Exception("Logical error: no table expression in view select AST", ErrorCodes::LOGICAL_ERROR);
 
-    auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
+    auto * select_element = select_query.tables()->children.front()->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
@@ -218,7 +218,7 @@ ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr 
     for (auto & child : table_expression->children)
         if (child.get() == subquery.get())
             child = view_name;
-    return subquery->children[0];
+    return subquery->children.front();
 }
 
 void registerStorageView(StorageFactory & factory)

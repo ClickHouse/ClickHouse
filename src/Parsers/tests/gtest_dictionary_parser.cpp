@@ -57,22 +57,25 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     /// source test
     EXPECT_EQ(create->dictionary->source->name, "clickhouse");
     auto children = create->dictionary->source->elements->children;
-    EXPECT_EQ(children[0]->as<ASTPair>() -> first, "host");
-    EXPECT_EQ(children[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "localhost");
+    auto it = children.begin();
+    EXPECT_EQ((*it)->as<ASTPair>() -> first, "host");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "localhost");
 
-    EXPECT_EQ(children[1]->as<ASTPair>()->first, "port");
-    EXPECT_EQ(children[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 9000);
-
-    EXPECT_EQ(children[2]->as<ASTPair>()->first, "user");
-    EXPECT_EQ(children[2]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "default");
-    EXPECT_EQ(children[3]->as<ASTPair>()->first, "password");
-    EXPECT_EQ(children[3]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
-
-    EXPECT_EQ(children[4]->as<ASTPair>()->first, "db");
-    EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "test");
-
-    EXPECT_EQ(children[5]->as<ASTPair>()->first, "table");
-    EXPECT_EQ(children[5]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "table_for_dict");
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "port");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 9000);
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "user");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "default");
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "password");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "db");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "test");
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "table");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "table_for_dict");
 
     /// layout test
     auto * layout = create->dictionary->layout;
@@ -89,7 +92,7 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     auto * primary_key = create->dictionary->primary_key;
 
     EXPECT_EQ(primary_key->children.size(), 1);
-    EXPECT_EQ(primary_key->children[0]->as<ASTIdentifier>()->name(), "key_column");
+    EXPECT_EQ(primary_key->children.front()->as<ASTIdentifier>()->name(), "key_column");
 
     /// range test
     auto * range = create->dictionary->range;
@@ -100,29 +103,30 @@ TEST(ParserDictionaryDDL, SimpleDictionary)
     EXPECT_NE(create->dictionary_attributes_list, nullptr);
 
     auto attributes_children = create->dictionary_attributes_list->children;
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->name, "key_column");
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 0);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "key_column");
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 0);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
 }
 
 
@@ -147,29 +151,30 @@ TEST(ParserDictionaryDDL, AttributesWithMultipleProperties)
     EXPECT_NE(create->dictionary_attributes_list, nullptr);
 
     auto attributes_children = create->dictionary_attributes_list->children;
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->name, "key_column");
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value, nullptr);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression, true), "(rand() % 100) * 77");
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->injective, true);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, true);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    auto it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "key_column");
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value, nullptr);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ(serializeAST(*(*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, true), "(rand() % 100) * 77");
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, true);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, true);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
 }
 
 TEST(ParserDictionaryDDL, CustomAttributePropertiesOrder)
@@ -192,30 +197,30 @@ TEST(ParserDictionaryDDL, CustomAttributePropertiesOrder)
     EXPECT_NE(create->dictionary_attributes_list, nullptr);
 
     auto attributes_children = create->dictionary_attributes_list->children;
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->name, "key_column");
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 100);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression, true), "(rand() % 100) * 77");
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->injective, false);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->injective, true);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->injective, true);
-
-    EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, true);
-    EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
-    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    auto it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "key_column");
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "second_column");
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->name, "third_column");
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 100);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 1);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->default_value->as<ASTLiteral>()->value.get<UInt64>(), 2);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
+    EXPECT_EQ(serializeAST(*(*(it++))->as<ASTDictionaryAttributeDeclaration>()->expression, true), "(rand() % 100) * 77");
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, true);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->injective, true);
+    it = attributes_children.begin();
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, true);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
+    EXPECT_EQ((*(it++))->as<ASTDictionaryAttributeDeclaration>()->is_object_id, false);
 
     /// lifetime test
     auto * lifetime = create->dictionary->lifetime;
@@ -248,27 +253,30 @@ TEST(ParserDictionaryDDL, NestedSource)
     /// source test
     EXPECT_EQ(create->dictionary->source->name, "mysql");
     auto children = create->dictionary->source->elements->children;
+    auto it = children.begin();
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "host");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "localhost");
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "port");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 9000);
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "user");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "default");
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "replica");
+    auto replica = (*it)->as<ASTPair>()->second->children;
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "password");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
 
-    EXPECT_EQ(children[0]->as<ASTPair>()->first, "host");
-    EXPECT_EQ(children[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "localhost");
+    it = replica.begin();
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "host");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "127.0.0.1");
+    ++it;
+    EXPECT_EQ((*it)->as<ASTPair>()->first, "priority");
+    EXPECT_EQ((*it)->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 1);
 
-    EXPECT_EQ(children[1]->as<ASTPair>()->first, "port");
-    EXPECT_EQ(children[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 9000);
 
-    EXPECT_EQ(children[2]->as<ASTPair>()->first, "user");
-    EXPECT_EQ(children[2]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "default");
-
-    EXPECT_EQ(children[3]->as<ASTPair>()->first, "replica");
-    auto replica = children[3]->as<ASTPair>()->second->children;
-
-    EXPECT_EQ(replica[0]->as<ASTPair>()->first, "host");
-    EXPECT_EQ(replica[0]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "127.0.0.1");
-
-    EXPECT_EQ(replica[1]->as<ASTPair>()->first, "priority");
-    EXPECT_EQ(replica[1]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<UInt64>(), 1);
-
-    EXPECT_EQ(children[4]->as<ASTPair>()->first, "password");
-    EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
 }
 
 

@@ -167,9 +167,10 @@ public:
 private:
     void visitChildren(ASTPtr & ast, const ColumnNumbers & dont_visit_children, const std::vector<char> & force_nullable)
     {
-        for (size_t i = 0; i < ast->children.size(); ++i)
+        auto it = ast->children.begin();
+        for (size_t i = 0; i < ast->children.size(); ++i, ++it)
             if (std::find(dont_visit_children.begin(), dont_visit_children.end(), i) == dont_visit_children.end())
-                visit(ast->children[i], force_nullable[i]);
+                visit(*it, force_nullable[i]);
     }
 
     void visit(ASTFunction & function, bool force_nullable)

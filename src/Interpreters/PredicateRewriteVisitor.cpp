@@ -54,9 +54,9 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
     }
 }
 
-void PredicateRewriteVisitorData::visitInternalSelect(size_t index, ASTSelectQuery & select_node, ASTPtr & node)
+void PredicateRewriteVisitorData::visitInternalSelect(bool first, ASTSelectQuery & select_node, ASTPtr & node)
 {
-    if (index == 0)
+    if (first)
         visitFirstInternalSelect(select_node, node);
     else
         visitOtherInternalSelect(select_node, node);
@@ -65,19 +65,19 @@ void PredicateRewriteVisitorData::visitInternalSelect(size_t index, ASTSelectQue
 void PredicateRewriteVisitorData::visit(ASTSelectIntersectExceptQuery & intersect_except_query, ASTPtr &)
 {
     auto internal_select_list = intersect_except_query.getListOfSelects();
-    for (size_t index = 0; index < internal_select_list.size(); ++index)
+    for (auto it = internal_select_list.begin(); it != internal_select_list.end(); ++it)
     {
-        if (auto * union_node = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
+        if (auto * union_node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            visit(*union_node, internal_select_list[index]);
+            visit(*union_node, *it);
         }
-        else if (auto * select_node = internal_select_list[index]->as<ASTSelectQuery>())
+        else if (auto * select_node = (*it)->as<ASTSelectQuery>())
         {
-            visitInternalSelect(index, *select_node, internal_select_list[index]);
+            visitInternalSelect(index, *select_node, *it);
         }
-        else if (auto * intersect_node = internal_select_list[index]->as<ASTSelectIntersectExceptQuery>())
+        else if (auto * intersect_node = (*it)->as<ASTSelectIntersectExceptQuery>())
         {
-            visit(*intersect_node, internal_select_list[index]);
+            visit(*intersect_node, *it);
         }
     }
 }

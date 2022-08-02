@@ -26,11 +26,11 @@ namespace DB
 
     void TableFunctionHive::parseArguments(const ASTPtr & ast_function_, ContextPtr context_)
     {
-        ASTs & args_func = ast_function_->children;
+        ASTList & args_func = ast_function_->children;
         if (args_func.size() != 1)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
-        ASTs & args = args_func.at(0)->children;
+        ASTList & args = args_func.front()->children;
 
         const auto message = fmt::format(
             "The signature of function {} is:\n"
@@ -43,11 +43,12 @@ namespace DB
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
 
-        hive_metastore_url = checkAndGetLiteralArgument<String>(args[0], "hive_url");
-        hive_database = checkAndGetLiteralArgument<String>(args[1], "hive_database");
-        hive_table = checkAndGetLiteralArgument<String>(args[2], "hive_table");
-        table_structure = checkAndGetLiteralArgument<String>(args[3], "structure");
-        partition_by_def = checkAndGetLiteralArgument<String>(args[4], "partition_by_keys");
+        auto it = args.begin();
+        hive_metastore_url = checkAndGetLiteralArgument<String>(*(it++), "hive_url");
+        hive_database = checkAndGetLiteralArgument<String>(*(it++), "hive_database");
+        hive_table = checkAndGetLiteralArgument<String>(*(it++), "hive_table");
+        table_structure = checkAndGetLiteralArgument<String>(*(it++), "structure");
+        partition_by_def = checkAndGetLiteralArgument<String>(*(it++), "partition_by_keys");
 
         actual_columns = parseColumnsListFromString(table_structure, context_);
     }

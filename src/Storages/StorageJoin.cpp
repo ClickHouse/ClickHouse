@@ -282,7 +282,8 @@ void registerStorageJoin(StorageFactory & factory)
         ASTTableJoin::Strictness strictness = ASTTableJoin::Strictness::Unspecified;
         ASTTableJoin::Kind kind = ASTTableJoin::Kind::Comma;
 
-        if (auto opt_strictness_id = tryGetIdentifierName(engine_args[0]))
+        auto it = engine_args.begin();
+        if (auto opt_strictness_id = tryGetIdentifierName(*(it++)))
         {
             const String strictness_str = Poco::toLower(*opt_strictness_id);
 
@@ -305,7 +306,7 @@ void registerStorageJoin(StorageFactory & factory)
             throw Exception("First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).",
                             ErrorCodes::BAD_ARGUMENTS);
 
-        if (auto opt_kind_id = tryGetIdentifierName(engine_args[1]))
+        if (auto opt_kind_id = tryGetIdentifierName(*(it++)))
         {
             const String kind_str = Poco::toLower(*opt_kind_id);
 
@@ -329,9 +330,9 @@ void registerStorageJoin(StorageFactory & factory)
 
         Names key_names;
         key_names.reserve(engine_args.size() - 2);
-        for (size_t i = 2, size = engine_args.size(); i < size; ++i)
+        for (size_t i = 0; it != engine_args.end(); ++i, ++it)
         {
-            auto opt_key = tryGetIdentifierName(engine_args[i]);
+            auto opt_key = tryGetIdentifierName(*it);
             if (!opt_key)
                 throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
 

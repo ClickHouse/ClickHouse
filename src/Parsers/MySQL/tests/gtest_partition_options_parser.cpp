@@ -45,8 +45,8 @@ TEST(ParserPartitionOptions, KeyPatitionOptions)
     ASTDeclarePartitionOptions * declare_partition_options_02 = ast_02->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_02->partition_type, "linear_key");
     ASTPtr columns_list = declare_partition_options_02->partition_expression->as<ASTFunction>()->arguments;
-    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name(), "col_01");
-    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name(), "col_02");
+    EXPECT_EQ(columns_list->children.front()->as<ASTIdentifier>()->name(), "col_01");
+    EXPECT_EQ((*++columns_list->children.begin())->as<ASTIdentifier>()->name(), "col_02");
 
     String key_partition_with_algorithm = "PARTITION BY KEY ALGORITHM=1 (col_01)";
     ASTPtr ast_03 = parseQuery(p_partition_options, key_partition_with_algorithm.data(), key_partition_with_algorithm.data() + key_partition_with_algorithm.size(), "", 0, 0);
@@ -73,8 +73,8 @@ TEST(ParserPartitionOptions, RangePatitionOptions)
     ASTDeclarePartitionOptions * declare_partition_options_02 = ast_02->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_02->partition_type, "range");
     ASTPtr columns_list = declare_partition_options_02->partition_expression->as<ASTFunction>()->arguments;
-    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name(), "col_01");
-    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name(), "col_02");
+    EXPECT_EQ(columns_list->children.front()->as<ASTIdentifier>()->name(), "col_01");
+    EXPECT_EQ((*++columns_list->children.begin())->as<ASTIdentifier>()->name(), "col_02");
 }
 
 TEST(ParserPartitionOptions, ListPatitionOptions)
@@ -94,8 +94,8 @@ TEST(ParserPartitionOptions, ListPatitionOptions)
     ASTDeclarePartitionOptions * declare_partition_options_02 = ast_02->as<ASTDeclarePartitionOptions>();
     EXPECT_EQ(declare_partition_options_02->partition_type, "list");
     ASTPtr columns_list = declare_partition_options_02->partition_expression->as<ASTFunction>()->arguments;
-    EXPECT_EQ(columns_list->children[0]->as<ASTIdentifier>()->name(), "col_01");
-    EXPECT_EQ(columns_list->children[1]->as<ASTIdentifier>()->name(), "col_02");
+    EXPECT_EQ(columns_list->children.front()->as<ASTIdentifier>()->name(), "col_01");
+    EXPECT_EQ((*++columns_list->children.begin())->as<ASTIdentifier>()->name(), "col_02");
 }
 
 TEST(ParserPartitionOptions, PatitionNumberOptions)
@@ -143,7 +143,7 @@ TEST(ParserPartitionOptions, PatitionOptionsWithDeclarePartition)
     EXPECT_EQ(declare_partition_options->subpartition_type, "hash");
     EXPECT_EQ(declare_partition_options->subpartition_expression->as<ASTIdentifier>()->name(), "col_02");
     EXPECT_EQ(declare_partition_options->subpartition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 4);
-    EXPECT_TRUE(declare_partition_options->declare_partitions->as<ASTExpressionList>()->children[0]->as<ASTDeclarePartition>());
+    EXPECT_TRUE(declare_partition_options->declare_partitions->as<ASTExpressionList>()->children.front()->as<ASTDeclarePartition>());
 }
 
 TEST(ParserPartitionOptions, PatitionOptionsWithDeclarePartitions)
@@ -162,6 +162,6 @@ TEST(ParserPartitionOptions, PatitionOptionsWithDeclarePartitions)
     EXPECT_EQ(declare_partition_options->subpartition_type, "hash");
     EXPECT_EQ(declare_partition_options->subpartition_expression->as<ASTIdentifier>()->name(), "col_02");
     EXPECT_EQ(declare_partition_options->subpartition_numbers->as<ASTLiteral>()->value.safeGet<UInt64>(), 4);
-    EXPECT_TRUE(declare_partition_options->declare_partitions->as<ASTExpressionList>()->children[0]->as<ASTDeclarePartition>());
-    EXPECT_TRUE(declare_partition_options->declare_partitions->as<ASTExpressionList>()->children[1]->as<ASTDeclarePartition>());
+    EXPECT_TRUE(declare_partition_options->declare_partitions->as<ASTExpressionList>()->children.front()->as<ASTDeclarePartition>());
+    EXPECT_TRUE((*++declare_partition_options->declare_partitions->as<ASTExpressionList>()->children.begin())->as<ASTDeclarePartition>());
 }

@@ -48,8 +48,8 @@ TEST(ParserTableOptions, AllSubpatitionOptions)
     EXPECT_EQ(declare_options->changes["tablespace"]->as<ASTIdentifier>()->name(), "tablespace_name");
 
     ASTPtr arguments = declare_options->changes["union"]->as<ASTFunction>()->arguments;
-    EXPECT_EQ(arguments->children[0]->as<ASTIdentifier>()->name(), "table_01");
-    EXPECT_EQ(arguments->children[1]->as<ASTIdentifier>()->name(), "table_02");
+    EXPECT_EQ(arguments->children.front()->as<ASTIdentifier>()->name(), "table_01");
+    EXPECT_EQ((*++arguments->children.begin())->as<ASTIdentifier>()->name(), "table_02");
 }
 
 TEST(ParserTableOptions, OptionalTableOptions)

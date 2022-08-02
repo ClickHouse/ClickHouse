@@ -31,12 +31,12 @@ namespace ErrorCodes
 
 void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     if (args.size() != 2)
         throw Exception("Table function '" + getName() + "' requires 2 arguments: format and data", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -44,8 +44,8 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    format = checkAndGetLiteralArgument<String>(args[0], "format");
-    data = checkAndGetLiteralArgument<String>(args[1], "data");
+    format = checkAndGetLiteralArgument<String>(args.front(), "format");
+    data = checkAndGetLiteralArgument<String>(args.back(), "data");
 }
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const

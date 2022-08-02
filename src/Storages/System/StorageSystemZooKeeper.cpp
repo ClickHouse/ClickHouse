@@ -251,11 +251,11 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
 
     if (function->name == "in")
     {
-        const ASTIdentifier * ident = args.children.at(0)->as<ASTIdentifier>();
+        const ASTIdentifier * ident = args.children.front()->as<ASTIdentifier>();
         if (!ident || ident->name() != "path")
             return false;
 
-        ASTPtr value = args.children.at(1);
+        ASTPtr value = args.children.back();
 
         if (value->as<ASTSubquery>())
         {
@@ -304,10 +304,10 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
     {
         const ASTIdentifier * ident;
         ASTPtr value;
-        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1);
-        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0);
+        if ((ident = args.children.front()->as<ASTIdentifier>()))
+            value = args.children.back();
+        else if ((ident = args.children.back()->as<ASTIdentifier>()))
+            value = args.children.front();
         else
             return false;
 
@@ -329,10 +329,10 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context, 
     {
         const ASTIdentifier * ident;
         ASTPtr value;
-        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-            value = args.children.at(1);
-        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-            value = args.children.at(0);
+        if ((ident = args.children.front()->as<ASTIdentifier>()))
+            value = args.children.back();
+        else if ((ident = args.children.back()->as<ASTIdentifier>()))
+            value = args.children.front();
         else
             return false;
 

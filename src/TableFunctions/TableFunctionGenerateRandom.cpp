@@ -29,12 +29,12 @@ namespace ErrorCodes
 
 void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
-    ASTs & args_func = ast_function->children;
+    ASTList & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = args_func.at(0)->children;
+    ASTList & args = args_func.front()->children;
 
     if (args.empty())
         throw Exception("Table function '" + getName() + "' requires at least one argument: "
@@ -58,21 +58,23 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
         }
     }
 
+    auto it = args.begin();
+
     /// Parsing first argument as table structure and creating a sample block
-    structure = checkAndGetLiteralArgument<String>(args[0], "structure");
+    structure = checkAndGetLiteralArgument<String>(*it++, "structure");
 
     if (args.size() >= 2)
     {
-        const auto & literal = args[1]->as<const ASTLiteral &>();
+        const auto & literal = (*it++)->as<const ASTLiteral &>();
         if (!literal.value.isNull())
             random_seed = checkAndGetLiteralArgument<UInt64>(literal, "random_seed");
     }
 
     if (args.size() >= 3)
-        max_string_length = checkAndGetLiteralArgument<UInt64>(args[2], "max_string_length");
+        max_string_length = checkAndGetLiteralArgument<UInt64>(*it++, "max_string_length");
 
     if (args.size() == 4)
-        max_array_length = checkAndGetLiteralArgument<UInt64>(args[3], "max_string_length");
+        max_array_length = checkAndGetLiteralArgument<UInt64>(*it++, "max_string_length");
 }
 
 ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextPtr context) const

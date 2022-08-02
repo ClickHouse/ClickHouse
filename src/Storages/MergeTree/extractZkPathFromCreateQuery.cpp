@@ -27,7 +27,7 @@ std::optional<String> tryExtractZkPathFromCreateQuery(const IAST & create_query,
     if (!ast_arguments || ast_arguments->children.empty())
         return {};
 
-    auto * ast_zk_path = typeid_cast<ASTLiteral *>(ast_arguments->children[0].get());
+    auto * ast_zk_path = typeid_cast<ASTLiteral *>(ast_arguments->children.front().get());
     if (!ast_zk_path || (ast_zk_path->value.getType() != Field::Types::String))
         return {};
 

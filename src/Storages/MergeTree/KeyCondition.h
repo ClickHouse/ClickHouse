@@ -396,7 +396,7 @@ private:
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
-        const ASTs & args,
+        const ASTList & args,
         ContextPtr context,
         RPNElement & out,
         size_t & out_key_column_num);

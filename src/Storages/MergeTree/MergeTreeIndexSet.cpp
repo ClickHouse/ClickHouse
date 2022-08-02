@@ -449,14 +449,14 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
         if (key_columns.contains(func->getColumnName()))
             return false;
 
-        const ASTs & args = func->arguments->children;
+        const ASTList & args = func->arguments->children;
 
         if (func->name == "and" || func->name == "indexHint")
             return std::all_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
         else if (func->name == "or")
             return std::any_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
         else if (func->name == "not")
-            return checkASTUseless(args[0], atomic);
+            return checkASTUseless(args.front(), atomic);
         else
             return std::any_of(args.begin(), args.end(),
                 [this](const auto & arg) { return checkASTUseless(arg, true); });

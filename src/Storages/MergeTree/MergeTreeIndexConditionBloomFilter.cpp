@@ -264,7 +264,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
         if (!function->arguments)
             return false;
 
-        const ASTs & arguments = function->arguments->children;
+        const ASTList & arguments = function->arguments->children;
         for (const auto & arg : arguments)
         {
             if (traverseFunction(arg, block_with_constants, out, node))
@@ -276,11 +276,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
 
         if (functionIsInOrGlobalInOperator(function->name))
         {
-            auto prepared_set = getPreparedSet(arguments[1]);
+            auto prepared_set = getPreparedSet(arguments.back());
 
             if (prepared_set)
             {
-                if (traverseASTIn(function->name, arguments[0], prepared_set, out))
+                if (traverseASTIn(function->name, arguments.front(), prepared_set, out))
                     maybe_useful = true;
             }
         }
@@ -294,14 +294,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const ASTPtr & node, B
         {
             Field const_value;
             DataTypePtr const_type;
-            if (KeyCondition::getConstant(arguments[1], block_with_constants, const_value, const_type))
+            if (KeyCondition::getConstant(arguments.back(), block_with_constants, const_value, const_type))
             {
-                if (traverseASTEquals(function->name, arguments[0], const_type, const_value, out, parent))
+                if (traverseASTEquals(function->name, arguments.front(), const_type, const_value, out, parent))
                     maybe_useful = true;
             }
-            else if (KeyCondition::getConstant(arguments[0], block_with_constants, const_value, const_type))
+            else if (KeyCondition::getConstant(arguments.front(), block_with_constants, const_value, const_type))
             {
-                if (traverseASTEquals(function->name, arguments[1], const_type, const_value, out, parent))
+                if (traverseASTEquals(function->name, arguments.back(), const_type, const_value, out, parent))
                     maybe_useful = true;
             }
         }
@@ -353,7 +353,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
         {
             const auto & tuple_column = typeid_cast<const ColumnTuple *>(column.get());
             const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
-            const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
+            const ASTList & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 
             if (tuple_data_type->getElements().size() != arguments.size() || tuple_column->getColumns().size() != arguments.size())
                 throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -362,8 +362,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
             const auto & sub_columns = tuple_column->getColumns();
             const auto & sub_data_types = tuple_data_type->getElements();
 
-            for (size_t index = 0; index < arguments.size(); ++index)
-                match_with_subtype |= traverseASTIn(function_name, arguments[index], nullptr, sub_data_types[index], sub_columns[index], out);
+            auto it = arguments.begin();
+            for (size_t index = 0; it != arguments.end(); ++index, ++it)
+                match_with_subtype |= traverseASTIn(function_name, *it, nullptr, sub_data_types[index], sub_columns[index], out);
 
             return match_with_subtype;
         }
@@ -390,7 +391,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
             if (set_contain_default_value)
                 return false;
 
-            const auto * column_ast_identifier = function->arguments.get()->children[0].get()->as<ASTIdentifier>();
+            const auto * column_ast_identifier = function->arguments.get()->children.front().get()->as<ASTIdentifier>();
             if (!column_ast_identifier)
                 return false;
 
@@ -402,7 +403,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTIn(
             {
                 /// For mapKeys we serialize key argument with bloom filter
 
-                auto & argument = function->arguments.get()->children[1];
+                auto & argument = function->arguments.get()->children.back();
 
                 if (const auto * literal = argument->as<ASTLiteral>())
                 {
@@ -478,12 +479,12 @@ static bool indexOfCanUseBloomFilter(const ASTPtr & parent)
             bool reversed = false;
             const ASTLiteral * constant = nullptr;
 
-            if (const ASTLiteral * left = function->arguments->children[0]->as<ASTLiteral>())
+            if (const ASTLiteral * left = function->arguments->children.front()->as<ASTLiteral>())
             {
                 constant = left;
                 reversed = true;
             }
-            else if (const ASTLiteral * right = function->arguments->children[1]->as<ASTLiteral>())
+            else if (const ASTLiteral * right = function->arguments->children.back()->as<ASTLiteral>())
             {
                 constant = right;
             }
@@ -615,7 +616,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
         {
             const Tuple & tuple = get<const Tuple &>(value_field);
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
-            const ASTs & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
+            const ASTList & arguments = typeid_cast<const ASTExpressionList &>(*function->arguments).children;
 
             if (tuple.size() != arguments.size())
                 throw Exception("Illegal types of arguments of function " + function_name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -623,8 +624,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             bool match_with_subtype = false;
             const DataTypes & subtypes = value_tuple_data_type->getElements();
 
-            for (size_t index = 0; index < tuple.size(); ++index)
-                match_with_subtype |= traverseASTEquals(function_name, arguments[index], subtypes[index], tuple[index], out, key_ast);
+            auto it = arguments.begin();
+            for (size_t index = 0; it != arguments.end(); ++index, ++it)
+                match_with_subtype |= traverseASTEquals(function_name, *it, subtypes[index], tuple[index], out, key_ast);
 
             return match_with_subtype;
         }
@@ -641,7 +643,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             if (value_field == value_type->getDefault())
                 return false;
 
-            const auto * column_ast_identifier = function->arguments.get()->children[0].get()->as<ASTIdentifier>();
+            const auto * column_ast_identifier = function->arguments.get()->children.front().get()->as<ASTIdentifier>();
             if (!column_ast_identifier)
                 return false;
 
@@ -657,7 +659,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseASTEquals(
             {
                 position = header.getPositionByName(map_keys_index_column_name);
 
-                auto & argument = function->arguments.get()->children[1];
+                auto & argument = function->arguments.get()->children.back();
 
                 if (const auto * literal = argument->as<ASTLiteral>())
                     const_value = literal->value;

@@ -255,8 +255,8 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
     {
         // Don't remove last element -- this leads to questionable
         // constructs such as empty select.
-        list->children.erase(list->children.begin()
-                             + fuzz_rand() % list->children.size());
+        list->children.erase(std::next(list->children.begin(),
+                                       fuzz_rand() % list->children.size()));
     }
 
     // Add element
@@ -264,7 +264,7 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
     {
         auto pos = list->children.empty()
                 ? list->children.begin()
-                : list->children.begin() + fuzz_rand() % list->children.size();
+                : std::next(list->children.begin(), fuzz_rand() % list->children.size());
         auto col = getRandomColumnLike();
         if (col)
         {
@@ -301,8 +301,8 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     {
         // Don't remove last element -- this leads to questionable
         // constructs such as empty select.
-        impl->children.erase(impl->children.begin()
-                             + fuzz_rand() % impl->children.size());
+        impl->children.erase(std::next(impl->children.begin(),
+                                       fuzz_rand() % impl->children.size()));
     }
 
     // Add element
@@ -310,7 +310,7 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     {
         auto pos = impl->children.empty()
                 ? impl->children.begin()
-                : impl->children.begin() + fuzz_rand() % impl->children.size();
+                : std::next(impl->children.begin(), fuzz_rand() % impl->children.size());
         auto col = getRandomColumnLike();
         if (col)
             impl->children.insert(pos, col);
@@ -398,7 +398,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
     }
 }
 
-void QueryFuzzer::fuzz(ASTs & asts)
+void QueryFuzzer::fuzz(ASTList & asts)
 {
     for (auto & ast : asts)
     {

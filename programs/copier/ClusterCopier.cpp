@@ -701,7 +701,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
 /// Removes data skipping indices.
 ASTPtr ClusterCopier::removeAliasMaterializedAndTTLColumnsFromCreateQuery(const ASTPtr & query_ast, bool allow_to_copy_alias_and_materialized_columns)
 {
-    const ASTs & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
+    const ASTList & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
     auto new_columns = std::make_shared<ASTExpressionList>();
 
     for (const ASTPtr & column_ast : column_asts)

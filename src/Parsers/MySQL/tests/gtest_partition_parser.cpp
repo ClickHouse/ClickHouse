@@ -73,8 +73,8 @@ TEST(ParserPartition, PatitionOptionsWithLessThan)
     ASTDeclarePartition * declare_partition_03 = ast_partition_03->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_03->partition_name, "partition_03");
     ASTPtr declare_partition_03_argument = declare_partition_03->less_than->as<ASTFunction>()->arguments;
-    EXPECT_EQ(declare_partition_03_argument->children[0]->as<ASTLiteral>()->value.safeGet<UInt64>(), 50);
-    EXPECT_EQ(declare_partition_03_argument->children[1]->as<ASTIdentifier>()->name(), "MAXVALUE");
+    EXPECT_EQ(declare_partition_03_argument->children.front()->as<ASTLiteral>()->value.safeGet<UInt64>(), 50);
+    EXPECT_EQ((*std::next(declare_partition_03_argument->children.begin()))->as<ASTIdentifier>()->name(), "MAXVALUE");
     ASTDeclareOptions * declare_options_03 = declare_partition_03->options->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options_03->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
 
@@ -84,8 +84,8 @@ TEST(ParserPartition, PatitionOptionsWithLessThan)
     ASTDeclarePartition * declare_partition_04 = ast_partition_04->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_04->partition_name, "partition_04");
     ASTPtr declare_partition_04_argument = declare_partition_04->less_than->as<ASTFunction>()->arguments;
-    EXPECT_EQ(declare_partition_04_argument->children[0]->as<ASTIdentifier>()->name(), "MAXVALUE");
-    EXPECT_EQ(declare_partition_04_argument->children[1]->as<ASTIdentifier>()->name(), "MAXVALUE");
+    EXPECT_EQ(declare_partition_04_argument->children.front()->as<ASTIdentifier>()->name(), "MAXVALUE");
+    EXPECT_EQ((*std::next(declare_partition_04_argument->children.begin()))->as<ASTIdentifier>()->name(), "MAXVALUE");
     ASTDeclareOptions * declare_options_04 = declare_partition_04->options->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options_04->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
 }
@@ -99,9 +99,9 @@ TEST(ParserPartition, PatitionOptionsWithInExpression)
     ASTDeclarePartition * declare_partition_01 = ast_partition_01->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_01->partition_name, "partition_01");
     ASTPtr declare_partition_01_argument = declare_partition_01->in_expression->as<ASTFunction>()->arguments;
-    EXPECT_TRUE(declare_partition_01_argument->children[0]->as<ASTLiteral>()->value.isNull());
-    EXPECT_EQ(declare_partition_01_argument->children[1]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1991);
-    EXPECT_EQ(declare_partition_01_argument->children[2]->as<ASTIdentifier>()->name(), "MAXVALUE");
+    EXPECT_TRUE(declare_partition_01_argument->children.front()->as<ASTLiteral>()->value.isNull());
+    EXPECT_EQ((*std::next(declare_partition_01_argument->children.begin()))->as<ASTLiteral>()->value.safeGet<UInt64>(), 1991);
+    EXPECT_EQ((*std::next(declare_partition_01_argument->children.begin(), 2))->as<ASTIdentifier>()->name(), "MAXVALUE");
     ASTDeclareOptions * declare_options_01 = declare_partition_01->options->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options_01->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
 
@@ -112,17 +112,17 @@ TEST(ParserPartition, PatitionOptionsWithInExpression)
     EXPECT_EQ(declare_partition_02->partition_name, "partition_02");
     ASTPtr declare_partition_02_argument = declare_partition_02->in_expression->as<ASTFunction>()->arguments;
 
-    ASTPtr argument_01 = declare_partition_02_argument->children[0];
+    ASTPtr argument_01 = declare_partition_02_argument->children.front();
     EXPECT_TRUE(argument_01->as<ASTLiteral>()->value.safeGet<Tuple>()[0].isNull());
     EXPECT_EQ(argument_01->as<ASTLiteral>()->value.safeGet<Tuple>()[1].safeGet<UInt64>(), 1991);
 
-    ASTPtr argument_02 = declare_partition_02_argument->children[1];
+    ASTPtr argument_02 = *++declare_partition_02_argument->children.begin();
     EXPECT_EQ(argument_02->as<ASTLiteral>()->value.safeGet<Tuple>()[0].safeGet<UInt64>(), 1991);
     EXPECT_TRUE(argument_02->as<ASTLiteral>()->value.safeGet<Tuple>()[1].isNull());
 
-    ASTPtr argument_03 = declare_partition_02_argument->children[2]->as<ASTFunction>()->arguments;
-    EXPECT_EQ(argument_03->as<ASTExpressionList>()->children[0]->as<ASTIdentifier>()->name(), "MAXVALUE");
-    EXPECT_EQ(argument_03->as<ASTExpressionList>()->children[1]->as<ASTIdentifier>()->name(), "MAXVALUE");
+    ASTPtr argument_03 = (*++(++declare_partition_02_argument->children.begin()))->as<ASTFunction>()->arguments;
+    EXPECT_EQ(argument_03->as<ASTExpressionList>()->children.front()->as<ASTIdentifier>()->name(), "MAXVALUE");
+    EXPECT_EQ((*std::next(argument_03->as<ASTExpressionList>()->children.begin()))->as<ASTIdentifier>()->name(), "MAXVALUE");
 
     ASTDeclareOptions * declare_options_02 = declare_partition_02->options->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options_02->changes["engine"]->as<ASTIdentifier>()->name(), "engine_name");
@@ -136,14 +136,14 @@ TEST(ParserPartition, PatitionOptionsWithSubpartitions)
 
     ASTDeclarePartition * declare_partition_01 = ast_partition_01->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_01->partition_name, "partition_01");
-    EXPECT_TRUE(declare_partition_01->subpartitions->as<ASTExpressionList>()->children[0]->as<ASTDeclareSubPartition>());
+    EXPECT_TRUE(declare_partition_01->subpartitions->as<ASTExpressionList>()->children.front()->as<ASTDeclareSubPartition>());
 
     String partition_02 = "PARTITION partition_02 VALUES IN (NULL, 1991, MAXVALUE) STORAGE engine = engine_name (SUBPARTITION s_p01, SUBPARTITION s_p02)";
     ASTPtr ast_partition_02 = parseQuery(p_partition, partition_02.data(), partition_02.data() + partition_02.size(), "", 0, 0);
 
     ASTDeclarePartition * declare_partition_02 = ast_partition_02->as<ASTDeclarePartition>();
     EXPECT_EQ(declare_partition_02->partition_name, "partition_02");
-    EXPECT_TRUE(declare_partition_02->subpartitions->as<ASTExpressionList>()->children[0]->as<ASTDeclareSubPartition>());
-    EXPECT_TRUE(declare_partition_02->subpartitions->as<ASTExpressionList>()->children[1]->as<ASTDeclareSubPartition>());
+    EXPECT_TRUE(declare_partition_02->subpartitions->as<ASTExpressionList>()->children.front()->as<ASTDeclareSubPartition>());
+    EXPECT_TRUE((*std::next(declare_partition_02->subpartitions->as<ASTExpressionList>()->children.begin()))->as<ASTDeclareSubPartition>());
 }
 

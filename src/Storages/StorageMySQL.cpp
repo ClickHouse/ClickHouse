@@ -236,7 +236,7 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
 }
 
 
-StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings)
+StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTList engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings)
 {
     StorageMySQLConfiguration configuration;
 
@@ -271,18 +271,19 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
 
-        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+        auto it = engine_args.begin();
+        const auto & host_port = checkAndGetLiteralArgument<String>(*(it++), "host:port");
         size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
-        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
+        configuration.database = checkAndGetLiteralArgument<String>(*(it++), "database");
+        configuration.table = checkAndGetLiteralArgument<String>(*(it++), "table");
+        configuration.username = checkAndGetLiteralArgument<String>(*(it++), "username");
+        configuration.password = checkAndGetLiteralArgument<String>(*(it++), "password");
         if (engine_args.size() >= 6)
-            configuration.replace_query = checkAndGetLiteralArgument<UInt64>(engine_args[5], "replace_query");
+            configuration.replace_query = checkAndGetLiteralArgument<UInt64>(*(it++), "replace_query");
         if (engine_args.size() == 7)
-            configuration.on_duplicate_clause = checkAndGetLiteralArgument<String>(engine_args[6], "on_duplicate_clause");
+            configuration.on_duplicate_clause = checkAndGetLiteralArgument<String>(*(it++), "on_duplicate_clause");
     }
     for (const auto & address : configuration.addresses)
         context_->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));

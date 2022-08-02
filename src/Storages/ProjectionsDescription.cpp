@@ -185,7 +185,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
     ASTPtr partition_columns,
     const Names & minmax_columns,
-    const ASTs & primary_key_asts,
+    const ASTList & primary_key_asts,
     ContextPtr query_context)
 {
     ProjectionDescription result;
