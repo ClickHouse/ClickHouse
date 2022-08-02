@@ -34,7 +34,9 @@ list (APPEND PRIVATE_LIBS
 )
 
 if (USE_BLAKE3)
-    target_link_libraries(clickhouse_functions PUBLIC ch_contrib::blake3)
+    list (APPEND PUBLIC_LIBS
+        ch_contrib::blake3
+    )
 endif()
 
 if (TARGET OpenSSL::Crypto)
