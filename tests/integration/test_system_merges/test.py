@@ -225,7 +225,7 @@ def test_mutation_simple(started_cluster, replicated):
 
         assert (
             node_check.query(
-                "SELECT * FROM system.merges WHERE table = '{name}'".format(
+                "SELECT * FROM system.merges WHERE table = '{name}' and progress < 1".format(
                     name=table_name
                 )
             )

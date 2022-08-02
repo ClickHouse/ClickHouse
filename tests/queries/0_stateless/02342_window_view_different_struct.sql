@@ -1,5 +1,3 @@
--- Tags: no-backward-compatibility-check:22.6
-
 SET allow_experimental_window_view = 1;
 
 DROP TABLE IF EXISTS data_02342;

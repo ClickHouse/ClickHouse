@@ -26,6 +26,18 @@ def cluster():
             ],
             with_minio=True,
         )
+
+        cluster.add_instance(
+            "node_with_limited_disk",
+            main_configs=[
+                "configs/config.d/storage_conf.xml",
+                "configs/config.d/bg_processing_pool_conf.xml",
+            ],
+            with_minio=True,
+            tmpfs=[
+                "/jbod1:size=2M",
+            ],
+        )
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -67,7 +79,10 @@ def create_table(node, table_name, **additional_settings):
 
 def run_s3_mocks(cluster):
     logging.info("Starting s3 mocks")
-    mocks = (("unstable_proxy.py", "resolver", "8081"),)
+    mocks = (
+        ("unstable_proxy.py", "resolver", "8081"),
+        ("no_delete_objects.py", "resolver", "8082"),
+    )
     for mock_filename, container, port in mocks:
         container_id = cluster.get_container_id(container)
         current_dir = os.path.dirname(__file__)
@@ -638,6 +653,15 @@ def test_s3_disk_restart_during_load(cluster, node_name):
 
 
 @pytest.mark.parametrize("node_name", ["node"])
+def test_s3_no_delete_objects(cluster, node_name):
+    node = cluster.instances[node_name]
+    create_table(
+        node, "s3_test_no_delete_objects", storage_policy="no_delete_objects_s3"
+    )
+    node.query("DROP TABLE s3_test_no_delete_objects SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
 def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test", storage_policy="unstable_s3")
@@ -666,3 +690,22 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
     minio = cluster.minio_client
     for obj in list(minio.list_objects(cluster.minio_bucket, "data/")):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
+
+
+@pytest.mark.parametrize("node_name", ["node_with_limited_disk"])
+def test_cache_with_full_disk_space(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query(
+        "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_with_cache_and_jbod';"
+    )
+    node.query(
+        "INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 500000"
+    )
+    node.query(
+        "SELECT * FROM s3_test WHERE value LIKE '%abc%' ORDER BY value FORMAT Null"
+    )
+    assert node.contains_in_log(
+        "Insert into cache is skipped due to insufficient disk space"
+    )
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")

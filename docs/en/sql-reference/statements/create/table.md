@@ -248,6 +248,15 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
+#### DEFLATE_QPL
+
+`DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
+
+-   DEFLATE_QPL is experimental and can only be used after setting configuration parameter `allow_experimental_codecs=1`.
+-   DEFLATE_QPL only works if ClickHouse was compiled with support for AVX2 or AVX512 instructions
+-   DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device
+-   DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with support for AVX2/AVX512
+
 ### Specialized Codecs
 
 These codecs are designed to make compression more effective by using specific features of data. Some of these codecs do not compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
