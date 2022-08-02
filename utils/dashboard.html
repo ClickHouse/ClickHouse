@@ -69,6 +69,11 @@
             grid-template-columns: auto;
             grid-template-rows: fit-content(10%) auto;
         }
+        input {
+            /* iPad, Safari */
+            border-radius: 0;
+            margin: 0;
+        }
         #charts
         {
             height: 100%;
@@ -291,59 +296,34 @@ let user = 'explorer';
 let password = '';
 
 let queries = [
-    { title: "Weekly Unique Comment Authors", query:
-    `SELECT toMonday(created_at)::DateTime::INT AS t, exponentialMovingAverage({smooth:UInt32})(uniq(actor_login), t::Date::INT) OVER (ORDER BY t) AS authors
-FROM github_events
-WHERE repo_name = {repo:String}
-AND created_at >= {start:Date}
-AND event_type = 'IssueCommentEvent'
-AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-GROUP BY t
-ORDER BY t`},
-    { title: "Weekly Unique Comments", query:
-    `SELECT toMonday(created_at)::DateTime::INT AS t, exponentialMovingAverage({smooth:UInt32})(count(), t::Date::INT) OVER (ORDER BY t) AS events
-FROM github_events
-WHERE repo_name = {repo:String}
-AND created_at >= {start:Date}
-AND event_type = 'IssueCommentEvent'
-AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-GROUP BY t
-ORDER BY t`},
-    { title: "Weekly Unique PR Authors", query:
-    `SELECT toMonday(created_at)::DateTime::INT AS t, exponentialMovingAverage({smooth:UInt32})(uniq(actor_login), t::Date::INT) OVER (ORDER BY t) AS authors
-FROM github_events
-WHERE repo_name = {repo:String}
-AND created_at >= {start:Date}
-AND event_type = 'PullRequestEvent'
-AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-GROUP BY t
-ORDER BY t`},
-    { title: "Weekly Unique PRs", query:
-    `SELECT toMonday(created_at)::DateTime::INT AS t, exponentialMovingAverage({smooth:UInt32})(count(), t::Date::INT) OVER (ORDER BY t) AS events
-FROM github_events
-WHERE repo_name = {repo:String}
-AND created_at >= {start:Date}
-AND event_type = 'PullRequestEvent'
-AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-GROUP BY t
-ORDER BY t`},
-    { title: "{repo} Daily Stars", query:
-    `SELECT toStartOfDay(created_at)::INT AS t, exponentialMovingAverage({smooth:UInt32})(count(), t::Date::INT) OVER (ORDER BY t) AS events
-FROM github_events
-WHERE repo_name = {repo:String}
-AND created_at >= {start:Date}
-AND event_type = 'WatchEvent'
-AND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'
-GROUP BY t
-ORDER BY t`},
+    {
+      "title": "Unique Comment Authors",
+      "query": "SELECT toStartOfInterval(created_at, INTERVAL {group_days:UInt16} DAY)::INT AS t, uniq(actor_login) AS authors\nFROM github_events\nWHERE repo_name = {repo:String}\nAND created_at >= {start:Date}\nAND event_type = 'IssueCommentEvent'\nAND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'\nGROUP BY t\nORDER BY t"
+    },
+    {
+      "title": "Comments",
+      "query": "SELECT toStartOfInterval(created_at, INTERVAL {group_days:UInt16} DAY)::INT AS t, count() AS events\nFROM github_events\nWHERE repo_name = {repo:String}\nAND created_at >= {start:Date}\nAND event_type = 'IssueCommentEvent'\nAND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'\nGROUP BY t\nORDER BY t"
+    },
+    {
+      "title": "Unique Pull Request Authors",
+      "query": "SELECT toStartOfInterval(created_at, INTERVAL {group_days:UInt16} DAY)::INT AS t, uniq(actor_login) AS authors\nFROM github_events\nWHERE repo_name = {repo:String}\nAND created_at >= {start:Date}\nAND event_type = 'PullRequestEvent'\nAND action = 'opened'\nAND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'\nGROUP BY t\nORDER BY t"
+    },
+    {
+      "title": "New Pull Requests",
+      "query": "SELECT toStartOfInterval(created_at, INTERVAL {group_days:UInt16} DAY)::INT AS t, count() AS events\nFROM github_events\nWHERE repo_name = {repo:String}\nAND created_at >= {start:Date}\nAND event_type = 'PullRequestEvent'\nAND action = 'opened'\nAND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'\nGROUP BY t\nORDER BY t"
+    },
+    {
+      "title": "{repo} Stars",
+      "query": "SELECT toStartOfInterval(created_at, INTERVAL {group_days:UInt16} DAY)::INT AS t, count() AS events\nFROM github_events\nWHERE repo_name = {repo:String}\nAND created_at >= {start:Date}\nAND event_type = 'WatchEvent'\nAND actor_login NOT LIKE 'robot-%' AND actor_login NOT LIKE '%[bot]'\nGROUP BY t\nORDER BY t"
+    }
 ];
 
 /// Query parameters with predefined default values.
 /// All other parameters will be automatically found in the queries.
 let params = {
-    start: '2015-01-01',
-    repo: 'ClickHouse/ClickHouse',
-    smooth: 7
+    "repo": "ClickHouse/ClickHouse",
+    "group_days": "7",
+    "start": "2020-01-01"
 };
 
 let theme = 'light';
