@@ -189,6 +189,7 @@ struct FormatSettings
          * because Protobuf without delimiters is not generally useful.
          */
         bool allow_multiple_rows_without_delimiter = false;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } protobuf;
 
     struct
@@ -259,6 +260,7 @@ struct FormatSettings
     struct
     {
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 
     enum class MsgPackUUIDRepresentation
