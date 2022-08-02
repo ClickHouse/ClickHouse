@@ -117,6 +117,8 @@ public:
           // first_input(true),
           join(join_)
     {
+        // status[0].blocks.resize(1);
+
         // for (size_t i = 0; i < num_inputs; ++i)
         //     inputs.emplace_back(Block(), this);
         // current_input = inputs.begin();
@@ -147,7 +149,8 @@ private:
         size_t current_pos = 0;
         bool left_rest = false;
         bool right_rest = false;
-        Block block;
+        Blocks blocks;
+        size_t current_block = 0;
         PaddedPODArray<Int16> right_filt;
         //  1  -  filter the row out
         //  negative -    -1 * (left_position + 1)

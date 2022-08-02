@@ -361,11 +361,21 @@ IProcessor::Status ParallelJoinTransform::prepare()
             all_finished = false;
             if (current_input == inputs.begin())
             { // left
-                left_read = false;
+                assert(!left_read);
                 assert(!inp);
                 LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "reading left");
                 //  only when no right input, that refers
                 //    active block
+                if (!status[0].blocks.empty())
+                {
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left already read");
+                    inp++;
+                    ++current_input;
+                    continue;
+                }
+
+
+
                 bool left_in_use = false;
                 for (size_t right_inp = 1; right_inp < num_inputs; ++right_inp)
                 {
@@ -387,15 +397,19 @@ IProcessor::Status ParallelJoinTransform::prepare()
 
                         current_input->setNeeded();
 
-                        status[0].block = current_input->getHeader().cloneWithColumns(chunk.detachColumns());
+                        // only one left block
+                        status[0].blocks.resize(1);
 
-                        auto & block = status[0].block;
+                        status[0].blocks[0] = current_input->getHeader().cloneWithColumns(chunk.detachColumns());
+                        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "read left block with {} rows", status[0].blocks[0].rows());
+
+                        auto & block = status[0].blocks[0];
                         auto const & col = block.getByPosition(0).column;
 
                         left_read = true;
 
                         // remove duplicates
-                        IColumn::Filter filt;
+                        IColumn::Filter filt(block.rows());
                         size_t shift = 1;
                         size_t row = 0;
                         for (; row+shift < col->size();)
@@ -414,6 +428,16 @@ IProcessor::Status ParallelJoinTransform::prepare()
 
                             shift++;
                         }
+                        for (size_t i = 0; i < block.columns(); ++i)
+                        {
+                            block.getByPosition(i).column = block.getByPosition(i).column->filter(filt, -1);
+                        }
+                        left_filt.resize(block.rows());
+                        for (auto & elem : left_filt)
+                        {
+                            elem = 1;
+                        }
+
                         LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "duplicates are removed");
                     }
                     else
@@ -426,46 +450,55 @@ IProcessor::Status ParallelJoinTransform::prepare()
             }
             else
             { // right
-                if (!left_read && status[inp].right_rest)
+                if (status[0].blocks.empty() /* || (!status[inp].blocks.empty() && !status[inp].left_rest)*/)
                 {
                     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "need left while it is not read");
+                    inputs.begin()->setNeeded();
+                    inp = 0;
+                    current_input = inputs.begin();
+                    continue;
+                    // goto EOFL;
+                }
+                if (!status[inp].blocks.empty() && !status[inp].left_rest)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "!status[inp].blocks.empty() && !status[inp].left_rest)");
                     goto EOFL;
                 }
-                if (!status[inp].current_pos) // status[inp].left_rest ?
+
+                // if (!status[inp].current_pos) // status[inp].left_rest ?
+                // {
+                //     assert(!status[inp].left_rest);
+                //     assert(status[inp].blocks.empty());
+                current_input->setNeeded();
+                if (current_input->hasData())
                 {
-                    assert(!status[inp].left_rest);
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "has data for input {}", inp);
+                    // current_input->setNotNeeded();
+
+                    chunk = current_input->pull(true);
+                    // status[inp].current_block++;
+                    auto & inserted_block = status[inp].blocks.emplace_back(current_input->getHeader());
+                    // status[inp].blocks[status[inp].current_block] = current_input->getHeader();
+                    inserted_block.setColumns(chunk.detachColumns());
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "read right block with {} rows", inserted_block.rows());
+
                     current_input->setNeeded();
-                    if (current_input->hasData())
-                    {
-                        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "has data for input {}", inp);
-                        // current_input->setNotNeeded();
-
-                        chunk = current_input->pull(true);
-                        status[inp].block = current_input->getHeader();
-                        status[inp].block.setColumns(chunk.detachColumns());
-
-
-                        current_input->setNeeded();
-
-                    }
-                    else if (!status[inp].right_rest)
-                    {
-                        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "no right, but cannot read - continue");
-                        goto EOFL;
-                    }
                 }
-                else
+                else if (!status[inp].right_rest)
                 {
-                    assert(status[inp].left_rest);
-                    // append block
-
-
-
-                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "current_pos {} for input {}", status[inp].current_pos, inp);
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "no right, but cannot read - continue");
+                    goto EOFL;
                 }
+                // }
+                // else
+                // {
+                //     assert(status[inp].left_rest);
+                //     // append block
 
+                //     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "current_pos {} for input {}", status[inp].current_pos, inp);
+                // }
 
-                if (!status[0].block.rows())
+                if (status[0].blocks.empty() || !status[0].blocks[0].rows())
                 {
                     assert(!left_read);
                     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "No left - setting right_rest for input {}", inp);
@@ -473,38 +506,65 @@ IProcessor::Status ParallelJoinTransform::prepare()
                     goto EOFL;
                 }
 
-                Block & add_block = status[inp].block;
+                Block & add_block = status[inp].blocks.back();
 
                 size_t & left_row = status[inp].left_pos;
                 size_t & right_row = status[inp].current_pos;
-                auto const & left_col = status[0].block.getByPosition(0).column;  //safeGetByPosition ??
+                auto const & left_col = status[0].blocks[0].getByPosition(0).column;  //safeGetByPosition ??
                 auto const & right_col = add_block.getByPosition(0).column;
-                status[inp].right_filt.resize(status[inp].block.rows());
 
 
-                for (;;)
+                size_t total_rows = std::accumulate(status[inp].blocks.begin(), status[inp].blocks.end(), 0, [](size_t s, const Block & b)
+                {
+                    return s + b.rows();
+                });
+
+                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "total_rows is {}, current_pos {}", total_rows, status[inp].current_pos);
+
+                status[inp].right_filt.resize(total_rows);
+                status[inp].left_rest = false;
+
+                for (size_t right_block_shift = right_row; ;)
                 {
                     // less, equal, greater than rhs[m] respectively
-                    auto comp = left_col->compareAt(left_row, right_row, *right_col, 0);
-                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "comp {}", comp);
+                    auto comp = left_col->compareAt(left_row, right_row - right_block_shift, *right_col, 0);
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "comp {}, left_row {}, right_row {}", comp, left_row, right_row);
                     if (comp < 0)
                     {
-                        left_filt[left_row] = 1;
+                        left_filt[left_row] = 0;
                         left_row++;
                         if (left_row == left_col->size())
                         {
-                            status[inp].right_rest = true;
-                            break;
+                            // if (current_right_block == status[inp].blocks.size() - 1)
+                            // {
+                                status[inp].right_rest = true;
+                                break;
+                            // }
+                            // else
+                            // {
+                            //     ++current_right_block;
+                            //     add_block = status[inp].blocks[current_right_block];
+                            //     right_block_shift = right_row;
+                            // }
                         }
                     }
-                    if (comp > 0)
+                    else if (comp > 0)
                     {
                         status[inp].right_filt[right_row] = 1;
                         right_row++;
-                        if (right_row == right_col->size())
+                        if (right_row - right_block_shift == right_col->size())
                         {
-                            status[inp].left_rest = true;
-                            break;
+                            // if (current_right_block == status[inp].blocks.size() - 1)
+                            // {
+                                status[inp].left_rest = true;
+                                break;
+                            // }
+                            // else
+                            // {
+                            //     ++current_right_block;
+                            //     add_block = status[inp].blocks[current_right_block];
+                            //     right_block_shift = right_row;
+                            // }
                         }
                     }
                     else
@@ -513,7 +573,7 @@ IProcessor::Status ParallelJoinTransform::prepare()
                         left_row++;
                         right_row++;
 
-                        if (left_row == left_col->size() && right_row == right_col->size())
+                        if (left_row == left_col->size() && right_row - right_block_shift == right_col->size() /*&& current_right_block == status[inp].blocks.size() - 1*/)
                         {
                             LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left_row == left_col->size() && right_row == right_col->size(); left_row {}, right_row {}", left_row, right_row);
                             break;
@@ -524,12 +584,19 @@ IProcessor::Status ParallelJoinTransform::prepare()
                             status[inp].right_rest = true;
                             break;
                         }
-                        else if (right_row == right_col->size())
+                        else if (right_row - right_block_shift == right_col->size() /* && current_right_block == status[inp].blocks.size() - 1*/)
                         {
                             LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "right_row == right_col->size(); left_row {}, right_row {}", left_row, right_row);
                             status[inp].left_rest = true;
                             break;
                         }
+                        // else if (current_right_block == status[inp].blocks.size() - 1)
+                        // {
+                        //     ++current_right_block;
+                        //     add_block = status[inp].blocks[current_right_block];
+                        //     right_block_shift = right_row;
+                        // }
+
                     }
                 }
 
@@ -551,6 +618,17 @@ IProcessor::Status ParallelJoinTransform::prepare()
                 // }
             }
           EOFL:
+            if (!left_read && status[0].blocks.empty() && !inputs.begin()->isFinished())
+            {
+
+                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "no left block - returning NeedData");
+                inputs.begin()->setNeeded();
+                inp = 0;
+                current_input = inputs.begin();
+
+                return Status::NeedData;
+            }
+
 
 
             // current_input->setNeeded();
@@ -562,6 +640,7 @@ IProcessor::Status ParallelJoinTransform::prepare()
             if (inp == num_inputs - 1) /*++current_input == inputs.end()*/
             {
                 bool left_in_use = false;  // ???
+                bool all_rights_have_blocks = true;
 
                 for (size_t right_inp = 1; right_inp < num_inputs; ++right_inp)
                 {
@@ -569,8 +648,12 @@ IProcessor::Status ParallelJoinTransform::prepare()
                     {
                         left_in_use = true;
                     }
+                    if (status[right_inp].blocks.empty())
+                    {
+                        all_rights_have_blocks = false;
+                    }
                 }
-                if (!left_in_use)
+                if (!left_in_use && all_rights_have_blocks)
                 {
                     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "inputs.end - not left in use");
 
@@ -580,14 +663,14 @@ IProcessor::Status ParallelJoinTransform::prepare()
                         bool needed = false;
                         for (auto cur_inp = inputs.begin(); cur_inp != inputs.end(); ++cur_inp, ++cur_inp_num)
                         {
-                            if (status[0].block.rows())
+                            if (status[cur_inp_num].blocks.empty() && !cur_inp->isFinished() && !inputs.begin()->isFinished()/*status[cur_inp_num].blocks[0].rows()*/)
                             {
                                 cur_inp->setNeeded();
                                 needed = true;
                                 LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "input {} does not have block", cur_inp_num);
                             }
                         }
-                        if (needed)
+                        if (needed)  // ???
                         {
                             inp = 0;
                             current_input = inputs.begin();
@@ -596,8 +679,13 @@ IProcessor::Status ParallelJoinTransform::prepare()
                     }
 
 
-                    if (!status[0].block.rows())
+                    if (status[0].blocks.empty() || !status[0].blocks[0].rows())
                     {
+                        if (inputs.begin()->isFinished())
+                        {
+                            break;
+                        }
+
                         LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "no left block - returning NeedData");
                         inputs.begin()->setNeeded();
                         inp = 0;
@@ -606,74 +694,228 @@ IProcessor::Status ParallelJoinTransform::prepare()
                         return Status::NeedData;
                     }
 
+                    Block & left_block = status[0].blocks[0];
+
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left block before filter has {} rows", left_block.rows());
+                    for (size_t i = 0; i < left_block.columns(); ++i)
+                    {
+                        left_block.getByPosition(i).column = left_block.getByPosition(i).column->filter(left_filt, -1);
+                    }
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left block after filter has {} rows", left_block.rows());
 
                     for (size_t right_inp = 1; right_inp < num_inputs; ++right_inp)
                     {
-                        IColumn::Filter filt(status[right_inp].right_filt.size());
 
-                        for (size_t f = 0; f < status[right_inp].right_filt.size(); ++f)
+                        assert(!status[right_inp].blocks.empty());
+
+                        std::vector<IColumn::Filter> filts(status[right_inp].blocks.size());
+
+
+                        // size_t block_shift;
+                        for (size_t filt_shift = 0, block_num = 0; block_num < filts.size(); ++block_num)
                         {
-                            auto filt_val = status[right_inp].right_filt[f];
-                            if (filt_val < 0)
+                            size_t filt_len = (block_num == filts.size() - 1) ?
+                                status[right_inp].current_pos - filt_shift :
+                                status[right_inp].blocks[block_num].rows();
+
+                            filts[block_num].resize(filt_len);
+                            LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "filts for input {}, block {} has length {} (block length is {})",
+                                right_inp, block_num, filt_len, status[right_inp].blocks[block_num].rows());
+
+                            for (size_t filt_row = 0; filt_row < filts[block_num].size(); ++filt_row, ++filt_shift)
                             {
-                                filt[f] = left_filt[filt_val - 1] ? 1 : 0;
+                                auto filt_val = status[right_inp].right_filt[filt_shift];
+                                if (filt_val < 0)
+                                {
+                                    if (!left_filt[-filt_val - 1])
+                                    {
+                                        filts[block_num][filt_row] = 0;
+                                        // num_filtered_out++;
+                                    }
+                                    else
+                                    {
+                                        filts[block_num][filt_row] = 1;
+                                    }
+                                }
+                                else
+                                {
+                                    filts[block_num][filt_row] = 0;
+                                }
                             }
-                            // adjust current_pos ?
                         }
-                        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "filter is adjusted");
 
-                        Block & add_block = status[inp].block;
+
+
+                        // IColumn::Filter filt(status[right_inp].right_filt.size());
+                        // size_t num_filtered_out = 0; // per block !!!
+                        // for (size_t f = 0; f < status[right_inp].right_filt.size(); ++f)
+                        // {
+                        //     auto filt_val = status[right_inp].right_filt[f];
+                        //     if (filt_val < 0)
+                        //     {
+                        //         if (left_filt[-filt_val - 1])
+                        //         {
+                        //             filt[f] = 1;
+                        //             num_filtered_out++;
+                        //         }
+                        //         else
+                        //         {
+                        //             filt[f] = 0;
+                        //         }
+
+                        //     }
+                        //     // adjust current_pos ?
+                        // }
+
+
+
                         // add_block.setColumns(chunk.detachColumns());
+                        // size_t filter_shift = 0;
                         size_t i = 0;
-                        for (; i < status[inp].block.columns(); ++i)
+                        auto const & sample_block = status[right_inp].blocks[0];
+                        auto & last_block = status[right_inp].blocks.back();
+                        for (; i < status[right_inp].blocks[0].columns(); ++i)
                         {
-                            add_block.getByPosition(i).column = add_block.getByPosition(i).column->filter(filt, -1);
-                            // adjust current_pos !
-
-#if 0
-                            // block.insert(add_block.getByPosition(i));
-                            auto new_col = add_block.getByPosition(i).column->cloneEmpty();
-                            new_col->insertRangeFrom(*add_block.getByPosition(i).column, 0, status[inp].current_pos);
-
-                            // status[0].block.column.insertRangeFrom(add_block.getByPosition(i).column, 0, status[inp].current_pos);
-                            status[0].block.insert(ColumnWithTypeAndName(std::move(new_col), add_block.getByPosition(i).type, add_block.getByPosition(i).name));
-#else
-                            // block.insert(add_block.getByPosition(i));
-                            auto new_col = add_block.getByPosition(i).cloneEmpty();
+                            auto new_col = sample_block.getByPosition(i).cloneEmpty();
                             auto new_col_col = IColumn::mutate(std::move(new_col.column));
 
-                            new_col_col->insertRangeFrom(*add_block.getByPosition(i).column, 0, status[inp].current_pos);
-                            new_col.column = std::move(new_col_col);
+                            // auto new_col = sample_block.getByPosition(i).column->cloneEmpty();
+                            LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "right_inp {}, column {} has {} blocks",
+                                right_inp, i, status[right_inp].blocks.size());
+
+                            size_t current_block = 0;
+                            for (; current_block < status[right_inp].blocks.size() - 1; ++current_block)
+                            {
+                                Block & add_block = status[right_inp].blocks[current_block];
+                                // add_block.getByPosition(i).column = add_block.getByPosition(i).column->filter(filts[current_block], -1);
+
+                                // size_t num_rows = filts[current_block].size();
+                                // block.insert(add_block.getByPosition(i));
+                                // new_col->insertRangeFrom(*add_block.getByPosition(i).column, 0, num_rows);
+
+                                // status[0].block.column.insertRangeFrom(add_block.getByPosition(i).column, 0, status[right_inp].current_pos);
+
+                                // block.insert(add_block.getByPosition(i));
+                                // auto filtered_col = add_block.getByPosition(i).column->filter(filts[current_block], -1);
 
 
-                            // status[0].block.column.insertRangeFrom(add_block.getByPosition(i).column, 0, status[inp].current_pos);
-                            status[0].block.insert(std::move(new_col));
-#endif
-                            add_block.getByPosition(i).column = add_block.getByPosition(i).column->cut(0, status[inp].current_pos);
-                            status[inp].current_pos = 0;
+                                // new_col_col->insertRangeFrom(*add_block.getByPosition(i).column, 0, num_rows);
+                                // new_col_col->insertRangeFrom(*filtered_col, 0, filtered_col->size());
+
+
+
+
+                                add_block.getByPosition(i).column = add_block.getByPosition(i).column->filter(filts[current_block], -1);
+                                new_col_col->insertRangeFrom(*add_block.getByPosition(i).column, 0, add_block.getByPosition(i).column->size());
+
+
+                                // new_col.column = std::move(new_col_col);
+
+
+                                // status[0].block.column.insertRangeFrom(add_block.getByPosition(i).column, 0, status[right_inp].current_pos);
+                                // new_col.column = new_col_col->filter(filts[current_block], -1); // try to filter before
+                                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "column to insert has {} rows for block {}", new_col_col->size(), current_block);
+                            }
+
+                            assert(current_block == status[right_inp].blocks.size() - 1);
+                            size_t num_rows = last_block.getByPosition(i).column->size();
+                            LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "num_rows {}, filts[current_block].size() {}", num_rows, filts[current_block].size());
+                            if (num_rows != filts[current_block].size())
+                            {
+                                assert(num_rows > filts[current_block].size());
+
+                                auto part_col = last_block.getByPosition(i).column->cut(0, filts[current_block].size());
+                                auto filtered_col = part_col->filter(filts[current_block], -1);
+                                new_col_col->insertRangeFrom(*filtered_col, 0, filtered_col->size());
+                                // new_col.column = std::move(new_col_col);
+
+                                status[right_inp].blocks[0].getByPosition(i).column = last_block.getByPosition(i).column->cut(0, status[right_inp].current_pos);
+
+                            }
+                            else
+                            {
+                                last_block.getByPosition(i).column = last_block.getByPosition(i).column->filter(filts[current_block], -1);
+                                new_col_col->insertRangeFrom(*last_block.getByPosition(i).column, 0, last_block.getByPosition(i).column->size());
+                                // new_col.column = std::move(*new_col_col);
+
+
+
+
+                                //   works
+                                // new_col_col->insertRangeFrom(*last_block.getByPosition(i).column, 0, filts[current_block].size());
+                                // new_col.column = new_col_col->filter(filts[current_block], -1); // try to filter before
+
+
+
+                                // does not work
+                                // new_col_col->insertRangeFrom(*last_block.getByPosition(i).column->filter(filts[current_block], -1),
+                                //     0, filts[current_block].size());
+                            }
+
+
+
+                            // status[0].blocks[0].insert(std::move(new_col_col));
+                            LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "inserting column with {} rows", new_col_col->size());
+                            status[0].blocks[0].insert(ColumnWithTypeAndName(std::move(new_col_col), sample_block.getByPosition(i).type, sample_block.getByPosition(i).name));
+
+
+                            // status[0].blocks[0].insert(std::move(new_col));
                         }
+                        if (status[right_inp].blocks.size() > 1)
+                        {
+                            status[right_inp].blocks[0] = std::move(last_block);
+                            status[right_inp].blocks.resize(1);
+                            assert(status[right_inp].right_rest);
+                        }
+                        else
+                        {
+                            status[right_inp].blocks.clear();
+                        }
+
+                        status[right_inp].current_pos = 0;
+                        status[right_inp].left_pos = 0;
+                        status[right_inp].left_rest = false;
                     }
+
+                    Chunk output_chunk;
+
+                    output_chunk.setColumns(status[0].blocks[0].getColumns(), status[0].blocks[0].rows());
+                    output.push(std::move(output_chunk));
+
+                    current_input = inputs.begin();
+                    inp = 0;
+                    status[0].blocks.clear();
+
+                    left_read = false;
+
                 }
 
                 // output.push(block);
-                Chunk output_chunk;
 
-                output_chunk.setColumns(status[0].block.getColumns(), status[0].block.rows());
-                output.push(std::move(output_chunk));
 
-                current_input = inputs.begin();
-                inp = 0;
-
-                if (all_finished)
+                if (all_finished || (inputs.begin()->isFinished() && status[0].blocks.empty()))
                 {
                     output.finish();
-                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "returning FInished");
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "returning Finished");
+                    for (auto & inp_to_close : inputs)
+                    {
+                        inp_to_close.close();
+                    }
+
                     return Status::Finished;
+                }
+                else if (!all_rights_have_blocks)
+                {
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "!all_rights_have_blocks - returning NeedData");
+                    inp = 1;
+                    current_input = inputs.begin();
+                    current_input++;
+                    return Status::NeedData;
                 }
                 else
                 {
                     /// Now, we pushed to output, and it must be full.
-                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "returning PortFull");
+                    LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "returning PortFull");   // !!!!!!!!!!
                     return Status::PortFull;
                 }
             }
@@ -709,6 +951,11 @@ IProcessor::Status ParallelJoinTransform::prepare()
 
             }
         }
+    }
+
+    for (auto & inp_to_close : inputs)
+    {
+        inp_to_close.close();
     }
 
     output.finish();
