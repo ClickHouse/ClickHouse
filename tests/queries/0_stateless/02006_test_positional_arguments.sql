@@ -48,3 +48,7 @@ select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8);
 select b from (select 5 as a, 'Hello' as b order by a);
 select b from (select 5 as a, 'Hello' as b group by a);
 select b from (select 5 as a, 'Hello' as b order by 1);
+
+create table tp2(first_col String, second_col Int32) engine = MergeTree() order by tuple();
+select count(*) from (select first_col, count(second_col) from tp2 group by 1);
+select total from (select first_col, count(second_col) as total from tp2 group by 1);
