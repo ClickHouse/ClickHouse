@@ -125,7 +125,7 @@ WORKDIR /workdir
 # https://github.com/google/sanitizers/issues/1552
 
 RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
-    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME} main" >> \
+    && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-15 main" >> \
         /etc/apt/sources.list.d/clang.list \
     && apt-get update \
     && apt-get install \
