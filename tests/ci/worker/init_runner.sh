@@ -19,7 +19,7 @@ export INSTANCE_ID
 
 # Add cloudflare DNS as a fallback
 # Get default gateway interface
-IFACE=$(ip -j route l | jq '.[]|select(.dst == "default").dev' -r)
+IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
 # `Link 2 (eth0): 172.31.0.2`
 ETH_DNS=$(resolvectl dns "$IFACE") || :
 CLOUDFRONT_NS=1.1.1.1
