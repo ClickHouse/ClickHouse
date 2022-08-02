@@ -60,7 +60,7 @@ public:
 };
 
 
-void registerFunctionIndexHint(FunctionFactory & factory)
+REGISTER_FUNCTION(IndexHint)
 {
     factory.registerFunction<FunctionIndexHint>();
 }

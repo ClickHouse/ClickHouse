@@ -29,6 +29,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/RewriteOrderByVisitor.hpp>
+#include <Interpreters/replaceForPositionalArguments.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
@@ -1251,6 +1252,26 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     }
 
     normalize(query, result.aliases, all_source_columns_set, select_options.ignore_alias, settings, /* allow_self_aliases = */ true, getContext());
+
+
+    if (getContext()->getSettingsRef().enable_positional_arguments)
+    {
+        if (select_query->groupBy())
+        {
+            for (auto & expr : select_query->groupBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::GROUP_BY);
+        }
+        if (select_query->orderBy())
+        {
+            for (auto & expr : select_query->orderBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::ORDER_BY);
+        }
+        if (select_query->limitBy())
+        {
+            for (auto & expr : select_query->limitBy()->children)
+                replaceForPositionalArguments(expr, select_query, ASTSelectQuery::Expression::LIMIT_BY);
+        }
+    }
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
