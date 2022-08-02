@@ -533,7 +533,8 @@ void HTTPHandler::processQuery(
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
 
-    auto context = session->makeQueryContext(session->getClientInfo());
+    auto client_info = session->getClientInfo();
+    auto context = session->makeQueryContext(std::move(client_info));
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
