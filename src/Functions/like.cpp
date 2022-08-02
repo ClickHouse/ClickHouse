@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void registerFunctionLike(FunctionFactory & factory)
+REGISTER_FUNCTION(Like)
 {
     factory.registerFunction<FunctionLike>();
 }
