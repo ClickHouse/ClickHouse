@@ -1090,7 +1090,7 @@ void ZooKeeper::initApiVersion()
     };
 
     get(keeper_api_version_path, std::move(callback), {});
-    if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
+    if (future.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
         LOG_TRACE(log, "Failed to get API version: timeout");
         return;

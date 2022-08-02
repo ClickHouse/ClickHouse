@@ -564,7 +564,7 @@ Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & 
 {
     auto future_result = asyncTrySyncNoThrow(path);
 
-    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
+    if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
     {
         impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Sync), path));
         return Coordination::Error::ZOPERATIONTIMEOUT;
@@ -769,7 +769,7 @@ void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
     if (!tryGet(path, content, nullptr, eph_node_disappeared))
         return;
 
-    int32_t timeout_ms = 3 * session_timeout_ms;
+    int32_t timeout_ms = 3 * args.session_timeout_ms;
     if (!eph_node_disappeared->tryWait(timeout_ms))
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
                             "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
