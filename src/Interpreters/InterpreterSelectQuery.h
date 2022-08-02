@@ -153,6 +153,8 @@ private:
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         PreparedSetsPtr prepared_sets_ = nullptr);
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
+
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
     void addPrewhereAliasActions();
@@ -209,7 +211,7 @@ private:
     /// Is calculated in getSampleBlock. Is used later in readImpl.
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
-    ASTPtr row_policy_filter;
+    RowPolicyFilter row_policy_filter;
     FilterDAGInfoPtr filter_info;
 
     /// For additional_filter setting.

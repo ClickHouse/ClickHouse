@@ -43,6 +43,12 @@ enum class RowPolicyFilterType
     MAX
 };
 
+enum class RowPolicyOrderType
+{
+    Restrictive = 0,
+    Permissive = 1
+};
+
 String toString(RowPolicyFilterType type);
 
 struct RowPolicyFilterTypeInfo

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Access/Common/RowPolicyDefs.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/Settings.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+
 
 namespace ProfileEvents
 {
@@ -85,6 +87,9 @@ struct QueryLogElement
     std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
     std::shared_ptr<Settings> query_settings;
+
+    std::vector<String> row_policies_names;
+    std::vector<RowPolicyOrderType> row_policies_order_types;
 
     TransactionID tid;
 

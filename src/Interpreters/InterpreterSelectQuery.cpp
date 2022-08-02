@@ -33,6 +33,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryLog.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 
@@ -112,7 +113,7 @@ namespace ErrorCodes
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
 FilterDAGInfoPtr generateFilterActions(
     const StorageID & table_id,
-    const ASTPtr & row_policy_filter,
+    const ASTPtr & row_policy_filter_expression,
     const ContextPtr & context,
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
@@ -133,9 +134,9 @@ FilterDAGInfoPtr generateFilterActions(
     auto expr_list = select_ast->select();
 
     /// The first column is our filter expression.
-    /// the row_policy_filter should be cloned, because it may be changed by TreeRewriter.
+    /// the row_policy_filter_expression should be cloned, because it may be changed by TreeRewriter.
     /// which make it possible an invalid expression, although it may be valid in whole select.
-    expr_list->children.push_back(row_policy_filter->clone());
+    expr_list->children.push_back(row_policy_filter_expression->clone());
 
     /// Keep columns that are required after the filter actions.
     for (const auto & column_str : prerequisite_columns)
@@ -613,10 +614,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query_info.filter_asts.clear();
 
             /// Fix source_header for filter actions.
-            if (row_policy_filter)
+            if (row_policy_filter.expression)
             {
                 filter_info = generateFilterActions(
-                    table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    table_id, row_policy_filter.expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
                 query_info.filter_asts.push_back(row_policy_filter);
@@ -1864,6 +1865,17 @@ void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t repl
     context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     context->getClientInfo().count_participating_replicas = replica_count;
     context->getClientInfo().number_of_current_replica = replica_num;
+}
+
+void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const
+{
+    extendQueryLogElemImplImpl(elem, ast, context_);
+
+    for (const auto & row_policy : row_policy_filter.policies)
+    {
+        elem.row_policies_names.push_back(row_policy->getShortName());
+        elem.row_policies_order_types.push_back(row_policy->getOrderType());
+    }
 }
 
 bool InterpreterSelectQuery::shouldMoveToPrewhere()
