@@ -22,12 +22,12 @@ export INSTANCE_ID
 IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
 # `Link 2 (eth0): 172.31.0.2`
 ETH_DNS=$(resolvectl dns "$IFACE") || :
-CLOUDFRONT_NS=1.1.1.1
-if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFRONT_NS"* ]]; then
+CLOUDFLARE_NS=1.1.1.1
+if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
   # Cut the leading legend
   ETH_DNS=${ETH_DNS#*: }
   # shellcheck disable=SC2206
-  new_dns=(${ETH_DNS} "$CLOUDFRONT_NS")
+  new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
   resolvectl dns "$IFACE" "${new_dns[@]}"
 fi
 
