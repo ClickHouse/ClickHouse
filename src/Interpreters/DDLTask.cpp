@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
+    extern const int DNS_ERROR;
 }
 
 HostID HostID::fromString(const String & host_port_str)
@@ -169,17 +170,33 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
 {
     bool host_in_hostlist = false;
+    std::exception_ptr first_exception = nullptr;
 
     for (const HostID & host : entry.hosts)
     {
         auto maybe_secure_port = global_context->getTCPPortSecure();
 
-        /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
-        bool is_local_port = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port))
-                             || host.isLocalAddress(global_context->getTCPPort());
+        try
+        {
+            /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
+            bool is_local_port
+                = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(global_context->getTCPPort());
 
-        if (!is_local_port)
+            if (!is_local_port)
+                continue;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DNS_ERROR)
+                throw;
+
+            if (!first_exception)
+                first_exception = std::current_exception();
+
+            /// Ignore unknown hosts (in case DNS record was removed)
+            /// We will rethrow exception if we don't find local host in the list.
             continue;
+        }
 
         if (host_in_hostlist)
         {
@@ -193,6 +210,12 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
             host_id = host;
             host_id_str = host.toString();
         }
+    }
+
+    if (!host_in_hostlist && first_exception)
+    {
+        /// We don't know for sure if we should process task or not
+        std::rethrow_exception(first_exception);
     }
 
     return host_in_hostlist;
