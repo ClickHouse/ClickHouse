@@ -1,6 +1,8 @@
 #include <Processors/DelayedPortsProcessor.h>
 
 #include <base/sort.h>
+#include <Common/logger_useful.h>
+#include "Processors/Port.h"
 
 
 namespace DB
@@ -170,12 +172,21 @@ IProcessor::Status DelayedPortsProcessor::prepare(const PortNumbers & updated_in
     return Status::PortFull;
 }
 
-
-NotifyProcessor::NotifyProcessor(const Block & header, size_t num_ports)
-    : IProcessor(InputPorts(num_ports, header), OutputPorts(num_ports, header))
-    , aux_in_port(Block(), this)
-    , aux_out_port(Block(), this)
+static InputPorts createPortsList(const Block & header, const Block & last_header, size_t num_ports)
 {
+    InputPorts res(num_ports, header);
+    res.emplace_back(last_header);
+    return res;
+}
+
+NotifyProcessor::NotifyProcessor(const Block & header, const Block & aux_header, size_t num_ports, StatePtr sync_state_)
+    : IProcessor(createPortsList(header, aux_header, num_ports), OutputPorts(num_ports + 1, header))
+    , aux_in_port(inputs.back())
+    , aux_out_port(outputs.back())
+    , sync_state(sync_state_)
+    , idx(sync_state->idx++)
+{
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}  {}: idx {}", __FILE__, __LINE__, getDescription(), idx);
     port_pairs.resize(num_ports);
 
     auto input_it = inputs.begin();
@@ -188,7 +199,6 @@ NotifyProcessor::NotifyProcessor(const Block & header, size_t num_ports)
         port_pairs[i].output_port = &*output_it;
         ++output_it;
     }
-
 }
 
 void NotifyProcessor::finishPair(PortsPair & pair)
@@ -234,16 +244,38 @@ bool NotifyProcessor::processPair(PortsPair & pair)
     return true;
 }
 
+bool NotifyProcessor::isPairsFinished() const
+{
+    return num_finished_pairs == port_pairs.size();
+}
+
 IProcessor::Status NotifyProcessor::processRegularPorts(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
+    if (isPairsFinished())
+        return Status::Finished;
+
     bool need_data = false;
 
-    for (const auto & output_number : updated_outputs)
-        need_data = processPair(port_pairs[output_number]) || need_data;
-    for (const auto & input_number : updated_inputs)
-        need_data = processPair(port_pairs[input_number]) || need_data;
+    UNUSED(updated_inputs);
+    UNUSED(updated_outputs);
 
-    if (num_finished_pairs == port_pairs.size())
+    // for (const auto & output_number : updated_outputs)
+    for (size_t output_number = 0; output_number < port_pairs.size(); ++output_number)
+    {
+        if (output_number >= port_pairs.size())
+            continue; /// skip auxiliary port
+        need_data = processPair(port_pairs[output_number]) || need_data;
+    }
+
+    // for (const auto & input_number : updated_inputs)
+    for (size_t input_number = 0; input_number < port_pairs.size(); ++input_number)
+    {
+        if (input_number >= port_pairs.size())
+            continue; /// skip auxiliary port
+        need_data = processPair(port_pairs[input_number]) || need_data;
+    }
+
+    if (isPairsFinished())
         return Status::Finished;
 
     if (need_data)
@@ -252,44 +284,102 @@ IProcessor::Status NotifyProcessor::processRegularPorts(const PortNumbers & upda
     return Status::PortFull;
 }
 
+void NotifyProcessor::work()
+{
+    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} work {}", __FILE__, __LINE__, getDescription());
+}
+
+bool NotifyProcessor::sendPing()
+{
+    if (aux_out_port.canPush())
+    {
+        Chunk chunk(aux_out_port.getHeader().cloneEmpty().getColumns(), 0);
+        aux_out_port.push(std::move(chunk));
+        is_send = true;
+        aux_out_port.finish();
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} sendPing OK {} ({})", __FILE__, __LINE__, idx, log());
+        return true;
+    }
+    // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} sendPing NA {} ({})", __FILE__, __LINE__, idx, log());
+    return false;
+}
+
+bool NotifyProcessor::recievePing()
+{
+    if (aux_in_port.hasData())
+    {
+        aux_in_port.pull();
+        is_recieved = true;
+        aux_in_port.close();
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} recievePing OK {} ({})", __FILE__, __LINE__, idx, log());
+        return true;
+    }
+    // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} recievePing NA {} ({})", __FILE__, __LINE__, idx, log());
+    return false;
+}
+
+
 IProcessor::Status NotifyProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
-    auto status = processRegularPorts(updated_inputs, updated_outputs);
-    if (status != Status::Ready)
-        return status;
-
-    if (ready == AuxPortState::NotInitialized && isReady())
-        ready = AuxPortState::Triggered;
-
-    if (ready == AuxPortState::Triggered)
+    if (!set_needed_once && !is_recieved && !aux_in_port.isFinished())
     {
-        if (aux_out_port.canPush())
-        {
-            aux_out_port.push({});
-            ready = AuxPortState::Finished;
-            return Status::Ready;
-        }
-        return Status::PortFull;
-    }
-
-    if (waiting == AuxPortState::NotInitialized && isWaiting())
-    {
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} set_needed_once {}: {}", __FILE__, __LINE__, getDescription(), idx);
+        set_needed_once = true;
         aux_in_port.setNeeded();
-        waiting = AuxPortState::Triggered;
     }
 
-    if (waiting == AuxPortState::Triggered)
+    if (idx == 0 || is_send)
     {
-        if (aux_in_port.hasData())
+        if (!is_recieved)
         {
-            aux_in_port.pull(true);
-            waiting = AuxPortState::Finished;
-            return Status::Ready;
+            bool recieved = recievePing();
+            if (!recieved)
+            {
+                return Status::NeedData;
+            }
         }
-        return Status::PortFull;
     }
 
-    return Status::Ready;
+    if (idx == 1 || is_recieved)
+    {
+        if (!is_send && canSend())
+        {
+            bool sent = sendPing();
+            if (!sent)
+                return Status::PortFull;
+        }
+    }
+
+    auto status = processRegularPorts(updated_inputs, updated_outputs);
+    if (status == Status::Finished)
+    {
+        if (idx == 0 || is_send)
+        {
+            if (!is_recieved)
+            {
+                bool recieved = recievePing();
+                if (!recieved)
+                {
+                    return Status::NeedData;
+                }
+            }
+        }
+
+        if (idx == 1 || is_recieved)
+        {
+            if (!is_send && canSend())
+            {
+                bool sent = sendPing();
+                if (!sent)
+                    return Status::PortFull;
+            }
+        }
+    }
+    if (status == Status::PortFull)
+    {
+        // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} status {}", __FILE__, __LINE__, status);
+    }
+    return status;
 }
 
 std::pair<InputPort *, OutputPort *> NotifyProcessor::getAuxPorts()
