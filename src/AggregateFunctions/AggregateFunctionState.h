@@ -34,7 +34,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return getStateType();
+        return getNormalizedStateType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override

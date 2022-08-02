@@ -122,8 +122,8 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
     if (typeid(rhs) != typeid(*this))
         return false;
 
-    auto lhs_state_type = function->getStateType();
-    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getStateType();
+    auto lhs_state_type = function->getNormalizedStateType();
+    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
 
     if (typeid(lhs_state_type.get()) != typeid(rhs_state_type.get()))
         return false;
