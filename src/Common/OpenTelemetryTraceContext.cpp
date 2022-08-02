@@ -4,6 +4,7 @@
 #include <base/getThreadId.h>
 #include <Common/Exception.h>
 #include <Common/hex.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
