@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
-#include <Processors/Transforms/CreatingSetsOnTheFlyTransform.h>
+#include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -51,6 +51,7 @@ public:
     using PortPair = std::pair<InputPort *, OutputPort *>;
 
     /// Remember ports passed on the first call and connect with ones from second call.
+    /// Thread-safe.
     bool tryConnectPorts(PortPair rhs_ports, IProcessor * proc)
     {
         std::lock_guard<std::mutex> lock(mux);
@@ -88,14 +89,14 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     const DataStream & input_stream_,
     const DataStream & rhs_input_stream_,
     const Names & column_names_,
-    size_t max_rows_,
+    size_t max_rows_in_set_,
     CrosswiseConnectionPtr crosswise_connection_,
     JoinTableSide position_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(false))
     , column_names(column_names_)
-    , max_rows(max_rows_)
+    , max_rows_in_set(max_rows_in_set_)
     , rhs_input_stream_header(rhs_input_stream_.header)
-    , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows, 0, OverflowMode::BREAK), false, true))
+    , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), false, true))
     , filtering_set(nullptr)
     , crosswise_connection(crosswise_connection_)
     , position(position_)
@@ -126,29 +127,33 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
 
     if (!filtering_set)
     {
-        LOG_DEBUG(log, "filtering_set is null");
+        LOG_DEBUG(log, "Skip filtering {} stream", position);
         return;
     }
 
     Block input_header = pipeline.getHeader();
-    pipeline.transform([&input_header, this](OutputPortRawPtrs ports)
+    auto pipeline_transform = [&input_header, this](OutputPortRawPtrs ports)
     {
-        Processors transforms;
+        Processors result_transforms;
 
         size_t num_ports = ports.size();
 
+        /// Add balancing transform
         auto idx = position == JoinTableSide::Left ? PingPongProcessor::First : PingPongProcessor::Second;
-        auto notifier = std::make_shared<ReadHeadBalancedProceesor>(input_header, rhs_input_stream_header, num_ports, max_rows, idx);
-        notifier->setDescription(getStepDescription());
+        auto stream_balancer = std::make_shared<ReadHeadBalancedProcessor>(input_header, rhs_input_stream_header, num_ports, max_rows_in_set, idx);
+        stream_balancer->setDescription(getStepDescription());
 
-        auto input_it = connectAllInputs(ports, notifier->getInputs(), num_ports);
-        assert(&*input_it == notifier->getAuxPorts().first);
+        /// Regular inputs just bypass data for respective ports
+        auto input_it = connectAllInputs(ports, stream_balancer->getInputs(), num_ports);
+        assert(&*input_it == stream_balancer->getAuxPorts().first);
         input_it++;
-        assert(input_it == notifier->getInputs().end());
+        assert(input_it == stream_balancer->getInputs().end());
 
-        crosswise_connection->tryConnectPorts(notifier->getAuxPorts(), notifier.get());
+        /// Connect auxilary ports
+        crosswise_connection->tryConnectPorts(stream_balancer->getAuxPorts(), stream_balancer.get());
 
-        auto & outputs = notifier->getOutputs();
+        /// Add filtering transform, ports just connected respectively
+        auto & outputs = stream_balancer->getOutputs();
         auto output_it = outputs.begin();
         for (size_t i = 0; i < outputs.size() - 1; ++i)
         {
@@ -156,14 +161,18 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
             auto transform = std::make_shared<FilterBySetOnTheFlyTransform>(port.getHeader(), column_names, filtering_set);
             transform->setDescription(this->getStepDescription());
             connect(port, transform->getInputPort());
-            transforms.emplace_back(std::move(transform));
+            result_transforms.emplace_back(std::move(transform));
         }
         output_it++;
         assert(output_it == outputs.end());
-        transforms.emplace_back(std::move(notifier));
+        result_transforms.emplace_back(std::move(stream_balancer));
 
-        return transforms;
-    }, /* check_ports= */ false);
+        return result_transforms;
+    };
+
+    /// Auxilary port stream_balancer can be connected later (by crosswise_connection).
+    /// So, use unsafe `transform` with `check_ports = false` to avoid assertions
+    pipeline.transform(std::move(pipeline_transform), /* check_ports= */ false);
 }
 
 void CreateSetAndFilterOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map) const

@@ -85,10 +85,10 @@ protected:
 };
 
 /// Reads first N rows from two streams evenly.
-class ReadHeadBalancedProceesor : public PingPongProcessor
+class ReadHeadBalancedProcessor : public PingPongProcessor
 {
 public:
-    ReadHeadBalancedProceesor(const Block & header, const Block & aux_header, size_t num_ports, size_t size_to_wait_, Order order_)
+    ReadHeadBalancedProcessor(const Block & header, const Block & aux_header, size_t num_ports, size_t size_to_wait_, Order order_)
         : PingPongProcessor(header, aux_header, num_ports, order_) , data_consumed(0) , size_to_wait(size_to_wait_)
     {}
 

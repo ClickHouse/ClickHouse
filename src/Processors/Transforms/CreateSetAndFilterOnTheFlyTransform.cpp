@@ -1,8 +1,9 @@
+#include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
+
 #include <cstddef>
 #include <mutex>
-#include <Processors/Transforms/CreatingSetsOnTheFlyTransform.h>
-#include <Interpreters/Set.h>
 
+#include <Interpreters/Set.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
