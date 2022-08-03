@@ -10,13 +10,13 @@ inline void reverseMemcpy(void * dst, const void * src, size_t size)
     uint8_t * uint_dst = reinterpret_cast<uint8_t *>(dst);
     const uint8_t * uint_src = reinterpret_cast<const uint8_t *>(src);
 
-    uint_dst += length;
+    uint_dst += size;
     while (length)
     {
         --uint_dst;
         *uint_dst = *uint_src;
         ++uint_src;
-        --length;
+        --size;
     }
 }
 
