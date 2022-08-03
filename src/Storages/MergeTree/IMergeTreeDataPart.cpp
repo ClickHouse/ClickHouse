@@ -946,7 +946,6 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
-    //const String path = fs::path(getRelativePath()) / "checksums.txt";
     bool exists = metadata_manager->exists("checksums.txt");
     if (exists)
     {
@@ -957,7 +956,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
             bytes_on_disk = checksums.getTotalSizeOnDisk();
         }
         else
-            bytes_on_disk = data_part_storage->calculateTotalSizeOnDisk(); //calculateTotalSizeOnDisk(volume->getDisk(), getRelativePath());
+            bytes_on_disk = data_part_storage->calculateTotalSizeOnDisk();
     }
     else
     {
