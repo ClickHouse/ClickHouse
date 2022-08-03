@@ -336,9 +336,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<SortingStep>(parent_node, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = simplePushDownOverStep<FilterBySetOnTheFlyStep>(parent_node, nodes, child))
-        return updated_steps;
-
     if (auto updated_steps = simplePushDownOverStep<CreatingSetOnTheFlyStep>(parent_node, nodes, child))
         return updated_steps;
 

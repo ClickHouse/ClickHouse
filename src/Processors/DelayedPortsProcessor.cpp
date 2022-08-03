@@ -179,14 +179,14 @@ static InputPorts createPortsList(const Block & header, const Block & last_heade
     return res;
 }
 
-NotifyProcessor::NotifyProcessor(const Block & header, const Block & aux_header, size_t num_ports, StatePtr sync_state_)
+PingPongProcessor::PingPongProcessor(const Block & header, const Block & aux_header, size_t num_ports, Order order_)
     : IProcessor(createPortsList(header, aux_header, num_ports), OutputPorts(num_ports + 1, header))
     , aux_in_port(inputs.back())
     , aux_out_port(outputs.back())
-    , sync_state(sync_state_)
-    , idx(sync_state->idx++)
+    , order(order_)
 {
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}  {}: idx {}", __FILE__, __LINE__, getDescription(), idx);
+    assert(order == First || order == Second);
+
     port_pairs.resize(num_ports);
 
     auto input_it = inputs.begin();
@@ -201,7 +201,7 @@ NotifyProcessor::NotifyProcessor(const Block & header, const Block & aux_header,
     }
 }
 
-void NotifyProcessor::finishPair(PortsPair & pair)
+void PingPongProcessor::finishPair(PortsPair & pair)
 {
     if (!pair.is_finished)
     {
@@ -213,7 +213,7 @@ void NotifyProcessor::finishPair(PortsPair & pair)
     }
 }
 
-bool NotifyProcessor::processPair(PortsPair & pair)
+bool PingPongProcessor::processPair(PortsPair & pair)
 {
     if (pair.output_port->isFinished())
     {
@@ -237,19 +237,19 @@ bool NotifyProcessor::processPair(PortsPair & pair)
     if (pair.input_port->hasData())
     {
         Chunk chunk = pair.input_port->pull(true);
-        dataCallback(chunk);
+        ready_to_send = isReady(chunk) || ready_to_send;
         pair.output_port->push(std::move(chunk));
     }
 
     return true;
 }
 
-bool NotifyProcessor::isPairsFinished() const
+bool PingPongProcessor::isPairsFinished() const
 {
     return num_finished_pairs == port_pairs.size();
 }
 
-IProcessor::Status NotifyProcessor::processRegularPorts(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status PingPongProcessor::processRegularPorts(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
     if (isPairsFinished())
         return Status::Finished;
@@ -284,12 +284,7 @@ IProcessor::Status NotifyProcessor::processRegularPorts(const PortNumbers & upda
     return Status::PortFull;
 }
 
-void NotifyProcessor::work()
-{
-    LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} work {}", __FILE__, __LINE__, getDescription());
-}
-
-bool NotifyProcessor::sendPing()
+bool PingPongProcessor::sendPing()
 {
     if (aux_out_port.canPush())
     {
@@ -297,38 +292,37 @@ bool NotifyProcessor::sendPing()
         aux_out_port.push(std::move(chunk));
         is_send = true;
         aux_out_port.finish();
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} sendPing OK {} ({})", __FILE__, __LINE__, idx, log());
         return true;
     }
-    // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} sendPing NA {} ({})", __FILE__, __LINE__, idx, log());
     return false;
 }
 
-bool NotifyProcessor::recievePing()
+bool PingPongProcessor::recievePing()
 {
     if (aux_in_port.hasData())
     {
         aux_in_port.pull();
         is_recieved = true;
         aux_in_port.close();
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} recievePing OK {} ({})", __FILE__, __LINE__, idx, log());
         return true;
     }
-    // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} recievePing NA {} ({})", __FILE__, __LINE__, idx, log());
     return false;
 }
 
+bool PingPongProcessor::canSend() const
+{
+    return !is_send && (ready_to_send || isPairsFinished());
+}
 
-IProcessor::Status NotifyProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status PingPongProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
     if (!set_needed_once && !is_recieved && !aux_in_port.isFinished())
     {
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} set_needed_once {}: {}", __FILE__, __LINE__, getDescription(), idx);
         set_needed_once = true;
         aux_in_port.setNeeded();
     }
 
-    if (idx == 0 || is_send)
+    if (order == First || is_send)
     {
         if (!is_recieved)
         {
@@ -340,7 +334,7 @@ IProcessor::Status NotifyProcessor::prepare(const PortNumbers & updated_inputs, 
         }
     }
 
-    if (idx == 1 || is_recieved)
+    if (order == Second || is_recieved)
     {
         if (!is_send && canSend())
         {
@@ -353,7 +347,7 @@ IProcessor::Status NotifyProcessor::prepare(const PortNumbers & updated_inputs, 
     auto status = processRegularPorts(updated_inputs, updated_outputs);
     if (status == Status::Finished)
     {
-        if (idx == 0 || is_send)
+        if (order == First || is_send)
         {
             if (!is_recieved)
             {
@@ -365,7 +359,7 @@ IProcessor::Status NotifyProcessor::prepare(const PortNumbers & updated_inputs, 
             }
         }
 
-        if (idx == 1 || is_recieved)
+        if (order == Second || is_recieved)
         {
             if (!is_send && canSend())
             {
@@ -382,10 +376,9 @@ IProcessor::Status NotifyProcessor::prepare(const PortNumbers & updated_inputs, 
     return status;
 }
 
-std::pair<InputPort *, OutputPort *> NotifyProcessor::getAuxPorts()
+std::pair<InputPort *, OutputPort *> PingPongProcessor::getAuxPorts()
 {
     return std::make_pair(&aux_in_port, &aux_out_port);
 }
-
 
 }
