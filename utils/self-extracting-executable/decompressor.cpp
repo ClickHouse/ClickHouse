@@ -360,7 +360,7 @@ int main(int/* argc*/, char* argv[])
         const char * const decompressed_name_fmt = "%s.decompressed.%s";
         int decompressed_name_len = snprintf(nullptr, 0, decompressed_name_fmt, argv[0], decompressed_suffix);
         char decompressed_name[decompressed_name_len + 1];
-        decompressed_name_len = snprintf(decompressed_name, decompressed_name_len + 1, decompressed_name_fmt, argv[0], decompressed_suffix);
+        (void)snprintf(decompressed_name, decompressed_name_len + 1, decompressed_name_fmt, argv[0], decompressed_suffix);
 
         std::error_code ec;
         std::filesystem::copy_file(static_cast<char *>(decompressed_name), argv[0], ec);
