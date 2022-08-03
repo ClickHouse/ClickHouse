@@ -5,6 +5,7 @@
                 <type>azure_blob_storage</type>
                 <storage_account_url>http://azurite1:10000/devstoreaccount1</storage_account_url>
                 <container_name>cont</container_name>
+                <container_already_exists>false</container_already_exists>
                 <skip_access_check>false</skip_access_check>
                 <!-- default credentials for Azurite storage account -->
                 <account_name>devstoreaccount1</account_name>
@@ -15,12 +16,6 @@
                 <type>local</type>
                 <path>/</path>
             </hdd>
-            <cache_on_jbod>
-                <type>cache</type>
-                <disk>blob_storage_disk</disk>
-                <path>/jbod1/</path>
-                <max_size>1000000000</max_size>
-            </cache_on_jbod>
         </disks>
         <policies>
             <blob_storage_policy>
@@ -33,13 +28,6 @@
                     </external>
                 </volumes>
             </blob_storage_policy>
-            <cache_on_jbod>
-                <volumes>
-                    <main>
-                        <disk>cache_on_jbod</disk>
-                    </main>
-                </volumes>
-            </cache_on_jbod>
         </policies>
     </storage_configuration>
 </clickhouse>
