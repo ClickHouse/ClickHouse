@@ -44,7 +44,7 @@ public:
 
     String getName() const override { return "PingPongProcessor"; }
 
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare() override;
 
     std::pair<InputPort *, OutputPort *> getAuxPorts();
 
@@ -65,7 +65,7 @@ protected:
     bool isPairsFinished() const;
     bool processPair(PortsPair & pair);
     void finishPair(PortsPair & pair);
-    Status processRegularPorts(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs);
+    Status processRegularPorts();
 
     std::vector<PortsPair> port_pairs;
     size_t num_finished_pairs = 0;
@@ -78,6 +78,7 @@ protected:
 
     bool ready_to_send = false;
 
+    /// Used to set 'needed' flag once for auxiliary input at first `prepare` call.
     bool set_needed_once = false;
 
     Order order;
@@ -87,22 +88,19 @@ protected:
 class ReadHeadBalancedProceesor : public PingPongProcessor
 {
 public:
-    ReadHeadBalancedProceesor(const Block & header, const Block & aux_header, size_t num_ports, size_t size_, Order order_)
-        : PingPongProcessor(header, aux_header, num_ports, order_)
-        , size(size_)
-    {
-    }
+    ReadHeadBalancedProceesor(const Block & header, const Block & aux_header, size_t num_ports, size_t size_to_wait_, Order order_)
+        : PingPongProcessor(header, aux_header, num_ports, order_) , data_consumed(0) , size_to_wait(size_to_wait_)
+    {}
 
     bool isReady(const Chunk & chunk) override
     {
         data_consumed += chunk.getNumRows();
-        return data_consumed > size;
+        return data_consumed > size_to_wait;
     }
 
 private:
-    size_t data_consumed = 0;
-
-    size_t size;
+    size_t data_consumed;
+    size_t size_to_wait;
 };
 
 }

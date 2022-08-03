@@ -80,31 +80,15 @@ bool PingPongProcessor::isPairsFinished() const
     return num_finished_pairs == port_pairs.size();
 }
 
-IProcessor::Status PingPongProcessor::processRegularPorts(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status PingPongProcessor::processRegularPorts()
 {
     if (isPairsFinished())
         return Status::Finished;
 
     bool need_data = false;
 
-    UNUSED(updated_inputs);
-    UNUSED(updated_outputs);
-
-    // for (const auto & output_number : updated_outputs)
-    for (size_t output_number = 0; output_number < port_pairs.size(); ++output_number)
-    {
-        if (output_number >= port_pairs.size())
-            continue; /// skip auxiliary port
-        need_data = processPair(port_pairs[output_number]) || need_data;
-    }
-
-    // for (const auto & input_number : updated_inputs)
-    for (size_t input_number = 0; input_number < port_pairs.size(); ++input_number)
-    {
-        if (input_number >= port_pairs.size())
-            continue; /// skip auxiliary port
-        need_data = processPair(port_pairs[input_number]) || need_data;
-    }
+    for (auto & pair : port_pairs)
+        need_data = processPair(pair) || need_data;
 
     if (isPairsFinished())
         return Status::Finished;
@@ -145,7 +129,7 @@ bool PingPongProcessor::canSend() const
     return !is_send && (ready_to_send || isPairsFinished());
 }
 
-IProcessor::Status PingPongProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status PingPongProcessor::prepare()
 {
     if (!set_needed_once && !is_recieved && !aux_in_port.isFinished())
     {
@@ -175,7 +159,7 @@ IProcessor::Status PingPongProcessor::prepare(const PortNumbers & updated_inputs
         }
     }
 
-    auto status = processRegularPorts(updated_inputs, updated_outputs);
+    auto status = processRegularPorts();
     if (status == Status::Finished)
     {
         if (order == First || is_send)
@@ -199,10 +183,6 @@ IProcessor::Status PingPongProcessor::prepare(const PortNumbers & updated_inputs
                     return Status::PortFull;
             }
         }
-    }
-    if (status == Status::PortFull)
-    {
-        // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} status {}", __FILE__, __LINE__, status);
     }
     return status;
 }
