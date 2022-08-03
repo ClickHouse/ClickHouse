@@ -1449,6 +1449,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     auto crosswise_connection = CreatingSetOnTheFlyStep::createCrossConnection();
                     auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const DataStream & rhs_data_stream, const Names & key_names, JoinTableSide join_pos)
                     {
+                        /// Small number of rows is unreasonable
                         size_t max_rows = std::max<size_t>(100, settings.max_rows_in_set_to_optimize_join);
 
                         auto creating_set_step = std::make_unique<CreatingSetOnTheFlyStep>(
@@ -1462,14 +1463,21 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
                     {
-                        const auto & join_clause = expressions.join->getTableJoin().getOnlyClause();
+                        const auto & table_join = expressions.join->getTableJoin();
+                        const auto & join_clause = table_join.getOnlyClause();
 
-                        if (settings.max_rows_in_set_to_optimize_join >= 0)
+                        auto join_kind = table_join.kind();
+                        bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
+                        if (settings.max_rows_in_set_to_optimize_join >= 0 && kind_allows_filtering)
                         {
                             auto * left_set = add_create_set(query_plan, joined_plan->getCurrentDataStream(), join_clause.key_names_left, JoinTableSide::Left);
                             auto * right_set = add_create_set(*joined_plan, query_plan.getCurrentDataStream(), join_clause.key_names_right, JoinTableSide::Right);
-                            left_set->setFiltering(right_set->getSet());
-                            right_set->setFiltering(left_set->getSet());
+
+                            if (isInnerOrLeft(join_kind))
+                                right_set->setFiltering(left_set->getSet());
+
+                            if (isInnerOrRight(join_kind))
+                                left_set->setFiltering(right_set->getSet());
                         }
 
                         add_sorting(query_plan, join_clause.key_names_left, JoinTableSide::Left);
