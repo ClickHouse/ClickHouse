@@ -486,25 +486,25 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
             "Customers | where Age in ((Customers|project Age|where Age < 30))",
             "SELECT *\nFROM Customers\nWHERE Age IN (\n    SELECT Age\n    FROM Customers\n    WHERE Age < 30\n)"
         },
-        {
+{
             "Customers | project ipv4_is_in_range(FirstName, LastName)",
-            "SELECT isIPAddressInRange(FirstName, concat(LastName, if(position(LastName, '/') > 0, '', '/32')))\nFROM Customers"
+            "SELECT if(((IPv4StringToNumOrNull(FirstName) AS ip) IS NULL) OR ((multiIf((length(splitByChar('/', LastName) AS tokens) > 2) OR (NOT isIPv4String(tokens[1])), NULL, length(tokens) = 1, 32, (toUInt8OrNull(tokens[-1]) AS mask) IS NULL, NULL, toUInt8(min2(mask, 32))) AS calculated_mask) IS NULL) OR ((toIPv4OrNull(tokens[1]) AS range_prefix_ip) IS NULL), NULL, isIPAddressInRange(IPv4NumToString(assumeNotNull(ip)), concat(IPv4NumToString(assumeNotNull(range_prefix_ip)), '/', toString(assumeNotNull(calculated_mask)))))\nFROM Customers"
         },
         {
             "Customers | project ipv4_is_private(Occupation)",
-            "SELECT (((length(splitByChar('/', Occupation) AS tokens) = 1) AND isIPAddressInRange(tokens[1] AS ip, '10.0.0.0/8')) OR ((length(tokens) = 2) AND isIPAddressInRange(IPv4NumToString((IPv4CIDRToRange(toIPv4(ip), if((toUInt8OrNull(tokens[-1]) AS suffix) IS NULL, throwIf(true, 'Unable to parse suffix'), assumeNotNull(suffix))) AS range).1) AS begin, '10.0.0.0/8') AND isIPAddressInRange(IPv4NumToString(range.2) AS end, '10.0.0.0/8'))) OR (((length(tokens) = 1) AND isIPAddressInRange(ip, '172.16.0.0/12')) OR ((length(tokens) = 2) AND isIPAddressInRange(begin, '172.16.0.0/12') AND isIPAddressInRange(end, '172.16.0.0/12'))) OR (((length(tokens) = 1) AND isIPAddressInRange(ip, '192.168.0.0/16')) OR ((length(tokens) = 2) AND isIPAddressInRange(begin, '192.168.0.0/16') AND isIPAddressInRange(end, '192.168.0.0/16')))\nFROM Customers"
+            "SELECT multiIf((length(splitByChar('/', Occupation) AS tokens) > 2) OR ((toIPv4OrNull(tokens[1]) AS nullable_ip) IS NULL), NULL, (length(tokens) = 2) AND ((toUInt8OrNull(tokens[-1]) AS mask) IS NULL), NULL, ignore(assumeNotNull(nullable_ip) AS ip, IPv4CIDRToRange(ip, assumeNotNull(mask)) AS range, IPv4NumToString(range.1) AS begin, IPv4NumToString(range.2) AS end), NULL, ((length(tokens) = 1) AND isIPAddressInRange(IPv4NumToString(ip), '10.0.0.0/8')) OR (isIPAddressInRange(begin, '10.0.0.0/8') AND isIPAddressInRange(end, '10.0.0.0/8')), true, ((length(tokens) = 1) AND isIPAddressInRange(IPv4NumToString(ip), '172.16.0.0/12')) OR (isIPAddressInRange(begin, '172.16.0.0/12') AND isIPAddressInRange(end, '172.16.0.0/12')), true, ((length(tokens) = 1) AND isIPAddressInRange(IPv4NumToString(ip), '192.168.0.0/16')) OR (isIPAddressInRange(begin, '192.168.0.0/16') AND isIPAddressInRange(end, '192.168.0.0/16')), true, false)\nFROM Customers"
         },
         {
             "Customers | project ipv4_netmask_suffix(Occupation)",
-            "SELECT if((length(splitByChar('/', Occupation) AS tokens) <= 2) AND isIPv4String(tokens[1]), if(length(tokens) != 2, 32, if(((toInt8OrNull(tokens[-1]) AS suffix) >= 1) AND (suffix <= 32), suffix, throwIf(true, 'Suffix must be between 1 and 32'))), throwIf(true, 'Unable to recognize and IP address with or without a suffix'))\nFROM Customers"
+            "SELECT multiIf((length(splitByChar('/', Occupation) AS tokens) > 2) OR (NOT isIPv4String(tokens[1])), NULL, length(tokens) = 1, 32, (toUInt8OrNull(tokens[-1]) AS mask) IS NULL, NULL, toUInt8(min2(mask, 32)))\nFROM Customers"
         },
         {
             "Customers | project parse_ipv4(FirstName)",
-            "SELECT toIPv4OrNull(FirstName)\nFROM Customers"
+            "SELECT multiIf(length(splitByChar('/', FirstName) AS tokens) = 1, IPv4StringToNumOrNull(tokens[1]) AS ip, (length(tokens) = 2) AND (ip IS NOT NULL) AND ((toUInt8OrNull(tokens[-1]) AS mask) IS NOT NULL), IPv4CIDRToRange(assumeNotNull(ip), assumeNotNull(mask)).1, NULL)\nFROM Customers"
         },
         {
             "Customers | project parse_ipv6(LastName)",
-            "SELECT toIPv6OrNull(LastName)\nFROM Customers"
+            "SELECT if((ifNull(if((multiIf(length(splitByChar('/', LastName) AS tokens) = 1, IPv4StringToNumOrNull(tokens[1]) AS ip, (length(tokens) = 2) AND (ip IS NOT NULL) AND ((toUInt8OrNull(tokens[-1]) AS mask) IS NOT NULL), IPv4CIDRToRange(assumeNotNull(ip), assumeNotNull(mask)).1, NULL) AS ipv4) IS NULL, NULL, IPv4ToIPv6(ipv4)), IPv6StringToNumOrNull(LastName)) AS ipv6) IS NULL, NULL, arrayStringConcat(flatten(extractAllGroups(lower(hex(assumeNotNull(ipv6))), '([\\\\da-f]{4})')), ':'))\nFROM Customers"
         },
         {
             "Customers|where Occupation has_any ('Skilled','abcd')",
