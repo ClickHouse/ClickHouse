@@ -44,30 +44,47 @@ private:
 };
 
 
-class NotifyProcessor : public IProcessor
+/*
+ * Processor with N inputs and N outputs. Moves data from i-th input to i-th output as is.
+ * It has a pair of auxiliary ports to notify another instance by sending empty chunk after some condition holds.
+ * You should use this processor in pair of instances and connect auxiliary ports crosswise.
+ *
+ *     ╭─┴───┴───┴───┴───┴─╮       ╭─┴───┴───┴───┴───┴─╮
+ *     │                   ├─ aux ⟶│                   │
+ *     │ PingPongProcessor │       │ PingPongProcessor │
+ *     │                   │⟵ aux ─┤                   │
+ *     ╰─┬───┬───┬───┬───┬─╯       ╰─┬───┬───┬───┬───┬─╯
+ *
+ * One of the processors starts processing data, and another waits for notification.
+ * When `isReady` returns true, the first stops processing, sends a ping to another and waits for notification.
+ * After that, the second one also processes data until `isReady`, then send a notification back to the first one.
+ * After this roundtrip, processors bypass data from regular inputs to outputs.
+ */
+class PingPongProcessor : public IProcessor
 {
 public:
-    struct State
+    enum class Order : uint8_t
     {
-        std::atomic_bool waiting = false;
-        std::atomic_bool can_push = false;
-        std::atomic_size_t idx = 0;
+        /// Processor that starts processing data.
+        First,
+        /// Processor that waits for notification.
+        Second,
     };
-    using StatePtr = std::shared_ptr<State>;
 
-    NotifyProcessor(const Block & header, const Block & aux_header, size_t num_ports, StatePtr sync_state_);
+    using enum Order;
 
-    String getName() const override { return "NotifyProcessor"; }
+    /// The `aux_header` is a header from another instance of procssor.
+    /// It's required because all outputs should have the same structure.
+    /// We don't care about structure of another processor, because we send just empty chunk, but need to follow the contract.
+    PingPongProcessor(const Block & header, const Block & aux_header, size_t num_ports, Order order_);
+
+    String getName() const override { return "PingPongProcessor"; }
 
     Status prepare(const PortNumbers &, const PortNumbers &) override;
-    void work() override;
 
     std::pair<InputPort *, OutputPort *> getAuxPorts();
 
-
-    virtual bool canSend() const = 0;
-
-    virtual void dataCallback(const Chunk & chunk) { UNUSED(chunk); }
+    virtual bool isReady(const Chunk & chunk) = 0;
 
 protected:
     struct PortsPair
@@ -79,7 +96,7 @@ protected:
 
     bool sendPing();
     bool recievePing();
-    virtual String log() = 0;
+    bool canSend() const;
 
     bool isPairsFinished() const;
     bool processPair(PortsPair & pair);
@@ -95,37 +112,27 @@ protected:
     bool is_send = false;
     bool is_recieved = false;
 
-    bool set_needed_once = false;
-    StatePtr sync_state;
+    bool ready_to_send = false;
 
-    size_t idx;
+    bool set_needed_once = false;
+
+    Order order;
 };
 
-
-class NotifyProcessor2 : public NotifyProcessor
+/// Reads first N rows from two streams evenly.
+class ReadHeadBalancedProceesor : public PingPongProcessor
 {
 public:
-    NotifyProcessor2(const Block & header, const Block & aux_header, size_t num_ports, size_t size_, NotifyProcessor::StatePtr sync_state_)
-        : NotifyProcessor(header, aux_header, num_ports, sync_state_)
+    ReadHeadBalancedProceesor(const Block & header, const Block & aux_header, size_t num_ports, size_t size_, Order order_)
+        : PingPongProcessor(header, aux_header, num_ports, order_)
         , size(size_)
     {
     }
 
-    bool canSend() const override
-    {
-        return isPairsFinished() || data_consumed > size;
-    }
-
-
-    void dataCallback(const Chunk & chunk) override
+    bool isReady(const Chunk & chunk) override
     {
         data_consumed += chunk.getNumRows();
-        // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {}: data_consumed {}", __FILE__, __LINE__, getDescription(), data_consumed);
-    }
-
-    String log() override
-    {
-        return fmt::format("data {} / {} = {:.2f}", data_consumed, size, data_consumed / float(size));
+        return data_consumed > size;
     }
 
 private:

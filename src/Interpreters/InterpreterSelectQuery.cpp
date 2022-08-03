@@ -1423,7 +1423,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
-                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, bool is_right)
+                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
                         SortDescription order_descr;
                         order_descr.reserve(key_names.size());
@@ -1442,44 +1442,38 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             this->context->getTemporaryVolume(),
                             settings.min_free_disk_space_for_temporary_data,
                             settings.optimize_sorting_by_input_stream_properties);
-                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", is_right ? "right" : "left"));
+                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
                         plan.addStep(std::move(sorting_step));
                     };
 
-                    auto add_create_set = [&settings](QueryPlan & plan, const Names & key_names, bool is_right)
+                    auto crosswise_connection = CreatingSetOnTheFlyStep::createCrossConnection();
+                    auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const DataStream & rhs_data_stream, const Names & key_names, JoinTableSide join_pos)
                     {
-                        SizeLimits size_limits(settings.max_rows_in_set_to_optimize_join, 0, OverflowMode::BREAK);
-                        auto creating_set_step = std::make_unique<CreatingSetOnTheFlyStep>(plan.getCurrentDataStream(), key_names, size_limits);
-                        creating_set_step->setStepDescription(fmt::format("Create set for {} stream", is_right ? "right" : "left"));
-                        auto set = creating_set_step->getSet();
-                        plan.addStep(std::move(creating_set_step));
-                        return set;
-                    };
+                        size_t max_rows = std::max<size_t>(100, settings.max_rows_in_set_to_optimize_join);
 
-                    auto add_filter_by_set = [&settings](QueryPlan & plan, const Block & rhs_header, const Names & key_names, auto set, auto ports_state, bool is_right)
-                    {
-                        auto filter_by_set_step = std::make_unique<FilterBySetOnTheFlyStep>(
-                            plan.getCurrentDataStream(), rhs_header, key_names, settings.max_rows_in_set_to_optimize_join, set, ports_state);
-                        filter_by_set_step->setStepDescription(fmt::format("Filter {} stream by set", is_right ? "right" : "left"));
-                        plan.addStep(std::move(filter_by_set_step));
+                        auto creating_set_step = std::make_unique<CreatingSetOnTheFlyStep>(
+                            plan.getCurrentDataStream(), rhs_data_stream, key_names, max_rows, crosswise_connection, join_pos);
+                        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos));
+
+                        auto * step_raw_ptr = creating_set_step.get();
+                        plan.addStep(std::move(creating_set_step));
+                        return step_raw_ptr;
                     };
 
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
                     {
                         const auto & join_clause = expressions.join->getTableJoin().getOnlyClause();
 
-                        if (settings.max_rows_in_set_to_optimize_join > 0)
+                        if (settings.max_rows_in_set_to_optimize_join >= 0)
                         {
-                            auto left_set = add_create_set(query_plan, join_clause.key_names_left, false);
-                            auto right_set = add_create_set(*joined_plan, join_clause.key_names_right, true);
-
-                            auto ports_state = std::make_shared<FilterBySetOnTheFlyStep::PortsState>();
-                            add_filter_by_set(query_plan, joined_plan->getCurrentDataStream().header, join_clause.key_names_left, right_set, ports_state, false);
-                            add_filter_by_set(*joined_plan, query_plan.getCurrentDataStream().header, join_clause.key_names_right, left_set, ports_state, true);
+                            auto * left_set = add_create_set(query_plan, joined_plan->getCurrentDataStream(), join_clause.key_names_left, JoinTableSide::Left);
+                            auto * right_set = add_create_set(*joined_plan, query_plan.getCurrentDataStream(), join_clause.key_names_right, JoinTableSide::Right);
+                            left_set->setFiltering(right_set->getSet());
+                            right_set->setFiltering(left_set->getSet());
                         }
 
-                        add_sorting(query_plan, join_clause.key_names_left, false);
-                        add_sorting(*joined_plan, join_clause.key_names_right, true);
+                        add_sorting(query_plan, join_clause.key_names_left, JoinTableSide::Left);
+                        add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
                     }
 
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
