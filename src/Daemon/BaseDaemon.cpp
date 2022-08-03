@@ -1017,7 +1017,7 @@ void BaseDaemon::setupWatchdog()
             if (config().getString("logger.formatting", "") == "json")
                 pf = new OwnJSONPatternFormatter;
             else
-                pf = new OwnPatternFormatter(true);
+                pf = new OwnPatternFormatter;
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }
