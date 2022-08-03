@@ -102,7 +102,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         if (config.getString("logger.formatting", "") == "json")
             pf = new OwnJSONPatternFormatter;
         else
-            pf = new OwnPatternFormatter(true);
+            pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
         log->setLevel(log_level);
@@ -143,7 +143,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         if (config.getString("logger.formatting", "") == "json")
             pf = new OwnJSONPatternFormatter;
         else
-            pf = new OwnPatternFormatter(true);
+            pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
         errorlog->setLevel(errorlog_level);
@@ -187,7 +187,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         if (config.getString("logger.formatting", "") == "json")
             pf = new OwnJSONPatternFormatter;
         else
-            pf = new OwnPatternFormatter(true);
+            pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
         log->setLevel(syslog_level);
