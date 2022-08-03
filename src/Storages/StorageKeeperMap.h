@@ -23,7 +23,9 @@ public:
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata,
         std::string_view primary_key_,
-        std::string_view keeper_path_);
+        std::string_view keeper_path_,
+        const std::string & hosts,
+        bool create_missing_root_path);
 
     Pipe read(
         const Names & column_names,
