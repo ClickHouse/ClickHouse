@@ -38,10 +38,10 @@ LibraryBridgeHelper::LibraryBridgeHelper(
     , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
     , library_data(library_data_)
     , dictionary_id(dictionary_id_)
+    , bridge_host(config.getString("library_bridge.host", DEFAULT_HOST))
+    , bridge_port(config.getUInt("library_bridge.port", DEFAULT_PORT))
     , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_))
 {
-    bridge_port = config.getUInt("library_bridge.port", DEFAULT_PORT);
-    bridge_host = config.getString("library_bridge.host", DEFAULT_HOST);
 }
 
 
@@ -91,12 +91,12 @@ bool LibraryBridgeHelper::bridgeHandShake()
      * 2. Bridge crashed or restarted for some reason while server did not.
     **/
     if (result.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {}. Check bridge and server have the same version.", result);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {}. Check that bridge and server have the same version.", result);
 
     UInt8 dictionary_id_exists;
     auto parsed = tryParse<UInt8>(dictionary_id_exists, result);
     if (!parsed || (dictionary_id_exists != 0 && dictionary_id_exists != 1))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {} ({}). Check bridge and server have the same version.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {} ({}). Check that bridge and server have the same version.",
                         result, parsed ? toString(dictionary_id_exists) : "failed to parse");
 
     LOG_TRACE(log, "dictionary_id: {}, dictionary_id_exists on bridge side: {}, library confirmed to be initialized on server side: {}",
@@ -113,7 +113,7 @@ bool LibraryBridgeHelper::bridgeHandShake()
         bool reinitialized = false;
         try
         {
-            auto uri = createRequestURI(LIB_NEW_METHOD);
+            auto uri = createRequestURI(EXT_DICT_LIB_NEW_METHOD);
             reinitialized = executeRequest(uri, getInitLibraryCallback());
         }
         catch (...)
@@ -153,7 +153,7 @@ ReadWriteBufferFromHTTP::OutStreamCallback LibraryBridgeHelper::getInitLibraryCa
 bool LibraryBridgeHelper::initLibrary()
 {
     startBridgeSync();
-    auto uri = createRequestURI(LIB_NEW_METHOD);
+    auto uri = createRequestURI(EXT_DICT_LIB_NEW_METHOD);
     library_initialized = executeRequest(uri, getInitLibraryCallback());
     return library_initialized;
 }
@@ -162,7 +162,7 @@ bool LibraryBridgeHelper::initLibrary()
 bool LibraryBridgeHelper::cloneLibrary(const Field & other_dictionary_id)
 {
     startBridgeSync();
-    auto uri = createRequestURI(LIB_CLONE_METHOD);
+    auto uri = createRequestURI(EXT_DICT_LIB_CLONE_METHOD);
     uri.addQueryParameter("from_dictionary_id", toString(other_dictionary_id));
     /// We also pass initialization settings in order to create a library handler
     /// in case from_dictionary_id does not exist in bridge side (possible in case of bridge crash).
@@ -177,7 +177,7 @@ bool LibraryBridgeHelper::removeLibrary()
     /// because in this case after restart it will not have this dictionaty id in memory anyway.
     if (bridgeHandShake())
     {
-        auto uri = createRequestURI(LIB_DELETE_METHOD);
+        auto uri = createRequestURI(EXT_DICT_LIB_DELETE_METHOD);
         return executeRequest(uri);
     }
     return true;
@@ -187,7 +187,7 @@ bool LibraryBridgeHelper::removeLibrary()
 bool LibraryBridgeHelper::isModified()
 {
     startBridgeSync();
-    auto uri = createRequestURI(IS_MODIFIED_METHOD);
+    auto uri = createRequestURI(EXT_DICT_IS_MODIFIED_METHOD);
     return executeRequest(uri);
 }
 
@@ -195,7 +195,7 @@ bool LibraryBridgeHelper::isModified()
 bool LibraryBridgeHelper::supportsSelectiveLoad()
 {
     startBridgeSync();
-    auto uri = createRequestURI(SUPPORTS_SELECTIVE_LOAD_METHOD);
+    auto uri = createRequestURI(EXT_DICT_SUPPORTS_SELECTIVE_LOAD_METHOD);
     return executeRequest(uri);
 }
 
@@ -203,7 +203,7 @@ bool LibraryBridgeHelper::supportsSelectiveLoad()
 QueryPipeline LibraryBridgeHelper::loadAll()
 {
     startBridgeSync();
-    auto uri = createRequestURI(LOAD_ALL_METHOD);
+    auto uri = createRequestURI(EXT_DICT_LOAD_ALL_METHOD);
     return QueryPipeline(loadBase(uri));
 }
 
@@ -211,7 +211,7 @@ QueryPipeline LibraryBridgeHelper::loadAll()
 QueryPipeline LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
 {
     startBridgeSync();
-    auto uri = createRequestURI(LOAD_IDS_METHOD);
+    auto uri = createRequestURI(EXT_DICT_LOAD_IDS_METHOD);
     uri.addQueryParameter("ids_num", toString(ids.size())); /// Not used parameter, but helpful
     auto ids_string = getDictIdsString(ids);
     return QueryPipeline(loadBase(uri, [ids_string](std::ostream & os) { os << ids_string; }));
@@ -221,7 +221,7 @@ QueryPipeline LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
 QueryPipeline LibraryBridgeHelper::loadKeys(const Block & requested_block)
 {
     startBridgeSync();
-    auto uri = createRequestURI(LOAD_KEYS_METHOD);
+    auto uri = createRequestURI(EXT_DICT_LOAD_KEYS_METHOD);
     /// Sample block to parse block from callback
     uri.addQueryParameter("requested_block_sample", requested_block.getNamesAndTypesList().toString());
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [requested_block, this](std::ostream & os)

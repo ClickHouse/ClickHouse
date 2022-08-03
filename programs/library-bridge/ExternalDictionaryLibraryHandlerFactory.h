@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SharedLibraryHandler.h"
+#include "ExternalDictionaryLibraryHandler.h"
 #include <base/defines.h>
 
 #include <unordered_map>
@@ -11,11 +11,11 @@ namespace DB
 {
 
 /// Each library dictionary source has unique UUID. When clone() method is called, a new UUID is generated.
-/// There is a unique mapping from diciotnary UUID to sharedLibraryHandler.
-class SharedLibraryHandlerFactory final : private boost::noncopyable
+/// There is a unique mapping from dictionary UUID to sharedLibraryHandler.
+class ExternalDictionaryLibraryHandlerFactory final : private boost::noncopyable
 {
 public:
-    static SharedLibraryHandlerFactory & instance();
+    static ExternalDictionaryLibraryHandlerFactory & instance();
 
     SharedLibraryHandlerPtr get(const std::string & dictionary_id);
 

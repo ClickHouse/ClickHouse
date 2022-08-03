@@ -41,7 +41,6 @@ protected:
     /// Check bridge is running. Can also check something else in the mean time.
     virtual bool bridgeHandShake() = 0;
 
-    /// clickhouse-odbc-bridge, clickhouse-library-bridge
     virtual String serviceAlias() const = 0;
 
     virtual String serviceFileName() const = 0;
