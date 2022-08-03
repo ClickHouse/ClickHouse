@@ -5,6 +5,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Disks/IDisk.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
@@ -18,10 +19,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
-
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <utime.h>
 
 #include "config_core.h"
 
@@ -894,7 +891,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             create->setTable(table_id.table_name);
             try
             {
-                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), false).second;
+                table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), true).second;
                 table->is_dropped = true;
             }
             catch (...)
@@ -979,7 +976,6 @@ void DatabaseCatalog::dropTableDataTask()
 
     if (table.table_id)
     {
-
         try
         {
             dropTableFinally(table);
@@ -1019,13 +1015,15 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         table.table->drop();
     }
 
-    /// Even if table is not loaded, try remove its data from disk.
-    /// TODO remove data from all volumes
-    fs::path data_path = fs::path(getContext()->getPath()) / "store" / getPathForUUID(table.table_id.uuid);
-    if (fs::exists(data_path))
+    /// Even if table is not loaded, try remove its data from disks.
+    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
-        LOG_INFO(log, "Removing data directory {} of dropped table {}", data_path.string(), table.table_id.getNameForLogs());
-        fs::remove_all(data_path);
+        String data_path = "store/" + getPathForUUID(table.table_id.uuid);
+        if (!disk->exists(data_path))
+            continue;
+
+        LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
+        disk->removeRecursive(data_path);
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
@@ -1169,120 +1167,117 @@ void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, Tabl
 
 void DatabaseCatalog::cleanupStoreDirectoryTask()
 {
-    fs::path store_path = fs::path(getContext()->getPath()) / "store";
-    size_t affected_dirs = 0;
-    for (const auto & prefix_dir : fs::directory_iterator{store_path})
+    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
-        String prefix = prefix_dir.path().filename();
-        bool expected_prefix_dir = prefix_dir.is_directory() &&
-            prefix.size() == 3 &&
-            isHexDigit(prefix[0]) &&
-            isHexDigit(prefix[1]) &&
-            isHexDigit(prefix[2]);
-
-        if (!expected_prefix_dir)
-        {
-            LOG_WARNING(log, "Found invalid directory {}, will try to remove it", prefix_dir.path().string());
-            affected_dirs += maybeRemoveDirectory(prefix_dir.path());
+        if (!disk->supportsStat() || !disk->supportsChmod())
             continue;
-        }
 
-        for (const auto & uuid_dir : fs::directory_iterator{prefix_dir.path()})
+        size_t affected_dirs = 0;
+        for (auto it = disk->iterateDirectory("store"); it->isValid(); it->next())
         {
-            String uuid_str = uuid_dir.path().filename();
-            UUID uuid;
-            bool parsed = tryParse(uuid, uuid_str);
+            String prefix = it->name();
+            bool expected_prefix_dir = disk->isDirectory(it->path()) && prefix.size() == 3 && isHexDigit(prefix[0]) && isHexDigit(prefix[1])
+                && isHexDigit(prefix[2]);
 
-            bool expected_dir = uuid_dir.is_directory() &&
-                parsed &&
-                uuid != UUIDHelpers::Nil &&
-                uuid_str.starts_with(prefix);
-
-            if (!expected_dir)
+            if (!expected_prefix_dir)
             {
-                LOG_WARNING(log, "Found invalid directory {}, will try to remove it", uuid_dir.path().string());
-                affected_dirs += maybeRemoveDirectory(uuid_dir.path());
+                LOG_WARNING(log, "Found invalid directory {} on disk {}, will try to remove it", it->path(), disk_name);
+                affected_dirs += maybeRemoveDirectory(disk_name, disk, it->path());
                 continue;
             }
 
-            /// Order is important
-            if (!hasUUIDMapping(uuid))
+            for (auto jt = disk->iterateDirectory(it->path()); jt->isValid(); jt->next())
             {
-                /// We load uuids even for detached and permanently detached tables,
-                /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
-                /// No table or database using this directory should concurrently appear,
-                /// because creation of new table would fail with "directory already exists".
-                affected_dirs += maybeRemoveDirectory(uuid_dir.path());
+                String uuid_str = jt->name();
+                UUID uuid;
+                bool parsed = tryParse(uuid, uuid_str);
+
+                bool expected_dir = disk->isDirectory(jt->path()) && parsed && uuid != UUIDHelpers::Nil && uuid_str.starts_with(prefix);
+
+                if (!expected_dir)
+                {
+                    LOG_WARNING(log, "Found invalid directory {} on disk {}, will try to remove it", jt->path(), disk_name);
+                    affected_dirs += maybeRemoveDirectory(disk_name, disk, jt->path());
+                    continue;
+                }
+
+                /// Order is important
+                if (!hasUUIDMapping(uuid))
+                {
+                    /// We load uuids even for detached and permanently detached tables,
+                    /// so it looks safe enough to remove directory if we don't have uuid mapping for it.
+                    /// No table or database using this directory should concurrently appear,
+                    /// because creation of new table would fail with "directory already exists".
+                    affected_dirs += maybeRemoveDirectory(disk_name, disk, jt->path());
+                }
             }
         }
-    }
 
-    if (affected_dirs)
-        LOG_INFO(log, "Cleaned up {} directories from store/", affected_dirs);
+        if (affected_dirs)
+            LOG_INFO(log, "Cleaned up {} directories from store/ on disk {}", affected_dirs, disk_name);
+    }
 
     (*cleanup_task)->scheduleAfter(unused_dir_cleanup_period_sec * 1000);
 }
 
-bool DatabaseCatalog::maybeRemoveDirectory(const fs::path & unused_dir)
+bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir)
 {
     /// "Safe" automatic removal of some directory.
     /// At first we do not remove anything and only revoke all access right.
     /// And remove only if nobody noticed it after, for example, one month.
 
-    struct stat st;
-    if (stat(unused_dir.string().c_str(), &st))
+    try
     {
-        LOG_ERROR(log, "Failed to stat {}, errno: {}", unused_dir.string(), errno);
+        struct stat st = disk->stat(unused_dir);
+
+        if (st.st_uid != geteuid())
+        {
+            /// Directory is not owned by clickhouse, it's weird, let's ignore it (chmod will likely fail anyway).
+            LOG_WARNING(log, "Found directory {} with unexpected owner (uid={}) on disk {}", unused_dir, st.st_uid, disk_name);
+            return false;
+        }
+
+        time_t max_modification_time = std::max(st.st_atime, std::max(st.st_mtime, st.st_ctime));
+        time_t current_time = time(nullptr);
+        if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
+        {
+            if (current_time <= max_modification_time + unused_dir_hide_timeout_sec)
+                return false;
+
+            LOG_INFO(log, "Removing access rights for unused directory {} from disk {} (will remove it when timeout exceed)", unused_dir, disk_name);
+
+            /// Explicitly update modification time just in case
+
+            disk->setLastModified(unused_dir, Poco::Timestamp::fromEpochTime(current_time));
+
+            /// Remove all access right
+            disk->chmod(unused_dir, 0);
+
+            return true;
+        }
+        else
+        {
+            if (!unused_dir_rm_timeout_sec)
+                return false;
+
+            if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
+                return false;
+
+            LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
+
+            /// We have to set these access rights to make recursive removal work
+            disk->chmod(unused_dir, S_IRWXU);
+
+            disk->removeRecursive(unused_dir);
+
+            return true;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Failed to remove unused directory {} from disk {} ({})",
+                                                unused_dir, disk->getName(), disk->getPath()));
         return false;
-    }
-
-    if (st.st_uid != geteuid())
-    {
-        /// Directory is not owned by clickhouse, it's weird, let's ignore it (chmod will likely fail anyway).
-        LOG_WARNING(log, "Found directory {} with unexpected owner (uid={})", unused_dir.string(), st.st_uid);
-        return false;
-    }
-
-    time_t max_modification_time = std::max(st.st_atime, std::max(st.st_mtime, st.st_ctime));
-    time_t current_time = time(nullptr);
-    if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
-    {
-        if (current_time <= max_modification_time + unused_dir_hide_timeout_sec)
-            return false;
-
-        LOG_INFO(log, "Removing access rights for unused directory {} (will remove it when timeout exceed)", unused_dir.string());
-
-        /// Explicitly update modification time just in case
-
-        struct utimbuf tb;
-        tb.actime = current_time;
-        tb.modtime = current_time;
-        if (utime(unused_dir.string().c_str(), &tb) != 0)
-            LOG_ERROR(log, "Failed to utime {}, errno: {}", unused_dir.string(), errno);
-
-        /// Remove all access right
-        if (chmod(unused_dir.string().c_str(), 0))
-            LOG_ERROR(log, "Failed to chmod {}, errno: {}", unused_dir.string(), errno);
-
-        return true;
-    }
-    else
-    {
-        if (!unused_dir_rm_timeout_sec)
-            return false;
-
-        if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
-            return false;
-
-        LOG_INFO(log, "Removing unused directory {}", unused_dir.string());
-
-        /// We have to set these access rights to make recursive removal work
-        if (chmod(unused_dir.string().c_str(), S_IRWXU))
-            LOG_ERROR(log, "Failed to chmod {}, errno: {}", unused_dir.string(), errno);
-
-        fs::remove_all(unused_dir);
-
-        return true;
     }
 }
 
