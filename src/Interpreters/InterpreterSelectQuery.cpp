@@ -98,7 +98,6 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
-    extern const int TOO_DEEP_PIPELINE;
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -499,14 +498,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
-        if (context->hasQueryContext())
-        {
-            std::atomic<size_t> & current_query_analyze_count = context->getQueryContext()->kitchen_sink.analyze_counter;
-            ++current_query_analyze_count;
-            if (settings.max_pipeline_depth && current_query_analyze_count >= settings.max_pipeline_depth)
-                throw DB::Exception(ErrorCodes::TOO_DEEP_PIPELINE, "Query analyze overflow. Try to increase `max_pipeline_depth` or simplify the query");
-        }
-
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
         if (view)
@@ -645,7 +636,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     analyze(shouldMoveToPrewhere());
 
     bool need_analyze_again = false;
-
     if (analysis_result.prewhere_constant_filter_description.always_false || analysis_result.prewhere_constant_filter_description.always_true)
     {
         if (analysis_result.prewhere_constant_filter_description.always_true)
@@ -654,7 +644,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::make_shared<ASTLiteral>(0u));
         need_analyze_again = true;
     }
-
     if (analysis_result.where_constant_filter_description.always_false || analysis_result.where_constant_filter_description.always_true)
     {
         if (analysis_result.where_constant_filter_description.always_true)

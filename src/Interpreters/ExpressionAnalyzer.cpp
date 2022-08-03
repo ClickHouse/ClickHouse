@@ -30,6 +30,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/replaceForPositionalArguments.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 
@@ -110,79 +111,6 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
         }
     }
     return true;
-}
-
-bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
-{
-    auto columns = select_query->select()->children;
-
-    const auto * expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
-    if (expr_with_alias && !expr_with_alias->alias.empty())
-        return false;
-
-    const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get());
-    if (!ast_literal)
-        return false;
-
-    auto which = ast_literal->value.getType();
-    if (which != Field::Types::UInt64)
-        return false;
-
-    auto pos = ast_literal->value.get<UInt64>();
-    if (!pos || pos > columns.size())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Positional argument out of bounds: {} (exprected in range [1, {}]",
-                        pos, columns.size());
-
-    const auto & column = columns[--pos];
-    if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))
-    {
-        argument = column->clone();
-    }
-    else if (typeid_cast<const ASTFunction *>(column.get()))
-    {
-        std::function<void(ASTPtr)> throw_if_aggregate_function = [&](ASTPtr node)
-        {
-            if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
-            {
-                auto is_aggregate_function = AggregateUtils::isAggregateFunction(*function);
-                if (is_aggregate_function)
-                {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                    "Illegal value (aggregate function) for positional argument in {}",
-                                    ASTSelectQuery::expressionToString(expression));
-                }
-                else
-                {
-                    if (function->arguments)
-                    {
-                        for (const auto & arg : function->arguments->children)
-                            throw_if_aggregate_function(arg);
-                    }
-                }
-            }
-        };
-
-        if (expression == ASTSelectQuery::Expression::GROUP_BY)
-            throw_if_aggregate_function(column);
-
-        argument = column->clone();
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal value for positional argument in {}",
-                        ASTSelectQuery::expressionToString(expression));
-    }
-
-    return true;
-}
-
-void replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
-{
-    auto argument_with_replacement = argument->clone();
-    if (checkPositionalArguments(argument_with_replacement, select_query, expression))
-        argument = argument_with_replacement;
 }
 
 }
@@ -1594,9 +1522,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
-        {
             replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
-        }
     }
 
     getRootActions(select_query->orderBy(), only_types, step.actions());
