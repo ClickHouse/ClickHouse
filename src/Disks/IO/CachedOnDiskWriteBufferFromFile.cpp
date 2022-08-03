@@ -25,13 +25,13 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     const String & query_id_,
     const WriteSettings & settings_)
     : WriteBufferFromFileDecorator(std::move(impl_))
+    , log(&Poco::Logger::get("CachedOnDiskWriteBufferFromFile"))
     , cache(cache_)
     , source_path(source_path_)
     , key(key_)
     , is_persistent_cache_file(is_persistent_cache_file_)
     , query_id(query_id_)
     , enable_cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log)
-    , log(&Poco::Logger::get("CachedOnDiskWriteBufferFromFile"))
     , cache_log(Context::getGlobalContextInstance()->getFilesystemCacheLog())
 {
 }

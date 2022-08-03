@@ -221,6 +221,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
     size_t wait_download_tries = 0;
 
     auto download_state = file_segment->state();
+    LOG_TEST(log, "getReadBufferForFileSegment: {}", file_segment->getInfoForLog());
 
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
@@ -231,6 +232,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
         }
         else
         {
+            LOG_DEBUG(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
             read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
             return getRemoteFSReadBuffer(file_segment, read_type);
         }
@@ -242,6 +244,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
         {
             case FileSegment::State::SKIP_CACHE:
             {
+                LOG_DEBUG(log, "Bypassing cache because file segment state is `SKIP_CACHE`");
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 return getRemoteFSReadBuffer(file_segment, read_type);
             }
@@ -272,6 +275,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                 }
                 else
                 {
+                    LOG_DEBUG(log, "Retries to wait for file segment download exceeded ({})", wait_download_tries);
                     download_state = FileSegment::State::SKIP_CACHE;
                 }
 
@@ -363,6 +367,9 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                 }
                 else
                 {
+                    LOG_DEBUG(
+                        log,
+                        "Bypassing cache because file segment state is `PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
                     read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                     return getRemoteFSReadBuffer(file_segment, read_type);
                 }
@@ -621,6 +628,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 }
                 else
                 {
+                    LOG_TEST(log, "Bypassing cache because writeCache method failed");
                     read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                     file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
@@ -648,6 +656,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 bytes_to_predownload = 0;
                 file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
+                LOG_TEST(log, "Bypassing cache because space reservation failed");
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
                 swap(*implementation_buffer);
@@ -971,6 +980,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 else
                 {
                     assert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                    LOG_TEST(log, "Bypassing cache because writeCache method failed");
                 }
             }
             else

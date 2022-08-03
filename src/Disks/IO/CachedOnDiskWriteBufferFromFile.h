@@ -36,6 +36,8 @@ private:
     void cacheData(char * data, size_t size);
     void appendFilesystemCacheLog(const FileSegment & file_segment);
 
+    Poco::Logger * log;
+
     FileCachePtr cache;
     String source_path;
     IFileCache::Key key;
@@ -43,15 +45,14 @@ private:
     bool is_persistent_cache_file;
     size_t current_download_offset = 0;
     const String query_id;
+
     bool enable_cache_log;
+    std::shared_ptr<FilesystemCacheLog> cache_log;
 
     bool stop_caching = false;
 
     ProfileEvents::Counters current_file_segment_counters;
     std::unique_ptr<FileSegmentRangeWriter> cache_writer;
-
-    Poco::Logger * log;
-    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }
