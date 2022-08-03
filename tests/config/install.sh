@@ -82,7 +82,7 @@ ln -sf --backup=simple --suffix=_original.xml \
 
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
 create_snapshot_on_exit=$(($RANDOM % 2))
-cat $DEST_SERVER_PATH/config.d/keeper_port.xml | sed "s|<create_snapshot_on_exit>true</create_snapshot_on_exit>|<create_snapshot_on_exit>$create_snapshot_on_exit</create_snapshot_on_exit>|" > $DEST_SERVER_PATH/config.d/keeper_port.xml
+sed --follow-symlinks -i "s|<create_snapshot_on_exit>true</create_snapshot_on_exit>|<create_snapshot_on_exit>$create_snapshot_on_exit</create_snapshot_on_exit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
 
 if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/polymorphic_parts.xml $DEST_SERVER_PATH/config.d/
