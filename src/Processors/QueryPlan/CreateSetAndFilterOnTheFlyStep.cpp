@@ -1,4 +1,4 @@
-#include <Processors/QueryPlan/CreatingSetOnTheFlyStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/Transforms/CreatingSetsOnTheFlyTransform.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -17,11 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-namespace
-{
-
-InputPorts::iterator connectAllInputs(OutputPortRawPtrs ports, InputPorts & inputs, size_t num_ports)
+static InputPorts::iterator connectAllInputs(OutputPortRawPtrs ports, InputPorts & inputs, size_t num_ports)
 {
     auto input_it = inputs.begin();
     for (size_t i = 0; i < num_ports; ++i)
@@ -30,8 +26,6 @@ InputPorts::iterator connectAllInputs(OutputPortRawPtrs ports, InputPorts & inpu
         input_it++;
     }
     return input_it;
-}
-
 }
 
 static ITransformingStep::Traits getTraits(bool is_filter)
@@ -51,7 +45,7 @@ static ITransformingStep::Traits getTraits(bool is_filter)
 }
 
 
-class CreatingSetOnTheFlyStep::CrosswiseConnection : public boost::noncopyable
+class CreateSetAndFilterOnTheFlyStep::CrosswiseConnection : public boost::noncopyable
 {
 public:
     using PortPair = std::pair<InputPort *, OutputPort *>;
@@ -85,12 +79,12 @@ private:
     std::unique_ptr<InputPort> dummy_input_port;
 };
 
-CreatingSetOnTheFlyStep::CrosswiseConnectionPtr CreatingSetOnTheFlyStep::createCrossConnection()
+CreateSetAndFilterOnTheFlyStep::CrosswiseConnectionPtr CreateSetAndFilterOnTheFlyStep::createCrossConnection()
 {
-    return std::make_shared<CreatingSetOnTheFlyStep::CrosswiseConnection>();
+    return std::make_shared<CreateSetAndFilterOnTheFlyStep::CrosswiseConnection>();
 }
 
-CreatingSetOnTheFlyStep::CreatingSetOnTheFlyStep(
+CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     const DataStream & input_stream_,
     const DataStream & rhs_input_stream_,
     const Names & column_names_,
@@ -118,7 +112,7 @@ CreatingSetOnTheFlyStep::CreatingSetOnTheFlyStep(
     own_set->setHeader(header);
 }
 
-void CreatingSetOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     size_t num_streams = pipeline.getNumStreams();
     pipeline.addSimpleTransform([this, num_streams](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -172,12 +166,12 @@ void CreatingSetOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline,
     }, /* check_ports= */ false);
 }
 
-void CreatingSetOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map) const
+void CreateSetAndFilterOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add(getName(), true);
 }
 
-void CreatingSetOnTheFlyStep::describeActions(FormatSettings & settings) const
+void CreateSetAndFilterOnTheFlyStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
     settings.out << prefix << getName();
@@ -185,7 +179,7 @@ void CreatingSetOnTheFlyStep::describeActions(FormatSettings & settings) const
     settings.out << '\n';
 }
 
-void CreatingSetOnTheFlyStep::updateOutputStream()
+void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
 {
     if (input_streams.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_streams.size());

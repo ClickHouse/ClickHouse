@@ -8,7 +8,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/CreatingSetOnTheFlyStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -336,7 +336,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<SortingStep>(parent_node, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = simplePushDownOverStep<CreatingSetOnTheFlyStep>(parent_node, nodes, child))
+    if (auto updated_steps = simplePushDownOverStep<CreateSetAndFilterOnTheFlyStep>(parent_node, nodes, child))
         return updated_steps;
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
