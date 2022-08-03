@@ -19,9 +19,6 @@ constexpr int MIN_SIZE_FOR_ROARING_ENCODING = 16;
 /// Gin Index Segment information, which contains:
 struct GinIndexSegment
 {
-    ///  Segment ID retrieved from next available ID from file .gin_sid
-    UInt32 segment_id {0};
-
     /// .gin_post file offset of this segment's postings lists
     UInt64 postings_start_offset{0};
 
@@ -30,6 +27,9 @@ struct GinIndexSegment
 
     /// Next row ID for this segment
     UInt32 next_row_id{1};
+
+    ///  Segment ID retrieved from next available ID from file .gin_sid
+    UInt32 segment_id {0};
 };
 
 using GinIndexSegments = std::vector<GinIndexSegment>;
