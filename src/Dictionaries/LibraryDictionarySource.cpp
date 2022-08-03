@@ -12,8 +12,6 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/registerDictionaries.h>
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
 
@@ -43,6 +41,8 @@ LibraryDictionarySource::LibraryDictionarySource(
     auto dictionaries_lib_path = context->getDictionariesLibPath();
     if (created_from_ddl && !fileOrSymlinkPathStartsWith(path, dictionaries_lib_path))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, dictionaries_lib_path);
+
+    namespace fs = std::filesystem;
 
     if (!fs::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", path);

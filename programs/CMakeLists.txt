@@ -44,15 +44,13 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data t
 # https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
 if (ENABLE_ODBC AND NOT USE_MUSL)
-    option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
-        ${ENABLE_CLICKHOUSE_ALL})
+    option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" ${ENABLE_CLICKHOUSE_ALL})
 else ()
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" OFF)
 endif ()
 
 if (NOT USE_MUSL)
-    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
-        ${ENABLE_CLICKHOUSE_ALL})
+    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source" ${ENABLE_CLICKHOUSE_ALL})
 endif ()
 
 # https://presentations.clickhouse.com/matemarketing_2020/

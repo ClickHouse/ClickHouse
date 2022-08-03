@@ -17,13 +17,7 @@ namespace DB
 class ODBCBridgeHandlerFactory : public HTTPRequestHandlerFactory, WithContext
 {
 public:
-    ODBCBridgeHandlerFactory(const std::string & name_, size_t keep_alive_timeout_, ContextPtr context_)
-        : WithContext(context_)
-        , log(&Poco::Logger::get(name_))
-        , name(name_)
-        , keep_alive_timeout(keep_alive_timeout_)
-    {
-    }
+    ODBCBridgeHandlerFactory(const std::string & name_, size_t keep_alive_timeout_, ContextPtr context_);
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
 
