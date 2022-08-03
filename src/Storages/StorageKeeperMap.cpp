@@ -39,9 +39,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int BAD_ARGUMENTS;
-extern const int KEEPER_EXCEPTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
+    extern const int KEEPER_EXCEPTION;
 }
 
 namespace
@@ -66,6 +66,8 @@ std::string base64Decode(const std::string & encoded)
     Poco::StreamCopier::copyToString(decoder, decoded);
     return decoded;
 }
+
+constexpr std::string_view default_host = "default";
 
 }
 
@@ -185,16 +187,28 @@ public:
     }
 };
 
+namespace
+{
+
+zkutil::ZooKeeperPtr getZooKeeperClient(const std::string & hosts, const ContextPtr & context)
+{
+    if (hosts == default_host)
+        return context->getZooKeeper()->startNewSession();
+
+    return std::make_shared<zkutil::ZooKeeper>(hosts);
+}
+
+}
+
 StorageKeeperMap::StorageKeeperMap(
     ContextPtr context,
     const StorageID & table_id,
     const StorageInMemoryMetadata & metadata,
     std::string_view primary_key_,
-    std::string_view keeper_path_)
-    : IKeyValueStorage(table_id)
-    , keeper_path(keeper_path_)
-    , primary_key(primary_key_)
-    , zookeeper_client(context->getZooKeeper()->startNewSession())
+    std::string_view keeper_path_,
+    const std::string & hosts,
+    bool create_missing_root_path)
+    : IKeyValueStorage(table_id), keeper_path(keeper_path_), primary_key(primary_key_), zookeeper_client(getZooKeeperClient(hosts, context))
 {
     setInMemoryMetadata(metadata);
 
@@ -203,23 +217,34 @@ StorageKeeperMap::StorageKeeperMap(
     if (!keeper_path.starts_with('/'))
         throw Exception("keeper_path should start with '/'", ErrorCodes::BAD_ARGUMENTS);
 
-    if (keeper_path != "/")
+    auto client = getClient();
+    if (keeper_path != "/" && !client->exists(keeper_path))
     {
-        LOG_TRACE(&Poco::Logger::get("StorageKeeperMap"), "Creating root path {}", keeper_path);
-
-        size_t cur_pos = 0;
-        do
+        if (!create_missing_root_path)
         {
-            size_t search_start = cur_pos + 1;
-            cur_pos = keeper_path.find('/', search_start);
-            if (search_start == cur_pos)
-                throw Exception("keeper_path is invalid, contains subsequent '/'", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Path '{}' doesn't exist. Please create it or set 'create_missing_root_path' to true'",
+                keeper_path_);
+        }
+        else
+        {
+            LOG_TRACE(&Poco::Logger::get("StorageKeeperMap"), "Creating root path {}", keeper_path);
 
-            auto path = keeper_path.substr(0, cur_pos);
-            auto status = getClient()->tryCreate(path, "", zkutil::CreateMode::Persistent);
-            if (status != Coordination::Error::ZOK && status != Coordination::Error::ZNODEEXISTS)
-                throw zkutil::KeeperException(status, path);
-        } while (cur_pos != std::string_view::npos);
+            size_t cur_pos = 0;
+            do
+            {
+                size_t search_start = cur_pos + 1;
+                cur_pos = keeper_path.find('/', search_start);
+                if (search_start == cur_pos)
+                    throw Exception("keeper_path is invalid, contains subsequent '/'", ErrorCodes::BAD_ARGUMENTS);
+
+                auto path = keeper_path.substr(0, cur_pos);
+                auto status = client->tryCreate(path, "", zkutil::CreateMode::Persistent);
+                if (status != Coordination::Error::ZOK && status != Coordination::Error::ZNODEEXISTS)
+                    throw zkutil::KeeperException(status, path);
+            } while (cur_pos != std::string_view::npos);
+        }
     }
 }
 
@@ -285,7 +310,10 @@ SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const Storage
 zkutil::ZooKeeperPtr & StorageKeeperMap::getClient() const
 {
     if (zookeeper_client->expired())
+    {
         zookeeper_client = zookeeper_client->startNewSession();
+        zookeeper_client->sync("/");
+    }
 
     return zookeeper_client;
 }
@@ -374,13 +402,29 @@ namespace
 StoragePtr create(const StorageFactory::Arguments & args)
 {
     ASTs & engine_args = args.engine_args;
-    if (engine_args.empty() || engine_args.size() > 1)
+    if (engine_args.empty() || engine_args.size() > 3)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage KeeperMap requires 1 argument: "
-            "keeper_path, path in the Keeper where the values will be stored");
+            "Storage KeeperMap requires 1-4 arguments:\n"
+            "keeper_path: path in the Keeper where the values will be stored (required)\n"
+            "keys_limit: number of keys allowed, set to 0 for no limit (default: 0)\n"
+            "hosts: comma separated Keeper hosts, set to '{0}' to use the same Keeper as ClickHouse (default: '{0}')\n"
+            "create_missing_root_path: true if the root path should be created if it's missing (default: 1)",
+            default_host);
 
-    auto keeper_path = checkAndGetLiteralArgument<String>(engine_args[0], "keeper_path");
+    auto keeper_path = checkAndGetLiteralArgument<std::string>(engine_args[0], "keeper_path");
+
+    std::string hosts = "default";
+    if (engine_args.size() > 1)
+        hosts = checkAndGetLiteralArgument<std::string>(engine_args[1], "hosts");
+
+    [[maybe_unused]] size_t keys_limit = 0;
+    if (engine_args.size() > 2)
+        keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[2], "keys_limit");
+
+    bool create_missing_root_path = true;
+    if (engine_args.size() > 3)
+        create_missing_root_path = checkAndGetLiteralArgument<UInt64>(engine_args[3], "create_missing_root_path");
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
@@ -394,7 +438,8 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (primary_key_names.size() != 1)
         throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
-    return std::make_shared<StorageKeeperMap>(args.getContext(), args.table_id, metadata, primary_key_names[0], keeper_path);
+    return std::make_shared<StorageKeeperMap>(
+        args.getContext(), args.table_id, metadata, primary_key_names[0], keeper_path, hosts, create_missing_root_path);
 }
 }
 
