@@ -28,7 +28,7 @@ static InputPorts::iterator connectAllInputs(OutputPortRawPtrs ports, InputPorts
     return input_it;
 }
 
-static ITransformingStep::Traits getTraits(bool is_filter)
+static ITransformingStep::Traits getTraits()
 {
     return ITransformingStep::Traits
     {
@@ -39,7 +39,7 @@ static ITransformingStep::Traits getTraits(bool is_filter)
             .preserves_sorting = true,
         },
         {
-            .preserves_number_of_rows = !is_filter,
+            .preserves_number_of_rows = false,
         }
     };
 }
@@ -77,6 +77,8 @@ private:
     InputPort * input_port = nullptr;
     OutputPort * output_port = nullptr;
 
+    /// Output ports should always be connected, and we can't add a step to the pipeline without them.
+    /// So, connect the port from the first processor to this dummy port and then reconnect to the second processor.
     std::unique_ptr<InputPort> dummy_input_port;
 };
 
@@ -92,7 +94,7 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     size_t max_rows_in_set_,
     CrosswiseConnectionPtr crosswise_connection_,
     JoinTableSide position_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits(false))
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , column_names(column_names_)
     , max_rows_in_set(max_rows_in_set_)
     , rhs_input_stream_header(rhs_input_stream_.header)
@@ -125,12 +127,6 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         return res;
     });
 
-    if (!filtering_set)
-    {
-        LOG_DEBUG(log, "Skip filtering {} stream", position);
-        return;
-    }
-
     Block input_header = pipeline.getHeader();
     auto pipeline_transform = [&input_header, this](OutputPortRawPtrs ports)
     {
@@ -151,6 +147,13 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
 
         /// Connect auxiliary ports
         crosswise_connection->tryConnectPorts(stream_balancer->getAuxPorts(), stream_balancer.get());
+
+        if (!filtering_set)
+        {
+            LOG_DEBUG(log, "Skip filtering {} stream", position);
+            result_transforms.emplace_back(std::move(stream_balancer));
+            return result_transforms;
+        }
 
         /// Add filtering transform, ports just connected respectively
         auto & outputs = stream_balancer->getOutputs();
