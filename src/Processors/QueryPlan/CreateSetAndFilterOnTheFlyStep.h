@@ -1,12 +1,17 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/Transforms/CreatingSetsOnTheFlyTransform.h>
 #include <Processors/DelayedPortsProcessor.h>
 
 
 namespace DB
 {
 
+/*
+ * Used to optimize JOIN when joining a small table over a large table.
+ * Currently applied only for the full sorting join.
+ * It tries to build a set for each stream.
+ * Once one stream is finished, it starts to filter another stream with this set.
+ */
 class CreateSetAndFilterOnTheFlyStep : public ITransformingStep
 {
 public:
@@ -19,7 +24,7 @@ public:
         const DataStream & input_stream_,
         const DataStream & rhs_input_stream_,
         const Names & column_names_,
-        size_t max_rows_,
+        size_t max_rows_in_set_,
         CrosswiseConnectionPtr crosswise_connection_,
         JoinTableSide position_);
 
@@ -30,6 +35,8 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     SetWithStatePtr getSet() const { return own_set; }
+
+    /// Set for another stream.
     void setFiltering(SetWithStatePtr filtering_set_) { filtering_set = filtering_set_; }
 
 private:
@@ -37,7 +44,7 @@ private:
 
     Names column_names;
 
-    size_t max_rows;
+    size_t max_rows_in_set;
 
     Block rhs_input_stream_header;
 
