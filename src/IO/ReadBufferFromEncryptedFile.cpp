@@ -21,7 +21,6 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     , encryptor(header_.algorithm, key_, header_.init_vector)
 {
     offset = offset_;
-    encryptor.setOffset(offset_);
     need_seek = true;
 }
 
@@ -60,9 +59,6 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
         assert(!hasPendingData());
     }
 
-    /// The encryptor always needs to know what the current offset is.
-    encryptor.setOffset(new_pos);
-
     return new_pos;
 }
 
@@ -94,6 +90,10 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     /// The used cipher algorithms generate the same number of bytes in output as it were in input,
     /// so after deciphering the numbers of bytes will be still `bytes_read`.
     working_buffer.resize(bytes_read);
+
+    /// The decryptor needs to know what the current offset is (because it's used in the decryption algorithm).
+    encryptor.setOffset(offset);
+
     encryptor.decrypt(encrypted_buffer.data(), bytes_read, working_buffer.begin());
 
     pos = working_buffer.begin();
