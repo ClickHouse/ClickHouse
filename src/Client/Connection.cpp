@@ -170,7 +170,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         sendHello();
         receiveHello();
-        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
@@ -271,7 +271,8 @@ void Connection::sendHello()
 
 void Connection::sendAddendum()
 {
-    writeStringBinary(quota_key, *out);
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+        writeStringBinary(quota_key, *out);
     out->next();
 }
 
