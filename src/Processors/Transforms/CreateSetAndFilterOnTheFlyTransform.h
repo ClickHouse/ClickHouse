@@ -42,7 +42,7 @@ struct SetWithState : public Set
 using SetWithStatePtr = std::shared_ptr<SetWithState>;
 
 /*
- * Create a set on the fly for incomming stream.
+ * Create a set on the fly for incoming stream.
  * The set is created from the key columns of the input block.
  * Data is not changed and returned as is.
  * Can be executed in parallel, but blocks on operations with set.
