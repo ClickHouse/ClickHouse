@@ -29,7 +29,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 
 ## Поддерживаемые типы данных {#data_types-support}
 
-| PostgerSQL       | ClickHouse                                                   |
+| PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
 | DATE             | [Date](../../sql-reference/data-types/date.md)               |
 | TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
