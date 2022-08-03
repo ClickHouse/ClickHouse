@@ -134,6 +134,8 @@ void TCPHandler::runImpl()
     {
         receiveHello();
         sendHello();
+        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+            receiveAddendum();
 
         if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
         {
@@ -1019,6 +1021,7 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     client_info.connection_client_version_patch = client_version_patch;
     client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
 
+    client_info.quota_key = quota_key;
     client_info.interface = interface;
 
     return res;
@@ -1075,6 +1078,12 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     session->authenticate(user, password, socket().peerAddress());
+}
+
+void TCPHandler::receiveAddendum()
+{
+    readStringBinary(quota_key, *in);
+    session->getClientInfo().quota_key = quota_key;
 }
 
 

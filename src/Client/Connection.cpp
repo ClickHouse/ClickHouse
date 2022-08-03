@@ -64,6 +64,7 @@ Connection::~Connection() = default;
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
+    const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
     const String & client_name_,
@@ -71,7 +72,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     Protocol::Secure secure_,
     Poco::Timespan sync_request_timeout_)
     : host(host_), port(port_), default_database(default_database_)
-    , user(user_), password(password_)
+    , user(user_), password(password_), quota_key(quota_key_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
@@ -169,6 +170,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         sendHello();
         receiveHello();
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+            sendAddendum();
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
@@ -262,6 +265,13 @@ void Connection::sendHello()
         writeStringBinary(password, *out);
     }
 
+    out->next();
+}
+
+
+void Connection::sendAddendum()
+{
+    writeStringBinary(quota_key, *out);
     out->next();
 }
 
@@ -1083,6 +1093,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.default_database,
         parameters.user,
         parameters.password,
+        parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */
         "client",
