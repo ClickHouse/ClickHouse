@@ -148,6 +148,7 @@ class Release:
                 with self.stable():
                     logging.info("Stable part of the releasing is done")
 
+        self.log_post_workflows()
         self.log_rollback()
 
     def check_no_tags_after(self):
@@ -191,6 +192,15 @@ class Release:
                 "To rollback the action run the following commands:\n  %s",
                 "\n  ".join(rollback),
             )
+
+    def log_post_workflows(self):
+        logging.info(
+            "To verify all actions are running good visit the following links:\n  %s",
+            "\n  ".join(
+                f"https://github.com/{self.repo}/actions/workflows/{action}.yml"
+                for action in ("release", "tags_stable")
+            ),
+        )
 
     @contextmanager
     def create_release_branch(self):
