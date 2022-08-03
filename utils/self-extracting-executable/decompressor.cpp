@@ -28,9 +28,6 @@
 
 #include "types.h"
 
-char decompressed_suffix[7] = {0};
-uint64_t decompressed_umask = 0;
-
 /// decompress part
 int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
                off_t input_size, off_t output_size, ZSTD_DCtx* dctx)
@@ -166,7 +163,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
 
 
 /// Read data about files and decomrpess them.
-int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge)
+int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
@@ -249,7 +246,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             }
             close(fd);
             strncpy(decompressed_suffix, file_name + strlen(file_name) - 6, 6);
-            decompressed_umask = le64toh(file_info.umask);
+            *decompressed_umask = le64toh(file_info.umask);
             have_compressed_analoge = true;
         }
 
@@ -334,9 +331,11 @@ int main(int/* argc*/, char* argv[])
     }
 
     bool have_compressed_analoge = false;
+    char decompressed_suffix[7] = {0};
+    uint64_t decompressed_umask = 0;
 
     /// Decompress all files
-    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge))
+    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge, decompressed_suffix, &decompressed_umask))
     {
         printf("Error happened during decompression.\n");
         if (0 != close(input_fd))
