@@ -979,7 +979,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
     assert(!ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
-    if (txn && txn->isInitialQuery())
+    if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
@@ -995,7 +995,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest -= getMetadataHash(table_name);
-    if (txn)
+    if (txn && !txn->isCreateOrReplaceQuery())
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
@@ -1028,11 +1028,14 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         String metadata_zk_path_to = zookeeper_path + "/metadata/" + escapeForFileName(to_table_name);
-        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+        if (!txn->isCreateOrReplaceQuery())
+            txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
+
         if (exchange)
         {
             txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path_to, -1));
-            txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
+            if (!txn->isCreateOrReplaceQuery())
+                txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement_to, zkutil::CreateMode::Persistent));
         }
         txn->addOp(zkutil::makeCreateRequest(metadata_zk_path_to, statement, zkutil::CreateMode::Persistent));
     }
@@ -1062,7 +1065,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     assert(!ddl_worker->isCurrentlyActive() || txn);
 
     String statement = getObjectDefinitionFromCreateQuery(query.clone());
-    if (txn && txn->isInitialQuery())
+    if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
@@ -1072,7 +1075,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
     new_digest += DB::getMetadataHash(query.getTable(), statement);
-    if (txn)
+    if (txn && !txn->isCreateOrReplaceQuery())
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
@@ -1085,6 +1088,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
+    assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);

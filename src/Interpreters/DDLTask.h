@@ -182,6 +182,12 @@ class ZooKeeperMetadataTransaction
     String task_path;
     Coordination::Requests ops;
 
+    /// CREATE OR REPLACE is special query that consists of 3 separate DDL queries (CREATE, RENAME, DROP)
+    /// and not all changes should be applied to metadata in ZooKeeper
+    /// (otherwise we may get partially applied changes on connection loss).
+    /// So we need this flag to avoid doing unnecessary operations with metadata.
+    bool is_create_or_replace_query = false;
+
 public:
     ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_, const String & task_path_)
     : current_zookeeper(current_zookeeper_)
@@ -200,6 +206,10 @@ public:
     String getTaskZooKeeperPath() const { return task_path; }
 
     ZooKeeperPtr getZooKeeper() const { return current_zookeeper; }
+
+    void setIsCreateOrReplaceQuery() { is_create_or_replace_query = true; }
+
+    bool isCreateOrReplaceQuery() const { return is_create_or_replace_query; }
 
     void addOp(Coordination::RequestPtr && op)
     {

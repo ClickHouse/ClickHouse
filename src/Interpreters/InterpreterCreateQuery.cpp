@@ -1366,25 +1366,15 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 {
     /// Replicated database requires separate contexts for each DDL query
     ContextPtr current_context = getContext();
+    if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        txn->setIsCreateOrReplaceQuery();
     ContextMutablePtr create_context = Context::createCopy(current_context);
     create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
 
-    auto make_drop_context = [&](bool on_error) -> ContextMutablePtr
+    auto make_drop_context = [&]() -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
-        drop_context->makeQueryContext();
-        if (on_error)
-            return drop_context;
-
-        if (auto txn = current_context->getZooKeeperMetadataTransaction())
-        {
-            /// Execute drop as separate query, because [CREATE OR] REPLACE query can be considered as
-            /// successfully executed after RENAME/EXCHANGE query.
-            drop_context->resetZooKeeperMetadataTransaction();
-            auto drop_txn = std::make_shared<ZooKeeperMetadataTransaction>(txn->getZooKeeper(), txn->getDatabaseZooKeeperPath(),
-                                                                           txn->isInitialQuery(), txn->getTaskZooKeeperPath());
-            drop_context->initZooKeeperMetadataTransaction(drop_txn);
-        }
+        drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
         return drop_context;
     };
 
@@ -1460,7 +1450,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
             /// Target table was replaced with new one, drop old table
-            auto drop_context = make_drop_context(false);
+            auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
 
@@ -1473,7 +1463,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// Drop temporary table if it was successfully created, but was not renamed to target name
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context(true);
+            auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
         throw;
