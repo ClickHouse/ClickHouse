@@ -333,7 +333,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-13",  # For TSAN builds, see #39450
+            "clang-15",  # For TSAN builds, see #39450
             "clang-14",
             "clang-14-darwin",
             "clang-14-darwin-aarch64",
