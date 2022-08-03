@@ -606,7 +606,7 @@ void finalizeMutatedPart(
 
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
-    new_data_part->setBytesOnDisk(new_data_part->checksums->getTotalSizeOnDisk());
+    new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
     /// Also use information from checksums
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
