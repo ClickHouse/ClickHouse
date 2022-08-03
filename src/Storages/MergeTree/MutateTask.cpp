@@ -441,7 +441,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
 
     for (const auto & column_name : column_names)
     {
-        if (auto serialization = data_part->getSerialization(column_name))
+        if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
