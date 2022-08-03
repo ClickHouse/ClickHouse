@@ -125,63 +125,58 @@ size_t MergeTreeReaderStream::getRightOffset(size_t right_mark_non_included)
     size_t result_right_offset;
     if (0 < right_mark_non_included && right_mark_non_included < marks_count)
     {
-        auto right_mark = marks_loader.getMark(right_mark_non_included);
-        result_right_offset = right_mark.offset_in_compressed_file;
+        /// Find the right border of the last mark we need to read.
+        /// To do that let's find the upper bound of the offset of the last
+        /// included mark.
 
-        bool need_to_check_marks_from_the_right = false;
+        /// In LowCardinality dictionary and in values of Sparse columns
+        /// several consecutive marks can point to the same offset.
+        ///
+        /// Example:
+        ///  Mark 186, points to [2003111, 0]
+        ///  Mark 187, points to [2003111, 0]
+        ///  Mark 188, points to [2003111, 0] <--- for example need to read until 188
+        ///  Mark 189, points to [2003111, 0] <--- not suitable, because have same offset
+        ///  Mark 190, points to [2003111, 0]
+        ///  Mark 191, points to [2003111, 0]
+        ///  Mark 192, points to [2081424, 0] <--- what we are looking for
+        ///  Mark 193, points to [2081424, 0]
+        ///  Mark 194, points to [2081424, 0]
 
-        /// If the end of range is inside the block, we will need to read it too.
-        if (right_mark.offset_in_decompressed_block > 0)
-        {
-            need_to_check_marks_from_the_right = true;
-        }
-        else if (is_low_cardinality_dictionary)
-        {
-            /// Also, in LowCardinality dictionary several consecutive marks can point to
-            /// the same offset. So to get true bytes offset we have to get first
-            /// non-equal mark.
-            /// Example:
-            ///  Mark 186, points to [2003111, 0]
-            ///  Mark 187, points to [2003111, 0]
-            ///  Mark 188, points to [2003111, 0] <--- for example need to read until 188
-            ///  Mark 189, points to [2003111, 0] <--- not suitable, because have same offset
-            ///  Mark 190, points to [2003111, 0]
-            ///  Mark 191, points to [2003111, 0]
-            ///  Mark 192, points to [2081424, 0] <--- what we are looking for
-            ///  Mark 193, points to [2081424, 0]
-            ///  Mark 194, points to [2081424, 0]
+        /// Also, in some cases, when one granule is not-atomically written (which is possible at merges)
+        /// one granule may require reading of two dictionaries which starts from different marks.
+        /// The only correct way is to take offset from at least next different granule from the right one.
+        /// So, that's why we have to read one extra granule to the right,
+        /// while reading dictionary of LowCardinality.
 
-            /// Also, in some cases, when one granule is not-atomically written (which is possible at merges)
-            /// one granule may require reading of two dictionaries which starts from different marks.
-            /// The only correct way is to take offset from at least next different granule from the right one.
+        /// If right_mark_non_included has non-zero offset in decompressed block, we have to
+        /// read its compressed block in a whole, because it may consist data from previous granule.
+        ///
+        /// For example:
+        /// Mark 10: (758287, 0)      <--- right_mark_included
+        /// Mark 11: (908457, 53477)  <--- right_mark_non_included
+        /// Mark 12: (1064746, 20742) <--- what we are looking for
+        /// Mark 13: (2009333, 40123)
+        ///
+        /// Since mark 11 starts from offset in decompressed block 53477,
+        /// it has some data from mark 10 and we have to read
+        /// compressed block  [908457; 1064746 in a whole.
 
-            /// Check test_s3_low_cardinality_right_border.
+        size_t right_mark_included = right_mark_non_included - 1;
+        if (is_low_cardinality_dictionary || marks_loader.getMark(right_mark_non_included).offset_in_decompressed_block != 0)
+            ++right_mark_included;
 
-            need_to_check_marks_from_the_right = true;
-        }
-
-
-        /// Let's go to the right and find mark with bigger offset in compressed file
-        if (need_to_check_marks_from_the_right)
-        {
-            bool found_bigger_mark = false;
-            for (size_t i = right_mark_non_included + 1; i < marks_count; ++i)
+        auto indices = collections::range(right_mark_included, marks_count);
+        auto it = std::upper_bound(indices.begin(), indices.end(), right_mark_included,
+            [&](auto lhs, auto rhs)
             {
-                const auto & candidate_mark =  marks_loader.getMark(i);
-                if (result_right_offset < candidate_mark.offset_in_compressed_file)
-                {
-                    result_right_offset = candidate_mark.offset_in_compressed_file;
-                    found_bigger_mark = true;
-                    break;
-                }
-            }
+                return marks_loader.getMark(lhs).offset_in_compressed_file < marks_loader.getMark(rhs).offset_in_compressed_file;
+            });
 
-            if (!found_bigger_mark)
-            {
-                /// If there are no marks after the end of range, just use file size
-                result_right_offset = file_size;
-            }
-        }
+        if (it != indices.end())
+            result_right_offset = marks_loader.getMark(*it).offset_in_compressed_file;
+        else
+            result_right_offset = file_size;
     }
     else if (right_mark_non_included == 0)
         result_right_offset = marks_loader.getMark(right_mark_non_included).offset_in_compressed_file;
