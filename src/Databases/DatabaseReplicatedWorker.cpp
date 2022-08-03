@@ -67,23 +67,33 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
 
-    String digest;
-    if (!zookeeper->tryGet(database->replica_path + "/digest", digest))
+    UInt64 digest;
+    String digest_str;
+    UInt64 local_digest;
+    if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
+    {
+        digest = parse<UInt64>(digest_str);
+        std::lock_guard lock{database->metadata_mutex};
+        local_digest = database->tables_metadata_digest;
+    }
+    else
     {
         /// Database was created by old ClickHouse versions, let's create the node
-        digest = toString(database->tables_metadata_digest);
-        zookeeper->create(database->replica_path + "/digest", digest, zkutil::CreateMode::Persistent);
+        std::lock_guard lock{database->metadata_mutex};
+        digest = local_digest = database->tables_metadata_digest;
+        digest_str = toString(digest);
+        zookeeper->create(database->replica_path + "/digest", digest_str, zkutil::CreateMode::Persistent);
     }
 
     bool is_new_replica = our_log_ptr == 0;
     bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
-    bool lost_according_to_digest = database->db_settings.check_consistency && database->tables_metadata_digest != parse<UInt64>(digest);
+    bool lost_according_to_digest = database->db_settings.check_consistency && local_digest != digest;
 
     if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
     {
         if (!is_new_replica)
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
-                        our_log_ptr, max_log_ptr, database->tables_metadata_digest, digest);
+                        our_log_ptr, max_log_ptr, local_digest, digest);
         database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
         zookeeper->set(database->replica_path + "/log_ptr", toString(max_log_ptr));
         initializeLogPointer(DDLTaskBase::getLogEntryName(max_log_ptr));
@@ -94,6 +104,10 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         last_skipped_entry_name.emplace(log_entry_name);
         initializeLogPointer(log_entry_name);
     }
+
+    std::lock_guard lock{database->metadata_mutex};
+    if (!database->checkDigestValid(context))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
 }
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)

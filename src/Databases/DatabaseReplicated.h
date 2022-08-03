@@ -112,7 +112,7 @@ private:
     }
 
     UInt64 getMetadataHash(const String & table_name) const;
-    bool debugCheckDigest(const ContextPtr & local_context) const;
+    bool checkDigestValid(const ContextPtr & local_context, bool debug_check = true) const TSA_REQUIRES(metadata_mutex);
 
     String zookeeper_path;
     String shard_name;
@@ -131,7 +131,11 @@ private:
     /// Usually operation with metadata are single-threaded because of the way replication works,
     /// but StorageReplicatedMergeTree may call alterTable outside from DatabaseReplicatedDDLWorker causing race conditions.
     std::mutex metadata_mutex;
-    UInt64 tables_metadata_digest = 0;
+
+    /// Sum of hashes of pairs (table_name, table_create_statement).
+    /// We calculate this sum from local metadata files and compare it will value in ZooKeeper.
+    /// It allows to detect if metadata is broken and recover replica.
+    UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
 
     mutable ClusterPtr cluster;
 };
