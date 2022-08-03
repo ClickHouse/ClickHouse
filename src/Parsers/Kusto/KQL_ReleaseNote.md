@@ -22,6 +22,39 @@ The config setting to allow modify dialect setting.
    OR 
       pass dialect setting with '--'. For example : 
       ` clickhouse-client --dialect='kusto_auto' -q "KQL query" `
+# Augest 1, 2022
+- **strcmp** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/strcmpfunction)  
+   `print strcmp('abc','ABC')`
+
+- **parse_url** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parseurlfunction)  
+   `print Result = parse_url('scheme://username:password@www.google.com:1234/this/is/a/path?k1=v1&k2=v2#fragment')`
+
+- **parse_urlquery** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parseurlqueryfunction)  
+   `print Result = parse_urlquery('k1=v1&k2=v2&k3=v3')`
+
+- **print operator** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/printoperator)  
+   `print x=1, s=strcat('Hello', ', ', 'World!')`
+
+- **The following functions now support arbitrary expressions as their argument:**
+   - [ipv4_is_private](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-privatefunction)
+   - [ipv4_is_in_range](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-in-range-function)
+   - [ipv4_netmask_suffix](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-netmask-suffix-function)
+
+- **Aggregate Functions:**
+ - [make_list()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/makelist-aggfunction)  
+   `Customers | summarize t = make_list(FirstName) by FirstName`
+   `Customers | summarize t = make_list(FirstName, 10) by FirstName`
+ - [make_list_if()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/makelistif-aggfunction)  
+   `Customers | summarize t = make_list_if(FirstName, Age > 10) by FirstName`
+   `Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName`
+ - [make_list_with_nulls()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-list-with-nulls-aggfunction)  
+   `Customers | summarize t = make_list_with_nulls(FirstName) by FirstName`
+ - [make_set()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/makeset-aggfunction)  
+   `Customers | summarize t = make_set(FirstName) by FirstName`
+   `Customers | summarize t = make_set(FirstName, 10) by FirstName`
+ - [make_set_if()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/makesetif-aggfunction)  
+   `Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName`
+   `Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName`
 
       
 # July 17, 2022
@@ -236,19 +269,20 @@ Please note that the functions listed below only take constant parameters for no
  - tolower()  
     `Customers | project tolower(FirstName)`
 
-# July 29, 2022
  ## Aggregate Functions
- - make_list()
-   `Customers | summarize t = make_list(FirstName) by FirstName`
-   `Customers | summarize t = make_list(FirstName, 10) by FirstName`
- - make_list_if()
-   `Customers | summarize t = make_list_if(FirstName, Age > 10) by FirstName`
-   `Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName`
- - make_list_with_nulls()
-   `Customers | summarize t = make_list_with_nulls(FirstName) by FirstName`
- - make_set()
-   `Customers | summarize t = make_set(FirstName) by FirstName`
-   `Customers | summarize t = make_set(FirstName, 10) by FirstName`
- - make_set_if()
-   `Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName`
-   `Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName`
+ - arg_max()
+ - arg_min()
+ - avg()
+ - avgif()
+ - count()
+ - countif()
+ - max()
+ - maxif()
+ - min()
+ - minif()
+ - sum()
+ - sumif()
+ - dcount()
+ - dcountif()
+ - bin
+ 
