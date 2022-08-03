@@ -185,7 +185,7 @@ class Release:
 
     def log_rollback(self):
         if self._rollback_stack:
-            rollback = self._rollback_stack
+            rollback = self._rollback_stack.copy()
             rollback.reverse()
             logging.info(
                 "To rollback the action run the following commands:\n  %s",
