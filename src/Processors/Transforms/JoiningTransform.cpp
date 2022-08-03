@@ -409,21 +409,21 @@ IProcessor::Status ParallelJoinTransform::prepare()
                         left_read = true;
 
                         // remove duplicates
-                        IColumn::Filter filt(block.rows());
-                        size_t shift = 1;
+                        IColumn::Filter filt(col->size());
                         size_t row = 0;
-                        for (; row+shift < col->size();)
+                        size_t shift = 1;
+                        filt[0] = 1;
+                        for (; shift < col->size();)
                         {
-                            auto comp = col->compareAt(row, row + shift, *col, 0);
-                            if (comp)
+                            auto comp = col->compareAt(row, shift, *col, 0);
+                            if (!comp)
                             {
-                                row = row + shift;
-                                filt[row + shift] = 1;
+                                filt[shift] = 0;
+                                row = shift;
                             }
                             else
                             {
-                                filt[row + shift] = 0;
-                                row++;
+                                filt[shift] = 1;
                             }
 
                             shift++;
@@ -600,22 +600,17 @@ IProcessor::Status ParallelJoinTransform::prepare()
                     }
                 }
 
-
-                if (status[inp].right_rest)
+                if (current_input->isFinished())
+                {
+                    status[inp].left_rest = false;
+                    status[inp].right_rest = false;
+                }
+                else if (status[inp].right_rest)
                 {
                     current_input->setNeeded();
                     // return Status::NeedData;  // sequence guaranteed ?
 
                 }
-                // else if (status[inp].left_rest)
-                // {
-                // }
-
-                // if (!status[inp].right_rest)
-                // {
-                //     right_col.filter(filt, -1);
-                //     LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "added {} columns", i);
-                // }
             }
           EOFL:
             if (!left_read && status[0].blocks.empty() && !inputs.begin()->isFinished())
