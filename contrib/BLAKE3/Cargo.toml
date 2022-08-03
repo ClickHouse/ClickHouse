@@ -1,5 +1,5 @@
 [package]
-name = "BLAKE3-cmake"
+name = "blake3"
 version = "0.1.0"
 edition = "2021"
 
