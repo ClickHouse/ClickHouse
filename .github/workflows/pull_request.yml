@@ -1263,7 +1263,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_s3_storage_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (debug, s3 storage, actions)
+          CHECK_NAME=Stateless tests (debug, s3 storage)
           REPO_COPY=${{runner.temp}}/stateless_s3_storage_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1300,7 +1300,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_s3_storage_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (debug, s3 storage, actions)
+          CHECK_NAME=Stateless tests (debug, s3 storage)
           REPO_COPY=${{runner.temp}}/stateless_s3_storage_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1337,7 +1337,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_s3_storage_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (debug, s3 storage, actions)
+          CHECK_NAME=Stateless tests (debug, s3 storage)
           REPO_COPY=${{runner.temp}}/stateless_s3_storage_debug/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=2
@@ -1374,7 +1374,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_s3_storage_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread, s3 storage, actions)
+          CHECK_NAME=Stateless tests (thread, s3 storage)
           REPO_COPY=${{runner.temp}}/stateless_s3_storage_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=0
@@ -1411,7 +1411,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_s3_storage_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread, s3 storage, actions)
+          CHECK_NAME=Stateless tests (thread, s3 storage)
           REPO_COPY=${{runner.temp}}/stateless_s3_storage_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=1
@@ -1448,7 +1448,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_s3_storage_tsan
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (thread, s3 storage, actions)
+          CHECK_NAME=Stateless tests (thread, s3 storage)
           REPO_COPY=${{runner.temp}}/stateless_s3_storage_tsan/ClickHouse
           KILL_TIMEOUT=10800
           RUN_BY_HASH_NUM=2
