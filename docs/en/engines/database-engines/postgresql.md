@@ -13,53 +13,52 @@ Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `
 
 ## Creating a Database {#creating-a-database}
 
-``` sql
+```sql
 CREATE DATABASE test_database
 ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
 ```
 
 **Engine Parameters**
 
--   `host:port` — PostgreSQL server address.
--   `database` — Remote database name.
--   `user` — PostgreSQL user.
--   `password` — User password.
--   `schema` — PostgreSQL schema.
--   `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — PostgreSQL schema.
+- `use_table_cache` — Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
 ## Data Types Support {#data_types-support}
 
-| PostgerSQL       | ClickHouse                                                   |
-|------------------|--------------------------------------------------------------|
-| DATE             | [Date](../../sql-reference/data-types/date.md)               |
-| TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
-| REAL             | [Float32](../../sql-reference/data-types/float.md)           |
-| DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
-| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)       |
-| SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
-| INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
-| BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
-| SERIAL           | [UInt32](../../sql-reference/data-types/int-uint.md)         |
-| BIGSERIAL        | [UInt64](../../sql-reference/data-types/int-uint.md)         |
-| TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
-| INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
-| ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
-
+| PostgreSQL       | ClickHouse                                                    |
+| ---------------- | ------------------------------------------------------------- |
+| DATE             | [Date](../../sql-reference/data-types/date.md)                |
+| TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)        |
+| REAL             | [Float32](../../sql-reference/data-types/float.md)            |
+| DOUBLE           | [Float64](../../sql-reference/data-types/float.md)            |
+| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)          |
+| SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)           |
+| INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)           |
+| BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)           |
+| SERIAL           | [UInt32](../../sql-reference/data-types/int-uint.md)          |
+| BIGSERIAL        | [UInt64](../../sql-reference/data-types/int-uint.md)          |
+| TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)            |
+| INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md)) |
+| ARRAY            | [Array](../../sql-reference/data-types/array.md)              |
 
 ## Examples of Use {#examples-of-use}
 
 Database in ClickHouse, exchanging data with the PostgreSQL server:
 
-``` sql
+```sql
 CREATE DATABASE test_database
 ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
 ```
 
-``` sql
+```sql
 SHOW DATABASES;
 ```
 
-``` text
+```text
 ┌─name──────────┐
 │ default       │
 │ test_database │
@@ -67,11 +66,11 @@ SHOW DATABASES;
 └───────────────┘
 ```
 
-``` sql
+```sql
 SHOW TABLES FROM test_database;
 ```
 
-``` text
+```text
 ┌─name───────┐
 │ test_table │
 └────────────┘
@@ -79,11 +78,11 @@ SHOW TABLES FROM test_database;
 
 Reading data from the PostgreSQL table:
 
-``` sql
+```sql
 SELECT * FROM test_database.test_table;
 ```
 
-``` text
+```text
 ┌─id─┬─value─┐
 │  1 │     2 │
 └────┴───────┘
@@ -91,12 +90,12 @@ SELECT * FROM test_database.test_table;
 
 Writing data to the PostgreSQL table:
 
-``` sql
+```sql
 INSERT INTO test_database.test_table VALUES (3,4);
 SELECT * FROM test_database.test_table;
 ```
 
-``` text
+```text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 │      3 │     4 │
@@ -105,16 +104,17 @@ SELECT * FROM test_database.test_table;
 
 Consider the table structure was modified in PostgreSQL:
 
-``` sql
+```sql
 postgre> ALTER TABLE test_table ADD COLUMN data Text
 ```
 
 As the `use_table_cache` parameter was set to `1` when the database was created, the table structure in ClickHouse was cached and therefore not modified:
 
-``` sql
+```sql
 DESCRIBE TABLE test_database.test_table;
 ```
-``` text
+
+```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │
 │ value  │ Nullable(Integer) │
@@ -123,16 +123,16 @@ DESCRIBE TABLE test_database.test_table;
 
 After detaching the table and attaching it again, the structure was updated:
 
-``` sql
+```sql
 DETACH TABLE test_database.test_table;
 ATTACH TABLE test_database.test_table;
 DESCRIBE TABLE test_database.test_table;
 ```
-``` text
+
+```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │
 │ value  │ Nullable(Integer) │
 │ data   │ Nullable(String)  │
 └────────┴───────────────────┘
 ```
-
