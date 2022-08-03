@@ -96,10 +96,17 @@ class Release:
 
     def check_prerequisites(self):
         """
-        Check tooling installed in the system
+        Check tooling installed in the system, `git` is checked by Git() init
         """
-        self.run("gh auth status")
-        self.run("git status")
+        try:
+            self.run("gh auth status")
+        except subprocess.SubprocessError:
+            logging.error(
+                "The github-cli either not installed or not setup, please follow "
+                "the instructions on https://github.com/cli/cli#installation and "
+                "https://cli.github.com/manual/"
+            )
+            raise
 
     def do(self, check_dirty: bool, check_branch: bool, with_release_branch: bool):
         self.check_prerequisites()
