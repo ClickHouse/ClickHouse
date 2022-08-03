@@ -20,6 +20,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 
@@ -171,6 +172,12 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void forceReconfigure(const nuraft::ptr<nuraft::cluster_config> & new_config)
     {
         reconfigure(new_config);
+    }
+
+    void commit_in_bg() override
+    {
+        MemoryTrackerBlockerInThread blocker;
+        nuraft::raft_server::commit_in_bg();
     }
 
     using nuraft::raft_server::raft_server;
