@@ -36,7 +36,7 @@ static ITransformingStep::Traits getTraits(bool is_filter)
             .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = false, /// resize doesn't perserve sorting (TODO fixit)
+            .preserves_sorting = true,
         },
         {
             .preserves_number_of_rows = !is_filter,
