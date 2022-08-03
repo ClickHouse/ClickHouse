@@ -133,7 +133,7 @@ struct MapApplyImpl
     }
 };
 
-void registerFunctionMapApply(FunctionFactory & factory)
+REGISTER_FUNCTION(MapApply)
 {
     factory.registerFunction<FunctionArrayMapped<MapFilterImpl, MapFilterImpl>>();
     factory.registerFunction<FunctionArrayMapped<MapApplyImpl, MapApplyImpl>>();
