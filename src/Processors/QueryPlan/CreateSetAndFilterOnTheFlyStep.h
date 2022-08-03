@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class CreatingSetOnTheFlyStep : public ITransformingStep
+class CreateSetAndFilterOnTheFlyStep : public ITransformingStep
 {
 public:
     /// Two instances of step need some shared state to connect processors crosswise
@@ -15,7 +15,7 @@ public:
     using CrosswiseConnectionPtr = std::shared_ptr<CrosswiseConnection>;
     static CrosswiseConnectionPtr createCrossConnection();
 
-    CreatingSetOnTheFlyStep(
+    CreateSetAndFilterOnTheFlyStep(
         const DataStream & input_stream_,
         const DataStream & rhs_input_stream_,
         const Names & column_names_,
@@ -48,7 +48,7 @@ private:
 
     JoinTableSide position;
 
-    Poco::Logger * log = &Poco::Logger::get("CreatingSetOnTheFlyStep");
+    Poco::Logger * log = &Poco::Logger::get("CreateSetAndFilterOnTheFlyStep");
 };
 
 }

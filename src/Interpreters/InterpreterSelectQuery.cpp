@@ -39,7 +39,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/CreatingSetOnTheFlyStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -1446,13 +1446,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         plan.addStep(std::move(sorting_step));
                     };
 
-                    auto crosswise_connection = CreatingSetOnTheFlyStep::createCrossConnection();
+                    auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
                     auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const DataStream & rhs_data_stream, const Names & key_names, JoinTableSide join_pos)
                     {
                         /// Small number of rows is unreasonable
                         size_t max_rows = std::max<size_t>(100, settings.max_rows_in_set_to_optimize_join);
 
-                        auto creating_set_step = std::make_unique<CreatingSetOnTheFlyStep>(
+                        auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
                             plan.getCurrentDataStream(), rhs_data_stream, key_names, max_rows, crosswise_connection, join_pos);
                         creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos));
 
