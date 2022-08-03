@@ -7,7 +7,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>
-#include <Processors/DelayedPortsProcessor.h>
+#include <Processors/PingPongProcessor.h>
 
 namespace DB
 {
