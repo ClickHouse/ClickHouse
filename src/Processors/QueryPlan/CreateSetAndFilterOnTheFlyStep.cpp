@@ -149,7 +149,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         input_it++;
         assert(input_it == stream_balancer->getInputs().end());
 
-        /// Connect auxilary ports
+        /// Connect auxiliary ports
         crosswise_connection->tryConnectPorts(stream_balancer->getAuxPorts(), stream_balancer.get());
 
         /// Add filtering transform, ports just connected respectively
@@ -170,7 +170,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         return result_transforms;
     };
 
-    /// Auxilary port stream_balancer can be connected later (by crosswise_connection).
+    /// Auxiliary port stream_balancer can be connected later (by crosswise_connection).
     /// So, use unsafe `transform` with `check_ports = false` to avoid assertions
     pipeline.transform(std::move(pipeline_transform), /* check_ports= */ false);
 }

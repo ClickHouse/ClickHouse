@@ -91,7 +91,7 @@ IProcessor::Status CreatingSetsOnTheFlyTransform::prepare()
         else
         {
             /// Should not happen because processor inserted before join that reads all the data
-            /// But let's hanlde this case just for safety.
+            /// But let's handle this case just for safety.
             set->state = SetWithState::State::Suspended;
             LOG_DEBUG(log, "{}: Processor finished, but not all input was read, cancelling building set after using {}",
                 getDescription(), formatBytesHumanReadable(set->getTotalByteCount()));
@@ -125,7 +125,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
                 LOG_DEBUG(log, "{}: set limit exceeded, give up building set, after reading {} rows and using {}",
                     getDescription(), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
             }
-            /// Probaply we need to clear set here, because it's unneded anymore
+            /// Probaply we need to clear set here, because it's unneeded anymore
             /// But now `Set` doesn't have such method, so reset pointer in all processors and then it should be freed
             set.reset();
         }

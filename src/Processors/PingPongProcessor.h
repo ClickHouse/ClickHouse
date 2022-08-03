@@ -74,7 +74,7 @@ protected:
     OutputPort & aux_out_port;
 
     bool is_send = false;
-    bool is_recieved = false;
+    bool is_received = false;
 
     bool ready_to_send = false;
 

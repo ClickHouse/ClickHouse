@@ -117,7 +117,7 @@ bool PingPongProcessor::recievePing()
     if (aux_in_port.hasData())
     {
         aux_in_port.pull();
-        is_recieved = true;
+        is_received = true;
         aux_in_port.close();
         return true;
     }
@@ -131,7 +131,7 @@ bool PingPongProcessor::canSend() const
 
 IProcessor::Status PingPongProcessor::prepare()
 {
-    if (!set_needed_once && !is_recieved && !aux_in_port.isFinished())
+    if (!set_needed_once && !is_received && !aux_in_port.isFinished())
     {
         set_needed_once = true;
         aux_in_port.setNeeded();
@@ -139,17 +139,17 @@ IProcessor::Status PingPongProcessor::prepare()
 
     if (order == First || is_send)
     {
-        if (!is_recieved)
+        if (!is_received)
         {
-            bool recieved = recievePing();
-            if (!recieved)
+            bool received = recievePing();
+            if (!received)
             {
                 return Status::NeedData;
             }
         }
     }
 
-    if (order == Second || is_recieved)
+    if (order == Second || is_received)
     {
         if (!is_send && canSend())
         {
@@ -164,17 +164,17 @@ IProcessor::Status PingPongProcessor::prepare()
     {
         if (order == First || is_send)
         {
-            if (!is_recieved)
+            if (!is_received)
             {
-                bool recieved = recievePing();
-                if (!recieved)
+                bool received = recievePing();
+                if (!received)
                 {
                     return Status::NeedData;
                 }
             }
         }
 
-        if (order == Second || is_recieved)
+        if (order == Second || is_received)
         {
             if (!is_send && canSend())
             {
