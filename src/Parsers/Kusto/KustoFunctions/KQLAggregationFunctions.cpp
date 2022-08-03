@@ -20,25 +20,21 @@ namespace DB
 
 bool ArgMax::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"argMax");
 }
 
 bool ArgMin::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"argMin");
 }
 
 bool Avg::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"avg");
 }
 
 bool AvgIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"avgIf");
 }
 
@@ -72,13 +68,11 @@ bool BuildSchema::convertImpl(String &out,IParser::Pos &pos)
 
 bool Count::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"count");
 }
 
 bool CountIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"countIf");
 }
 
@@ -125,60 +119,102 @@ bool MakeBagIf::convertImpl(String &out,IParser::Pos &pos)
 
 bool MakeList::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    ++pos;
+    const auto expr = getConvertedArgument(fn_name,pos);
+    if (pos->type == TokenType::Comma)
+    {
+        ++pos;
+        const auto max_size = getConvertedArgument(fn_name,pos);
+        out = "groupArrayIf(" + max_size + ")(" + expr + " , " + expr + " IS NOT NULL)";
+    } else
+        out = "groupArrayIf(" + expr + " , " + expr + " IS NOT NULL)";
+    return true;
 }
 
 bool MakeListIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    ++pos;
+    const auto expr = getConvertedArgument(fn_name,pos);
+    ++pos;
+    const auto predicate = getConvertedArgument(fn_name,pos);
+    if (pos->type == TokenType::Comma)
+    {
+        ++pos;
+        const auto max_size = getConvertedArgument(fn_name,pos);
+        out = "groupArrayIf(" + max_size + ")(" + expr + " , " + predicate+ " )";
+    } else
+        out = "groupArrayIf(" + expr + " , " + predicate+ " )";
+    return true;
 }
 
 bool MakeListWithNulls::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out,pos,"groupArray"); //groupArray takes everything including NULLs
 }
 
 bool MakeSet::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    ++pos;
+    const auto expr = getConvertedArgument(fn_name,pos);
+    if (pos->type == TokenType::Comma)
+    {
+        ++pos;
+        const auto max_size = getConvertedArgument(fn_name,pos);
+        out = "groupUniqArray(" + max_size + ")(" + expr + ")";
+    } else
+        out = "groupUniqArray(" + expr + ")";    
+    return true;
 }
 
 bool MakeSetIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    ++pos;
+    const auto expr = getConvertedArgument(fn_name,pos);
+    ++pos;
+    const auto predicate = getConvertedArgument(fn_name,pos);
+    if (pos->type == TokenType::Comma)
+    {
+        ++pos;
+        const auto max_size = getConvertedArgument(fn_name,pos);
+        out = "groupUniqArrayIf(" + max_size + ")(" + expr + " , " + predicate+ " )";
+    } else
+        out = "groupUniqArrayIf(" + expr + " , " + predicate+ " )";
+    return true;
 }
 
 bool Max::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"max");
 }
 
 bool MaxIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"maxIf");
 }
 
 bool Min::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"min");
 }
 
 bool MinIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"minIf");
 }
 
@@ -226,13 +262,11 @@ bool StdevIf::convertImpl(String &out,IParser::Pos &pos)
 
 bool Sum::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"sum");
 }
 
 bool SumIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
     return directMapping(out,pos,"sumIf");
 }
 

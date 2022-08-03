@@ -589,7 +589,43 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         {
             "print x=1, s=strcat('Hello', ', ', 'World!')",
             "SELECT\n    1 AS x,\n    concat('Hello', ', ', 'World!') AS s"
-        }
+        },
+         {
+             "Customers | summarize t = make_list(FirstName) by FirstName",
+             "SELECT\n    FirstName,\n    groupArrayIf(FirstName, FirstName IS NOT NULL) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "Customers | summarize t = make_list(FirstName, 10) by FirstName",
+             "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, FirstName IS NOT NULL) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "Customers | summarize t = make_list_if(FirstName, Age > 10) by FirstName",
+             "SELECT\n    FirstName,\n    groupArrayIf(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName",
+             "SELECT\n    FirstName,\n    groupArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "Customers | summarize t = make_list_with_nulls(FirstName) by FirstName",
+             "SELECT\n    FirstName,\n    groupArray(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "Customers | summarize t = make_set(FirstName) by FirstName",
+             "SELECT\n    FirstName,\n    groupUniqArray(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "Customers | summarize t = make_set(FirstName, 10) by FirstName",
+             "SELECT\n    FirstName,\n    groupUniqArray(10)(FirstName) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName",
+             "SELECT\n    FirstName,\n    groupUniqArrayIf(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName",
+             "SELECT\n    FirstName,\n    groupUniqArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+         }
 })));
 
 static constexpr size_t kDummyMaxQuerySize = 256 * 1024;

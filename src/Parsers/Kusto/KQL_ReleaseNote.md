@@ -236,19 +236,19 @@ Please note that the functions listed below only take constant parameters for no
  - tolower()  
     `Customers | project tolower(FirstName)`
 
+# July 29, 2022
  ## Aggregate Functions
- - arg_max()
- - arg_min()
- - avg()
- - avgif()
- - count()
- - countif()
- - max()
- - maxif()
- - min()
- - minif()
- - sum()
- - sumif()
- - dcount()
- - dcountif()
- - bin
+ - make_list()
+   `Customers | summarize t = make_list(FirstName) by FirstName`
+   `Customers | summarize t = make_list(FirstName, 10) by FirstName`
+ - make_list_if()
+   `Customers | summarize t = make_list_if(FirstName, Age > 10) by FirstName`
+   `Customers | summarize t = make_list_if(FirstName, Age > 10, 10) by FirstName`
+ - make_list_with_nulls()
+   `Customers | summarize t = make_list_with_nulls(FirstName) by FirstName`
+ - make_set()
+   `Customers | summarize t = make_set(FirstName) by FirstName`
+   `Customers | summarize t = make_set(FirstName, 10) by FirstName`
+ - make_set_if()
+   `Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName`
+   `Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName`
