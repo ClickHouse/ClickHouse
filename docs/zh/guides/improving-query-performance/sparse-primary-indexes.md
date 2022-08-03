@@ -306,7 +306,7 @@ ClickHouse允许插入具有相同主键列的多行数据。在这种情况下(
   - 然后是<font face = "monospace">URL</font>，
   - 最后是<font face = "monospace">EventTime</font>：
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-01.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-01.png').default} class="image"/>
 UserID.bin，URL.bin，和EventTime.bin是<font face = "monospace">UserID</font>，<font face = "monospace">URL</font>，和<font face = "monospace">EventTime</font>列的数据文件。
 
 <br/>
@@ -330,7 +330,7 @@ UserID.bin，URL.bin，和EventTime.bin是<font face = "monospace">UserID</font>
 
 下图显示了如何将表中的887万行(列值)组织成1083个颗粒，这是表的DDL语句包含设置<font face = "monospace">index_granularity</font>(设置为默认值8192)的结果。
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-02.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-02.png').default} class="image"/>
 
 第一个(根据磁盘上的物理顺序)8192行(它们的列值)在逻辑上属于颗粒0，然后下一个8192行(它们的列值)属于颗粒1，以此类推。
 
@@ -357,11 +357,11 @@ UserID.bin，URL.bin，和EventTime.bin是<font face = "monospace">UserID</font>
 - 第一个索引条目(下图中的“mark 0”)存储上图中颗粒0的主键列的最小值，  
 - 第二个索引条目(下图中的“mark 1”)存储上图中颗粒1的主键列的最小值，以此类推。 
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-03a.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-03a.png').default} class="image"/>
 
 在我们的表中，索引总共有1083个条目，887万行数据和1083个颗粒: 
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-03b.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-03b.png').default} class="image"/>
 
 :::note
 - 最后一个索引条目(上图中的“mark 1082”)存储了上图中颗粒1082的主键列的最大值。
@@ -514,7 +514,7 @@ LIMIT 10;
 
 下图描述了上表主索引文件的一部分。 
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-04.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-04.png').default} class="image"/>
 
 如上所述，通过对索引的1083个UserID标记进行二分搜索，确定了第176个标记。因此，它对应的颗粒176可能包含UserID列值为749.927.693的行。
 
@@ -536,7 +536,7 @@ LIMIT 10;
 
 下图显示了三个标记文件UserID.mrk、URL.mrk、EventTime.mrk，为表的UserID、URL和EventTime列存储颗粒的物理位置。
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-05.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-05.png').default} class="image"/>
 
 我们已经讨论了主索引是一个扁平的未压缩数组文件(primary.idx)，其中包含从0开始编号的索引标记。
 
@@ -575,7 +575,7 @@ LIMIT 10;
 
 下面的图表和文本说明了我们的查询示例，ClickHouse如何在UserID.bin数据文件中定位176颗粒。
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-06.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-06.png').default} class="image"/>
 
 我们在本文前面讨论过，ClickHouse选择了主索引标记176，因此176颗粒可能包含查询所需的匹配行。
 
@@ -692,7 +692,7 @@ Processed 8.81 million rows,
 
 假设UserID具有较低的基数。在这种情况下，相同的UserID值很可能分布在多个表行和颗粒上，从而分布在索引标记上。对于具有相同UserID的索引标记，索引标记的URL值按升序排序(因为表行首先按UserID排序，然后按URL排序)。这使得有效的过滤如下所述：
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-07.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-07.png').default} class="image"/>
 
 在上图中，我们的抽象样本数据的颗粒选择过程有三种不同的场景:
 
@@ -709,7 +709,7 @@ Processed 8.81 million rows,
 
 当UserID具有较高的基数时，相同的UserID值不太可能分布在多个表行和颗粒上。这意味着索引标记的URL值不是单调递增的：
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-08.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-08.png').default} class="image"/>
 
 
 正如在上面的图表中所看到的，所有URL值小于W3的标记都被选中，以便将其关联的颗粒的行加载到ClickHouse引擎中。
@@ -744,7 +744,7 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 ```
 ClickHouse现在创建了一个额外的索引来存储—每组4个连续的颗粒(注意上面ALTER TABLE语句中的GRANULARITY 4子句)—最小和最大的URL值：
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-13a.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-13a.png').default} class="image"/>
 
 第一个索引条目(上图中的mark 0)存储属于表的前4个颗粒的行的最小和最大URL值。
 
@@ -785,15 +785,15 @@ ClickHouse现在创建了一个额外的索引来存储—每组4个连续的颗
 
 当创建有不同主键的第二个表时，查询必须显式地发送给最适合查询的表版本，并且必须显式地插入新数据到两个表中，以保持表的同步：
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-09a.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-09a.png').default} class="image"/>
 
 
 在物化视图中，额外的表被隐藏，数据自动在两个表之间保持同步：
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-09b.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-09b.png').default} class="image"/>
 
 
 projection方式是最透明的选项，因为除了自动保持隐藏的附加表与数据变化同步外，ClickHouse还会自动选择最有效的表版本进行查询：
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-09c.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-09c.png').default} class="image"/>
 
 下面我们使用真实的例子详细讨论下这三种方式。
 
@@ -840,10 +840,10 @@ OPTIMIZE TABLE hits_URL_UserID FINAL;
 
 因为我们切换了主键中列的顺序，插入的行现在以不同的字典顺序存储在磁盘上(与我们的原始表相比)，因此该表的1083个颗粒也包含了与以前不同的值：
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-10.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-10.png').default} class="image"/>
 
 主键索引如下：
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-11.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-11.png').default} class="image"/>
 
 现在计算最频繁点击URL"http://public_search"的前10名用户，这时候的查询速度是明显加快的：
 ```sql
@@ -959,7 +959,7 @@ Processed 8.02 million rows,
 
 
 现在我们有了两张表。优化了对UserID和URL的查询过滤，分别:
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-12a.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-12a.png').default} class="image"/>
 
 
 
@@ -999,13 +999,13 @@ Ok.
 
 
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-12b-1.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-12b-1.png').default} class="image"/>
 
 
 ClickHouse将隐藏表的列数据文件(.bin)、标记文件(.mrk2)和主索引(primary.idx)存储在ClickHouse服务器的数据目录的一个特殊文件夹中：
 
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-12b-2.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-12b-2.png').default} class="image"/>
 
 :::
 
@@ -1094,11 +1094,11 @@ ALTER TABLE hits_UserID_URL
 - 查询总是(从语法上)针对源表hits_UserID_URL，但是如果隐藏表的行顺序和主索引允许更有效地执行查询，那么将使用该隐藏表
 - 实际上，隐式创建的隐藏表的行顺序和主索引与我们显式创建的辅助表相同：
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-12c-1.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-12c-1.png').default} class="image"/>
 
 ClickHouse将隐藏表的列数据文件(.bin)、标记文件(.mrk2)和主索引(primary.idx)存储在一个特殊的文件夹中(在下面的截图中用橙色标记)，紧挨着源表的数据文件、标记文件和主索引文件：
 
-<img src={require('../../en/guides/improving-query-performance/images/sparse-primary-indexes-12c-2.png').default} class="image"/>
+<img src={require('../../../en/guides/improving-query-performance/sparse-primary-indexes/images/sparse-primary-indexes-12c-2.png').default} class="image"/>
 :::
 
 由投影创建的隐藏表(以及它的主索引)现在可以(隐式地)用于显著加快URL列上查询过滤的执行。注意，查询在语法上针对投影的源表。
