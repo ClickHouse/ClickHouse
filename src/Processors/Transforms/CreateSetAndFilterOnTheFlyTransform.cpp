@@ -53,7 +53,6 @@ std::string formatBytesHumanReadable(size_t bytes)
 
 }
 
-
 CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
     const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
@@ -67,34 +66,38 @@ CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
 
 IProcessor::Status CreatingSetsOnTheFlyTransform::prepare()
 {
-    auto status = ISimpleTransform::prepare();
+    IProcessor::Status status = ISimpleTransform::prepare();
 
-    if (status == Status::Finished && set && set->state == SetWithState::State::Creating)
+    if (!set || status != Status::Finished)
+        /// Nothing to handle with set
+        return status;
+
+    /// Finalize set
+    if (set->state == SetWithState::State::Creating)
     {
         if (input.isFinished())
         {
             set->finished_count++;
-            if (set->finished_count == num_streams)
-            {
-                set->finishInsert();
-                set->state = SetWithState::State::Finished;
-                LOG_DEBUG(log, "{}: finish building set for [{}] with {} rows, set size is {}",
-                    getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
-            }
+            if (set->finished_count != num_streams)
+                /// Not all instances of processor are finished
+                return status;
+
+            set->finishInsert();
+            set->state = SetWithState::State::Finished;
+            LOG_DEBUG(log, "{}: finish building set for [{}] with {} rows, set size is {}",
+                getDescription(), fmt::join(column_names, ", "), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
+            set.reset();
         }
         else
         {
-            /// Should not happen because processor places before join that reads all the data
+            /// Should not happen because processor inserted before join that reads all the data
             /// But let's hanlde this case just for safety.
             set->state = SetWithState::State::Suspended;
             LOG_DEBUG(log, "{}: Processor finished, but not all input was read, cancelling building set after using {}",
                 getDescription(), formatBytesHumanReadable(set->getTotalByteCount()));
+            set.reset();
         }
     }
-
-    if (status == Status::Finished && set && set->state != SetWithState::State::Creating)
-        /// Release pointer to make it possible destroy it by consumer
-        set.reset();
 
     return status;
 }
@@ -103,7 +106,8 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
 {
     if (!set || set->state != SetWithState::State::Creating)
     {
-        if (set)
+        /// If set building suspended by another processor, release pointer
+        if (set != nullptr)
             set.reset();
         return;
     }
@@ -111,17 +115,18 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     if (chunk.getNumRows())
     {
         Columns key_columns = getColumnsByIndices(chunk, key_column_indices);
-        size_t prev_size = set->getTotalByteCount();
         bool limit_exceeded = !set->insertFromBlock(key_columns);
         if (limit_exceeded)
         {
             auto prev_state = set->state.exchange(SetWithState::State::Suspended);
+            /// Print log only after first state switch
             if (prev_state == SetWithState::State::Creating)
             {
-                LOG_DEBUG(log, "{}: set limit exceeded, give up building set, after using {} ({} -> {} bytes)",
-                    getDescription(), formatBytesHumanReadable(set->getTotalByteCount()), prev_size, set->getTotalByteCount());
+                LOG_DEBUG(log, "{}: set limit exceeded, give up building set, after reading {} rows and using {}",
+                    getDescription(), set->getTotalRowCount(), formatBytesHumanReadable(set->getTotalByteCount()));
             }
-            // TODO(@vdimir): set->clear() ?
+            /// Probaply we need to clear set here, because it's unneded anymore
+            /// But now `Set` doesn't have such method, so reset pointer in all processors and then it should be freed
             set.reset();
         }
     }
@@ -142,15 +147,19 @@ FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_
 IProcessor::Status FilterBySetOnTheFlyTransform::prepare()
 {
     auto status = ISimpleTransform::prepare();
+
+    if (set && set->state == SetWithState::State::Suspended)
+        set.reset();
+
     if (status == Status::Finished)
     {
         bool has_filter = set && set->state == SetWithState::State::Finished;
         if (has_filter)
         {
-            LOG_DEBUG(log, "Finished {} by [{}]: consumed {} rows in total, {} rows bypassed, result {} rows, {}% filtered",
+            LOG_DEBUG(log, "Finished {} by [{}]: consumed {} rows in total, {} rows bypassed, result {} rows, {:.2f}% filtered",
                 Poco::toLower(getDescription()), fmt::join(column_names, ", "),
                 stat.consumed_rows, stat.consumed_rows_before_set, stat.result_rows,
-                static_cast<int>(100 - 100.0 * stat.result_rows / stat.consumed_rows));
+                100 - 100.0 * stat.result_rows / stat.consumed_rows);
         }
         else
         {
@@ -169,7 +178,6 @@ void FilterBySetOnTheFlyTransform::transform(Chunk & chunk)
     stat.result_rows += chunk.getNumRows();
 
     bool can_filter = set && set->state == SetWithState::State::Finished;
-    // LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{} {} / {} / {}", __FILE__, __LINE__, set->finished_count.load(), set->state.load(), set->getTotalRowCount());
     if (!can_filter)
         stat.consumed_rows_before_set += chunk.getNumRows();
 

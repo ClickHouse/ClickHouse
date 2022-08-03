@@ -1,4 +1,5 @@
 #pragma once
+
 #include <atomic>
 #include <mutex>
 #include <vector>
@@ -6,39 +7,50 @@
 #include <Poco/Logger.h>
 #include <Interpreters/Set.h>
 
-
 namespace DB
 {
 
-class SetWithState : public Set
+struct SetWithState : public Set
 {
-public:
     using Set::Set;
 
+    /// Flow: Creating -> Finished or Suspended
     enum class State
     {
+        /// Set is not yet created,
+        /// Creating processor continues to build set.
+        /// Filtering bypasses data.
         Creating,
+
+        /// Set is finished.
+        /// Creating processor is finished.
+        /// Filtering filter stream with this set.
         Finished,
+
+        /// Set building is canceled (due to limit exceeded).
+        /// Creating and filtering processors bypass data.
         Suspended,
     };
 
     std::atomic<State> state = State::Creating;
+
+    /// Track number of processors that are currently working on this set.
+    /// Last one finalizes set.
     std::atomic_size_t finished_count = 0;
 };
 
 using SetWithStatePtr = std::shared_ptr<SetWithState>;
 
 /*
- * Create a set on the fly.
+ * Create a set on the fly for incomming stream.
  * The set is created from the key columns of the input block.
  * Data is not changed and returned as is.
- * Can be executed only in one stream.
+ * Can be executed in parallel, but blocks on operations with set.
  */
 class CreatingSetsOnTheFlyTransform : public ISimpleTransform
 {
 public:
-    explicit CreatingSetsOnTheFlyTransform(
-        const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
+    CreatingSetsOnTheFlyTransform(const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
 
     String getName() const override { return "CreatingSetsOnTheFlyTransform"; }
 
@@ -58,7 +70,6 @@ private:
     Poco::Logger * log;
 };
 
-
 /*
  * Filter the input chunk by the set.
  * When set building is not completed, just return the source data.
@@ -66,8 +77,7 @@ private:
 class FilterBySetOnTheFlyTransform : public ISimpleTransform
 {
 public:
-    explicit FilterBySetOnTheFlyTransform(
-        const Block & header_, const Names & column_names_, SetWithStatePtr set_);
+    FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_);
 
     String getName() const override { return "FilterBySetOnTheFlyTransform"; }
 
@@ -85,16 +95,20 @@ private:
     /// Filter by this set when it's created
     SetWithStatePtr set;
 
+    /// Statistics to log
     struct Stat
     {
+        /// Total number of rows
         size_t consumed_rows = 0;
+
+        /// Number of bypassed rows (processed before set is created)
         size_t consumed_rows_before_set = 0;
+
+        /// Number of rows that passed the filter
         size_t result_rows = 0;
     } stat;
 
     Poco::Logger * log;
 };
-
-
 
 }
