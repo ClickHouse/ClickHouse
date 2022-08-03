@@ -148,7 +148,7 @@ private:
 
 }
 
-void registerFunctionReverse(FunctionFactory & factory)
+REGISTER_FUNCTION(Reverse)
 {
     factory.registerFunction<ReverseOverloadResolver>(FunctionFactory::CaseInsensitive);
 }

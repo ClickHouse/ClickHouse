@@ -196,6 +196,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->columns_list, columns_list->clone());
     if (storage)
         res->set(res->storage, storage->clone());
+    if (inner_storage)
+        res->set(res->inner_storage, inner_storage->clone());
     if (select)
         res->set(res->select, select->clone());
     if (table_overrides)

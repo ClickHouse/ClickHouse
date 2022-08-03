@@ -100,12 +100,12 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(build_type, package_type, sanitizer, split_binary):
+def is_release_build(build_type, package_type, sanitizer, shared_libraries):
     return (
         build_type == ""
         and package_type == "deb"
         and sanitizer == ""
-        and not split_binary
+        and not shared_libraries
     )
 
 
@@ -116,7 +116,7 @@ def parse_env_variables(
     package_type,
     cache,
     distcc_hosts,
-    split_binary,
+    shared_libraries,
     clang_tidy,
     version,
     author,
@@ -134,6 +134,7 @@ def parse_env_variables(
     result = []
     result.append("OUTPUT_DIR=/output")
     cmake_flags = ["$CMAKE_FLAGS"]
+    build_target = "clickhouse-bundle"
 
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
@@ -201,7 +202,7 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_PREFIX=/usr")
         cmake_flags.append("-DCMAKE_INSTALL_SYSCONFDIR=/etc")
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
-        if is_release_build(build_type, package_type, sanitizer, split_binary):
+        if is_release_build(build_type, package_type, sanitizer, shared_libraries):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -214,11 +215,11 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
-    # Create combined output archive for split build and for performance tests.
+    # Create combined output archive for shared library build and for performance tests.
     if package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
-    elif split_binary:
+    elif shared_libraries:
         result.append("COMBINED_OUTPUT=shared_build")
 
     if sanitizer:
@@ -233,11 +234,15 @@ def parse_env_variables(
 
     if cache:
         result.append("CCACHE_DIR=/ccache")
+        result.append("CCACHE_COMPRESSLEVEL=5")
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
-        result.append("CCACHE_MAXSIZE=15G")
-        # result.append("CCACHE_UMASK=777")
+        cache_maxsize = "15G"
+        if clang_tidy:
+            # 15G is not enough for tidy build
+            cache_maxsize = "25G"
+        result.append(f"CCACHE_MAXSIZE={cache_maxsize}")
 
     if distcc_hosts:
         hosts_with_params = [f"{host}/24,lzo" for host in distcc_hosts] + [
@@ -259,23 +264,27 @@ def parse_env_variables(
         result.append("BINARY_OUTPUT=tests")
         cmake_flags.append("-DENABLE_TESTS=1")
 
-    if split_binary:
+    if shared_libraries:
         cmake_flags.append(
-            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 "
-            "-DCLICKHOUSE_SPLIT_BINARY=1"
+            "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1"
         )
         # We can't always build utils because it requires too much space, but
-        # we have to build them at least in some way in CI. The split build is
-        # probably the least heavy disk-wise.
+        # we have to build them at least in some way in CI. The shared library
+        # build is probably the least heavy disk-wise.
         cmake_flags.append("-DENABLE_UTILS=1")
+        # utils are not included into clickhouse-bundle, so build everything
+        build_target = "all"
 
     if clang_tidy:
         cmake_flags.append("-DENABLE_CLANG_TIDY=1")
-        cmake_flags.append("-DENABLE_UTILS=1")
         cmake_flags.append("-DENABLE_TESTS=1")
         cmake_flags.append("-DENABLE_EXAMPLES=1")
         # Don't stop on first error to find more clang-tidy errors in one run.
         result.append("NINJA_FLAGS=-k0")
+
+        cmake_flags.append("-DENABLE_UTILS=1")
+        # utils are not included into clickhouse-bundle, so build everything
+        build_target = "all"
 
     if with_coverage:
         cmake_flags.append("-DWITH_COVERAGE=1")
@@ -290,6 +299,7 @@ def parse_env_variables(
         cmake_flags.append("-DCLICKHOUSE_OFFICIAL_BUILD=1")
 
     result.append('CMAKE_FLAGS="' + " ".join(cmake_flags) + '"')
+    result.append(f"BUILD_TARGET={build_target}")
 
     return result
 
@@ -323,6 +333,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compiler",
         choices=(
+            "clang-15",  # For TSAN builds, see #39450
             "clang-14",
             "clang-14-darwin",
             "clang-14-darwin-aarch64",
@@ -340,7 +351,7 @@ if __name__ == "__main__":
         default="",
     )
 
-    parser.add_argument("--split-binary", action="store_true")
+    parser.add_argument("--shared-libraries", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
     parser.add_argument(
@@ -393,7 +404,7 @@ if __name__ == "__main__":
         args.package_type,
         args.cache,
         args.distcc_hosts,
-        args.split_binary,
+        args.shared_libraries,
         args.clang_tidy,
         args.version,
         args.author,
