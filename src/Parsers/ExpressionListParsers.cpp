@@ -1366,7 +1366,7 @@ public:
         return true;
     }
 
-    /// Put 'node' indentifier into the last operand as its alias
+    /// Put 'node' identifier into the last operand as its alias
     bool insertAlias(ASTPtr node)
     {
         if (!mergeElement(false))
@@ -1405,7 +1405,7 @@ protected:
     bool finished = false;
     int state = 0;
 
-    /// 'AND' in operator '... BETWEEN ... AND ...'  mirrors logical operator 'AND'. 
+    /// 'AND' in operator '... BETWEEN ... AND ...'  mirrors logical operator 'AND'.
     ///  In order to distinguish them we keep a counter of BETWEENs without matching ANDs.
     int open_between = 0;
 
@@ -2325,7 +2325,7 @@ public:
         /// INTERVAL 1 HOUR or INTERVAL expr HOUR
         ///
         /// 0. Try to parse interval_kind (-> 1)
-        /// 1. Basic parser 
+        /// 1. Basic parser
 
         if (state == 0)
         {
