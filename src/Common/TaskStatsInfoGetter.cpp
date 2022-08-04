@@ -240,33 +240,33 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
 
     try
     {
-      /// On some containerized environments, operation on Netlink socket could hang forever.
-      /// We set reasonably small timeout to overcome this issue.
+        /// On some containerized environments, operation on Netlink socket could hang forever.
+        /// We set reasonably small timeout to overcome this issue.
 
-      struct timeval tv;
-      tv.tv_sec = 0;
-      tv.tv_usec = 50000;
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 50000;
 
-      if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
-          throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+        if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
+            throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-      union
-      {
-          ::sockaddr_nl addr{};
-          ::sockaddr sockaddr;
-      };
-      addr.nl_family = AF_NETLINK;
+        union
+        {
+            ::sockaddr_nl addr{};
+            ::sockaddr sockaddr;
+        };
+        addr.nl_family = AF_NETLINK;
 
-      if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
-          throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+        if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
+            throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-      taskstats_family_id = getFamilyId(netlink_socket_fd);
+        taskstats_family_id = getFamilyId(netlink_socket_fd);
     }
     catch (...)
     {
-      if (netlink_socket_fd >= 0)
-          close(netlink_socket_fd);
-      throw;
+        if (netlink_socket_fd >= 0)
+            close(netlink_socket_fd);
+        throw;
     }
 }
 
