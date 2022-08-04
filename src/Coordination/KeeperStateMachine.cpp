@@ -385,6 +385,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
 
     if (keeper_context->server_state == KeeperContext::Phase::SHUTDOWN)
     {
+        LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
         snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         return;
     }
