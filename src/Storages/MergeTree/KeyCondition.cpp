@@ -223,7 +223,7 @@ public:
         return res;
     }
 
-    bool getConstant(const Block & block_with_constants, Field & out_value, DataTypePtr & out_type) const
+    bool tryGetConstant(const Block & block_with_constants, Field & out_value, DataTypePtr & out_type) const
     {
         if (ast)
         {
@@ -719,7 +719,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
             const auto & arg = cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, false);
-            res = &inverted_dag.addArrayJoin(arg, "");
+            res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
         case (ActionsDAG::ActionType::FUNCTION):
@@ -971,7 +971,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
   */
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
-    return Tree(expr.get()).getConstant(block_with_constants, out_value, out_type);
+    return Tree(expr.get()).tryGetConstant(block_with_constants, out_value, out_type);
 }
 
 
@@ -1612,7 +1612,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
                 else
                     return false;
             }
-            else if (func.getArgumentAt(1).getConstant(block_with_constants, const_value, const_type))
+            else if (func.getArgumentAt(1).tryGetConstant(block_with_constants, const_value, const_type))
             {
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(0), context, key_column_num, key_expr_type, chain))
                 {
@@ -1635,7 +1635,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
                 else
                     return false;
             }
-            else if (func.getArgumentAt(0).getConstant(block_with_constants, const_value, const_type))
+            else if (func.getArgumentAt(0).tryGetConstant(block_with_constants, const_value, const_type))
             {
                 if (isKeyPossiblyWrappedByMonotonicFunctions(func.getArgumentAt(1), context, key_column_num, key_expr_type, chain))
                 {
@@ -1762,7 +1762,7 @@ bool KeyCondition::tryParseAtomFromAST(const Tree & node, ContextPtr context, Bl
 
         return atom_it->second(out, const_value);
     }
-    else if (node.getConstant(block_with_constants, const_value, const_type))
+    else if (node.tryGetConstant(block_with_constants, const_value, const_type))
     {
         /// For cases where it says, for example, `WHERE 0 AND something`
 
