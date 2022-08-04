@@ -7345,7 +7345,7 @@ try
 
     if (profile_counters)
     {
-      part_log_elem.profile_counters = profile_counters;
+        part_log_elem.profile_counters = profile_counters;
     }
 
     part_log->add(part_log_elem);
@@ -7493,6 +7493,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                 moving_part.part->name,
                 cloned_part,
                 {moving_part.part},
+                nullptr,
                 nullptr);
         };
 

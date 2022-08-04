@@ -29,6 +29,9 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
+    /// Metrics will be saved in the thread_group.
+    CurrentThread::ScopedAttach scoped_attach(thread_group);
+
     std::exception_ptr saved_exception;
 
     bool retryable_error = false;
@@ -82,7 +85,6 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
     {
         saved_exception = std::current_exception();
     }
-
 
     if (!retryable_error && saved_exception)
     {

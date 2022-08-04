@@ -17,7 +17,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/TaskObserverMetrics.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -813,13 +812,11 @@ public:
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
-    bool onSuspend() override
-    {
-        return observer.doSuspend();
-    }
-
     bool executeStep() override
     {
+        /// Metrics will be saved in the thread_group.
+        CurrentThread::ScopedAttach scoped_attach(thread_group);
+
         auto & current_level_parts = level_parts[current_level];
         auto & next_level_parts = level_parts[next_level];
 
@@ -905,11 +902,6 @@ public:
         return true;
     }
 
-    bool onResume() override
-    {
-        return observer.doResume();
-    }
-
 private:
     String name;
     MergeTreeData::MutableDataPartsVector parts;
@@ -926,7 +918,7 @@ private:
     /// TODO(nikitamikhaylov): make this constant a setting
     static constexpr size_t max_parts_to_merge_in_one_level = 10;
 
-    TaskObserverMetrics observer;
+    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
 };
 
 
@@ -937,9 +929,7 @@ private:
 
 // In short it executed a mutation for the part an original part and for its every projection
 
-/**
- *
- * An overview of how the process of mutation works for projections:
+/** An overview of how the process of mutation works for projections:
  *
  * The mutation for original parts is executed block by block,
  * but additionally we execute a SELECT query for each projection over a current block.
@@ -1148,14 +1138,11 @@ public:
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
-
-    bool onSuspend() override
-    {
-        return observer.doSuspend();
-    }
-
     bool executeStep() override
     {
+        /// Metrics will be saved in the thread_group.
+        CurrentThread::ScopedAttach scoped_attach(thread_group);
+
         switch (state)
         {
             case State::NEED_PREPARE:
@@ -1188,13 +1175,7 @@ public:
         return false;
     }
 
-    bool onResume() override
-    {
-        return observer.doResume();
-    }
-
 private:
-
     void prepare()
     {
         if (ctx->new_data_part->isStoredOnDisk())
@@ -1277,8 +1258,9 @@ private:
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
 
-    TaskObserverMetrics observer;
+    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
 };
+
 
 class MutateSomePartColumnsTask : public IExecutableTask
 {
@@ -1289,13 +1271,11 @@ public:
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
-    bool onSuspend() override
-    {
-        return observer.doSuspend();
-    }
-
     bool executeStep() override
     {
+        /// Metrics will be saved in the thread_group.
+        CurrentThread::ScopedAttach scoped_attach(thread_group);
+
         switch (state)
         {
             case State::NEED_PREPARE:
@@ -1327,13 +1307,7 @@ public:
         return false;
     }
 
-    bool onResume() override
-    {
-        return observer.doResume();
-    }
-
 private:
-
     void prepare()
     {
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
@@ -1492,7 +1466,7 @@ private:
     MergedColumnOnlyOutputStreamPtr out;
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
-    TaskObserverMetrics observer;
+    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
 };
 
 

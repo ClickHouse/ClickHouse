@@ -62,8 +62,12 @@ void MutatePlainMergeTreeTask::prepare()
             time(nullptr), fake_query_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
+
 bool MutatePlainMergeTreeTask::executeStep()
 {
+    /// Metrics will be saved in the thread_group.
+    CurrentThread::ScopedAttach scoped_attach(thread_group);
+
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
@@ -126,6 +130,5 @@ bool MutatePlainMergeTreeTask::executeStep()
 
     return false;
 }
-
 
 }

@@ -132,15 +132,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
     try
     {
-        item->task->onResume();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    try
-    {
         ALLOW_ALLOCATIONS_IN_SCOPE;
         need_execute_again = item->task->executeStep();
     }
@@ -160,15 +151,6 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             ALLOW_ALLOCATIONS_IN_SCOPE;
             tryLogCurrentException(__PRETTY_FUNCTION__);
         });
-    }
-
-    try
-    {
-        item->task->onSuspend();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     if (need_execute_again)
