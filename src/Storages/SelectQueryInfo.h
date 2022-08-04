@@ -155,8 +155,6 @@ struct SelectQueryInfo
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
-    PrewhereInfoPtr prewhere_info;
-
     /// This is an additional filer applied to current table.
     /// It is needed only for additional PK filtering.
     ASTPtr additional_filter_ast;
@@ -169,8 +167,11 @@ struct SelectQueryInfo
     /// Example: x IN (1, 2, 3)
     PreparedSetsPtr prepared_sets;
 
-    /// Cached value of ExpressionAnalysisResult::has_window
+    /// Cached value of ExpressionAnalysisResult
     bool has_window = false;
+    bool has_order_by = false;
+    bool need_aggregate = false;
+    PrewhereInfoPtr prewhere_info;
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 

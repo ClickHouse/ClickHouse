@@ -396,21 +396,21 @@ def test_replicated_database_async():
     node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' mydb.tbl")
 
     backup_name = new_backup_name()
-    [id, _, status] = node1.query(
+    [id, status] = node1.query(
         f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name} ASYNC"
     ).split("\t")
 
-    assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
+    assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
 
     assert_eq_with_retry(
         node1,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}' AND NOT internal",
-        TSV([["BACKUP_COMPLETE", ""]]),
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
+        TSV([["BACKUP_CREATED", ""]]),
     )
 
     node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' NO DELAY")
 
-    [id, _, status] = node1.query(
+    [id, status] = node1.query(
         f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} ASYNC"
     ).split("\t")
 
@@ -418,7 +418,7 @@ def test_replicated_database_async():
 
     assert_eq_with_retry(
         node1,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}' AND NOT internal",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["RESTORED", ""]]),
     )
 
@@ -439,56 +439,73 @@ def test_async_backups_to_same_destination(interface, on_cluster):
         "ORDER BY x"
     )
 
+    nodes = [node1, node2]
     node1.query("INSERT INTO tbl VALUES (1)")
 
     backup_name = new_backup_name()
-
-    ids = []
-    nodes = [node1, node2]
     on_cluster_part = "ON CLUSTER 'cluster'" if on_cluster else ""
+
+    # Multiple backups to the same destination.
+    ids = []
     for node in nodes:
         if interface == "http":
-            res = node.http_query(
+            res, err = node.http_query_and_get_answer_with_error(
                 f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} ASYNC"
             )
         else:
-            res = node.query(
+            res, err = node.query_and_get_answer_with_error(
                 f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} ASYNC"
             )
-        ids.append(res.split("\t")[0])
 
-    [id1, id2] = ids
+        # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+        # If it fails immediately we won't even get its ID.
+        if not err:
+            ids.append(res.split("\t")[0])
 
-    for i in range(len(nodes)):
+    ids_for_query = "[" + ", ".join(f"'{id}'" for id in ids) + "]"
+
+    for node in nodes:
         assert_eq_with_retry(
-            nodes[i],
-            f"SELECT status FROM system.backups WHERE uuid='{ids[i]}' AND status == 'MAKING_BACKUP'",
+            node,
+            f"SELECT status FROM system.backups WHERE id IN {ids_for_query} AND status == 'CREATING_BACKUP'",
             "",
         )
 
-    num_completed_backups = sum(
+    num_created_backups = sum(
         [
             int(
-                nodes[i]
-                .query(
-                    f"SELECT count() FROM system.backups WHERE uuid='{ids[i]}' AND status == 'BACKUP_COMPLETE' AND NOT internal"
-                )
-                .strip()
+                node.query(
+                    f"SELECT count() FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
+                ).strip()
             )
-            for i in range(len(nodes))
+            for node in nodes
         ]
     )
 
-    if num_completed_backups != 1:
-        for i in range(len(nodes)):
+    num_failed_backups = sum(
+        [
+            int(
+                node.query(
+                    f"SELECT count() FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
+                ).strip()
+            )
+            for node in nodes
+        ]
+    )
+
+    # Only one backup should succeed.
+    if (num_created_backups != 1) or (num_failed_backups != len(ids) - 1):
+        for node in nodes:
             print(
-                nodes[i].query(
-                    f"SELECT status, error FROM system.backups WHERE uuid='{ids[i]}' AND NOT internal"
+                node.query(
+                    f"SELECT status, error FROM system.backups WHERE id IN {ids_for_query}"
                 )
             )
 
-    assert num_completed_backups == 1
+    assert num_created_backups == 1
+    assert num_failed_backups == len(ids) - 1
 
+    # Check that the succeeded backup is all right.
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
     node1.query(f"RESTORE TABLE tbl FROM {backup_name}")
     assert node1.query("SELECT * FROM tbl") == "1\n"
@@ -817,27 +834,25 @@ def test_stop_other_host_during_backup(kill):
 
     assert_eq_with_retry(
         node1,
-        f"SELECT status FROM system.backups WHERE uuid='{id}' AND status == 'MAKING_BACKUP' AND NOT internal",
+        f"SELECT status FROM system.backups WHERE id='{id}' AND status == 'CREATING_BACKUP'",
         "",
         retry_count=100,
     )
 
-    status = node1.query(
-        f"SELECT status FROM system.backups WHERE uuid='{id}' AND NOT internal"
-    ).strip()
+    status = node1.query(f"SELECT status FROM system.backups WHERE id='{id}'").strip()
 
     if kill:
-        assert status in ["BACKUP_COMPLETE", "FAILED_TO_BACKUP"]
+        assert status in ["BACKUP_CREATED", "BACKUP_FAILED"]
     else:
-        assert status == "BACKUP_COMPLETE"
+        assert status == "BACKUP_CREATED"
 
     node2.start_clickhouse()
 
-    if status == "BACKUP_COMPLETE":
+    if status == "BACKUP_CREATED":
         node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
         node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
         assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
-    elif status == "FAILED_TO_BACKUP":
+    elif status == "BACKUP_FAILED":
         assert not os.path.exists(
             os.path.join(get_path_to_backup(backup_name), ".backup")
         )

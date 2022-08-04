@@ -206,7 +206,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         )
         self.cherrypick_pr.add_to_labels(Labels.LABEL_CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.LABEL_DO_NOT_TEST)
-        self.cherrypick_pr.add_to_assignees(self.pr.assignee)
+        if self.pr.assignee is not None:
+            self.cherrypick_pr.add_to_assignees(self.pr.assignee)
         self.cherrypick_pr.add_to_assignees(self.pr.user)
 
     def create_backport(self):
@@ -238,7 +239,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             head=self.backport_branch,
         )
         self.backport_pr.add_to_labels(Labels.LABEL_BACKPORT)
-        self.backport_pr.add_to_assignees(self.pr.assignee)
+        if self.pr.assignee is not None:
+            self.cherrypick_pr.add_to_assignees(self.pr.assignee)
         self.backport_pr.add_to_assignees(self.pr.user)
 
     @property
