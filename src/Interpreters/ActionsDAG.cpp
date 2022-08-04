@@ -1932,7 +1932,6 @@ bool ActionsDAG::isSortingPreserved(const SortDescription & sort_description) co
         const Field field{};
         std::unordered_set<const Node *> visited_nodes;
 
-        bool column_found = false;
         for (const auto & head : nodes)
         {
             const auto * root = &head;
@@ -1953,8 +1952,6 @@ bool ActionsDAG::isSortingPreserved(const SortDescription & sort_description) co
                 /// if found column
                 if (node == column)
                 {
-                    column_found = true;
-
                     backtrace.pop(); /// pop column itself
 
                     /// walk back to root and check functions
@@ -1994,16 +1991,25 @@ bool ActionsDAG::isSortingPreserved(const SortDescription & sort_description) co
             }
         }
 
-        return column_found;
+        return true;
     };
 
     for (const auto & column_sort_desc : sort_description)
     {
-        const auto * node = tryFindInIndex(column_sort_desc.column_name);
-        if (node && node->type == ActionsDAG::ActionType::INPUT)
+        for (const auto * node : inputs)
         {
-            if (!node_preserve_sorting(node))
+            if (!node)
+                continue;
+
+            if (node->result_name == column_sort_desc.column_name || (node->column && isColumnConst(*node->column)))
+            {
+                if (!node_preserve_sorting(node))
+                    return false;
+            }
+            else
+            {
                 return false;
+            }
         }
     }
     return true;
