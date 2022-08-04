@@ -4,16 +4,16 @@
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
-#include <Storages/MergeTree/TaskObserverMetrics.h>
+
 
 namespace DB
 {
 
 class StorageReplicatedMergeTree;
 
-/**
- * This is used as a base of MergeFromLogEntryTask and MutateFromLogEntryTaskBase
- */
+
+/** This is used as a base of MergeFromLogEntryTask and MutateFromLogEntryTaskBase
+  */
 class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
@@ -33,17 +33,12 @@ public:
     }
 
     ~ReplicatedMergeMutateTaskBase() override = default;
+
     void onCompleted() override;
+
     StorageID getStorageID() override;
-    bool onSuspend() override
-    {
-        return observer.doSuspend();
-    }
+
     bool executeStep() override;
-    bool onResume() override
-    {
-        return observer.doResume();
-    }
 
 protected:
     using PartLogWriter =  std::function<void(const ExecutionStatus &)>;
@@ -70,7 +65,6 @@ protected:
     StorageReplicatedMergeTree & storage;
 
 private:
-
     enum class CheckExistingPartResult
     {
         PART_EXISTS,
@@ -78,7 +72,7 @@ private:
     };
 
     CheckExistingPartResult checkExistingPart();
-    bool executeImpl() ;
+    bool executeImpl();
 
     enum class State
     {
@@ -92,7 +86,7 @@ private:
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
-    TaskObserverMetrics observer;
+    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
 };
 
 }

@@ -27,6 +27,9 @@ void MergePlainMergeTreeTask::onCompleted()
 
 bool MergePlainMergeTreeTask::executeStep()
 {
+    /// Metrics will be saved in the thread_group.
+    CurrentThread::ScopedAttach scoped_attach(thread_group);
+
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)

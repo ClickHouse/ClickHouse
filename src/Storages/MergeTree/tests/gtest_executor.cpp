@@ -24,11 +24,6 @@ public:
     {
     }
 
-    bool onSuspend() override
-    {
-      suspend_calls++
-    }
-
     bool executeStep() override
     {
         auto sleep_time = distribution(generator);
@@ -39,11 +34,6 @@ public:
             throw std::runtime_error("Unlucky...");
 
         return false;
-    }
-
-    bool onSuspend() override
-    {
-      resume_calls++
     }
 
     StorageID getStorageID() override
@@ -65,9 +55,7 @@ private:
     std::uniform_int_distribution<> distribution;
 
     String name;
-    size_t suspend_calls;
     std::function<void()> on_completed;
-    size_t resume_calls;
 };
 
 
@@ -87,8 +75,7 @@ TEST(Executor, RemoveTasks)
     for (size_t i = 0; i < batch; ++i)
         for (size_t j = 0; j < tasks_kinds; ++j)
             ASSERT_TRUE(
-                executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j)))
-            );
+                executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j))));
 
     std::vector<std::thread> threads(batch);
 
@@ -105,9 +92,6 @@ TEST(Executor, RemoveTasks)
         thread.join();
 
     ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
-    /// TODO: move to a test by itself
-    ASSERT_EQ(batch*tasks_kinds, suspend_calls);
-    ASSERT_EQ(batch*tasks_kinds, resume_calls);
 
     executor->wait();
 }
