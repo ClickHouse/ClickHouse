@@ -64,7 +64,7 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
     {
         if ((*it)->as<ASTSetQuery>())
         {
-            settings_query = std::move(args[i]);
+            settings_query = std::move(*it);
         }
         else
         {
@@ -79,7 +79,7 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
                     ErrorCodes::UNSUPPORTED_METHOD,
                     "Table function '{}' argument is invalid {}",
                     getName(),
-                    args[i]->formatForErrorMessage());
+                    (*it)->formatForErrorMessage());
             }
         }
     }
