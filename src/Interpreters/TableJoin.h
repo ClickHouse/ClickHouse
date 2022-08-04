@@ -8,7 +8,7 @@
 #include <Interpreters/join_common.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Storages/IKVStorage.h>
+#include <Storages/IKeyValueStorage.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>

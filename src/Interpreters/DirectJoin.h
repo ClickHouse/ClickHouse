@@ -9,7 +9,7 @@
 
 #include <QueryPipeline/SizeLimits.h>
 
-#include <Storages/IKVStorage.h>
+#include <Storages/IKeyValueStorage.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
