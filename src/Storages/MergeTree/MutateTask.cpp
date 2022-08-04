@@ -611,7 +611,7 @@ void finalizeMutatedPart(
     {
         auto out = data_part_storage_builder->writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(queryToString(codec->getFullCodecDesc()), *out);
-    }
+    } /// close fd
 
     {
         /// Write a file with a description of columns.
@@ -625,9 +625,14 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadProjections(false, false);
-    new_data_part->setBytesOnDisk(new_data_part->data_part_storage->calculateTotalSizeOnDisk());
-    new_data_part->default_codec = codec;
+
+    /// All information about sizes is stored in checksums.
+    /// It doesn't make sense to touch filesystem for sizes.
+    new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
+    /// Also use information from checksums
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
+    new_data_part->default_codec = codec;
 }
 
 }
