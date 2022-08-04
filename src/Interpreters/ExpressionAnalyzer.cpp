@@ -113,6 +113,8 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
     return true;
 }
 
+Poco::Logger * getLogger() { return &Poco::Logger::get("ExpressionAnalyzer"); }
+
 }
 
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
@@ -1006,6 +1008,7 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
+std::shared_ptr<DirectKeyValueJoin> tryDictJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block, ContextPtr context);
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block);
 
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
@@ -1016,7 +1019,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
     {
         JoinPtr direct_join = nullptr;
         direct_join = direct_join ? direct_join : tryKeyValueJoin(analyzed_join, right_sample_block);
-        direct_join = direct_join ? direct_join : tryDictJoin(analyzed_join, right_sample_block, getContext());
+        direct_join = direct_join ? direct_join : tryDictJoin(analyzed_join, right_sample_block, context);
 
         if (direct_join)
         {
@@ -1111,23 +1114,21 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
 
 std::shared_ptr<DirectKeyValueJoin> tryDictJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block, ContextPtr context)
 {
-    using Strictness = ASTTableJoin::Strictness;
-
-    bool allowed_inner = isInner(analyzed_join->kind()) && analyzed_join->strictness() == Strictness::All;
-    bool allowed_left = isLeft(analyzed_join->kind()) && (analyzed_join->strictness() == Strictness::Any ||
-                                                          analyzed_join->strictness() == Strictness::All ||
-                                                          analyzed_join->strictness() == Strictness::Semi ||
-                                                          analyzed_join->strictness() == Strictness::Anti);
+    bool allowed_inner = isInner(analyzed_join->kind()) && analyzed_join->strictness() == JoinStrictness::All;
+    bool allowed_left = isLeft(analyzed_join->kind()) && (analyzed_join->strictness() == JoinStrictness::Any ||
+                                                          analyzed_join->strictness() == JoinStrictness::All ||
+                                                          analyzed_join->strictness() == JoinStrictness::Semi ||
+                                                          analyzed_join->strictness() == JoinStrictness::Anti);
     if (!allowed_inner && !allowed_left)
     {
-        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: {} {} is not supported",
+        LOG_TRACE(getLogger(), "Can't use dictionary join: {} {} is not supported",
             analyzed_join->kind(), analyzed_join->strictness());
         return nullptr;
     }
 
     if (analyzed_join->getClauses().size() != 1 || analyzed_join->getClauses()[0].key_names_right.size() != 1)
     {
-        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: only one key is supported");
+        LOG_TRACE(getLogger(), "Can't use dictionary join: only one key is supported");
         return nullptr;
     }
 
@@ -1136,7 +1137,7 @@ std::shared_ptr<DirectKeyValueJoin> tryDictJoin(std::shared_ptr<TableJoin> analy
     const auto & dictionary_name = analyzed_join->getRightStorageName();
     if (dictionary_name.empty())
     {
-        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: dictionary was not found");
+        LOG_TRACE(getLogger(), "Can't use dictionary join: dictionary was not found");
         return nullptr;
     }
 
@@ -1145,14 +1146,14 @@ std::shared_ptr<DirectKeyValueJoin> tryDictJoin(std::shared_ptr<TableJoin> analy
     auto dictionary = dictionary_helper.getDictionary(dictionary_name);
     if (!dictionary)
     {
-        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: dictionary was not found");
+        LOG_TRACE(getLogger(), "Can't use dictionary join: dictionary was not found");
         return nullptr;
     }
 
     const auto & dict_keys = dictionary->getStructure().getKeysNames();
     if (dict_keys.size() != 1 || dict_keys[0] != analyzed_join->getOriginalName(right_key))
     {
-        LOG_TRACE(&Poco::Logger::get("tryDictJoin"), "Can't use dictionary join: join key '{}' doesn't natch to dictionary key ({})",
+        LOG_TRACE(getLogger(), "Can't use dictionary join: join key '{}' doesn't natch to dictionary key ({})",
             right_key, fmt::join(dict_keys, ", "));
         return nullptr;
     }
