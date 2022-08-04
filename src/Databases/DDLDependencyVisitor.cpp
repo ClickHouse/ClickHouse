@@ -15,6 +15,18 @@ namespace DB
 
 namespace
 {
+    /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
+    void visitCreateQuery(const ASTCreateQuery & create, DDLDependencyVisitor::Data & data)
+    {
+        QualifiedTableName to_table{create.to_table_id.database_name, create.to_table_id.table_name};
+        if (!to_table.table.empty())
+        {
+            if (to_table.database.empty())
+                to_table.database = data.default_database;
+            data.dependencies.emplace(to_table);
+        }
+    }
+
     /// ASTTableExpression represents a reference to a table in SELECT query.
     /// DDLDependencyVisitor should handle ASTTableExpression because some CREATE queries can contain SELECT queries after AS
     /// (for example, CREATE VIEW).
@@ -62,7 +74,9 @@ TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const
 void DDLDependencyVisitor::visit(const ASTPtr & ast, Data & data)
 {
     /// Looking for functions in column default expressions and dictionary source definition
-    if (const auto * function = ast->as<ASTFunction>())
+    if (auto * create = ast->as<ASTCreateQuery>())
+        visitCreateQuery(*create, data);
+    else if (const auto * function = ast->as<ASTFunction>())
         visit(*function, data);
     else if (const auto * dict_source = ast->as<ASTFunctionWithKeyValueArguments>())
         visit(*dict_source, data);
