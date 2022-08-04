@@ -580,6 +580,19 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
                 break;
             }
+            case nuraft::cb_func::AppendLogFailed:
+            {
+                // we are relying on the fact that request are being processed under a mutex
+                // and not a RW lock
+                auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+
+                assert(entry->get_val_type() == nuraft::app_log);
+
+                auto & entry_buf = entry->get_buf();
+                auto request_for_session = state_machine->parseRequest(entry_buf);
+                state_machine->rollbackRequest(request_for_session, true);
+                break;
+            }
             default:
                 break;
         }

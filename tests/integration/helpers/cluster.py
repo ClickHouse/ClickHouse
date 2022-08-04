@@ -3121,7 +3121,69 @@ class ClickHouseInstance:
         params=None,
         user=None,
         password=None,
-        expect_fail_and_get_error=False,
+        port=8123,
+        timeout=None,
+        retry_strategy=None,
+    ):
+        output, error = self.http_query_and_get_answer_with_error(
+            sql,
+            data=data,
+            method=method,
+            params=params,
+            user=user,
+            password=password,
+            port=port,
+            timeout=timeout,
+            retry_strategy=retry_strategy,
+        )
+
+        if error:
+            raise Exception("ClickHouse HTTP server returned " + error)
+
+        return output
+
+    # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
+    def http_query_and_get_error(
+        self,
+        sql,
+        data=None,
+        method=None,
+        params=None,
+        user=None,
+        password=None,
+        port=8123,
+        timeout=None,
+        retry_strategy=None,
+    ):
+        output, error = self.http_query_and_get_answer_with_error(
+            sql,
+            data=data,
+            method=method,
+            params=params,
+            user=user,
+            password=password,
+            port=port,
+            timeout=timeout,
+            retry_strategy=retry_strategy,
+        )
+
+        if not error:
+            raise Exception(
+                "ClickHouse HTTP server is expected to fail, but succeeded: " + output
+            )
+
+        return error
+
+    # Connects to the instance via HTTP interface, sends a query and returns both the answer and the error message
+    # as a tuple (output, error).
+    def http_query_and_get_answer_with_error(
+        self,
+        sql,
+        data=None,
+        method=None,
+        params=None,
+        user=None,
+        password=None,
         port=8123,
         timeout=None,
         retry_strategy=None,
@@ -3155,23 +3217,11 @@ class ClickHouseInstance:
 
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
 
-        def http_code_and_message():
-            code = r.status_code
-            return str(code) + " " + http.client.responses[code] + ": " + r.text
+        if r.ok:
+            return (r.text, None)
 
-        if expect_fail_and_get_error:
-            if r.ok:
-                raise Exception(
-                    "ClickHouse HTTP server is expected to fail, but succeeded: "
-                    + r.text
-                )
-            return http_code_and_message()
-        else:
-            if not r.ok:
-                raise Exception(
-                    "ClickHouse HTTP server returned " + http_code_and_message()
-                )
-            return r.text
+        code = r.status_code
+        return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_request(self, url, method="GET", params=None, data=None, headers=None):
@@ -3179,20 +3229,6 @@ class ClickHouseInstance:
         url = "http://" + self.ip_address + ":8123/" + url
         return requests.request(
             method=method, url=url, params=params, data=data, headers=headers
-        )
-
-    # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
-    def http_query_and_get_error(
-        self, sql, data=None, params=None, user=None, password=None
-    ):
-        logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
-        return self.http_query(
-            sql=sql,
-            data=data,
-            params=params,
-            user=user,
-            password=password,
-            expect_fail_and_get_error=True,
         )
 
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
