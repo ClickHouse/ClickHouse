@@ -148,7 +148,7 @@ public:
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
-    void waitMutation(const String & znode_name, size_t mutations_sync);
+    void waitMutation(const String & znode_name, size_t mutations_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
@@ -796,7 +796,7 @@ private:
 
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(
-        const Strings & replicas, const String & mutation_id);
+        const Strings & replicas, const String & mutation_id) const;
 
     MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
