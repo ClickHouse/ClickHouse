@@ -75,6 +75,7 @@ void LocalConnection::sendProfileEvents()
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
+    const NameToNameMap &,
     const String & query_id,
     UInt64 stage,
     const Settings *,
