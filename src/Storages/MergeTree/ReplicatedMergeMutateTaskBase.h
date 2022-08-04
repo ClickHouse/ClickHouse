@@ -11,9 +11,9 @@ namespace DB
 
 class StorageReplicatedMergeTree;
 
-/**
- * This is used as a base of MergeFromLogEntryTask and MutateFromLogEntryTaskBase
- */
+
+/** This is used as a base of MergeFromLogEntryTask and MutateFromLogEntryTaskBase
+  */
 class ReplicatedMergeMutateTaskBase : public IExecutableTask
 {
 public:
@@ -33,16 +33,21 @@ public:
     }
 
     ~ReplicatedMergeMutateTaskBase() override = default;
+
     void onCompleted() override;
+
     StorageID getStorageID() override;
-    bool onSuspend() override
+
+    void onSuspend() override
     {
-        return observer.doSuspend();
+        observer.doSuspend();
     }
+
     bool executeStep() override;
-    bool onResume() override
+
+    void onResume() override
     {
-        return observer.doResume();
+        observer.doResume();
     }
 
 protected:
@@ -70,7 +75,6 @@ protected:
     StorageReplicatedMergeTree & storage;
 
 private:
-
     enum class CheckExistingPartResult
     {
         PART_EXISTS,
@@ -78,7 +82,7 @@ private:
     };
 
     CheckExistingPartResult checkExistingPart();
-    bool executeImpl() ;
+    bool executeImpl();
 
     enum class State
     {

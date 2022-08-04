@@ -800,9 +800,9 @@ public:
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
-    bool onSuspend() override
+    void onSuspend() override
     {
-        return observer.doSuspend();
+        observer.doSuspend();
     }
 
     bool executeStep() override
@@ -892,9 +892,9 @@ public:
         return true;
     }
 
-    bool onResume() override
+    void onResume() override
     {
-        return observer.doResume();
+        observer.doResume();
     }
 
 private:
@@ -1136,9 +1136,9 @@ public:
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
 
-    bool onSuspend() override
+    void onSuspend() override
     {
-        return observer.doSuspend();
+        observer.doSuspend();
     }
 
     bool executeStep() override
@@ -1175,9 +1175,9 @@ public:
         return false;
     }
 
-    bool onResume() override
+    void onResume() override
     {
-        return observer.doResume();
+        observer.doResume();
     }
 
 private:
@@ -1276,9 +1276,9 @@ public:
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
-    bool onSuspend() override
+    void onSuspend() override
     {
-        return observer.doSuspend();
+        observer.doSuspend();
     }
 
     bool executeStep() override
@@ -1315,9 +1315,9 @@ public:
         return false;
     }
 
-    bool onResume() override
+    void onResume() override
     {
-        return observer.doResume();
+        observer.doResume();
     }
 
 private:

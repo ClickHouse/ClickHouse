@@ -36,16 +36,16 @@ public:
             priority += item->getBytesOnDisk();
     }
 
-    bool onResume() override
+    void onResume() override
     {
-        return observer.doResume();
+        observer.doResume();
     }
 
     bool executeStep() override;
 
-    bool onSuspend() override
+    void onSuspend() override
     {
-        return observer.doSuspend();
+        observer.doSuspend();
     }
 
     void onCompleted() override;

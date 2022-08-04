@@ -11,16 +11,14 @@ public:
     TaskObserverMetrics() : thread_group(std::make_shared<ThreadGroupStatus>()) { }
     ~TaskObserverMetrics() { }
 
-    bool doResume()
+    void doResume()
     {
         CurrentThread::attachTo(thread_group);
-        return true;
     }
 
-    bool doSuspend()
+    void doSuspend()
     {
         CurrentThread::detachQueryIfNotDetached();
-        return true;
     }
 
 
