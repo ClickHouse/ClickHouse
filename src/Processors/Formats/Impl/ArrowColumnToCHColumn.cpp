@@ -346,7 +346,7 @@ static ColumnPtr shift_dictionary_indexes_and_handle_nullable(const ColumnPtr & 
     {
         if (nullmap_column->getBool(i))
         {
-            indexes_shifted->insert(0);
+            indexes_shifted->insertDefault();
         }
         else
         {
