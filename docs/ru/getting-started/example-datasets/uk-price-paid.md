@@ -389,12 +389,6 @@ SETTINGS mutations_sync = 1;
 
 Давайте выполним те же 3 запроса.
 
-[Включите](../../operations/settings/settings.md#allow-experimental-projection-optimization) поддержку проекций:
-
-```sql
-SET allow_experimental_projection_optimization = 1;
-```
-
 ### Запрос 1. Средняя цена за год {#average-price-projections}
 
 Запрос:
@@ -647,4 +641,3 @@ no projection: 100 rows in set. Elapsed: 0.069 sec. Processed 26.32 million rows
 ### Online Playground {#playground}
 
 Этот набор данных доступен в [Online Playground](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).
-

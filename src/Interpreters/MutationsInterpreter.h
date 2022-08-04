@@ -78,6 +78,8 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
+
 private:
     ASTPtr prepare(bool dry_run);
 
@@ -96,6 +98,8 @@ private:
     ContextPtr context;
     bool can_execute;
     SelectQueryOptions select_limits;
+
+    bool apply_deleted_mask = true;
 
     ASTPtr mutation_ast;
 

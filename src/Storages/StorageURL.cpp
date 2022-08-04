@@ -447,18 +447,36 @@ StorageURLSink::StorageURLSink(
 
 void StorageURLSink::consume(Chunk chunk)
 {
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
     writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+}
+
+void StorageURLSink::onCancel()
+{
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+    cancelled = true;
 }
 
 void StorageURLSink::onException()
 {
-    if (!writer)
-        return;
-    onFinish();
+    std::lock_guard lock(cancel_mutex);
+    finalize();
 }
 
 void StorageURLSink::onFinish()
 {
+    std::lock_guard lock(cancel_mutex);
+    finalize();
+}
+
+void StorageURLSink::finalize()
+{
+    if (!writer)
+        return;
+
     try
     {
         writer->finalize();

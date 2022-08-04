@@ -32,7 +32,7 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, A
     semantic->legacy_compound = true;
     if (!name_params.empty())
     {
-        size_t params = 0;
+        [[maybe_unused]] size_t params = 0;
         for (const auto & part [[maybe_unused]] : name_parts)
         {
             if (part.empty())

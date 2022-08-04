@@ -363,7 +363,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), forceFullSortingMergeJoin());
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -388,17 +388,17 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
             left_columns.emplace_back(col.name, col.type);
 }
 
-bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
+bool TableJoin::sameStrictnessAndKind(JoinStrictness strictness_, JoinKind kind_) const
 {
     if (strictness_ == strictness() && kind_ == kind())
         return true;
 
     /// Compatibility: old ANY INNER == new SEMI LEFT
-    if (strictness_ == ASTTableJoin::Strictness::Semi && isLeft(kind_) &&
-        strictness() == ASTTableJoin::Strictness::RightAny && isInner(kind()))
+    if (strictness_ == JoinStrictness::Semi && isLeft(kind_) &&
+        strictness() == JoinStrictness::RightAny && isInner(kind()))
         return true;
-    if (strictness() == ASTTableJoin::Strictness::Semi && isLeft(kind()) &&
-        strictness_ == ASTTableJoin::Strictness::RightAny && isInner(kind_))
+    if (strictness() == JoinStrictness::Semi && isLeft(kind()) &&
+        strictness_ == JoinStrictness::RightAny && isInner(kind_))
         return true;
 
     return false;
@@ -409,22 +409,10 @@ bool TableJoin::oneDisjunct() const
     return clauses.size() == 1;
 }
 
-bool TableJoin::allowMergeJoin() const
-{
-    bool is_any = (strictness() == ASTTableJoin::Strictness::Any);
-    bool is_all = (strictness() == ASTTableJoin::Strictness::All);
-    bool is_semi = (strictness() == ASTTableJoin::Strictness::Semi);
-
-    bool all_join = is_all && (isInner(kind()) || isLeft(kind()) || isRight(kind()) || isFull(kind()));
-    bool special_left = isLeft(kind()) && (is_any || is_semi);
-
-    return (all_join || special_left) && oneDisjunct();
-}
-
 bool TableJoin::needStreamWithNonJoinedRows() const
 {
-    if (strictness() == ASTTableJoin::Strictness::Asof ||
-        strictness() == ASTTableJoin::Strictness::Semi)
+    if (strictness() == JoinStrictness::Asof ||
+        strictness() == JoinStrictness::Semi)
         return false;
     return isRightOrFull(kind());
 }
@@ -442,13 +430,11 @@ static std::optional<String> getDictKeyName(const String & dict_name , ContextPt
 
 bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
 {
-    using Strictness = ASTTableJoin::Strictness;
-
-    bool allowed_inner = isInner(kind()) && strictness() == Strictness::All;
-    bool allowed_left = isLeft(kind()) && (strictness() == Strictness::Any ||
-                                           strictness() == Strictness::All ||
-                                           strictness() == Strictness::Semi ||
-                                           strictness() == Strictness::Anti);
+    bool allowed_inner = isInner(kind()) && strictness() == JoinStrictness::All;
+    bool allowed_left = isLeft(kind()) && (strictness() == JoinStrictness::Any ||
+                                           strictness() == JoinStrictness::All ||
+                                           strictness() == JoinStrictness::Semi ||
+                                           strictness() == JoinStrictness::Anti);
 
     /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
     if (!allowed_inner && !allowed_left)
@@ -511,7 +497,7 @@ TableJoin::createConvertingActions(
     const ColumnsWithTypeAndName & left_sample_columns,
     const ColumnsWithTypeAndName & right_sample_columns)
 {
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), forceFullSortingMergeJoin());
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
 
     NameToNameMap left_key_column_rename;
     NameToNameMap right_key_column_rename;
@@ -581,7 +567,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
     for (const auto & col : right)
         right_types[renamedRightColumnName(col.name)] = col.type;
 
-    if (strictness() == ASTTableJoin::Strictness::Asof)
+    if (strictness() == JoinStrictness::Asof)
     {
         if (clauses.size() != 1)
             throw DB::Exception("ASOF join over multiple keys is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -827,16 +813,16 @@ void TableJoin::assertHasOneOnExpr() const
 void TableJoin::resetToCross()
 {
     this->resetKeys();
-    this->table_join.kind = ASTTableJoin::Kind::Cross;
+    this->table_join.kind = JoinKind::Cross;
 }
 
 bool TableJoin::allowParallelHashJoin() const
 {
     if (dictionary_reader || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
         return false;
-    if (table_join.kind != ASTTableJoin::Kind::Left && table_join.kind != ASTTableJoin::Kind::Inner)
+    if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
         return false;
-    if (table_join.strictness == ASTTableJoin::Strictness::Asof)
+    if (table_join.strictness == JoinStrictness::Asof)
         return false;
     if (isSpecialStorage() || !oneDisjunct())
         return false;

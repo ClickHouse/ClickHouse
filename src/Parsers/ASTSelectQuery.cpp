@@ -346,6 +346,25 @@ const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
     return getFirstTableJoin(*this);
 }
 
+bool ASTSelectQuery::hasJoin() const
+{
+    if (!tables())
+        return false;
+
+    const auto & tables_in_select_query = tables()->as<ASTTablesInSelectQuery &>();
+    if (tables_in_select_query.children.empty())
+        return false;
+
+    for (const auto & child : tables_in_select_query.children)
+    {
+        const auto & tables_element = child->as<ASTTablesInSelectQueryElement &>();
+        if (tables_element.table_join)
+            return true;
+    }
+
+    return false;
+}
+
 static String getTableExpressionAlias(const ASTTableExpression * table_expression)
 {
     if (table_expression->subquery)
