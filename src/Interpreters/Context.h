@@ -360,9 +360,33 @@ private:
 
     inline static ContextPtr global_context_instance;
 
+    /// A flag, used to mark if reader needs to apply deleted rows mask.
+    bool apply_deleted_mask = true;
+
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
+
+    /// Some counters for current query execution.
+    /// Most of them are workarounds and should be removed in the future.
+    struct KitchenSink
+    {
+        std::atomic<size_t> analyze_counter = 0;
+
+        KitchenSink() = default;
+
+        KitchenSink(const KitchenSink & rhs)
+            : analyze_counter(rhs.analyze_counter.load())
+        {}
+
+        KitchenSink & operator=(const KitchenSink & rhs)
+        {
+            analyze_counter = rhs.analyze_counter.load();
+            return *this;
+        }
+    };
+
+    KitchenSink kitchen_sink;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -607,8 +631,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(StringRef name, const String & value);
-    void setSetting(StringRef name, const Field & value);
+    void setSetting(std::string_view name, const String & value);
+    void setSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -911,6 +935,9 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
+
+    bool applyDeletedMask() const { return apply_deleted_mask; }
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
 
     ActionLocksManagerPtr getActionLocksManager();
 

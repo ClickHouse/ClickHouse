@@ -251,7 +251,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = std::string_view{(*arguments[j + 1].column).getDataAt(row)};
+                    key = (*arguments[j + 1].column).getDataAt(row).toView();
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -1443,7 +1443,7 @@ public:
     }
 };
 
-void registerFunctionsJSON(FunctionFactory & factory)
+REGISTER_FUNCTION(JSON)
 {
     factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>();
