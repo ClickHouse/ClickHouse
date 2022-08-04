@@ -42,7 +42,7 @@ using FunctionBitAnd = BinaryArithmeticOverloadResolver<BitAndImpl, NameBitAnd, 
 
 }
 
-void registerFunctionBitAnd(FunctionFactory & factory)
+REGISTER_FUNCTION(BitAnd)
 {
     factory.registerFunction<FunctionBitAnd>();
 }

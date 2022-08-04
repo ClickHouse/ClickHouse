@@ -5,7 +5,8 @@ import ssl
 import os.path
 
 HTTPS_PORT = 8443
-NODE_IP = "10.5.172.77"  # It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
+# It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
+NODE_IP = "10.5.172.77"  # Never copy-paste this line
 NODE_IP_WITH_HTTPS_PORT = NODE_IP + ":" + str(HTTPS_PORT)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 

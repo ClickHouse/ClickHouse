@@ -407,6 +407,18 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <include_from>/etc/metrica.xml</include_from>
 ```
 
+## interserver_listen_host {#interserver-listen-host}
+
+Ограничение по хостам, для обмена между серверами ClickHouse.
+Значение по умолчанию совпадает со значением параметра listen_host
+
+Примеры:
+
+``` xml
+<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
+<interserver_listen_host>10.0.0.1</interserver_listen_host>
+```
+
 ## interserver_http_port {#interserver-http-port}
 
 Порт для обмена между серверами ClickHouse.
