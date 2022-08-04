@@ -7284,7 +7284,7 @@ try
 
     if (profile_counters)
     {
-      part_log_elem.profile_counters = profile_counters;
+        part_log_elem.profile_counters = profile_counters;
     }
 
     part_log->add(part_log_elem);
