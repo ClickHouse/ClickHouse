@@ -125,13 +125,27 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
 
     auto settings_ptr = s3_settings.get();
 
-    auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
-        client.get(),
-        bucket,
-        version_id,
+    auto read_buffer_creator =
+        [this, settings_ptr, disk_read_settings]
+        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_shared<ReadBufferFromS3>(
+            client.get(),
+            bucket,
+            path,
+            version_id,
+            settings_ptr->s3_settings.max_single_read_retries,
+            disk_read_settings,
+            /* use_external_buffer */true,
+            /* offset */0,
+            read_until_position,
+            /* restricted_seek */true);
+    };
+
+    auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
         objects,
-        settings_ptr->s3_settings.max_single_read_retries,
-        read_settings);
+        disk_read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {

@@ -162,8 +162,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync = removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
 
-        new_part->setColumns(part_columns);
-        new_part->setSerializationInfos(serialization_infos);
+        new_part->setColumns(part_columns, serialization_infos);
     }
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, data_part_storage_builder, files_to_remove_after_sync, sync);
