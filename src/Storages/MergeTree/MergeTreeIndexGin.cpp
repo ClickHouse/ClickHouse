@@ -116,11 +116,9 @@ void MergeTreeIndexAggregatorGinFilter::addToGinFilter(UInt32 rowID, const char*
     size_t token_start = 0;
     size_t token_len = 0;
 
-    int offset = 0;
     while (cur < length && token_extractor->nextInStringPadded(data, length, &cur, &token_start, &token_len))
     {
         gin_filter.add(data + token_start, token_len, rowID, store);
-        offset++;
     }
 }
 
