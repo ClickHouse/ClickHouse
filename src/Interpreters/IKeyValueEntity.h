@@ -1,18 +1,15 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Storages/IStorage.h>
 #include <Processors/Chunk.h>
 
 namespace DB
 {
 
-/// Storage that support key-value requests
-class IKeyValueStorage : public IStorage
+/// Interface for entities with key-value semantics.
+class IKeyValueEntity
 {
 public:
-    using IStorage::IStorage;
-
     /// Get primary key name that supports key-value requests.
     /// Primary key can constist of multiple columns.
     virtual Names getPrimaryKey() const = 0;
@@ -28,6 +25,11 @@ public:
      *   If the key was not found row would have a default value.
      */
     virtual Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & out_null_map) const = 0;
+
+    /// Header for getByKeys result
+    virtual Block getSampleBlock() const = 0;
+
+    virtual ~IKeyValueEntity() = default;
 };
 
 }

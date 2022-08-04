@@ -27,7 +27,7 @@
 #include <Core/Block.h>
 
 #include <Storages/IStorage_fwd.h>
-#include <Storages/IKeyValueStorage.h>
+#include <Interpreters/IKeyValueEntity.h>
 
 namespace DB
 {

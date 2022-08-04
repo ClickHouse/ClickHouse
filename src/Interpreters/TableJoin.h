@@ -8,7 +8,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Storages/IKeyValueStorage.h>
+#include <Interpreters/IKeyValueEntity.h>
 
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
@@ -31,7 +31,7 @@ class Block;
 class DictionaryJoinAdapter;
 class StorageJoin;
 class StorageDictionary;
-class IKeyValueStorage;
+class IKeyValueEntity;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -140,7 +140,7 @@ private:
 
     std::shared_ptr<StorageJoin> right_storage_join;
 
-    std::shared_ptr<IKeyValueStorage> right_kv_storage;
+    std::shared_ptr<IKeyValueEntity> right_kv_storage;
 
     std::string right_storage_name;
 
@@ -304,14 +304,14 @@ public:
     void setRightStorageName(const std::string & storage_name);
     const std::string & getRightStorageName() const;
 
-    void setStorageJoin(std::shared_ptr<IKeyValueStorage> storage);
+    void setStorageJoin(std::shared_ptr<IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() { return right_storage_join; }
 
     bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
-    std::shared_ptr<IKeyValueStorage> getStorageKeyValue() { return right_kv_storage; }
+    std::shared_ptr<IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 };
 
 }
