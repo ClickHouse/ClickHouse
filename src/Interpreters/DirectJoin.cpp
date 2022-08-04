@@ -69,21 +69,21 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("DirectKeyValueJoin"))
 {
-    if (!table_join->oneDisjunct()
-        || table_join->getOnlyClause().key_names_left.size() != 1
-        || table_join->getOnlyClause().key_names_right.size() != 1)
+    if (!table_join->oneDisjunct() ||
+        table_join->getOnlyClause().key_names_left.size() != 1 ||
+        table_join->getOnlyClause().key_names_right.size() != 1)
     {
         throw DB::Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Not supported by direct JOIN");
     }
 
-    bool allowed_inner = isInner(table_join->kind()) && (table_join->strictness() == ASTTableJoin::Strictness::All ||
-                                                         table_join->strictness() == ASTTableJoin::Strictness::Any ||
+    bool allowed_inner = isInner(table_join->kind()) && (table_join->strictness() == JoinStrictness::All ||
+                                                         table_join->strictness() == JoinStrictness::Any ||
                                                          table_join->strictness() != JoinStrictness::RightAny);
 
-    bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == ASTTableJoin::Strictness::Any ||
-                                                       table_join->strictness() == ASTTableJoin::Strictness::All ||
-                                                       table_join->strictness() == ASTTableJoin::Strictness::Semi ||
-                                                       table_join->strictness() == ASTTableJoin::Strictness::Anti);
+    bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == JoinStrictness::Any ||
+                                                       table_join->strictness() == JoinStrictness::All ||
+                                                       table_join->strictness() == JoinStrictness::Semi ||
+                                                       table_join->strictness() == JoinStrictness::Anti);
     if (!allowed_inner && !allowed_left)
     {
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Strictness {} and kind {} is not supported by direct JOIN",
@@ -128,8 +128,8 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
         block.insert(std::move(col));
     }
 
-    bool is_semi_join = table_join->strictness() == ASTTableJoin::Strictness::Semi;
-    bool is_anti_join = table_join->strictness() == ASTTableJoin::Strictness::Anti;
+    bool is_semi_join = table_join->strictness() == JoinStrictness::Semi;
+    bool is_anti_join = table_join->strictness() == JoinStrictness::Anti;
 
     if (is_anti_join)
     {

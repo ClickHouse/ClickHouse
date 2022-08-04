@@ -266,7 +266,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
         const auto & key_names_right = clause.key_names_right;
         ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
 
-        if (strictness == ASTTableJoin::Strictness::Asof)
+        if (strictness == JoinStrictness::Asof)
         {
             assert(disjuncts_num == 1);
 
@@ -459,7 +459,7 @@ struct KeyGetterForType
 void HashJoin::dataMapInit(MapsVariant & map)
 {
 
-    if (kind == ASTTableJoin::Kind::Cross)
+    if (kind == JoinKind::Cross)
         return;
     joinDispatchInit(kind, strictness, map);
     joinDispatch(kind, strictness, map, [&](auto, auto, auto & map_) { map_.create(data->type); });
