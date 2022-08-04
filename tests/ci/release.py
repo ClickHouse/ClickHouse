@@ -335,7 +335,7 @@ class Release:
             yield
         except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
-            self.run(f"git reset --hard; git checkout {orig_ref}")
+            self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
         else:
             if with_checkout_back and need_rollback:
