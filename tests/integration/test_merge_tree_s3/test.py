@@ -715,15 +715,15 @@ def test_cache_with_full_disk_space(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node"])
 def test_store_cleanup_disk_s3(cluster, node_name):
     node = cluster.instances[node_name]
-    node.query("DROP TABLE IF EXISTS store_cleanup SYNC")
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
     node.query(
-        "CREATE TABLE store_cleanup UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
+        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
     )
-    node.query("INSERT INTO store_cleanup SELECT 1")
+    node.query("INSERT INTO s3_test SELECT 1")
 
     node.stop_clickhouse(kill=True)
     path_to_data = "/var/lib/clickhouse/"
-    node.exec_in_container(["rm", f"{path_to_data}/metadata/default/store_cleanup.sql"])
+    node.exec_in_container(["rm", f"{path_to_data}/metadata/default/s3_test.sql"])
     node.start_clickhouse()
 
     node.wait_for_log_line(
@@ -731,6 +731,6 @@ def test_store_cleanup_disk_s3(cluster, node_name):
     )
     node.wait_for_log_line("directories from store")
     node.query(
-        "CREATE TABLE store_cleanup UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
+        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
     )
-    node.query("INSERT INTO store_cleanup SELECT 1")
+    node.query("INSERT INTO s3_test SELECT 1")
