@@ -1,4 +1,4 @@
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>

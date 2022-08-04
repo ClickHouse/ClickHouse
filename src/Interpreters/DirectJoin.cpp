@@ -30,7 +30,7 @@ static MutableColumns convertBlockStructure(
     MutableColumns result_columns;
     for (const auto & out_sample_col : result_sample_block)
     {
-        /// Some coulumns from result_sample_block may not be in source_sample_block,
+        /// Some columns from result_sample_block may not be in source_sample_block,
         /// e.g. if they will be calculated later based on joined columns
         if (!source_sample_block.has(out_sample_col.name))
             continue;
