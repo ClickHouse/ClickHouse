@@ -326,6 +326,37 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr
     return std::make_shared<arrow::ChunkedArray>(array_vector);
 }
 
+static ColumnPtr shift_dictionary_indexes(const ColumnPtr & indexes)
+{
+    auto indexes_shifted = indexes->cloneEmpty();
+
+    for (std::size_t i = 0; i < indexes->size(); i++)
+    {
+        indexes_shifted->insert(indexes->getUInt(i) + 1);
+    }
+
+    return indexes_shifted;
+}
+
+static ColumnPtr shift_dictionary_indexes_and_handle_nullable(const ColumnPtr & indexes, const ColumnPtr & nullmap_column)
+{
+    auto indexes_shifted = indexes->cloneEmpty();
+
+    for (std::size_t i = 0; i < indexes->size(); i++)
+    {
+        if (nullmap_column->getBool(i))
+        {
+            indexes_shifted->insert(0);
+        }
+        else
+        {
+            indexes_shifted->insert(indexes->getUInt(i) + 1);
+        }
+    }
+
+    return indexes_shifted;
+}
+
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     const std::string & column_name,
@@ -338,7 +369,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     bool & skipped)
 {
     if (!is_nullable && arrow_column->null_count() && arrow_column->type()->id() != arrow::Type::LIST
-        && arrow_column->type()->id() != arrow::Type::MAP && arrow_column->type()->id() != arrow::Type::STRUCT)
+        && arrow_column->type()->id() != arrow::Type::MAP && arrow_column->type()->id() != arrow::Type::STRUCT &&
+        arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
         auto nested_column = readColumnFromArrowColumn(arrow_column, column_name, format_name, true, dictionary_values, read_ints_as_dates, allow_null_type, skip_columns_with_unsupported_types, skipped);
         if (skipped)
@@ -473,6 +505,25 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
             auto indexes_column = readColumnWithIndexesData(arrow_indexes_column);
+
+            const auto contains_null = arrow_column->null_count() > 0;
+
+            /*
+             * LC contains a default item at the 0th position. Indexes need to be shifted by one.
+             * CH doesn't maintain a nullmap. Instead, it points to the default/ null item.
+             * The below shifting could be omitted / optimized away if the indexes are shifted in-place when reading
+             * from the ArrowColumn
+             * */
+            if (contains_null)
+            {
+                auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
+                indexes_column = shift_dictionary_indexes_and_handle_nullable(indexes_column, nullmap_column);
+            }
+            else
+            {
+                indexes_column = shift_dictionary_indexes(indexes_column);
+            }
+
             auto lc_column = ColumnLowCardinality::create(dict_values->column, indexes_column);
             auto lc_type = std::make_shared<DataTypeLowCardinality>(dict_values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
