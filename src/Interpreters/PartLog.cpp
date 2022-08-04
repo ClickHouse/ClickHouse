@@ -193,7 +193,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 bool PartLog::addNewPart(
     ContextPtr current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_)
 {
-    return addNewParts(current_context, {part}, elapsed_ns, execution_status, profile_counters_);
+    return addNewParts(current_context, {part}, elapsed_ns, execution_status, std::move(profile_counters_));
 }
 
 
