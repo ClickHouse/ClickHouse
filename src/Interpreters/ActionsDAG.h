@@ -33,6 +33,8 @@ namespace JSONBuilder
     using ItemPtr = std::unique_ptr<IItem>;
 }
 
+class SortDescription;
+
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
 /// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
@@ -73,7 +75,7 @@ public:
         DataTypePtr result_type;
 
         FunctionOverloadResolverPtr function_builder;
-        /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
+        /// Can be used to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
         /// Prepared function which is used in function execution.
         ExecutableFunctionPtr function;
@@ -300,6 +302,8 @@ public:
         bool can_remove_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
+
+    bool isSortingPreserved(const SortDescription & sort_description) const;
 
 private:
     Node & addNode(Node node);
