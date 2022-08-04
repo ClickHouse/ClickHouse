@@ -194,7 +194,11 @@ namespace
         if (!function.arguments || function.arguments->children.size() <= arg_idx)
             return;
 
-        auto & arg = function.arguments->as<ASTExpressionList>()->children[arg_idx];
+        auto * expr_list = function.arguments->as<ASTExpressionList>();
+        if (!expr_list)
+            return;
+
+        auto & arg = expr_list->children[arg_idx];
         if (auto * literal = arg->as<ASTLiteral>())
         {
             if (literal->value.getType() != Field::Types::String)

@@ -130,7 +130,11 @@ void DDLDependencyVisitor::extractTableNameFromArgument(const ASTFunction & func
 
     QualifiedTableName qualified_name;
 
-    const auto * arg = function.arguments->as<ASTExpressionList>()->children[arg_idx].get();
+    const auto * expr_list = function.arguments->as<ASTExpressionList>();
+    if (!expr_list)
+        return;
+
+    const auto * arg = expr_list->children[arg_idx].get();
     if (const auto * literal = arg->as<ASTLiteral>())
     {
         if (literal->value.getType() != Field::Types::String)
@@ -156,7 +160,7 @@ void DDLDependencyVisitor::extractTableNameFromArgument(const ASTFunction & func
     }
     else
     {
-        assert(false);
+        /// Just return because we don't validate AST in this function.
         return;
     }
 
