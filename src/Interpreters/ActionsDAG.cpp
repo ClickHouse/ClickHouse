@@ -448,17 +448,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            // bool all_args_are_const = true;
-
-            // for (const auto & argument : arguments)
-            //     if (typeid_cast<const ColumnConst *>(argument.column.get()) == nullptr)
-            //         all_args_are_const = false;
-
             res_column.column = node->function->execute(arguments, res_column.type, 0, true);
-
-            // if (!all_args_are_const)
-            //     res_column.column = res_column.column->convertToFullColumnIfConst();
-
             break;
         }
 

@@ -9,6 +9,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Coordination/KeeperContext.h>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -336,11 +337,15 @@ public:
 
     Digest getNodesDigest(bool committed) const;
 
-    const bool digest_enabled;
+    KeeperContextPtr keeper_context;
 
     const String superdigest;
 
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_);
+    bool initialized{false};
+
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
+
+    void initializeSystemNodes();
 
     /// Allocate new session id with the specified timeouts
     int64_t getSessionID(int64_t session_timeout_ms)

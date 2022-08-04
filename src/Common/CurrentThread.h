@@ -2,7 +2,6 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadStatus.h>
-#include <base/StringRef.h>
 
 #include <memory>
 #include <string>
@@ -76,7 +75,7 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static StringRef getQueryId()
+    static std::string_view getQueryId()
     {
         if (unlikely(!current_thread))
             return {};

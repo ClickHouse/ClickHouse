@@ -45,7 +45,7 @@ Configuration template:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
+-   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
 -   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table.md#create-query-general-purpose-codecs).
 
 You can configure multiple `<case>` sections.
@@ -197,7 +197,7 @@ Default value: `480` (8 minute).
 
 Parameter of a task that cleans up garbage from `store/` directory.
 If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-`database_catalog_unused_dir_hide_timeout_sec` seconds, the task will "hide" this directory by 
+`database_catalog_unused_dir_hide_timeout_sec` seconds, the task will "hide" this directory by
 removing all access rights. It also works for directories that clickhouse-server does not
 expect to see inside `store/`. Zero means "immediately".
 
@@ -206,10 +206,10 @@ Default value: `3600` (1 hour).
 ## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec}
 
 Parameter of a task that cleans up garbage from `store/` directory.
-If some subdirectory is not used by clickhouse-server and it was previousely "hidden" 
-(see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec)) 
+If some subdirectory is not used by clickhouse-server and it was previousely "hidden"
+(see [database_catalog_unused_dir_hide_timeout_sec](../../operations/server-configuration-parameters/settings.md#database_catalog_unused_dir_hide_timeout_sec))
 and this directory was not modified for last
-`database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory. 
+`database_catalog_unused_dir_rm_timeout_sec` seconds, the task will remove this directory.
 It also works for directories that clickhouse-server does not
 expect to see inside `store/`. Zero means "never".
 
@@ -436,6 +436,18 @@ For more information, see the section “[Configuration files](../../operations/
 
 ``` xml
 <include_from>/etc/metrica.xml</include_from>
+```
+
+## interserver_listen_host {#interserver-listen-host}
+
+Restriction on hosts that can exchange data between ClickHouse servers.
+The default value equals to `listen_host` setting.
+
+Examples:
+
+``` xml
+<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
+<interserver_listen_host>10.0.0.1</interserver_listen_host>
 ```
 
 ## interserver_http_port {#interserver-http-port}
@@ -730,6 +742,16 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 **See Also**
 
 -   [max_server_memory_usage](#max_server_memory_usage)
+
+## concurrent_threads_soft_limit {#concurrent_threads_soft_limit}
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get one thread to run.
+
+Possible values:
+-   Positive integer.
+-   0 — No limit.
+-   -1 — The parameter is initialized by number of logical cores multiplies by 3. Which is a good heuristic for CPU-bound tasks.
+
+Default value: `0`.
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
