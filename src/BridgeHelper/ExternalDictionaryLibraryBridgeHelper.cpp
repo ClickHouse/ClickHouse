@@ -1,4 +1,4 @@
-#include "LibraryBridgeHelper.h"
+#include "ExternalDictionaryLibraryBridgeHelper.h"
 
 #include <Formats/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
@@ -26,13 +26,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LibraryBridgeHelper::LibraryBridgeHelper(
+ExternalDictionaryLibraryBridgeHelper::ExternalDictionaryLibraryBridgeHelper(
         ContextPtr context_,
         const Block & sample_block_,
         const Field & dictionary_id_,
         const LibraryInitData & library_data_)
     : IBridgeHelper(context_->getGlobalContext())
-    , log(&Poco::Logger::get("LibraryBridgeHelper"))
+    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeHelper"))
     , sample_block(sample_block_)
     , config(context_->getConfigRef())
     , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
@@ -45,7 +45,7 @@ LibraryBridgeHelper::LibraryBridgeHelper(
 }
 
 
-Poco::URI LibraryBridgeHelper::getPingURI() const
+Poco::URI ExternalDictionaryLibraryBridgeHelper::getPingURI() const
 {
     auto uri = createBaseURI();
     uri.setPath(PING_HANDLER);
@@ -54,7 +54,7 @@ Poco::URI LibraryBridgeHelper::getPingURI() const
 }
 
 
-Poco::URI LibraryBridgeHelper::getMainURI() const
+Poco::URI ExternalDictionaryLibraryBridgeHelper::getMainURI() const
 {
     auto uri = createBaseURI();
     uri.setPath(MAIN_HANDLER);
@@ -62,7 +62,7 @@ Poco::URI LibraryBridgeHelper::getMainURI() const
 }
 
 
-Poco::URI LibraryBridgeHelper::createRequestURI(const String & method) const
+Poco::URI ExternalDictionaryLibraryBridgeHelper::createRequestURI(const String & method) const
 {
     auto uri = getMainURI();
     uri.addQueryParameter("dictionary_id", toString(dictionary_id));
@@ -71,7 +71,7 @@ Poco::URI LibraryBridgeHelper::createRequestURI(const String & method) const
 }
 
 
-Poco::URI LibraryBridgeHelper::createBaseURI() const
+Poco::URI ExternalDictionaryLibraryBridgeHelper::createBaseURI() const
 {
     Poco::URI uri;
     uri.setHost(bridge_host);
@@ -81,13 +81,13 @@ Poco::URI LibraryBridgeHelper::createBaseURI() const
 }
 
 
-void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
+void ExternalDictionaryLibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 {
     getContext()->addBridgeCommand(std::move(cmd));
 }
 
 
-bool LibraryBridgeHelper::bridgeHandShake()
+bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
 {
     String result;
     try
@@ -148,11 +148,11 @@ bool LibraryBridgeHelper::bridgeHandShake()
 }
 
 
-ReadWriteBufferFromHTTP::OutStreamCallback LibraryBridgeHelper::getInitLibraryCallback() const
+ReadWriteBufferFromHTTP::OutStreamCallback ExternalDictionaryLibraryBridgeHelper::getInitLibraryCallback() const
 {
     /// Sample block must contain null values
     WriteBufferFromOwnString out;
-    auto output_format = getContext()->getOutputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
+    auto output_format = getContext()->getOutputFormat(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
     formatBlock(output_format, sample_block);
     auto block_string = out.str();
 
@@ -167,7 +167,7 @@ ReadWriteBufferFromHTTP::OutStreamCallback LibraryBridgeHelper::getInitLibraryCa
 }
 
 
-bool LibraryBridgeHelper::initLibrary()
+bool ExternalDictionaryLibraryBridgeHelper::initLibrary()
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LIB_NEW_METHOD);
@@ -176,7 +176,7 @@ bool LibraryBridgeHelper::initLibrary()
 }
 
 
-bool LibraryBridgeHelper::cloneLibrary(const Field & other_dictionary_id)
+bool ExternalDictionaryLibraryBridgeHelper::cloneLibrary(const Field & other_dictionary_id)
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LIB_CLONE_METHOD);
@@ -188,7 +188,7 @@ bool LibraryBridgeHelper::cloneLibrary(const Field & other_dictionary_id)
 }
 
 
-bool LibraryBridgeHelper::removeLibrary()
+bool ExternalDictionaryLibraryBridgeHelper::removeLibrary()
 {
     /// Do not force bridge restart if it is not running in case of removeLibrary
     /// because in this case after restart it will not have this dictionaty id in memory anyway.
@@ -201,7 +201,7 @@ bool LibraryBridgeHelper::removeLibrary()
 }
 
 
-bool LibraryBridgeHelper::isModified()
+bool ExternalDictionaryLibraryBridgeHelper::isModified()
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_IS_MODIFIED_METHOD);
@@ -209,7 +209,7 @@ bool LibraryBridgeHelper::isModified()
 }
 
 
-bool LibraryBridgeHelper::supportsSelectiveLoad()
+bool ExternalDictionaryLibraryBridgeHelper::supportsSelectiveLoad()
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_SUPPORTS_SELECTIVE_LOAD_METHOD);
@@ -217,7 +217,7 @@ bool LibraryBridgeHelper::supportsSelectiveLoad()
 }
 
 
-QueryPipeline LibraryBridgeHelper::loadAll()
+QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadAll()
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LOAD_ALL_METHOD);
@@ -225,7 +225,7 @@ QueryPipeline LibraryBridgeHelper::loadAll()
 }
 
 
-QueryPipeline LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
+QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LOAD_IDS_METHOD);
@@ -235,7 +235,7 @@ QueryPipeline LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
 }
 
 
-QueryPipeline LibraryBridgeHelper::loadKeys(const Block & requested_block)
+QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadKeys(const Block & requested_block)
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LOAD_KEYS_METHOD);
@@ -244,14 +244,14 @@ QueryPipeline LibraryBridgeHelper::loadKeys(const Block & requested_block)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [requested_block, this](std::ostream & os)
     {
         WriteBufferFromOStream out_buffer(os);
-        auto output_format = getContext()->getOutputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
+        auto output_format = getContext()->getOutputFormat(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
         formatBlock(output_format, requested_block);
     };
     return QueryPipeline(loadBase(uri, out_stream_callback));
 }
 
 
-bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback) const
+bool ExternalDictionaryLibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback) const
 {
     ReadWriteBufferFromHTTP buf(
         uri,
@@ -265,7 +265,7 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
 }
 
 
-QueryPipeline LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
+QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
     auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
@@ -278,13 +278,13 @@ QueryPipeline LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBuff
         getContext()->getReadSettings(),
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
 
-    auto source = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
+    auto source = FormatFactory::instance().getInput(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
     source->addBuffer(std::move(read_buf_ptr));
     return QueryPipeline(std::move(source));
 }
 
 
-String LibraryBridgeHelper::getDictIdsString(const std::vector<UInt64> & ids)
+String ExternalDictionaryLibraryBridgeHelper::getDictIdsString(const std::vector<UInt64> & ids)
 {
     WriteBufferFromOwnString out;
     writeVectorBinary(ids, out);
