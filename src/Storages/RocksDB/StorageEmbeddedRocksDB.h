@@ -3,7 +3,7 @@
 #include <memory>
 #include <shared_mutex>
 #include <Storages/IStorage.h>
-#include <Storages/IKeyValueStorage.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
 
 
@@ -23,7 +23,7 @@ class Context;
 /// Operates with rocksdb data structures via rocksdb API (holds pointer to rocksdb::DB inside for that).
 /// Storage have one primary key.
 /// Values are serialized into raw strings to store in rocksdb.
-class StorageEmbeddedRocksDB final : public IKeyValueStorage, WithContext
+class StorageEmbeddedRocksDB final : public IStorage, public IKeyValueEntity, WithContext
 {
     friend class EmbeddedRocksDBSink;
 public:
@@ -64,6 +64,8 @@ public:
     Names getPrimaryKey() const override { return {primary_key}; }
 
     Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map) const override;
+
+    Block getSampleBlock() const override;
 
     /// Return chunk with data for given serialized keys.
     /// If out_null_map is passed, fill it with 1/0 depending on key was/wasn't found. Result chunk may contain default values.

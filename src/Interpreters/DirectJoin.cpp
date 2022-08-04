@@ -63,7 +63,7 @@ static MutableColumns convertBlockStructure(
 
 DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
                                        const Block & right_sample_block_,
-                                       std::shared_ptr<IKeyValueStorage> storage_)
+                                       std::shared_ptr<IKeyValueEntity> storage_)
     : table_join(table_join_)
     , storage(storage_)
     , right_sample_block(right_sample_block_)
@@ -118,7 +118,7 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
 
     /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
     Block original_right_block = originalRightBlock(right_sample_block, *table_join);
-    Block sample_storage_block = storage->getInMemoryMetadataPtr()->getSampleBlock();
+    Block sample_storage_block = storage->getSampleBlock();
     MutableColumns result_columns = convertBlockStructure(sample_storage_block, original_right_block, joined_chunk.mutateColumns(), null_map);
 
     for (size_t i = 0; i < result_columns.size(); ++i)

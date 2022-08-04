@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 DictionaryJoinAdapter::DictionaryJoinAdapter(
     std::shared_ptr<const IDictionary> dictionary_, const Names & result_column_names)
-    : IKeyValueStorage(StorageID::createEmpty())
+    : IKeyValueEntity()
     , dictionary(dictionary_)
 {
     if (!dictionary)
@@ -30,29 +30,30 @@ DictionaryJoinAdapter::DictionaryJoinAdapter(
     if (key_types.size() != key_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary '{}' has invalid structure", dictionary->getFullName());
 
-    StorageInMemoryMetadata storage_metadata;
-
     for (size_t i = 0; i < key_types.size(); ++i)
     {
-        storage_metadata.columns.add(ColumnDescription(key_names[i], key_types[i]));
+        sample_block.insert(ColumnWithTypeAndName(nullptr, key_types[i], key_names[i]));
     }
 
     for (const auto & attr_name : result_column_names)
     {
         const auto & attr = dictionary->getStructure().getAttribute(attr_name);
-        storage_metadata.columns.add(ColumnDescription(attr_name, attr.type));
+
+        sample_block.insert(ColumnWithTypeAndName(nullptr, attr.type, attr_name));
 
         attribute_names.emplace_back(attr_name);
         result_types.emplace_back(attr.type);
     }
-
-    /// Fill in memory metadata to make getSampleBlock work.
-    setInMemoryMetadata(storage_metadata);
 }
 
 Names DictionaryJoinAdapter::getPrimaryKey() const
 {
     return dictionary->getStructure().getKeysNames();
+}
+
+Block DictionaryJoinAdapter::getSampleBlock() const
+{
+    return sample_block;
 }
 
 Chunk DictionaryJoinAdapter::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & out_null_map) const
