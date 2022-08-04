@@ -1045,9 +1045,9 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
             result_idx = i;
     }
 
-    ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
     if (result_idx == columns->size())
     {
+        ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
     }
