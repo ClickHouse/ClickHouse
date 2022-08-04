@@ -505,8 +505,6 @@
             (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
             'add_http_cors_header=1' +
-            '&user=' + encodeURIComponent(user) +
-            '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
@@ -514,6 +512,7 @@
         const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
+        xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
 
         xhr.onreadystatechange = function()
         {
