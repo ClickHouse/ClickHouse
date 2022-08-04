@@ -160,6 +160,7 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
     RPN rpn_where_clause;
     RPN rpn_order_by_clause;
     RPNElement rpn_limit;
+    UInt64 limit;
 
     ANNQueryInformation prewhere_info;
     ANNQueryInformation where_info;
@@ -196,8 +197,8 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
     // Match rpns with supported types and extract information
     const bool prewhere_is_valid = matchRPNWhere(rpn_prewhere_clause, prewhere_info);
     const bool where_is_valid = matchRPNWhere(rpn_where_clause, where_info);
-    const bool limit_is_valid = matchRPNLimit(rpn_limit, prewhere_is_valid ? prewhere_info.limit : where_info.limit);
     const bool order_by_is_valid = matchRPNOrderBy(rpn_order_by_clause, order_by_info);
+    const bool limit_is_valid = matchRPNLimit(rpn_limit, limit);
 
     // Query without LIMIT clause is not supported
     if (!limit_is_valid)
@@ -228,6 +229,7 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
         query_information = std::move(order_by_info);
     }
 
+    query_information->limit = limit;
     return query_information.has_value();
 }
 
