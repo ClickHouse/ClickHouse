@@ -1,5 +1,5 @@
 #include <Interpreters/DictionaryJoinAdapter.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
