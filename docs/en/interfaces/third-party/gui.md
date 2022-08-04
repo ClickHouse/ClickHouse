@@ -149,7 +149,7 @@ Features:
 
 ### ClickCat {#clickcat}
 
-[ClickCat](https://github.com/open-botech/ClickCat) is a firendly user interface that lets you search, explore and visualize your ClickHouse Data.
+[ClickCat](https://github.com/clickcat-project/ClickCat) is a friendly user interface that lets you search, explore and visualize your ClickHouse Data.
 
 Features:
 
