@@ -45,6 +45,23 @@ LibraryBridgeHelper::LibraryBridgeHelper(
 }
 
 
+Poco::URI LibraryBridgeHelper::getPingURI() const
+{
+    auto uri = createBaseURI();
+    uri.setPath(PING_HANDLER);
+    uri.addQueryParameter("dictionary_id", toString(dictionary_id));
+    return uri;
+}
+
+
+Poco::URI LibraryBridgeHelper::getMainURI() const
+{
+    auto uri = createBaseURI();
+    uri.setPath(MAIN_HANDLER);
+    return uri;
+}
+
+
 Poco::URI LibraryBridgeHelper::createRequestURI(const String & method) const
 {
     auto uri = getMainURI();
@@ -75,7 +92,7 @@ bool LibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
-        ReadWriteBufferFromHTTP buf(createRequestURI(PING), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts, credentials);
+        ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts, credentials);
         readString(result, buf);
     }
     catch (...)

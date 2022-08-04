@@ -19,8 +19,6 @@ class IBridgeHelper: protected WithContext
 
 public:
     static constexpr inline auto DEFAULT_HOST = "127.0.0.1";
-    static constexpr inline auto PING_HANDLER = "/ping";
-    static constexpr inline auto MAIN_HANDLER = "/";
     static constexpr inline auto DEFAULT_FORMAT = "RowBinary";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
@@ -31,9 +29,9 @@ public:
 
     virtual ~IBridgeHelper() = default;
 
-    Poco::URI getMainURI() const;
+    virtual Poco::URI getMainURI() const = 0;
 
-    Poco::URI getPingURI() const;
+    virtual Poco::URI getPingURI() const = 0;
 
     void startBridgeSync();
 

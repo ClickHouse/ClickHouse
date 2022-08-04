@@ -24,10 +24,16 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     LOG_DEBUG(log, "Request URI: {}", uri.toString());
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
-        return std::make_unique<LibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
+    {
+        if (uri.getPath() == "/extdict_ping")
+            return std::make_unique<LibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
+    }
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        return std::make_unique<LibraryBridgeRequestHandler>(keep_alive_timeout, getContext());
+    {
+        if (uri.getPath() == "/extdict_request")
+            return std::make_unique<LibraryBridgeRequestHandler>(keep_alive_timeout, getContext());
+    }
 
     return nullptr;
 }
