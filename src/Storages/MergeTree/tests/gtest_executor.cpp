@@ -24,10 +24,6 @@ public:
     {
     }
 
-    void onSuspend() override
-    {
-    }
-
     bool executeStep() override
     {
         auto sleep_time = distribution(generator);
@@ -38,10 +34,6 @@ public:
             throw std::runtime_error("Unlucky...");
 
         return false;
-    }
-
-    void onResume() override
-    {
     }
 
     StorageID getStorageID() override
