@@ -10,34 +10,18 @@
 namespace DB
 {
 
-static bool isSortingPreserved(const SortDescription & sort_description, const ActionsDAGPtr & actions_dag)
+static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const SortDescription & input_sort_desc)
 {
-    for (const auto & column_sort_desc : sort_description)
-    {
-        const auto * node = actions_dag->tryFindInIndex(column_sort_desc.column_name);
-        if (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            // todo: check if alias keep order
-            return false;
-        }
-    }
-    return true;
-}
-
-static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const SortDescription& input_sort_desc)
-{
-    return ITransformingStep::Traits
-    {
+    return ITransformingStep::Traits{
         {
             .preserves_distinct_columns = !actions->hasArrayJoin(),
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = isSortingPreserved(input_sort_desc, actions)
+            .preserves_sorting = !actions->hasArrayJoin() && actions->isSortingPreserved(input_sort_desc),
         },
         {
             .preserves_number_of_rows = !actions->hasArrayJoin(),
-        }
-    };
+        }};
 }
 
 ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDAGPtr & actions_dag_)

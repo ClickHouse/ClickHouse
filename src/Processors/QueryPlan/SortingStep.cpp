@@ -196,7 +196,7 @@ void SortingStep::mergeSorting(QueryPipelineBuilder & pipeline, const SortDescri
 
 void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
 {
-    if (!skip_partial_sort)
+    if (!skip_partial_sort || limit_)
     {
         pipeline.addSimpleTransform(
             [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -287,7 +287,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (input_sort_desc.hasPrefix(result_description))
         {
             LOG_DEBUG(getLogger(), "Almost FullSort");
-            fullSort(pipeline, result_description, limit, true);
+            const bool skip_partial_sort = true;
+            fullSort(pipeline, result_description, limit, skip_partial_sort);
             return;
         }
     }
