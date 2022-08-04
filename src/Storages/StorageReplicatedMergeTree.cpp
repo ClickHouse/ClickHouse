@@ -501,11 +501,14 @@ bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper()
 
 
 void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
-    const Strings & replicas, const String & mutation_id) const
+    const Strings & replicas, const String & mutation_id)
 {
     if (replicas.empty())
         return;
 
+    /// We need to make sure that local queue has been synced from zookeeper and contains the entry for the
+    /// current mutation. We use local mutation status for checkig for errors.
+    queue.updateMutations(getZooKeeper());
 
     std::set<String> inactive_replicas;
     for (const String & replica : replicas)
@@ -5958,7 +5961,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     waitMutation(mutation_entry.znode_name, query_context->getSettingsRef().mutations_sync);
 }
 
-void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t mutations_sync) const
+void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t mutations_sync)
 {
     if (!mutations_sync)
         return;
@@ -5974,7 +5977,7 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
         {
             if (*it == replica_name)
             {
-                std::iter_swap(it, replicas.rbegin());
+                std::iter_swap(it, replicas.begin());
                 break;
             }
         }
