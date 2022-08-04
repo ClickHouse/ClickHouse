@@ -1,4 +1,4 @@
--- Tags: long, no-tsan, no-msan, no-asan, no-ubsan
+-- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug
 
 create table t_2354_dist_with_external_aggr(a UInt64, b String, c FixedString(100)) engine = MergeTree order by tuple();
 
