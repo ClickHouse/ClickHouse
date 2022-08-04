@@ -73,7 +73,6 @@ void IOutputFormat::work()
             setRowsBeforeLimit(rows_before_limit_counter->get());
 
         finalize();
-        finalized = true;
         return;
     }
 
@@ -120,9 +119,12 @@ void IOutputFormat::write(const Block & block)
 
 void IOutputFormat::finalize()
 {
+    if (finalized)
+        return;
     writePrefixIfNot();
     writeSuffixIfNot();
     finalizeImpl();
+    finalized = true;
 }
 
 }

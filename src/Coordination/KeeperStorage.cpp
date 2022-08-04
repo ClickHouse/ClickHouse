@@ -6,7 +6,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Poco/Base64Encoder.h>
 #include <Poco/SHA1Engine.h>
-#include "Common/ZooKeeper/ZooKeeperCommon.h"
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -14,6 +14,7 @@
 #include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
 #include <sstream>
@@ -365,10 +366,10 @@ void KeeperStorage::UncommittedState::addDeltas(std::vector<Delta> new_deltas)
 {
     for (auto & delta : new_deltas)
     {
-        if (!delta.path.empty())
-            applyDelta(delta);
+        const auto & added_delta = deltas.emplace_back(std::move(delta));
 
-        deltas.push_back(std::move(delta));
+        if (!added_delta.path.empty())
+            applyDelta(added_delta);
     }
 }
 
@@ -2113,14 +2114,30 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(
     return results;
 }
 
-void KeeperStorage::rollbackRequest(int64_t rollback_zxid)
+void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
 {
+    if (allow_missing && (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid < rollback_zxid))
+        return;
+
     if (uncommitted_transactions.empty() || uncommitted_transactions.back().zxid != rollback_zxid)
+    {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Trying to rollback invalid ZXID ({}). It should be the last preprocessed.", rollback_zxid);
+    }
 
-    uncommitted_transactions.pop_back();
-    uncommitted_state.rollback(rollback_zxid);
+    // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
+    // we block memory tracking so we can avoid terminating if we're rollbacking because of memory limit
+    MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits;
+    try
+    {
+        uncommitted_transactions.pop_back();
+        uncommitted_state.rollback(rollback_zxid);
+    }
+    catch (...)
+    {
+        LOG_FATAL(&Poco::Logger::get("KeeperStorage"), "Failed to rollback log. Terminating to avoid incosistencies");
+        std::terminate();
+    }
 }
 
 KeeperStorage::Digest KeeperStorage::getNodesDigest(bool committed) const

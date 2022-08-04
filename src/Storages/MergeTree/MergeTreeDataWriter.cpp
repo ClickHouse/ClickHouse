@@ -395,8 +395,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns);
-    new_data_part->setSerializationInfos(infos);
+    new_data_part->setColumns(columns, infos);
     new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
@@ -522,8 +521,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns);
-    new_data_part->setSerializationInfos(infos);
+    new_data_part->setColumns(columns, infos);
 
     if (new_data_part->isStoredOnDisk())
     {
