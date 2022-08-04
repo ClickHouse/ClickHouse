@@ -20,7 +20,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 
@@ -181,7 +181,7 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         // making it impossible to handle correctly.
         // We block the memory tracker for all the commit operations (including KeeperStateMachine::commit)
         // assuming that the allocations are small
-        MemoryTrackerBlockerInThread blocker;
+        LockMemoryExceptionInThread blocker{VariableContext::Global};
         nuraft::raft_server::commit_in_bg();
     }
 
