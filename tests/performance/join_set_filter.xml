@@ -9,7 +9,6 @@
     </substitutions>
 
     <settings>
-        <max_rows_in_set_to_optimize_join>100000</max_rows_in_set_to_optimize_join>
         <join_algorithm>full_sorting_merge</join_algorithm>
     </settings>
 
