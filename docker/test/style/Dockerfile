@@ -17,7 +17,9 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     python3-pip \
     shellcheck \
     yamllint \
-    && pip3 install black boto3 codespell dohq-artifactory PyGithub unidiff pylint==2.6.2
+    && pip3 install black boto3 codespell dohq-artifactory PyGithub unidiff pylint==2.6.2 \
+    && apt-get clean \
+    && rm -rf /root/.cache/pip
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH

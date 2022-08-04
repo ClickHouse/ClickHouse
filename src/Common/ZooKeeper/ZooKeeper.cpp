@@ -337,17 +337,17 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
     }
 }
 
-Strings ZooKeeper::getChildren(const std::string & path, Coordination::Stat * stat, const EventPtr & watch)
+Strings ZooKeeper::getChildren(const std::string & path, Coordination::Stat * stat, const EventPtr & watch, Coordination::ListRequestType list_request_type)
 {
     Strings res;
-    check(tryGetChildren(path, res, stat, watch), path);
+    check(tryGetChildren(path, res, stat, watch, list_request_type), path);
     return res;
 }
 
-Strings ZooKeeper::getChildrenWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
+Strings ZooKeeper::getChildrenWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback, Coordination::ListRequestType list_request_type)
 {
     Strings res;
-    check(tryGetChildrenWatch(path, res, stat, watch_callback), path);
+    check(tryGetChildrenWatch(path, res, stat, watch_callback, list_request_type), path);
     return res;
 }
 
@@ -539,7 +539,6 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
         return code;
     }
 }
-
 
 std::string ZooKeeper::get(const std::string & path, Coordination::Stat * stat, const EventPtr & watch)
 {
@@ -885,7 +884,7 @@ void ZooKeeper::waitForEphemeralToDisappearIfAny(const std::string & path)
     if (!tryGet(path, content, nullptr, eph_node_disappeared))
         return;
 
-    int32_t timeout_ms = 2 * session_timeout_ms;
+    int32_t timeout_ms = 3 * session_timeout_ms;
     if (!eph_node_disappeared->tryWait(timeout_ms))
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
                             "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
@@ -902,6 +901,11 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
 bool ZooKeeper::expired()
 {
     return impl->isExpired();
+}
+
+DB::KeeperApiVersion ZooKeeper::getApiVersion()
+{
+    return impl->getApiVersion();
 }
 
 Int64 ZooKeeper::getClientID()
@@ -1227,7 +1231,7 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 }
 
 
-size_t KeeperMultiException::getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
+size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
     if (responses.empty())
         throw DB::Exception("Responses for multi transaction is empty", DB::ErrorCodes::LOGICAL_ERROR);

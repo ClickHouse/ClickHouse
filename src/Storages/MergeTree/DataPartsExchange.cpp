@@ -127,12 +127,13 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     {
         if (part && part->isProjectionPart())
         {
-            data.reportBrokenPart(part->getParentPart()->name);
+            auto parent_part = part->getParentPart()->shared_from_this();
+            data.reportBrokenPart(parent_part);
         }
+        else if (part)
+            data.reportBrokenPart(part);
         else
-        {
-            data.reportBrokenPart(part_name);
-        }
+            LOG_TRACE(log, "Part {} was not found, do not report it as broken", part_name);
     };
 
     try
@@ -174,6 +175,8 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             std::sregex_token_iterator());
 
         if (data_settings->allow_remote_fs_zero_copy_replication &&
+            /// In memory data part does not have metadata yet.
+            !isInMemoryPart(part) &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk_type = part->data_part_storage->getDiskType();
@@ -643,7 +646,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             std::make_shared<MergeTreeDataPartInMemory>(data, projection_name, new_part_info, projection_part_storage, new_data_part.get());
 
         new_projection_part->is_temp = false;
-        new_projection_part->setColumns(block.getNamesAndTypesList());
+        new_projection_part->setColumns(block.getNamesAndTypesList(), {});
         MergeTreePartition partition{};
         new_projection_part->partition = std::move(partition);
         new_projection_part->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
@@ -673,7 +676,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
-    new_data_part->setColumns(block.getNamesAndTypesList());
+    new_data_part->setColumns(block.getNamesAndTypesList(), {});
     new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
@@ -796,7 +799,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     SyncGuardPtr sync_guard;
     if (data.getSettings()->fsync_part_directory)
-        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getPartDirectory());
+        sync_guard = disk->getDirectorySyncGuard(data_part_storage->getRelativePath());
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 

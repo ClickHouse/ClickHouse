@@ -32,6 +32,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/AsynchronousReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveSettings.h>
@@ -217,7 +218,10 @@ public:
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
                         auto buf = std::make_unique<ReadBufferFromHDFS>(
-                            hdfs_namenode_url, current_path, getContext()->getGlobalContext()->getConfigRef());
+                            hdfs_namenode_url,
+                            current_path,
+                            getContext()->getGlobalContext()->getConfigRef(),
+                            getContext()->getReadSettings());
 
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
@@ -910,6 +914,17 @@ std::optional<UInt64> StorageHive::totalRows(const Settings & settings) const
 std::optional<UInt64> StorageHive::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const
 {
     return totalRowsImpl(context_->getSettingsRef(), query_info, context_, PruneLevel::Partition);
+}
+
+void StorageHive::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*local_context*/) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_TABLE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+    }
 }
 
 std::optional<UInt64>
