@@ -129,7 +129,7 @@ struct NameArrayReverseFill { static constexpr auto name = "arrayReverseFill"; }
 using FunctionArrayFill = FunctionArrayMapped<ArrayFillImpl<false>, NameArrayFill>;
 using FunctionArrayReverseFill = FunctionArrayMapped<ArrayFillImpl<true>, NameArrayReverseFill>;
 
-void registerFunctionsArrayFill(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayFill)
 {
     factory.registerFunction<FunctionArrayFill>();
     factory.registerFunction<FunctionArrayReverseFill>();

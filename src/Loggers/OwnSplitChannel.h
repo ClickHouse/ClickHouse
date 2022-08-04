@@ -24,6 +24,9 @@ class OwnSplitChannel : public Poco::Channel
 public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
+
+    void setChannelProperty(const std::string& channel_name, const std::string& name, const std::string& value);
+
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
 
