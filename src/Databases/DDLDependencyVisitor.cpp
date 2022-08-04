@@ -6,10 +6,45 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Poco/String.h>
+
 
 namespace DB
 {
+
+namespace
+{
+    /// ASTTableExpression represents a reference to a table in SELECT query.
+    /// DDLDependencyVisitor should handle ASTTableExpression because some CREATE queries can contain SELECT queries after AS
+    /// (for example, CREATE VIEW).
+    void visitTableExpression(const ASTTableExpression & expr, DDLDependencyVisitor::Data & data)
+    {
+        if (!expr.database_and_table_name)
+            return;
+
+        const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(expr.database_and_table_name.get());
+        if (!identifier)
+            return;
+
+        auto table_identifier = identifier->createTable();
+        if (!table_identifier)
+            return;
+
+        QualifiedTableName qualified_name{table_identifier->getDatabaseName(), table_identifier->shortName()};
+        if (qualified_name.table.empty())
+            return;
+
+        if (qualified_name.database.empty())
+        {
+            /// It can be table/dictionary from default database or XML dictionary, but we cannot distinguish it here.
+            qualified_name.database = data.default_database;
+        }
+
+        data.dependencies.emplace(qualified_name);
+    }
+}
+
 
 TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast)
 {
@@ -33,19 +68,12 @@ void DDLDependencyVisitor::visit(const ASTPtr & ast, Data & data)
         visit(*dict_source, data);
     else if (const auto * storage = ast->as<ASTStorage>())
         visit(*storage, data);
+    else if (auto * expr = ast->as<ASTTableExpression>())
+        visitTableExpression(*expr, data);
 }
 
-bool DDLDependencyVisitor::needChildVisit(const ASTPtr & node, const ASTPtr & child)
+bool DDLDependencyVisitor::needChildVisit(const ASTPtr &, const ASTPtr &)
 {
-    if (node->as<ASTStorage>())
-        return false;
-
-    if (auto * create = node->as<ASTCreateQuery>())
-    {
-        if (child.get() == create->select)
-            return false;
-    }
-
     return true;
 }
 
