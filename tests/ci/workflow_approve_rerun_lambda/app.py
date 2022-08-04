@@ -402,10 +402,27 @@ def main(event):
     workflow_description = get_workflow_description_from_event(event_data)
 
     print("Got workflow description", workflow_description)
-    if (
-        workflow_description.action == "completed"
-        and workflow_description.conclusion == "failure"
-    ):
+    if workflow_description.action == "completed":
+        attempt = 0
+        # Nice and reliable GH API sends from time to time such events, e.g:
+        # action='completed', conclusion=None, status='in_progress',
+        # So let's try receiving a real workflow data
+        while workflow_description.conclusion is None and attempt < MAX_RETRY:
+            progressive_sleep = 3 * sum(i + 1 for i in range(attempt))
+            time.sleep(progressive_sleep)
+            event_data["workflow_run"] = _exec_get_with_retry(
+                workflow_description.api_url
+            )
+            workflow_description = get_workflow_description_from_event(event_data)
+            attempt += 1
+
+        if workflow_description.conclusion != "failure":
+            print(
+                "Workflow finished with status "
+                f"{workflow_description.conclusion}, exiting"
+            )
+            return
+
         print(
             "Workflow",
             workflow_description.url,
@@ -438,11 +455,9 @@ def main(event):
     )
 
     print("Got pull requests for workflow", len(pull_requests))
-    if len(pull_requests) > 1:
-        raise Exception("Received more than one PR for workflow run")
-
-    if len(pull_requests) < 1:
-        raise Exception("Cannot find any pull requests for workflow run")
+    if len(pull_requests) != 1:
+        print(f"Can't continue with non-uniq PRs: {pull_requests}")
+        return
 
     pull_request = pull_requests[0]
     print("Pull request for workflow number", pull_request["number"])
@@ -467,4 +482,8 @@ def main(event):
 
 
 def handler(event, _):
-    main(event)
+    try:
+        main(event)
+    except Exception:
+        print("Received event: ", event)
+        raise
