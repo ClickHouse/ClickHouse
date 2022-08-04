@@ -1,0 +1,7 @@
+lc_string
+LowCardinality(Nullable(String))
+one
+two
+three
+four
+five
