@@ -107,7 +107,7 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Crosswise connection is not initialized");
 
     if (input_streams.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_streams.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step requires exactly one input stream, got {}", input_streams.size());
 
     ColumnsWithTypeAndName header;
     for (const auto & name : column_names)
