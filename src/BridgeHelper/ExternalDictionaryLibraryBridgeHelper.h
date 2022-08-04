@@ -14,7 +14,7 @@ namespace DB
 
 class Pipe;
 
-class LibraryBridgeHelper : public IBridgeHelper
+class ExternalDictionaryLibraryBridgeHelper : public IBridgeHelper
 {
 
 public:
@@ -29,7 +29,7 @@ public:
     static constexpr inline auto PING_HANDLER = "/extdict_ping";
     static constexpr inline auto MAIN_HANDLER = "/extdict_request";
 
-    LibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_, const LibraryInitData & library_data_);
+    ExternalDictionaryLibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_, const LibraryInitData & library_data_);
 
     bool initLibrary();
 
