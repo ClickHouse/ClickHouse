@@ -681,6 +681,47 @@ SELECT
 └────────────┴─────────────────────────────────────────────────────────────────┘
 ```
 
+## parseTimeDelta
+
+Parse a sequence of numbers followed by something resembling a time unit.
+
+**Syntax**
+
+```sql
+parseTimeDelta(timestr)
+```
+
+**Arguments**
+
+-   `timestr` — A sequence of numbers followed by something resembling a time unit.
+
+
+**Returned value**
+
+-   A floating-point number with the number of seconds.
+
+**Example**
+
+```sql
+SELECT parseTimeDelta('11s+22min')
+```
+
+```text
+┌─parseTimeDelta('11s+22min')─┐
+│                        1331 │
+└─────────────────────────────┘
+```
+
+```sql
+SELECT parseTimeDelta('1yr2mo')
+```
+
+```text
+┌─parseTimeDelta('1yr2mo')─┐
+│                 36806400 │
+└──────────────────────────┘
+```
+
 ## least(a, b)
 
 Returns the smallest value from a and b.

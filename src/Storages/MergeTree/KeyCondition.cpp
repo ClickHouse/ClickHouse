@@ -607,9 +607,9 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
             result_idx = i;
     }
 
-    ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
     if (result_idx == columns->size())
     {
+        ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size());
     }
@@ -2050,7 +2050,7 @@ bool KeyCondition::mayBeTrueInRange(
 }
 
 String KeyCondition::RPNElement::toString() const { return toString("column " + std::to_string(key_column), false); }
-String KeyCondition::RPNElement::toString(const std::string_view & column_name, bool print_constants) const
+String KeyCondition::RPNElement::toString(std::string_view column_name, bool print_constants) const
 {
     auto print_wrapped_column = [this, &column_name, print_constants](WriteBuffer & buf)
     {

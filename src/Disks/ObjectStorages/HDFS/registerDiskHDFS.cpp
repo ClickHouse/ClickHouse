@@ -36,7 +36,7 @@ void registerDiskHDFS(DiskFactory & factory)
 
 
         /// FIXME Cache currently unsupported :(
-        ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(nullptr, uri, std::move(settings), config);
+        ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(uri, std::move(settings), config);
 
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context_);
 

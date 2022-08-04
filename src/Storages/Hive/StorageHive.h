@@ -70,6 +70,7 @@ public:
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
 private:
     using FileFormat = IHiveFile::FileFormat;
