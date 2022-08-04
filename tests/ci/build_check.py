@@ -39,7 +39,7 @@ def _can_export_binaries(build_config: BuildConfig) -> bool:
         return False
     if build_config["bundled"] != "bundled":
         return False
-    if build_config["splitted"] == "splitted":
+    if build_config["libraries"] == "shared":
         return False
     if build_config["sanitizer"] != "":
         return True
@@ -68,8 +68,8 @@ def get_packager_cmd(
         cmd += f" --build-type={build_config['build_type']}"
     if build_config["sanitizer"]:
         cmd += f" --sanitizer={build_config['sanitizer']}"
-    if build_config["splitted"] == "splitted":
-        cmd += " --split-binary"
+    if build_config["libraries"] == "shared":
+        cmd += " --shared-libraries"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 

@@ -85,7 +85,7 @@ public:
 
 }
 
-void registerFunctionH3GetOriginIndexFromUnidirectionalEdge(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetOriginIndexFromUnidirectionalEdge)
 {
     factory.registerFunction<FunctionH3GetOriginIndexFromUnidirectionalEdge>();
 }

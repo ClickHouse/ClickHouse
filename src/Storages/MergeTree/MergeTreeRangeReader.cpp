@@ -8,6 +8,7 @@
 #include <base/range.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <bit>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -473,7 +474,7 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
             count += 64;
         else
         {
-            count += __builtin_clzll(val);
+            count += std::countl_zero(val);
             return count;
         }
     }
@@ -507,7 +508,7 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
             count += 64;
         else
         {
-            count += __builtin_clzll(val);
+            count += std::countl_zero(val);
             return count;
         }
     }
@@ -531,7 +532,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 
     size_t count = 0;
 
-#if defined(__SSE2__) && defined(__POPCNT__)
+#if defined(__SSE2__)
     const __m128i zero16 = _mm_setzero_si128();
     while (end - begin >= 64)
     {
@@ -555,7 +556,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
             count += 64;
         else
         {
-            count += __builtin_clzll(val);
+            count += std::countl_zero(val);
             return count;
         }
     }
@@ -583,7 +584,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
             count += 64;
         else
         {
-            count += __builtin_clzll(val);
+            count += std::countl_zero(val);
             return count;
         }
     }
