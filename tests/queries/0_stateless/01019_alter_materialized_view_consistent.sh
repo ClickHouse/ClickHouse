@@ -39,7 +39,7 @@ function insert_thread() {
         done
         wait
 
-        is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(\`case\` = 1) > 0 AND countIf(\`case\` = 2) > 0 FROM mv;")
+        is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv;")
 
         if [ "$is_done" -eq "1" ]; then
             break
@@ -58,7 +58,7 @@ function alter_thread() {
         -q "${ALTER[$RANDOM % 2]}"
         sleep "0.0$RANDOM"
 
-        is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(\`case\` = 1) > 0 AND countIf(\`case\` = 2) > 0 FROM mv;")
+        is_done=$($CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv;")
 
         if [ "$is_done" -eq "1" ]; then
             break
@@ -75,7 +75,7 @@ timeout 120 bash -c alter_thread &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "SELECT countIf(\`case\` = 1) > 0 AND countIf(\`case\` = 2) > 0 FROM mv LIMIT 1;"
+$CLICKHOUSE_CLIENT -q "SELECT countIf(case = 1) > 0 AND countIf(case = 2) > 0 FROM mv LIMIT 1;"
 $CLICKHOUSE_CLIENT -q "SELECT 'inconsistencies', count() FROM mv WHERE test == 0;"
 
 $CLICKHOUSE_CLIENT -q "DROP VIEW mv"
