@@ -759,13 +759,21 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusRequest request;
     request.read(*in, client_tcp_protocol_version);
 
-    ContextPtr context_to_resolve_table_names = (session && session->sessionContext()) ? session->sessionContext() : server.context();
-    if (is_interserver_mode && !default_database.empty())
+    ContextPtr context_to_resolve_table_names;
+    if (is_interserver_mode)
     {
-        // in interserver mode, the session doesn't exist.
-        ContextMutablePtr interserver_context = Context::createCopy(context_to_resolve_table_names);
-        interserver_context->setCurrentDatabase(default_database);
-        context_to_resolve_table_names = interserver_context;
+        /// In interserver mode session context does not exists, because authentication is done for each query.
+        /// We also cannot create query context earlier, because it cannot be created before authentication,
+        /// but query is not received yet. So we have to do this trick.
+        ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
+        if (!default_database.empty())
+            fake_interserver_context->setCurrentDatabase(default_database);
+        context_to_resolve_table_names = fake_interserver_context;
+    }
+    else
+    {
+        assert(session);
+        context_to_resolve_table_names = session->sessionContext();
     }
 
     TablesStatusResponse response;
@@ -1361,7 +1369,7 @@ void TCPHandler::receiveQuery()
     query_context = session->makeQueryContext(std::move(client_info));
 
     /// Sets the default database if it wasn't set earlier for the session context.
-    if (!default_database.empty() && !session->sessionContext())
+    if (is_interserver_mode && !default_database.empty())
         query_context->setCurrentDatabase(default_database);
 
     if (state.part_uuids_to_ignore)
