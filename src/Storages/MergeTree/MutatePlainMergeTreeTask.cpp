@@ -38,6 +38,9 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
+        auto & thread_status = CurrentThread::get();
+        thread_status.finalizePerformanceCounters();
+        auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
         mutate_task.reset();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
@@ -46,7 +49,8 @@ void MutatePlainMergeTreeTask::prepare()
             future_part->name,
             new_part,
             future_part->parts,
-            merge_list_entry.get());
+            merge_list_entry.get(),
+            profile_counters);
     };
 
     fake_query_context = Context::createCopy(storage.getContext());

@@ -10,6 +10,9 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Common/ProfileEvents.h>
+#include <DataTypes/DataTypeMap.h>
 
 #include <Common/CurrentThread.h>
 
@@ -119,6 +122,17 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
         /// Is there an error during the execution or commit
         {"error", std::make_shared<DataTypeUInt16>()},
         {"exception", std::make_shared<DataTypeString>()},
+
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+    };
+}
+
+NamesAndAliases PartLogElement::getNamesAndAliases()
+{
+    return
+    {
+        {"ProfileEvents.Names", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}, "mapKeys(ProfileEvents)"},
+        {"ProfileEvents.Values", {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())}, "mapValues(ProfileEvents)"},
     };
 }
 
@@ -160,13 +174,23 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
+
+    if (profile_counters)
+    {
+        auto * column = columns[i++].get();
+        ProfileEvents::dumpToMapColumn(*profile_counters, column, true);
+    }
+    else
+    {
+        columns[i++]->insertDefault();
+    }
 }
 
 
 bool PartLog::addNewPart(
-    ContextPtr current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
+    ContextPtr current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_)
 {
-    return addNewParts(current_context, {part}, elapsed_ns, execution_status);
+    return addNewParts(current_context, {part}, elapsed_ns, execution_status, profile_counters_);
 }
 
 static inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
@@ -181,7 +205,7 @@ static inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system
 }
 
 bool PartLog::addNewParts(
-    ContextPtr current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
+    ContextPtr current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns, const ExecutionStatus & execution_status, std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_)
 {
     if (parts.empty())
         return true;
@@ -226,6 +250,8 @@ bool PartLog::addNewParts(
 
             elem.error = static_cast<UInt16>(execution_status.code);
             elem.exception = execution_status.message;
+
+            elem.profile_counters = profile_counters_;
 
             part_log->add(elem);
         }

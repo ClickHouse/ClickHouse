@@ -7,6 +7,10 @@
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 
+namespace ProfileEvents
+{
+    class Counters;
+}
 
 namespace DB
 {
@@ -79,13 +83,15 @@ struct PartLogElement
     UInt16 error = 0;
     String exception;
 
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+
     static std::string name() { return "PartLog"; }
 
     static MergeReasonType getMergeReasonType(MergeType merge_type);
     static PartMergeAlgorithm getMergeAlgorithm(MergeAlgorithm merge_algorithm_);
 
     static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }
 };
@@ -104,9 +110,11 @@ class PartLog : public SystemLog<PartLogElement>
 public:
     /// Add a record about creation of new part.
     static bool addNewPart(ContextPtr context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
-                           const ExecutionStatus & execution_status = {});
+                           const ExecutionStatus & execution_status = {},
+                           std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_ = {});
     static bool addNewParts(ContextPtr context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
-                            const ExecutionStatus & execution_status = {});
+                            const ExecutionStatus & execution_status = {},
+                            std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters_ = {});
 };
 
 }

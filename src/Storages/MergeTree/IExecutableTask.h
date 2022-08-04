@@ -29,7 +29,9 @@ class IExecutableTask
 {
 public:
     using TaskResultCallback = std::function<void(bool)>;
+    virtual bool onResume() = 0;
     virtual bool executeStep() = 0;
+    virtual bool onSuspend() = 0;
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() = 0;
     virtual UInt64 getPriority() = 0;
@@ -54,11 +56,21 @@ public:
         , job_result_callback(std::forward<Callback>(job_result_callback_))
         , id(id_) {}
 
+    bool onResume() override
+    {
+        return true;
+    }
+
     bool executeStep() override
     {
         res = job_to_execute();
         job_to_execute = {};
         return false;
+    }
+
+    bool onSuspend() override
+    {
+        return true;
     }
 
     void onCompleted() override { job_result_callback(!res); }
