@@ -1118,7 +1118,6 @@ enum class Action
   * Operators can be grouped into some type if they have similar behaviour.
   * Certain operators are unique in terms of their behaviour, so they are assigned a separate type.
   */
-
 enum class OperatorType
 {
     None,
@@ -1132,7 +1131,8 @@ enum class OperatorType
     FinishBetween,
     StartIf,
     FinishIf,
-    Cast
+    Cast,
+    Lambda
 };
 
 /** Operator class stores parameters of the operator:
@@ -1186,19 +1186,6 @@ public:
 
     void pushOperator(Operator op)
     {
-        /// Mergeable operators does not add depth compared to other operators
-        ///  a AND b AND c => and(a, b, c) 
-        if (op.type != OperatorType::Mergeable)
-        {
-            ++depth_diff;
-            ++depth_total;
-        }
-        else
-        {
-            depth_diff -= depth_total;
-            depth_total = 0;
-        }
-
         operators.push_back(std::move(op));
     }
 
@@ -1270,6 +1257,8 @@ public:
         if (n > operands.size())
             return false;
 
+        asts.reserve(asts.size() + n);
+
         auto start = operands.begin() + operands.size() - n;
         asts.insert(asts.end(), std::make_move_iterator(start), std::make_move_iterator(operands.end()));
         operands.erase(start, operands.end());
@@ -1277,9 +1266,12 @@ public:
         return true;
     }
 
-    /// Merge operators and operands into a single element.
-    ///  Operators are previously sorted in ascending order,
+    /// Merge operators and operands into a single element (column), then push it to 'result' vector.
+    ///  Operators are previously sorted in ascending order of priority
+    ///  (operator with priority 1 has higher priority than operator with priority 2),
     ///  so we can just merge them with operands starting from the end.
+    ///
+    /// If we fail here it means that the query was incorrect and we should return an error.
     ///
     bool mergeElement(bool push_to_result = true)
     {
@@ -1342,9 +1334,6 @@ public:
         else
             pushOperand(node);
 
-        depth_diff -= depth_total;
-        depth_total = 0;
-
         return res;
     }
 
@@ -1358,7 +1347,7 @@ public:
             return true;
         }
 
-        if (!mergeElement())
+        if (operands.size() != 1 || !operators.empty() || !mergeElement())
             return false;
 
         /// 1. If there is already tuple do nothing
@@ -1377,6 +1366,7 @@ public:
         return true;
     }
 
+    /// Put 'node' indentifier into the last operand as its alias
     bool insertAlias(ASTPtr node)
     {
         if (!mergeElement(false))
@@ -1408,15 +1398,6 @@ public:
         return open_between > 0;
     }
 
-    void syncDepth(IParser::Pos & pos)
-    {
-        for (; depth_diff > 0; --depth_diff)
-            pos.increaseDepth();
-
-        for (; depth_diff < 0; ++depth_diff)
-            pos.decreaseDepth();
-    }
-
 protected:
     std::vector<Operator> operators;
     ASTs operands;
@@ -1428,15 +1409,16 @@ protected:
     ///  In order to distinguish them we keep a counter of BETWEENs without matching ANDs.
     int open_between = 0;
 
-    /// We need to count depth (at least кщгпрдн) because of the segfault in the AST destructor, if the depth is too deep.
-    ///  We change depth in two places, in both of which we don't have acces to the current IParser::Pos.
-    ///  So we need to store the current difference of depth to later sync it in syncDepth(pos).
-    int depth_diff = 1;
-
-    /// Total depth allows us to decrease depth to the previous level (before entering our layer).
-    int depth_total = 1;
+    // bool allow_alias = true;
+    // bool allow_alias_without_as_keyword = true;
 };
 
+
+/// Basic layer for a function with certain separator and end tokens:
+///  1. If we parse a separator we should merge current operands and operators
+///     into one element and push in to 'result' vector.
+///  2. If we parse an ending token, we should merge everything as in (1) and
+///     also set 'finished' flag.
 template <TokenType separator, TokenType end>
 class BaseLayer : public Layer
 {
@@ -1464,6 +1446,7 @@ public:
     }
 };
 
+/// General function layer
 class FunctionLayer : public Layer
 {
 public:
@@ -1473,6 +1456,13 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        ///   | 0 |      1      |     2    |
+        ///  f(ALL ...)(ALL ...) FILTER ...
+        ///
+        /// 0. Parse ALL and DISTINCT qualifiers (-> 1)
+        /// 1. Parse all the arguments and ending token (-> 2), possibly with parameters list (-> 1)
+        /// 2. Create function, possibly parse FILTER and OVER window definitions (finished)
+
         if (state == 0)
         {
             state = 1;
@@ -1657,7 +1647,7 @@ private:
     ASTPtr parameters;
 };
 
-
+/// Layer for priority brackets and tuple function
 class RoundBracketsLayer : public Layer
 {
 public:
@@ -1705,6 +1695,7 @@ private:
     bool is_tuple = false;
 };
 
+/// Layer for array square brackets operator
 class ArrayLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingSquareBracket>
 {
 public:
@@ -1720,8 +1711,9 @@ public:
     }
 };
 
-// FunctionBaseLayer
-
+/// Layer for arrayElement square brackets operator
+///  This layer does not create a function, it is only needed to parse closing token
+///  and return only one element.
 class ArrayElementLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingSquareBracket>
 {
 public:
@@ -1736,6 +1728,11 @@ class CastLayer : public Layer
 public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        /// CAST(x [AS alias1], T [AS alias2]) or CAST(x [AS alias1] AS T)
+        ///
+        /// 0. Parse all the cases (-> 1)
+        /// 1. Parse closing token (finished)
+
         ParserKeyword as_keyword_parser("AS");
         ASTPtr alias;
 
@@ -1829,7 +1826,7 @@ class ExtractLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingRoundB
 public:
     bool getResult(ASTPtr & op) override
     {
-        if (parsed_interval_kind)
+        if (state == 2)
         {
             if (result.empty())
                 return false;
@@ -1837,13 +1834,21 @@ public:
             op = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), result[0]);
         }
         else
+        {
             op = makeASTFunction("extract", std::move(result));
+        }
 
         return true;
     }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        /// extract(haystack, pattern) or EXTRACT(DAY FROM Date)
+        ///
+        /// 0. If we parse interval_kind and 'FROM' keyword (-> 2), otherwise (-> 1)
+        /// 1. Basic parser
+        /// 2. Parse closing bracket (finished)
+
         if (state == 0)
         {
             IParser::Pos begin = pos;
@@ -1851,7 +1856,6 @@ public:
 
             if (parseIntervalKind(pos, expected, interval_kind) && s_from.ignore(pos, expected))
             {
-                parsed_interval_kind = true;
                 state = 2;
                 return true;
             }
@@ -1884,16 +1888,24 @@ public:
 
 private:
     IntervalKind interval_kind;
-    bool parsed_interval_kind = false;
 };
 
 class SubstringLayer : public Layer
 {
 public:
+    bool getResult(ASTPtr & op) override
+    {
+        op = makeASTFunction("substring", std::move(result));
+        return true;
+    }
+
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        /// Either SUBSTRING(expr FROM start) or SUBSTRING(expr FROM start FOR length) or SUBSTRING(expr, start, length)
-        /// The latter will be parsed normally as a function later.
+        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
+        ///
+        /// 0: Parse first separator: FROM or comma (-> 1)
+        /// 1: Parse second separator: FOR or comma (-> 2)
+        /// 1 or 2: Parse closing bracket (finished)
 
         if (state == 0)
         {
@@ -1930,9 +1942,7 @@ public:
                 if (!mergeElement())
                     return false;
 
-                result = {makeASTFunction("substring", result)};
                 finished = true;
-                return true;
             }
         }
 
@@ -1943,8 +1953,23 @@ public:
 class PositionLayer : public Layer
 {
 public:
+    bool getResult(ASTPtr & op) override
+    {
+        if (state == 2)
+            std::swap(result[1], result[0]);
+
+        op = makeASTFunction("position", std::move(result));
+        return true;
+    }
+
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        /// position(haystack, needle[, start_pos]) or position(needle IN haystack)
+        ///
+        /// 0: Parse separator: comma (-> 1) or IN (-> 2)
+        /// 1: Parse second separator: comma
+        /// 1 or 2: Parse closing bracket (finished)
+
         if (state == 0)
         {
             if (ParserToken(TokenType::Comma).ignore(pos, expected))
@@ -1985,13 +2010,7 @@ public:
                 if (!mergeElement())
                     return false;
 
-                if (state == 1)
-                    result = {makeASTFunction("position", result)};
-                else
-                    result = {makeASTFunction("position", result[1], result[0])};
-
                 finished = true;
-                return true;
             }
         }
 
@@ -2040,6 +2059,12 @@ public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
         /// Handles all possible TRIM/LTRIM/RTRIM call variants
+        ///
+        /// 0: If flags 'trim_left' and 'trim_right' are set (-> 2).
+        ///    If not, try to parse 'BOTH', 'LEADING', 'TRAILING' keywords,
+        ///    then if char_override (-> 1), else (-> 2)
+        /// 1. Parse 'FROM' keyword (-> 2)
+        /// 2. Parse closing token, choose name, add arguments (finished)
 
         if (state == 0)
         {
@@ -2154,14 +2179,9 @@ public:
                     else
                     {
                         if (trim_left)
-                        {
                             function_name = "trimLeft";
-                        }
                         else
-                        {
-                            /// trim_right == false not possible
                             function_name = "trimRight";
-                        }
                     }
                 }
 
@@ -2210,6 +2230,11 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        /// DATEADD(YEAR, 1, date) or DATEADD(INTERVAL 1 YEAR, date);
+        ///
+        /// 0. Try to parse interval_kind (-> 1)
+        /// 1. Basic parser
+
         if (state == 0)
         {
             if (parseIntervalKind(pos, expected, interval_kind))
@@ -2218,13 +2243,10 @@ public:
                     return false;
 
                 action = Action::OPERAND;
-                state = 2;
                 parsed_interval_kind = true;
             }
-            else
-            {
-                state = 1;
-            }
+
+            state = 1;
         }
 
         if (state == 1)
@@ -2232,29 +2254,6 @@ public:
             return BaseLayer::parse(pos, expected, action);
         }
 
-        if (state == 2)
-        {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected))
-            {
-                action = Action::OPERAND;
-
-                if (!mergeElement())
-                    return false;
-
-                state = 3;
-            }
-        }
-
-        if (state == 3)
-        {
-            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            {
-                if (!mergeElement())
-                    return false;
-
-                finished = true;
-            }
-        }
         return true;
     }
 
@@ -2288,6 +2287,9 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        /// 0. Try to parse interval_kind (-> 1)
+        /// 1. Basic parser
+
         if (state == 0)
         {
             if (parseIntervalKind(pos, expected, interval_kind))
@@ -2320,6 +2322,11 @@ class IntervalLayer : public Layer
 public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
     {
+        /// INTERVAL 1 HOUR or INTERVAL expr HOUR
+        ///
+        /// 0. Try to parse interval_kind (-> 1)
+        /// 1. Basic parser 
+
         if (state == 0)
         {
             auto begin = pos;
@@ -2339,7 +2346,9 @@ public:
                     ASTPtr expr;
 
                     if (!ParserNumber{}.parse(token_pos, expr, token_expected))
+                    {
                         return false;
+                    }
                     else
                     {
                         /// case: INTERVAL '1' HOUR
@@ -2363,6 +2372,7 @@ public:
                 }
             }
             state = 1;
+            return true;
         }
 
         if (state == 1)
@@ -2390,6 +2400,13 @@ class CaseLayer : public Layer
 public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        /// CASE [x] WHEN expr THEN expr [WHEN expr THEN expr [...]] [ELSE expr] END
+        ///
+        /// 0. Check if we have case expression [x] (-> 1)
+        /// 1. Parse keywords: WHEN (-> 2), ELSE (-> 3), END (finished)
+        /// 2. Parse THEN keyword (-> 1)
+        /// 3. Parse END keyword (finished)
+
         if (state == 0)
         {
             auto old_pos = pos;
@@ -2564,7 +2581,8 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {"BETWEEN",       Operator("",                6,  0, OperatorType::StartBetween)},
         {"NOT BETWEEN",   Operator("",                6,  0, OperatorType::StartNotBetween)},
         {"[",             Operator("arrayElement",    14, 2, OperatorType::ArrayElement)},
-        {"::",            Operator("CAST",            14, 2, OperatorType::Cast)}
+        {"::",            Operator("CAST",            14, 2, OperatorType::Cast)},
+        {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)}
     });
 
     static std::vector<std::pair<const char *, Operator>> op_table_unary({
@@ -2572,7 +2590,6 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {"-",             Operator("negate",          13, 1)}
     });
 
-    auto lambda_operator = Operator("lambda",         1, 2);
     auto finish_between_operator = Operator("",       7, 0, OperatorType::FinishBetween);
 
     ParserCompoundIdentifier identifier_parser(false, true);
@@ -2594,26 +2611,24 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Action next = Action::OPERAND;
 
-    std::vector<std::unique_ptr<Layer>> storage;
-    storage.push_back(std::make_unique<Layer>());
+    std::vector<std::unique_ptr<Layer>> layers;
+    layers.push_back(std::make_unique<Layer>());
 
     while (pos.isValid())
     {
-        if (!storage.back()->parse(pos, expected, next))
+        if (!layers.back()->parse(pos, expected, next))
             return false;
 
-        storage.back()->syncDepth(pos);
-
-        if (storage.back()->isFinished())
+        if (layers.back()->isFinished())
         {
             next = Action::OPERATOR;
 
             ASTPtr res;
-            if (!storage.back()->getResult(res))
+            if (!layers.back()->getResult(res))
                 return false;
 
-            storage.pop_back();
-            storage.back()->pushOperand(res);
+            layers.pop_back();
+            layers.back()->pushOperand(res);
             continue;
         }
 
@@ -2623,16 +2638,15 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ASTPtr tmp;
 
             /// Special case for cast expression
-            if (storage.back()->previousType() != OperatorType::TupleElement &&
+            if (layers.back()->previousType() != OperatorType::TupleElement &&
                 ParseCastExpression(pos, tmp, expected))
             {
-                storage.back()->pushOperand(std::move(tmp));
+                layers.back()->pushOperand(std::move(tmp));
                 continue;
             }
 
-            if (storage.back()->previousType() == OperatorType::Comparison)
+            if (layers.back()->previousType() == OperatorType::Comparison)
             {
-                auto old_pos = pos;
                 SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
                 if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
@@ -2645,9 +2659,9 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     Operator prev_op;
                     ASTPtr function, argument;
 
-                    if (!storage.back()->popOperator(prev_op))
+                    if (!layers.back()->popOperator(prev_op))
                         return false;
-                    if (!storage.back()->popOperand(argument))
+                    if (!layers.back()->popOperand(argument))
                         return false;
 
                     function = makeASTFunction(prev_op.function_name, argument, tmp);
@@ -2655,12 +2669,8 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!modifyAST(function, subquery_function_type))
                         return false;
 
-                    storage.back()->pushOperand(std::move(function));
+                    layers.back()->pushOperand(std::move(function));
                     continue;
-                }
-                else
-                {
-                    pos = old_pos;
                 }
             }
 
@@ -2675,29 +2685,72 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (cur_op != op_table_unary.end())
             {
                 next = Action::OPERAND;
-                storage.back()->pushOperator(cur_op->second);
+                layers.back()->pushOperator(cur_op->second);
+                continue;
             }
-            else if (parseOperator(pos, "INTERVAL", expected))
-            {
-                next = Action::OPERAND;
-                storage.push_back(std::make_unique<IntervalLayer>());
-            }
+
+            auto old_pos = pos;
+            std::unique_ptr<Layer> layer;
+            if (parseOperator(pos, "INTERVAL", expected))
+                layer = std::make_unique<IntervalLayer>();
             else if (parseOperator(pos, "CASE", expected))
+                layer = std::make_unique<CaseLayer>();
+
+            /// Here we check that CASE or INTERVAL is not an identifier
+            /// It is needed for backwards compatibility
+            if (layer)
             {
-                next = Action::OPERAND;
-                storage.push_back(std::make_unique<CaseLayer>());
+                Expected stub;
+
+                auto stub_cur_op = op_table.begin();
+                for (; stub_cur_op != op_table.end(); ++stub_cur_op)
+                {
+                    if (parseOperator(pos, stub_cur_op->first, stub))
+                        break;
+                }
+
+                auto check_pos = pos;
+
+                if (stub_cur_op != op_table.end() ||
+                    ParserToken(TokenType::Comma).ignore(pos, stub) ||
+                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, stub) ||
+                    ParserToken(TokenType::ClosingSquareBracket).ignore(pos, stub) ||
+                    ParserToken(TokenType::Semicolon).ignore(pos, stub) ||
+                    ParserKeyword("AS").ignore(pos, stub) ||
+                    ParserKeyword("FROM").ignore(pos, stub) ||
+                    !pos.isValid())
+                {
+                    pos = old_pos;
+                }
+                else if (ParserAlias(true).ignore(check_pos, stub) &&
+                         (ParserToken(TokenType::Comma).ignore(check_pos, stub) ||
+                          ParserToken(TokenType::ClosingRoundBracket).ignore(check_pos, stub) ||
+                          ParserToken(TokenType::ClosingSquareBracket).ignore(check_pos, stub) ||
+                          ParserToken(TokenType::Semicolon).ignore(check_pos, stub) ||
+                          ParserKeyword("FROM").ignore(check_pos, stub) ||
+                          !check_pos.isValid()))
+                {
+                    pos = old_pos;
+                }
+                else
+                {
+                    next = Action::OPERAND;
+                    layers.push_back(std::move(layer));
+                    continue;
+                }
             }
-            else if (ParseDateOperatorExpression(pos, tmp, expected) ||
-                     ParseTimestampOperatorExpression(pos, tmp, expected) ||
-                     tuple_literal_parser.parse(pos, tmp, expected) ||
-                     array_literal_parser.parse(pos, tmp, expected) ||
-                     number_parser.parse(pos, tmp, expected) ||
-                     literal_parser.parse(pos, tmp, expected) ||
-                     asterisk_parser.parse(pos, tmp, expected) ||
-                     qualified_asterisk_parser.parse(pos, tmp, expected) ||
-                     columns_matcher_parser.parse(pos, tmp, expected))
+
+            if (ParseDateOperatorExpression(pos, tmp, expected) ||
+                ParseTimestampOperatorExpression(pos, tmp, expected) ||
+                tuple_literal_parser.parse(pos, tmp, expected) ||
+                array_literal_parser.parse(pos, tmp, expected) ||
+                number_parser.parse(pos, tmp, expected) ||
+                literal_parser.parse(pos, tmp, expected) ||
+                asterisk_parser.parse(pos, tmp, expected) ||
+                qualified_asterisk_parser.parse(pos, tmp, expected) ||
+                columns_matcher_parser.parse(pos, tmp, expected))
             {
-                storage.back()->pushOperand(std::move(tmp));
+                layers.back()->pushOperand(std::move(tmp));
             }
             else if (identifier_parser.parse(pos, tmp, expected))
             {
@@ -2711,53 +2764,53 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     String function_name_lowercase = Poco::toLower(function_name);
 
                     if (function_name_lowercase == "cast")
-                        storage.push_back(std::make_unique<CastLayer>());
+                        layers.push_back(std::make_unique<CastLayer>());
                     else if (function_name_lowercase == "extract")
-                        storage.push_back(std::make_unique<ExtractLayer>());
+                        layers.push_back(std::make_unique<ExtractLayer>());
                     else if (function_name_lowercase == "substring")
-                        storage.push_back(std::make_unique<SubstringLayer>());
+                        layers.push_back(std::make_unique<SubstringLayer>());
                     else if (function_name_lowercase == "position")
-                        storage.push_back(std::make_unique<PositionLayer>());
+                        layers.push_back(std::make_unique<PositionLayer>());
                     else if (function_name_lowercase == "exists")
-                        storage.push_back(std::make_unique<ExistsLayer>());
+                        layers.push_back(std::make_unique<ExistsLayer>());
                     else if (function_name_lowercase == "trim")
-                        storage.push_back(std::make_unique<TrimLayer>(false, false));
+                        layers.push_back(std::make_unique<TrimLayer>(false, false));
                     else if (function_name_lowercase == "ltrim")
-                        storage.push_back(std::make_unique<TrimLayer>(true, false));
+                        layers.push_back(std::make_unique<TrimLayer>(true, false));
                     else if (function_name_lowercase == "rtrim")
-                        storage.push_back(std::make_unique<TrimLayer>(false, true));
+                        layers.push_back(std::make_unique<TrimLayer>(false, true));
                     else if (function_name_lowercase == "dateadd" || function_name_lowercase == "date_add"
                         || function_name_lowercase == "timestampadd" || function_name_lowercase == "timestamp_add")
-                        storage.push_back(std::make_unique<DateAddLayer>("plus"));
+                        layers.push_back(std::make_unique<DateAddLayer>("plus"));
                     else if (function_name_lowercase == "datesub" || function_name_lowercase == "date_sub"
                         || function_name_lowercase == "timestampsub" || function_name_lowercase == "timestamp_sub")
-                        storage.push_back(std::make_unique<DateAddLayer>("minus"));
+                        layers.push_back(std::make_unique<DateAddLayer>("minus"));
                     else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
                         || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
-                        storage.push_back(std::make_unique<DateDiffLayer>());
+                        layers.push_back(std::make_unique<DateDiffLayer>());
                     else if (function_name_lowercase == "grouping")
-                        storage.push_back(std::make_unique<FunctionLayer>(function_name_lowercase));
+                        layers.push_back(std::make_unique<FunctionLayer>(function_name_lowercase));
                     else
-                        storage.push_back(std::make_unique<FunctionLayer>(function_name));
+                        layers.push_back(std::make_unique<FunctionLayer>(function_name));
                 }
                 else
                 {
-                    storage.back()->pushOperand(std::move(tmp));
+                    layers.back()->pushOperand(std::move(tmp));
                 }
             }
             else if (substitution_parser.parse(pos, tmp, expected))
             {
-                storage.back()->pushOperand(std::move(tmp));
+                layers.back()->pushOperand(std::move(tmp));
             }
             else if (pos->type == TokenType::OpeningRoundBracket)
             {
                 if (subquery_parser.parse(pos, tmp, expected))
                 {
-                    storage.back()->pushOperand(std::move(tmp));
+                    layers.back()->pushOperand(std::move(tmp));
                     continue;
                 }
                 next = Action::OPERAND;
-                storage.push_back(std::make_unique<RoundBracketsLayer>());
+                layers.push_back(std::make_unique<RoundBracketsLayer>());
                 ++pos;
             }
             else if (pos->type == TokenType::OpeningSquareBracket)
@@ -2765,11 +2818,11 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 ++pos;
 
                 next = Action::OPERAND;
-                storage.push_back(std::make_unique<ArrayLayer>());
+                layers.push_back(std::make_unique<ArrayLayer>());
             }
             else if (mysql_global_variable_parser.parse(pos, tmp, expected))
             {
-                storage.back()->pushOperand(std::move(tmp));
+                layers.back()->pushOperand(std::move(tmp));
             }
             else
             {
@@ -2781,6 +2834,10 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             next = Action::OPERAND;
             ASTPtr tmp;
 
+            /// ParserExpression can be called in this part of the query:
+            ///  ALTER TABLE partition_all2 CLEAR INDEX [ p ] IN PARTITION ALL
+            ///
+            /// 'IN PARTITION' here is not an 'IN' operator, so we should stop parsing immediately
             Expected stub;
             if (ParserKeyword("IN PARTITION").checkWithoutMoving(pos, stub))
                 break;
@@ -2797,19 +2854,30 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             {
                 auto op = cur_op->second;
 
-                // 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
-                if (op.function_name == "and" && storage.back()->hasBetween())
+                if (op.type == OperatorType::Lambda)
                 {
-                    storage.back()->subBetween();
+                    if (!layers.back()->parseLambda())
+                        return false;
+
+                    layers.back()->pushOperator(op);
+                    continue;
+                }
+
+                // 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
+                if (op.function_name == "and" && layers.back()->hasBetween())
+                {
+                    layers.back()->subBetween();
                     op = finish_between_operator;
                 }
 
-                while (storage.back()->previousPriority() >= op.priority)
+                while (layers.back()->previousPriority() >= op.priority)
                 {
                     ASTPtr function;
                     Operator prev_op;
-                    storage.back()->popOperator(prev_op);
+                    layers.back()->popOperator(prev_op);
 
+                    /// Mergeable operators are operators that are merged into one function:
+                    /// For example: 'a OR b OR c' -> 'or(a, b, c)' and not 'or(or(a,b), c)'
                     if (prev_op.type == OperatorType::Mergeable && op.function_name == prev_op.function_name)
                     {
                         op.arity += prev_op.arity - 1;
@@ -2819,7 +2887,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (prev_op.type == OperatorType::FinishBetween)
                     {
                         Operator tmp_op;
-                        if (!storage.back()->popOperator(tmp_op))
+                        if (!layers.back()->popOperator(tmp_op))
                             return false;
 
                         if (tmp_op.type != OperatorType::StartBetween && tmp_op.type != OperatorType::StartNotBetween)
@@ -2828,7 +2896,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         bool negative = tmp_op.type == OperatorType::StartNotBetween;
 
                         ASTs arguments;
-                        if (!storage.back()->popLastNOperands(arguments, 3))
+                        if (!layers.back()->popLastNOperands(arguments, 3))
                             return false;
 
                         function = makeBetweenOperator(negative, arguments);
@@ -2837,23 +2905,23 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     {
                         function = makeASTFunction(prev_op.function_name);
 
-                        if (!storage.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
+                        if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
                             return false;
                     }
 
-                    storage.back()->pushOperand(function);
+                    layers.back()->pushOperand(function);
                 }
-                storage.back()->pushOperator(op);
+                layers.back()->pushOperator(op);
 
                 if (op.type == OperatorType::ArrayElement)
-                    storage.push_back(std::make_unique<ArrayElementLayer>());
+                    layers.push_back(std::make_unique<ArrayElementLayer>());
 
                 // isNull & isNotNull is postfix unary operator
                 if (op.type == OperatorType::IsNull)
                     next = Action::OPERATOR;
 
                 if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
-                    storage.back()->addBetween();
+                    layers.back()->addBetween();
 
                 if (op.type == OperatorType::Cast)
                 {
@@ -2863,24 +2931,17 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!ParserDataType().parse(pos, type_ast, expected))
                         return false;
 
-                    storage.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
+                    layers.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
                 }
             }
-            else if (parseOperator(pos, "->", expected))
+            else if (layers.size() > 1 && ParserAlias(true).parse(pos, tmp, expected))
             {
-                if (!storage.back()->parseLambda())
-                    return false;
-
-                storage.back()->pushOperator(lambda_operator);
-            }
-            else if (storage.size() > 1 && ParserAlias(true).parse(pos, tmp, expected))
-            {
-                if (!storage.back()->insertAlias(tmp))
+                if (!layers.back()->insertAlias(tmp))
                     return false;
             }
             else if (pos->type == TokenType::Comma)
             {
-                if (storage.size() == 1)
+                if (layers.size() == 1)
                     break;
             }
             else
@@ -2890,17 +2951,15 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    // Check if we only have one starting layer
-    if (storage.size() > 1)
+    // When we exit the loop we should be on the 1st level
+    if (layers.size() > 1)
         return false;
 
-    if (!storage.back()->mergeElement())
+    if (!layers.back()->mergeElement())
         return false;
 
-    if (!storage.back()->getResult(node))
+    if (!layers.back()->getResult(node))
         return false;
-
-    storage.back()->syncDepth(pos);
 
     return true;
 }
