@@ -179,7 +179,7 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         // For NuRaft, if any commit fails (uncaught exception) the whole server aborts as a safety
         // This includes failed allocation which can produce an unknown state for the storage,
         // making it impossible to handle correctly.
-        // We block the memory tracker for all the commit operations (including KeeperStateMachine::commit) 
+        // We block the memory tracker for all the commit operations (including KeeperStateMachine::commit)
         // assuming that the allocations are small
         MemoryTrackerBlockerInThread blocker;
         nuraft::raft_server::commit_in_bg();
