@@ -323,12 +323,28 @@ void LocalServer::setupUsers()
     auto & access_control = global_context->getAccessControl();
     access_control.setNoPasswordAllowed(config().getBool("allow_no_password", true));
     access_control.setPlaintextPasswordAllowed(config().getBool("allow_plaintext_password", true));
-    if (config().has("users_config") || config().has("config-file") || fs::exists("config.xml"))
+    if (config().has("config-file") || fs::exists("config.xml"))
     {
-        const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-        ConfigProcessor config_processor(users_config_path);
-        const auto loaded_config = config_processor.loadConfig();
-        users_config = loaded_config.configuration;
+        String config_path = config().getString("config-file", "");
+        bool has_user_directories = config().has("user_directories");
+        const auto config_dir = fs::path{config_path}.remove_filename().string();
+        String users_config_path = config().getString("users_config", "");
+
+        if (users_config_path.empty() && has_user_directories)
+        {
+            users_config_path = config().getString("user_directories.users_xml.path");
+            if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
+                users_config_path = fs::path(config_dir) / users_config_path;
+        }
+
+        if (users_config_path.empty())
+            users_config = getConfigurationFromXMLString(minimal_default_user_xml);
+        else
+        {
+            ConfigProcessor config_processor(users_config_path);
+            const auto loaded_config = config_processor.loadConfig();
+            users_config = loaded_config.configuration;
+        }
     }
     else
         users_config = getConfigurationFromXMLString(minimal_default_user_xml);
@@ -337,7 +353,6 @@ void LocalServer::setupUsers()
     else
         throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
 }
-
 
 void LocalServer::connect()
 {
