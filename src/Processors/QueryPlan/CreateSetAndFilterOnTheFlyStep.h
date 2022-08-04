@@ -29,7 +29,7 @@ public:
         CrosswiseConnectionPtr crosswise_connection_,
         JoinTableSide position_);
 
-    String getName() const override { return "CreatingSetsOnTheFly"; }
+    String getName() const override { return "CreateSetAndFilterOnTheFlyStep"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
