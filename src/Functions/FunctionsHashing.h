@@ -35,12 +35,14 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMap.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
@@ -1112,6 +1114,16 @@ private:
                 auto tmp = ColumnConst::create(tuple_columns[i], column->size());
                 executeForArgument(tuple_types[i].get(), tmp.get(), vec_to, is_first);
             }
+        }
+        else if (const auto * map = checkAndGetColumn<ColumnMap>(column))
+        {
+            const auto & type_map = assert_cast<const DataTypeMap &>(*type);
+            executeForArgument(type_map.getNestedType().get(), map->getNestedColumnPtr().get(), vec_to, is_first);
+        }
+        else if (const auto * const_map = checkAndGetColumnConstData<ColumnMap>(column))
+        {
+            const auto & type_map = assert_cast<const DataTypeMap &>(*type);
+            executeForArgument(type_map.getNestedType().get(), const_map->getNestedColumnPtr().get(), vec_to, is_first);
         }
         else
         {
