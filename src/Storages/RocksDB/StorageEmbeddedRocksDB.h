@@ -3,7 +3,7 @@
 #include <memory>
 #include <shared_mutex>
 #include <Storages/IStorage.h>
-#include <Storages/IKVStorage.h>
+#include <Storages/IKeyValueStorage.h>
 #include <rocksdb/status.h>
 
 

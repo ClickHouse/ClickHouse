@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Dictionaries/IDictionary.h>
-#include <Storages/IKVStorage.h>
+#include <Storages/IKeyValueStorage.h>
 
 namespace DB
 {
