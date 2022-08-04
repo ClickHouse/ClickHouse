@@ -1,7 +1,3 @@
 -- check that partition key with ignore works correctly
-┌─database─┬─table───────────────┬─parts─┬─rows─┬─marks─┐
-│ default  │ partition_by_ignore │     1 │   29 │     1 │
-└──────────┴─────────────────────┴───────┴──────┴───────┘
-┌─database─┬─table───────────────┬─parts─┬─rows─┬─marks─┐
-│ default  │ partition_by_ignore │     1 │   29 │     1 │
-└──────────┴─────────────────────┴───────┴──────┴───────┘
+default partition_by_ignore     1       29      1
+default partition_by_ignore     1       29      1
