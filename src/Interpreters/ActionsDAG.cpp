@@ -1513,8 +1513,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     }
 
     auto res = split(split_nodes);
-    /// Do not remove array joined columns if they are not used.
-    /// res.first->project_input = false;
+    res.second->project_input = project_input;
     return res;
 }
 

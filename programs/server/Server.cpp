@@ -29,6 +29,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -366,7 +367,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     return address;
 }
 
-std::vector<std::string> getListenHosts(const Poco::Util::AbstractConfiguration & config)
+Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
     auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
     if (listen_hosts.empty())
@@ -375,6 +376,16 @@ std::vector<std::string> getListenHosts(const Poco::Util::AbstractConfiguration 
         listen_hosts.emplace_back("127.0.0.1");
     }
     return listen_hosts;
+}
+
+Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & config)
+{
+    auto interserver_listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
+    if (!interserver_listen_hosts.empty())
+      return interserver_listen_hosts;
+
+    /// Use more general restriction in case of emptiness
+    return getListenHosts(config);
 }
 
 bool getListenTry(const Poco::Util::AbstractConfiguration & config)
@@ -625,6 +636,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
+
+    StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 
     registerFunctions();
     registerAggregateFunctions();
@@ -1124,6 +1137,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
+            if (config->has("concurrent_threads_soft_limit"))
+            {
+                auto concurrent_threads_soft_limit = config->getInt("concurrent_threads_soft_limit", 0);
+                if (concurrent_threads_soft_limit == -1)
+                {
+                    // Based on tests concurrent_threads_soft_limit has an optimal value when it's about 3 times of logical CPU cores
+                    constexpr size_t thread_factor = 3;
+                    concurrent_threads_soft_limit = std::thread::hardware_concurrency() * thread_factor;
+                }
+                if (concurrent_threads_soft_limit)
+                    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
+                else
+                    ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+            }
+            else
+                ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
 
@@ -1214,6 +1244,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
     const auto listen_hosts = getListenHosts(config());
+    const auto interserver_listen_hosts = getInterserverListenHosts(config());
     const auto listen_try = getListenTry(config());
 
     if (config().has("keeper_server"))
@@ -1609,7 +1640,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), listen_hosts, listen_try, server_pool, async_metrics, servers);
+            createServers(config(), listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers);
             if (servers.empty())
                 throw Exception(
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
@@ -1791,7 +1822,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
 void Server::createServers(
     Poco::Util::AbstractConfiguration & config,
-    const std::vector<std::string> & listen_hosts,
+    const Strings & listen_hosts,
+    const Strings & interserver_listen_hosts,
     bool listen_try,
     Poco::ThreadPool & server_pool,
     AsynchronousMetrics & async_metrics,
@@ -1909,51 +1941,6 @@ void Server::createServers(
 #endif
         });
 
-        /// Interserver IO HTTP
-        port_name = "interserver_http_port";
-        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
-        {
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(config, socket, listen_host, port);
-            socket.setReceiveTimeout(settings.http_receive_timeout);
-            socket.setSendTimeout(settings.http_send_timeout);
-            return ProtocolServerAdapter(
-                listen_host,
-                port_name,
-                "replica communication (interserver): http://" + address.toString(),
-                std::make_unique<HTTPServer>(
-                    context(),
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
-        });
-
-        port_name = "interserver_https_port";
-        createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
-        {
-#if USE_SSL
-            Poco::Net::SecureServerSocket socket;
-            auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(settings.http_receive_timeout);
-            socket.setSendTimeout(settings.http_send_timeout);
-            return ProtocolServerAdapter(
-                listen_host,
-                port_name,
-                "secure replica communication (interserver): https://" + address.toString(),
-                std::make_unique<HTTPServer>(
-                    context(),
-                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
-#else
-            UNUSED(port);
-            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                            ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-        });
-
         port_name = "mysql_port";
         createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
         {
@@ -2012,6 +1999,55 @@ void Server::createServers(
         });
     }
 
+    /// Now iterate over interserver_listen_hosts
+    for (const auto & interserver_listen_host : interserver_listen_hosts)
+    {
+         /// Interserver IO HTTP
+        const char * port_name = "interserver_http_port";
+        createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(config, socket, interserver_listen_host, port);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+            return ProtocolServerAdapter(
+                interserver_listen_host,
+                port_name,
+                "replica communication (interserver): http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    context(),
+                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+        });
+
+        port_name = "interserver_https_port";
+        createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+        {
+#if USE_SSL
+            Poco::Net::SecureServerSocket socket;
+            auto address = socketBindListen(config, socket, interserver_listen_host, port, /* secure = */ true);
+            socket.setReceiveTimeout(settings.http_receive_timeout);
+            socket.setSendTimeout(settings.http_send_timeout);
+            return ProtocolServerAdapter(
+                interserver_listen_host,
+                port_name,
+                "secure replica communication (interserver): https://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    context(),
+                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+#else
+            UNUSED(port);
+            throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                            ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+        });
+    }
+
 }
 
 void Server::updateServers(
@@ -2023,6 +2059,7 @@ void Server::updateServers(
     Poco::Logger * log = &logger();
 
     const auto listen_hosts = getListenHosts(config);
+    const auto interserver_listen_hosts = getInterserverListenHosts(config);
     const auto listen_try = getListenTry(config);
 
     /// Remove servers once all their connections are closed
@@ -2055,7 +2092,7 @@ void Server::updateServers(
         }
     }
 
-    createServers(config, listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
+    createServers(config, listen_hosts, interserver_listen_hosts, listen_try, server_pool, async_metrics, servers, /* start_servers= */ true);
 
     std::erase_if(servers, std::bind_front(check_server, ""));
 }

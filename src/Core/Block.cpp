@@ -8,6 +8,7 @@
 
 #include <Common/assert_cast.h>
 
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 
@@ -68,9 +69,27 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
                 actual_column = &column_sparse->getValuesColumn();
     }
 
-    if (actual_column->getName() != expected.column->getName())
-        return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different columns:\n"
-            + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
+    const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
+    const auto * expected_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(expected.column.get());
+    if (actual_column_maybe_agg && expected_column_maybe_agg)
+    {
+        if (!actual_column_maybe_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_column_maybe_agg->getAggregateFunction()))
+            return onError<ReturnType>(
+                fmt::format(
+                    "Block structure mismatch in {} stream: different columns:\n{}\n{}",
+                    context_description,
+                    actual.dumpStructure(),
+                    expected.dumpStructure()),
+                code);
+    }
+    else if (actual_column->getName() != expected.column->getName())
+        return onError<ReturnType>(
+            fmt::format(
+                "Block structure mismatch in {} stream: different columns:\n{}\n{}",
+                context_description,
+                actual.dumpStructure(),
+                expected.dumpStructure()),
+            code);
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column))
     {
