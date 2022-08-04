@@ -83,7 +83,3 @@ SELECT
 FROM video_log
 WHERE (toDate(hour) = '2022-07-22') AND (device_id = '100') --(device_id = '100') Make sure it's not good and doesn't go into prewhere.
 GROUP BY hour;
-
-DROP TABLE IF EXISTS video_log;
-
-DROP TABLE IF EXISTS rng;
