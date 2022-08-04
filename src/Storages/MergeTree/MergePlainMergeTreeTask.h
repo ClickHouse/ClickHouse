@@ -95,7 +95,7 @@ private:
 
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
-    
+
     TaskObserverMetrics observer;
 };
 
