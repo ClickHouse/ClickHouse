@@ -36,7 +36,7 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
                 "Positional argument out of bounds: {} (exprected in range [1, {}]",
                         pos, columns.size());
 
-    const auto & column = columns[--pos];
+    const auto & column = *std::next(columns.begin(), --pos);
     if (typeid_cast<const ASTIdentifier *>(column.get()) || typeid_cast<const ASTLiteral *>(column.get()))
     {
         argument = column->clone();

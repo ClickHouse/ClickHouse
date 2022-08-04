@@ -154,7 +154,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 
                 if (data.is_rejected)
                 {
-                    ++i;
+                    ++it;
                     continue;
                 }
             }

@@ -32,27 +32,25 @@ IAST::~IAST()
     /// Will avoid recursive destruction.
     if (deleter)
     {
-        deleter->push_back(std::move(children));
+        deleter->splice(deleter->end(), std::move(children));
         return;
     }
 
-    std::list<ASTs> queue;
-    queue.push_back(std::move(children));
+    ASTList queue = std::move(children);
     while (!queue.empty())
     {
-        for (auto & node : queue.front())
+        auto & node = queue.front();
+
+        /// If two threads remove ASTPtr concurrently,
+        /// it is possible that neither thead will see use_count == 1.
+        /// It is ok. Will need one more extra stack frame in this case.
+        if (node.use_count() == 1)
         {
-            /// If two threads remove ASTPtr concurrently,
-            /// it is possible that neither thead will see use_count == 1.
-            /// It is ok. Will need one more extra stack frame in this case.
-            if (node.use_count() == 1)
-            {
-                /// Deleter is only set when current thread is the single owner.
-                /// No extra synchronisation is needed.
-                ASTPtr to_delete;
-                node.swap(to_delete);
-                to_delete->deleter = &queue;
-            }
+            /// Deleter is only set when current thread is the single owner.
+            /// No extra synchronisation is needed.
+            ASTPtr to_delete;
+            node.swap(to_delete);
+            to_delete->deleter = &queue;
         }
 
         queue.pop_front();
