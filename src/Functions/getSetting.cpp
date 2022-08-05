@@ -63,7 +63,7 @@ private:
 
 }
 
-void registerFunctionGetSetting(FunctionFactory & factory)
+REGISTER_FUNCTION(GetSetting)
 {
     factory.registerFunction<FunctionGetSetting>();
 }
