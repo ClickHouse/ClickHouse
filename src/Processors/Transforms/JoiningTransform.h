@@ -145,6 +145,9 @@ private:
 
     std::optional<IProcessor::Status> topCheck();
     std::optional<IProcessor::Status> endOfInputs();
+    std::optional<IProcessor::Status> processLeft();
+    std::optional<IProcessor::Status> processRight();
+    void finish();
 
     struct SourceStatus
     {
