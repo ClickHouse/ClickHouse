@@ -22,16 +22,7 @@ void createHardLink(const String & source_path, const String & destination_path)
         {
             auto link_errno = errno;
 
-            struct stat source_descr;
-            struct stat destination_descr;
-
-            if (0 != lstat(source_path.c_str(), &source_descr))
-                throwFromErrnoWithPath("Cannot stat " + source_path, source_path, ErrorCodes::CANNOT_STAT);
-
-            if (0 != lstat(destination_path.c_str(), &destination_descr))
-                throwFromErrnoWithPath("Cannot stat " + destination_path, destination_path, ErrorCodes::CANNOT_STAT);
-
-            if (source_descr.st_ino != destination_descr.st_ino)
+            if (!isFilesHardLinked(source_path, destination_path))
                 throwFromErrnoWithPath(
                         "Destination file " + destination_path + " is already exist and have different inode.",
                         destination_path, ErrorCodes::CANNOT_LINK, link_errno);
@@ -40,6 +31,30 @@ void createHardLink(const String & source_path, const String & destination_path)
             throwFromErrnoWithPath("Cannot link " + source_path + " to " + destination_path, destination_path,
                                    ErrorCodes::CANNOT_LINK);
     }
+}
+
+bool isFilesHardLinked(const String & source_path, const String & destination_path)
+{
+    struct stat source_descr;
+    struct stat destination_descr;
+
+    if (0 != lstat(source_path.c_str(), &source_descr))
+        throwFromErrnoWithPath("Cannot stat " + source_path, source_path, ErrorCodes::CANNOT_STAT);
+
+    if (0 != lstat(destination_path.c_str(), &destination_descr))
+        throwFromErrnoWithPath("Cannot stat " + destination_path, destination_path, ErrorCodes::CANNOT_STAT);
+
+    return source_descr.st_ino == destination_descr.st_ino;
+}
+
+uint32_t getFileHardLinkCount(const String & path)
+{
+    struct stat descr;
+
+    if (0 != lstat(path.c_str(), &descr))
+        throwFromErrnoWithPath("Cannot stat " + path, path, ErrorCodes::CANNOT_STAT);
+
+    return descr.st_nlink;
 }
 
 }

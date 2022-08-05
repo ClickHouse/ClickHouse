@@ -294,6 +294,18 @@ void DiskRestartProxy::createHardLink(const String & src_path, const String & ds
     DiskDecorator::createHardLink(src_path, dst_path);
 }
 
+bool DiskRestartProxy::isFilesHardLinked(const String & src_path, const String & dst_path) const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::isFilesHardLinked(src_path, dst_path);
+}
+
+uint32_t DiskRestartProxy::getFileHardLinkCount(const String & path) const
+{
+    ReadLock lock (mutex);
+    return DiskDecorator::getFileHardLinkCount(path);
+}
+
 void DiskRestartProxy::truncateFile(const String & path, size_t size)
 {
     ReadLock lock (mutex);

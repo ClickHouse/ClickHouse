@@ -218,6 +218,19 @@ public:
         delegate->createHardLink(wrapped_src_path, wrapped_dst_path);
     }
 
+    bool isFilesHardLinked(const String & src_path, const String & dst_path) const override
+    {
+        auto wrapped_src_path = wrappedPath(src_path);
+        auto wrapped_dst_path = wrappedPath(dst_path);
+        return delegate->isFilesHardLinked(wrapped_src_path, wrapped_dst_path);
+    }
+
+    uint32_t getFileHardLinkCount(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getFileHardLinkCount(wrapped_path);
+    }
+
     void truncateFile(const String & path, size_t size) override;
 
     String getUniqueId(const String & path) const override

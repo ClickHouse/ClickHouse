@@ -57,6 +57,8 @@ public:
     StoredObjects getStorageObjects(const std::string & path) const override;
 
     std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
+
+    void checkAndFixMetadataHardLink(const std::string & /* path */) const override {}
 };
 
 class FakeMetadataStorageFromDiskTransaction final : public IMetadataTransaction

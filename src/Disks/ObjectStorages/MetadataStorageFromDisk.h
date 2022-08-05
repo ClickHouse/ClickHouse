@@ -59,6 +59,10 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> & lock) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> & lock) const;
+
+    /// check and fix furcated metadata files
+    void checkAndFixMetadataHardLinkUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> & lock) const;
+    void checkAndFixMetadataHardLink(const std::string & path) const override;
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction

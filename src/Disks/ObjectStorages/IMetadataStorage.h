@@ -131,6 +131,8 @@ public:
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
 
     virtual std::string getObjectStorageRootPath() const = 0;
+
+    virtual void checkAndFixMetadataHardLink(const std::string & path) const = 0;
 };
 
 using MetadataStoragePtr = std::shared_ptr<IMetadataStorage>;

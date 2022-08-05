@@ -102,6 +102,9 @@ public:
     virtual void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const = 0;
     virtual void checkConsistency(const MergeTreeDataPartChecksums & checksums) const = 0;
 
+    /// Check and fix if possible metadata consistency for remote storage
+    virtual void checkAndFixMetadataConsistency() const = 0;
+
     struct ProjectionChecksums
     {
         const std::string & name;

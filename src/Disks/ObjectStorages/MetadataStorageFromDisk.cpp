@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FS_METADATA_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, const std::string & object_storage_root_path_)
@@ -99,6 +100,44 @@ DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadata(const std::st
 {
     std::shared_lock lock(metadata_mutex);
     return readMetadataUnlocked(path, lock);
+}
+
+void MetadataStorageFromDisk::checkAndFixMetadataHardLinkUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> & lock) const
+{
+    auto metadata = readMetadataUnlocked(path, lock);
+    auto index_path = metadata->getIndexPath();
+
+    if (!index_path.empty() && index_path != path)
+    {
+        if (!disk->exists(index_path))
+        {
+            disk->createDirectories(directoryPath(index_path));
+            disk->createHardLink(path, index_path);
+        }
+        else if (!disk->isFilesHardLinked(path, index_path))
+        {
+            disk->removeFile(path);
+            disk->createHardLink(index_path, path);
+
+            auto ref_count = disk->getFileHardLinkCount(index_path);
+            if (ref_count < 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "After creation hard link nlink less than 2 : {}", index_path);
+
+            auto metadata_index = readMetadataUnlocked(index_path, lock);
+            /// Index link + work link - object with single refecence, ref_count=0
+            /// So ref_count should be equal file hard links minus 2
+            metadata_index->setRefCount(ref_count - 2);
+            auto buf = disk->writeFile(index_path);
+            writeString(metadata_index->serializeToString(), *buf);
+            buf->finalize();
+        }
+    }
+}
+
+void MetadataStorageFromDisk::checkAndFixMetadataHardLink(const std::string & path) const
+{
+    std::unique_lock lock(metadata_mutex);
+    return checkAndFixMetadataHardLinkUnlocked(path, lock);
 }
 
 std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadata(const std::vector<String> & file_paths) const
@@ -311,13 +350,15 @@ void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & 
 
     metadata->addObject(blob_name, size_in_bytes);
 
-    auto metadataIndexPath = metadata->getIndexPath();
+    auto index_path = metadata->getIndexPath();
+    // index_path is not empty after addObject
+    // so we need not check it
 
     auto data = metadata->serializeToString();
     if (!data.empty())
         addOperation(std::make_unique<WriteFileAndCreateHardLinkOperation>(
             path,
-            metadataIndexPath,
+            index_path,
             *metadata_storage.getDisk(),
             data,
             metadata_storage));
@@ -341,13 +382,15 @@ void MetadataStorageFromDiskTransaction::createMetadataFileFromContent(const std
     for (auto object : objects)
         metadata->addObject(object.relative_path, object.bytes_size);
 
-    auto metadataIndexPath = metadata->getIndexPath();
+    auto index_path = metadata->getIndexPath();
+    // index_path is not empty after at least one addObject
+    // so we need not check it
 
     auto data = metadata->serializeToString();
     if (!data.empty())
         addOperation(std::make_unique<WriteFileAndCreateHardLinkOperation>(
             path,
-            metadataIndexPath,
+            index_path,
             *metadata_storage.getDisk(),
             data,
             metadata_storage));

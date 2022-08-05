@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/localBackup.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 
 namespace DB
 {
@@ -196,6 +197,22 @@ void DataPartStorageOnDisk::loadVersionMetadata(VersionMetadata & version, Poco:
 void DataPartStorageOnDisk::checkConsistency(const MergeTreeDataPartChecksums & checksums) const
 {
     checksums.checkSizes(volume->getDisk(), getRelativePath());
+}
+
+void DataPartStorageOnDisk::checkAndFixMetadataConsistency() const
+{
+    if (!isStoredOnRemoteDisk())
+        return;
+
+    auto metadata_storage = volume->getDisk()->getMetadataStorage();
+
+    fs::path reative_path = getRelativePath();
+
+    for (auto it = iterate(); it->isValid(); it->next())
+    {
+        std::string path = reative_path / it->name();
+        metadata_storage->checkAndFixMetadataHardLink(path);
+    }
 }
 
 DataPartStorageBuilderPtr DataPartStorageOnDisk::getBuilder() const

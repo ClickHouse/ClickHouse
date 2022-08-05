@@ -44,6 +44,8 @@ public:
     void loadVersionMetadata(VersionMetadata & version, Poco::Logger * log) const override;
     void checkConsistency(const MergeTreeDataPartChecksums & checksums) const override;
 
+    void checkAndFixMetadataConsistency() const override;
+
     void remove(
         bool can_remove_shared_data,
         const NameSet & names_not_to_remove,

@@ -414,6 +414,16 @@ void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
     DB::createHardLink(fs::path(disk_path) / src_path, fs::path(disk_path) / dst_path);
 }
 
+bool DiskLocal::isFilesHardLinked(const String & src_path, const String & dst_path) const
+{
+    return DB::isFilesHardLinked(fs::path(disk_path) / src_path, fs::path(disk_path) / dst_path);
+}
+
+uint32_t DiskLocal::getFileHardLinkCount(const String & path) const
+{
+    return DB::getFileHardLinkCount(fs::path(disk_path) / path);
+}
+
 void DiskLocal::truncateFile(const String & path, size_t size)
 {
     int res = truncate((fs::path(disk_path) / path).string().data(), size);

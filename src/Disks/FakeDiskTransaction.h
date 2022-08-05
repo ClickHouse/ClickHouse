@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// Fake disk transaction implementation.
 /// Just execute all operations immediately, commit is noop operation.
 /// No support for atomicity and rollback.

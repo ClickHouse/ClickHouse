@@ -201,6 +201,16 @@ void DiskDecorator::createHardLink(const String & src_path, const String & dst_p
     delegate->createHardLink(src_path, dst_path);
 }
 
+bool DiskDecorator::isFilesHardLinked(const String & src_path, const String & dst_path) const
+{
+    return delegate->isFilesHardLinked(src_path, dst_path);
+}
+
+uint32_t DiskDecorator::getFileHardLinkCount(const String & path) const
+{
+    return delegate->getFileHardLinkCount(path);
+}
+
 void DiskDecorator::truncateFile(const String & path, size_t size)
 {
     delegate->truncateFile(path, size);

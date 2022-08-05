@@ -1495,6 +1495,8 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, con
 
 void IMergeTreeDataPart::checkConsistencyBase() const
 {
+    data_part_storage->checkAndFixMetadataConsistency();
+
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;

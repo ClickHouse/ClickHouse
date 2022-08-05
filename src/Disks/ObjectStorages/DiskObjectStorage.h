@@ -110,6 +110,10 @@ public:
     void createHardLink(const String & src_path, const String & dst_path) override;
     void createHardLink(const String & src_path, const String & dst_path, bool should_send_metadata);
 
+    bool isFilesHardLinked(const String & src_path, const String & dst_path) const override;
+
+    uint32_t getFileHardLinkCount(const String & path) const override;
+
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
     void setReadOnly(const String & path) override;

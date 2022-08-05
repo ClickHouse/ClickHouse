@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -287,6 +288,15 @@ void DiskObjectStorage::createHardLink(const String & src_path, const String & d
     createHardLink(src_path, dst_path, send_metadata);
 }
 
+bool DiskObjectStorage::isFilesHardLinked(const String &, const String &) const
+{
+    throw Exception("Method isFilesHardLinked is not implemented for object storage disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+uint32_t DiskObjectStorage::getFileHardLinkCount(const String &) const
+{
+    throw Exception("Method getFileHardLinkCount is not implemented for object storage disks", ErrorCodes::NOT_IMPLEMENTED);
+}
 
 void DiskObjectStorage::setReadOnly(const String & path)
 {

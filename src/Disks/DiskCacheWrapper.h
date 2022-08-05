@@ -51,6 +51,8 @@ public:
     void removeSharedRecursive(const String & path, bool keep_all, const NameSet & files_to_keep) override;
     void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all, const NameSet & files_to_keep) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
+    bool isFilesHardLinked(const String & src_path, const String & dst_path) const override;
+    uint32_t getFileHardLinkCount(const String &) const override;
     ReservationPtr reserve(UInt64 bytes) override;
 
 private:

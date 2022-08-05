@@ -262,6 +262,12 @@ public:
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
+    /// Check if one file is hadrlink of another
+    virtual bool isFilesHardLinked(const String & src_path, const String & dst_path) const = 0;
+
+    /// Return number of hard links for file
+    virtual uint32_t getFileHardLinkCount(const String & path) const = 0;
+
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 

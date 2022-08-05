@@ -422,6 +422,16 @@ void DiskMemory::createHardLink(const String &, const String &)
     throw Exception("Method createHardLink is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+bool DiskMemory::isFilesHardLinked(const String &, const String &) const
+{
+    throw Exception("Method isFilesHardLinked is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+uint32_t DiskMemory::getFileHardLinkCount(const String &) const
+{
+    throw Exception("Method getFileHardLinkCount is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 void DiskMemory::createFile(const String &)
 {
     throw Exception("Method createFile is not implemented for memory disks", ErrorCodes::NOT_IMPLEMENTED);

@@ -89,6 +89,11 @@ public:
         --ref_count;
     }
 
+    void setRefCount(uint32_t n)
+    {
+        ref_count = n;
+    }
+
     void resetRefCount()
     {
         ref_count = 0;

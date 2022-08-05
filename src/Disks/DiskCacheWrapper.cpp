@@ -345,6 +345,16 @@ void DiskCacheWrapper::createHardLink(const String & src_path, const String & ds
     DiskDecorator::createHardLink(src_path, dst_path);
 }
 
+bool DiskCacheWrapper::isFilesHardLinked(const String & src_path, const String & dst_path) const
+{
+    return DiskDecorator::isFilesHardLinked(src_path, dst_path);
+}
+
+uint32_t DiskCacheWrapper::getFileHardLinkCount(const String & path) const
+{
+    return DiskDecorator::getFileHardLinkCount(path);
+}
+
 void DiskCacheWrapper::createDirectory(const String & path)
 {
     cache_disk->createDirectory(path);

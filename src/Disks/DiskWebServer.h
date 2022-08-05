@@ -188,6 +188,16 @@ public:
 
     void createHardLink(const String &, const String &) override {}
 
+    bool isFilesHardLinked(const String &, const String &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is not support hard links", getName());
+    }
+
+    uint32_t getFileHardLinkCount(const String &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk {} is not support hard links", getName());
+    }
+
 private:
     void initialize(const String & uri_path) const;
 

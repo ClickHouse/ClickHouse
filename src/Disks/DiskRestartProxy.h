@@ -61,6 +61,8 @@ public:
     Poco::Timestamp getLastModified(const String & path) const override;
     void setReadOnly(const String & path) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
+    bool isFilesHardLinked(const String & src_path, const String & dst_path) const override;
+    uint32_t getFileHardLinkCount(const String & path) const override;
     void truncateFile(const String & path, size_t size) override;
     String getUniqueId(const String & path) const override;
     bool checkUniqueId(const String & id) const override;
