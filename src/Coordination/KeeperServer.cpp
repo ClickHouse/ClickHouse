@@ -107,8 +107,9 @@ KeeperServer::KeeperServer(
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
-    , is_recovering(config.has("keeper_server.force_recovery") && config.getBool("keeper_server.force_recovery"))
+    , is_recovering(config.getBool("keeper_server.force_recovery", false))
     , keeper_context{std::make_shared<KeeperContext>()}
+    , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
@@ -367,6 +368,12 @@ void KeeperServer::shutdownRaftServer()
     }
 
     raft_instance->shutdown();
+
+    keeper_context->server_state = KeeperContext::Phase::SHUTDOWN;
+
+    if (create_snapshot_on_exit)
+        raft_instance->create_snapshot();
+
     raft_instance.reset();
 
     if (asio_listener)
