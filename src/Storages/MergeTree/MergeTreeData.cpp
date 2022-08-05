@@ -5009,7 +5009,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
                 if (covering_part)
                 {
-                    LOG_WARNING(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
+                    /// It's totally fine for zero-level parts, because of possible race condition between ReplicatedMergeTreeSink and
+                    /// background queue execution (new part is added to ZK before this function is called,
+                    /// so other replica may produce covering part and replication queue may download covering part).
+                    if (part->info.level)
+                        LOG_WARNING(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
+                    else
+                        LOG_INFO(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
 
                     part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
                     data.modifyPartState(part, DataPartState::Outdated);
