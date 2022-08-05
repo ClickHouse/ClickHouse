@@ -100,7 +100,7 @@
   ReadFromMergeTree (default.idx)
   Indexes:
     PrimaryKey
-      Keys:
+      Keys: 
         x
         plus(x, y)
       Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
