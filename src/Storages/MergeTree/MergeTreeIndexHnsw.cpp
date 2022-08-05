@@ -215,7 +215,7 @@ MergeTreeIndexAggregatorHnsw::MergeTreeIndexAggregatorHnsw(
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorHnsw::getGranuleAndReset()
 {
     auto impl = std::make_unique<ApproximateNearestNeighbor::HNSWIndex<float>>("l2");
-    impl->addBatchUnsafe(std::move(data));
+    impl->replaceDataWith(std::move(data));
     impl->createIndex(index_params);
     return std::make_shared<MergeTreeIndexGranuleHnsw>(index_name, index_sample_block, std::move(impl));
 }
