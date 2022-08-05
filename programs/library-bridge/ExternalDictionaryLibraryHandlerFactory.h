@@ -17,22 +17,22 @@ class ExternalDictionaryLibraryHandlerFactory final : private boost::noncopyable
 public:
     static ExternalDictionaryLibraryHandlerFactory & instance();
 
-    SharedLibraryHandlerPtr get(const std::string & dictionary_id);
+    ExternalDictionaryLibraryHandlerPtr get(const String & dictionary_id);
 
     void create(
-        const std::string & dictionary_id,
-        const std::string & library_path,
-        const std::vector<std::string> & library_settings,
+        const String & dictionary_id,
+        const String & library_path,
+        const std::vector<String> & library_settings,
         const Block & sample_block,
-        const std::vector<std::string> & attributes_names);
+        const std::vector<String> & attributes_names);
 
-    bool clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id);
+    bool clone(const String & from_dictionary_id, const String & to_dictionary_id);
 
-    bool remove(const std::string & dictionary_id);
+    bool remove(const String & dictionary_id);
 
 private:
     /// map: dict_id -> sharedLibraryHandler
-    std::unordered_map<std::string, SharedLibraryHandlerPtr> library_handlers TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, ExternalDictionaryLibraryHandlerPtr> library_handlers TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 

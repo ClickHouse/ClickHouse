@@ -27,12 +27,16 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     {
         if (uri.getPath() == "/extdict_ping")
             return std::make_unique<ExternalDictionaryLibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
+        else if (uri.getPath() == "/catboost_ping")
+            return std::make_unique<CatBoostLibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
     }
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
         if (uri.getPath() == "/extdict_request")
             return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(keep_alive_timeout, getContext());
+        else if (uri.getPath() == "/catboost_request")
+            return std::make_unique<CatBoostLibraryBridgeRequestHandler>(keep_alive_timeout, getContext());
     }
 
     return nullptr;
