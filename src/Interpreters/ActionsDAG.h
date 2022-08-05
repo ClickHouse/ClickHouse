@@ -303,7 +303,7 @@ public:
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
 
-    bool isSortingPreserved(const SortDescription & sort_description) const;
+    bool isSortingPreserved() const;
 
 private:
     Node & addNode(Node node);
