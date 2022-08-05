@@ -559,9 +559,9 @@ void Connection::sendQuery(
 
     writeStringBinary(query, *out);
 
-    Settings params;
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
+        Settings params;
         for (const auto & [name, value] : query_parameters)
             params.set(name, value);
         params.write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
