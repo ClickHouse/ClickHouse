@@ -8,18 +8,21 @@ CREATE TABLE Customers
     Age Nullable(UInt8)
 ) ENGINE = Memory;
 
-INSERT INTO Customers VALUES  ('Theodore','Diaz','Skilled Manual','Bachelors',28);
-INSERT INTO Customers VALUES  ('Stephanie','Cox','Management abcd defg','Bachelors',33);
-INSERT INTO Customers VALUES  ('Peter','Nara','Skilled Manual','Graduate Degree',26);
-INSERT INTO Customers VALUES  ('Latoya','Shen','Professional','Graduate Degree',25);
-INSERT INTO Customers VALUES  ('Joshua','Lee','Professional','Partial College',26);
-INSERT INTO Customers VALUES  ('Edward','Hernandez','Skilled Manual','High School',36);
-INSERT INTO Customers VALUES  ('Dalton','Wood','Professional','Partial College',42);
-INSERT INTO Customers VALUES  ('Christine','Nara','Skilled Manual','Partial College',33);
-INSERT INTO Customers VALUES  ('Cameron','Rodriguez','Professional','Partial College',28);
-INSERT INTO Customers VALUES  ('Angel','Stewart','Professional','Partial College',46);
-INSERT INTO Customers VALUES  ('Apple','','Skilled Manual','Bachelors',28);
-INSERT INTO Customers VALUES  (NULL,'why','Professional','Partial College',38);
+-- INSERT INTO Customers VALUES  ('Theodore','Diaz','Skilled Manual','Bachelors',28);
+-- INSERT INTO Customers VALUES  ('Stephanie','Cox','Management abcd defg','Bachelors',33);
+-- INSERT INTO Customers VALUES  ('Peter','Nara','Skilled Manual','Graduate Degree',26);
+-- INSERT INTO Customers VALUES  ('Latoya','Shen','Professional','Graduate Degree',25);
+-- INSERT INTO Customers VALUES  ('Joshua','Lee','Professional','Partial College',26);
+-- INSERT INTO Customers VALUES  ('Edward','Hernandez','Skilled Manual','High School',36);
+-- INSERT INTO Customers VALUES  ('Dalton','Wood','Professional','Partial College',42);
+-- INSERT INTO Customers VALUES  ('Christine','Nara','Skilled Manual','Partial College',33);
+-- INSERT INTO Customers VALUES  ('Cameron','Rodriguez','Professional','Partial College',28);
+-- INSERT INTO Customers VALUES  ('Angel','Stewart','Professional','Partial College',46);
+-- INSERT INTO Customers VALUES  ('Apple','','Skilled Manual','Bachelors',28);
+-- INSERT INTO Customers VALUES  (NULL,'why','Professional','Partial College',38);
+
+INSERT INTO Customers VALUES  ('Theodore','Diaz','Skilled Manual','Bachelors',28),('Stephanie','Cox','Management abcd defg','Bachelors',33),('Peter','Nara','Skilled Manual','Graduate Degree',26),('Latoya','Shen','Professional','Graduate Degree',25),('Joshua','Lee','Professional','Partial College',26),('Edward','Hernandez','Skilled Manual','High School',36),('Dalton','Wood','Professional','Partial College',42),('Christine','Nara','Skilled Manual','Partial College',33),('Cameron','Rodriguez','Professional','Partial College',28),('Angel','Stewart','Professional','Partial College',46),('Apple','','Skilled Manual','Bachelors',28),(NULL,'why','Professional','Partial College',38);
+
 
 Select '-- test summarize --' ;
 set dialect='kusto';
@@ -34,6 +37,21 @@ Customers | summarize dcount(Education);
 Customers | summarize dcountif(Education, Occupation=='Professional');
 Customers | summarize count() by bin(Age, 10) | order by count() ASC;
 
--- The following does not work
+-- make_list()
+Customers | summarize f_list = make_list(Education) by Occupation;
+Customers | summarize f_list = make_list(Education, 2) by Occupation;
+-- make_list_if()
+Customers | summarize f_list = make_list_if(FirstName, Age>30) by Occupation;
+Customers | summarize f_list = make_list_if(FirstName, Age>30, 1) by Occupation;
+-- make_set()
+Customers | summarize f_list = make_set(Education) by Occupation;
+Customers | summarize f_list = make_set(Education, 2) by Occupation;
+-- make_set_if()
+Customers | summarize f_list = make_set_if(Education, Age>30) by Occupation;
+Customers | summarize f_list = make_set_if(Education, Age>30, 1) by Occupation;
+
+-- TODO:
 -- arg_max()
 -- arg_min()
+-- make_list_with_nulls()
+-- Customers | sort by FirstName | summarize count(Education) by Occupation;
