@@ -635,7 +635,11 @@ nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(con
 
 bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
 {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    static constexpr uint32_t ZSTD_COMPRESSED_MAGIC = 0x28B52FFD;
+#else
     static constexpr uint32_t ZSTD_COMPRESSED_MAGIC = 0xFD2FB528;
+#endif
     ReadBufferFromNuraftBuffer reader(buffer);
     uint32_t magic_from_buffer;
     reader.readStrict(reinterpret_cast<char *>(&magic_from_buffer), sizeof(magic_from_buffer));
