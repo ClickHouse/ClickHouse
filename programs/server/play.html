@@ -501,20 +501,28 @@
 
         const server_address = document.getElementById('url').value;
 
-        const url = server_address +
+        
+        var url = server_address +
             (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
             'add_http_cors_header=1' +
-            '&user=' + encodeURIComponent(user) +
-            '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
+        // If play.html is opened locally, append username and password to the URL parameter to avoid CORS issue.
+        if (document.location.href.startsWith("file://")) {
+            url += '&user=' + encodeURIComponent(user) +
+            '&password=' + encodeURIComponent(password)
+        }
+
         const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
-
+        // If play.html is open normally, use Basic auth to prevent username and password being exposed in URL parameters
+        if (!document.location.href.startsWith("file://")) {
+            xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
+        }
         xhr.onreadystatechange = function()
         {
             if (posted_request_num != request_num) {
