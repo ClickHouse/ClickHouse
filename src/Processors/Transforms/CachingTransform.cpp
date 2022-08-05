@@ -5,7 +5,8 @@ namespace DB
 
 void CachingTransform::transform(Chunk & chunk)
 {
-    holder.insertChunk(chunk.clone());
+        LOG_FATAL(&Poco::Logger::get("CachingTransform::transform"), "chunk.num_cols ={}, .structure = {}", chunk.getNumColumns(), chunk.dumpStructure());
+	holder.insertChunk(chunk.clone());
 }
 
 };

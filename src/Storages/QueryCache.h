@@ -33,7 +33,7 @@ struct CacheKey
     bool operator==(const CacheKey & other) const
     {
         return ast->getTreeHash() == other.ast->getTreeHash()
-            && header.getNamesAndTypesList() == other.header.getNamesAndTypesList()
+            && blocksHaveEqualStructure(header, other.header)
             && settings == other.settings
             && username == other.username;
     }
@@ -207,7 +207,8 @@ public:
         {
             removal_scheduler->scheduleRemoval(std::chrono::milliseconds{cache_key.settings.query_cache_entry_put_timeout_ms}, cache_key);
             cache->set(cache_key, result);
-            LOG_DEBUG(&Poco::Logger::get("CachePutHolder"), "put in cache: a key with header = {}", cache_key.header.getNamesAndTypesList().toString());
+            LOG_DEBUG(&Poco::Logger::get("CachePutHolder"), "put in cache: a key with header = {} and weight = {}",
+                      cache_key.header.getNamesAndTypesList().toString(), query_weight(*result));
         }
     }
 

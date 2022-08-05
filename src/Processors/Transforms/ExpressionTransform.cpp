@@ -17,12 +17,22 @@ ExpressionTransform::ExpressionTransform(const Block & header_, ExpressionAction
 
 void ExpressionTransform::transform(Chunk & chunk)
 {
+    std::cerr << "[ExpressionTransform] ===" << std::endl;
+    std::cerr << "[ExpressionTransform] before transform got chunk with structure: " << chunk.dumpStructure() << std::endl;
+    std::cerr << "[ExpressionTransform] input port structure " << getInputPort().getHeader().dumpStructure() << std::endl;
+    std::cerr << "[ExpressionTransform] output port structure " << getInputPort().getHeader().dumpStructure() << std::endl;
+
     size_t num_rows = chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+
+    std::cerr << "[ExpressionTransform] executing actions: " << expression->dumpActions() << std::endl;
 
     expression->execute(block, num_rows);
 
     chunk.setColumns(block.getColumns(), num_rows);
+
+    std::cerr << "[ExpressionTransform] after transform got chunk with structure: " << chunk.dumpStructure() << std::endl;
+    std::cerr << "[ExpressionTransform] ===" << std::endl;
 }
 
 ConvertingTransform::ConvertingTransform(const Block & header_, ExpressionActionsPtr expression_)
