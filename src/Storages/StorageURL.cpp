@@ -790,9 +790,9 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
     }
 }
 
-SchemaCache & IStorageURLBase::getSchemaCache()
+SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 {
-    static SchemaCache schema_cache;
+    static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
 }
 
@@ -804,7 +804,7 @@ std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
-    auto & schema_cache = getSchemaCache();
+    auto & schema_cache = getSchemaCache(context);
     for (const auto & url : urls)
     {
         auto get_last_mod_time = [&]() -> std::optional<time_t>
@@ -813,7 +813,7 @@ std::optional<ColumnsDescription> IStorageURLBase::tryGetColumnsFromCache(
             /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
             /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
             /// special setting for this case is enabled.
-            if (!last_mod_time && context->getSettingsRef().allow_urls_without_last_mod_time_in_schema_inference_cache)
+            if (!last_mod_time && !context->getSettingsRef().schema_inference_cache_require_modification_time_for_url)
                 return 0;
             return last_mod_time;
         };
@@ -834,9 +834,9 @@ void IStorageURLBase::addColumnsToCache(
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
-    auto & schema_cache = getSchemaCache();
+    auto & schema_cache = getSchemaCache(context);
     Strings cache_keys = getKeysForSchemaCache(urls, format_name, format_settings, context);
-    schema_cache.addMany(cache_keys, columns, context->getSettingsRef().cache_ttl_for_url_schema_inference.totalSeconds());
+    schema_cache.addMany(cache_keys, columns);
 }
 
 std::optional<time_t> IStorageURLBase::getLastModificationTime(

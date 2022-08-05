@@ -4,7 +4,8 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", stay_alive=True, main_configs=["configs/config.d/query_log.xml"]
+    "node", stay_alive=True,
+    main_configs=["configs/config.d/query_log.xml", "configs/config.d/schema_cache.xml"]
 )
 
 
@@ -27,122 +28,115 @@ def get_profile_event_for_query(node, query, profile_event):
     )
 
 
+def check_cache_misses(node, file, amount=1):
+    assert get_profile_event_for_query(node, f"desc file('{file}')",
+                                       "SchemaInferenceCacheMisses") == amount
+
+
+def check_cache_hits(node, file, amount=1):
+    assert get_profile_event_for_query(node, f"desc file('{file}')",
+                                       "SchemaInferenceCacheHits") == amount
+
+
+def check_cache_invalidations(node, file, amount=1):
+    assert get_profile_event_for_query(node, f"desc file('{file}')",
+                                       "SchemaInferenceCacheInvalidations") == amount
+
+
+def check_cache_evictions(node, file, amount=1):
+    assert get_profile_event_for_query(node, f"desc file('{file}')",
+                                       "SchemaInferenceCacheEvictions") == amount
+
+
+def check_cache(node, expected_files):
+    sources = node.query("select source from system.schema_inference_cache")
+    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(expected_files)
+
+
 def test(start_cluster):
     node.query("insert into function file('data.jsonl') select * from numbers(100)")
     time.sleep(1)
-    desc_query = "desc file('data.jsonl')"
-    node.query(desc_query)
-    cache_misses = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheMisses"
-    )
-    assert cache_misses == 1
 
-    desc_query = "desc file('data.jsonl')"
-    node.query(desc_query)
-    cache_hits = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheHits"
-    )
-    assert cache_hits == 1
+    node.query("desc file('data.jsonl')")
+    check_cache(node, ["data.jsonl"])
+    check_cache_misses(node, "data.jsonl")
+
+    node.query("desc file('data.jsonl')")
+    check_cache_hits(node, "data.jsonl")
 
     node.query("insert into function file('data.jsonl') select * from numbers(100)")
-
     time.sleep(1)
 
-    desc_query = "desc file('data.jsonl')"
-    node.query(desc_query)
-    cache_invalidations = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheInvalidations"
-    )
-    assert cache_invalidations == 1
+    node.query("desc file('data.jsonl')")
+    check_cache_invalidations(node, "data.jsonl")
 
     node.query("insert into function file('data1.jsonl') select * from numbers(100)")
-    desc_query = (
-        "desc file('data1.jsonl') settings cache_ttl_for_file_schema_inference=1"
-    )
-    node.query(desc_query)
-    cache_misses = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheMisses"
-    )
-    assert cache_misses == 1
+    time.sleep(1)
 
-    time.sleep(2)
+    node.query("desc file('data1.jsonl')")
+    check_cache(node, ["data.jsonl", "data1.jsonl"])
+    check_cache_misses(node, "data1.jsonl")
 
-    desc_query = (
-        "desc file('data1.jsonl') settings cache_ttl_for_file_schema_inference=1000"
-    )
-    node.query(desc_query)
-    cache_misses = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheMisses"
-    )
-    assert cache_misses == 1
-    cache_ttl_expirations = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheTTLExpirations"
-    )
-    assert cache_ttl_expirations == 1
-
-    desc_query = "desc file('data1.jsonl')"
-    node.query(desc_query)
-    cache_hits = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheHits"
-    )
-    assert cache_hits == 1
-    cache_ttl_updates = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheTTLUpdates"
-    )
-    assert cache_ttl_updates == 1
-
-    node.query("insert into function file('data1.jsonl') select * from numbers(100)")
-    desc_query = (
-        "desc file('data1.jsonl') settings cache_ttl_for_file_schema_inference=1"
-    )
-    node.query(desc_query)
-    cache_invalidations = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheInvalidations"
-    )
-    assert cache_invalidations == 1
-
-    time.sleep(2)
-
-    desc_query = "desc file('data.jsonl')"
-    node.query(desc_query)
-    cache_hits = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheHits"
-    )
-    assert cache_hits == 1
-    cache_ttl_expirations = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheTTLExpirations"
-    )
-    assert cache_ttl_expirations == 1
-
-    desc_query = "desc file('data1.jsonl')"
-    node.query(desc_query)
-    cache_misses = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheMisses"
-    )
-    assert cache_misses == 1
+    node.query("desc file('data1.jsonl')")
+    check_cache_hits(node, "data1.jsonl")
 
     node.query("insert into function file('data2.jsonl') select * from numbers(100)")
-    node.query("insert into function file('data3.jsonl') select * from numbers(100)")
-
     time.sleep(1)
 
-    desc_query = "desc file('data*.jsonl')"
-    node.query(desc_query)
-    cache_hits = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheHits"
-    )
-    assert cache_hits == 1
+    node.query("desc file('data2.jsonl')")
+    check_cache(node, ["data1.jsonl", "data2.jsonl"])
+    check_cache_misses(node, "data2.jsonl")
+    check_cache_evictions(node, "data2.jsonl")
 
-    desc_query = "desc file('data2.jsonl')"
-    node.query(desc_query)
-    cache_hits = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheHits"
-    )
-    assert cache_hits == 1
+    node.query("desc file('data2.jsonl')")
+    check_cache_hits(node, "data2.jsonl")
 
-    desc_query = "desc file('data3.jsonl')"
-    node.query(desc_query)
-    cache_hits = get_profile_event_for_query(
-        node, desc_query, "SchemaInferenceCacheHits"
-    )
-    assert cache_hits == 1
+    node.query("desc file('data1.jsonl')")
+    check_cache_hits(node, "data1.jsonl")
+
+    node.query("desc file('data.jsonl')")
+    check_cache(node, ["data.jsonl", "data1.jsonl"])
+    check_cache_misses(node, "data.jsonl")
+    check_cache_evictions(node, "data.jsonl")
+
+    node.query("desc file('data2.jsonl')")
+    check_cache(node, ["data.jsonl", "data2.jsonl"])
+    check_cache_misses(node, "data2.jsonl")
+    check_cache_evictions(node, "data2.jsonl")
+
+    node.query("desc file('data2.jsonl')")
+    check_cache_hits(node, "data2.jsonl")
+
+    node.query("desc file('data.jsonl')")
+    check_cache_hits(node, "data.jsonl")
+
+    node.query("insert into function file('data3.jsonl') select * from numbers(100)")
+    time.sleep(1)
+
+    node.query("desc file('data*.jsonl')")
+    check_cache(node, ["data.jsonl", "data1.jsonl"])
+    check_cache_hits(node, "data*.jsonl")
+
+    node.query("desc file('data.jsonl')")
+    check_cache_hits(node, "data.jsonl")
+
+    node.query("desc file('data1.jsonl')")
+    check_cache_hits(node, "data1.jsonl")
+
+    node.query("desc file('data2.jsonl')")
+    check_cache_misses(node, "data2.jsonl")
+
+    node.query("desc file('data3.jsonl')")
+    check_cache_misses(node, "data3.jsonl")
+
+    node.query("system drop schema cache for file")
+    check_cache(node, [])
+
+    node.query("desc file('data*.jsonl')")
+    check_cache_misses(node, "data*.jsonl", 4)
+
+    node.query("system drop schema cache")
+    check_cache(node, [])
+
+    node.query("desc file('data*.jsonl')")
+    check_cache_misses(node, "data*.jsonl", 4)

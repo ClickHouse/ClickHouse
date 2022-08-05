@@ -1,0 +1,12 @@
+storage	String					
+source	String					
+format	String					
+additional_format_info	String					
+registration_time	DateTime					
+schema	String					
+x	Nullable(String)					
+s	Nullable(String)					
+x	Nullable(String)					
+s	Nullable(String)					
+File	02374_data1.jsonl	JSONEachRow	x Nullable(String), s Nullable(String)
+File	02374_data2.jsonl	JSONEachRow	x Nullable(String), s Nullable(String)

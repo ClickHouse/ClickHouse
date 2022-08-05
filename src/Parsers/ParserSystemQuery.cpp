@@ -363,6 +363,23 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             parseQueryWithOnCluster(res, pos, expected);
             break;
         }
+        case Type::DROP_SCHEMA_CACHE:
+        {
+            if (ParserKeyword{"FOR"}.ignore(pos, expected))
+            {
+                if (ParserKeyword{"FILE"}.ignore(pos, expected))
+                    res->schema_cache_storage = "FILE";
+                else if (ParserKeyword{"S3"}.ignore(pos, expected))
+                    res->schema_cache_storage = "S3";
+                else if (ParserKeyword{"HDFS"}.ignore(pos, expected))
+                    res->schema_cache_storage = "HDFS";
+                else if (ParserKeyword{"URL"}.ignore(pos, expected))
+                    res->schema_cache_storage = "URL";
+                else
+                    return false;
+            }
+            break;
+        }
 
         case Type::UNFREEZE:
         {

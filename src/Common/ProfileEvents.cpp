@@ -348,8 +348,7 @@
     \
     M(SchemaInferenceCacheHits, "Number of times a schema from cache was used for schema inference") \
     M(SchemaInferenceCacheMisses, "Number of times a schema is not in cache while schema inference") \
-    M(SchemaInferenceCacheTTLExpirations, "Number of times a schema from cache expires due to TTL") \
-    M(SchemaInferenceCacheTTLUpdates, "Number of times TTL for schema in cache was updated") \
+    M(SchemaInferenceCacheEvictions, "Number of times a schema from cache was evicted due to overflow") \
     M(SchemaInferenceCacheInvalidations, "Number of times a schema in cache became invalid due to changes in data") \
     \
     M(KeeperPacketsSent, "Packets sent by keeper server") \

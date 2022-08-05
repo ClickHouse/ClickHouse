@@ -454,7 +454,7 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
     });
 
     factory.registerAdditionalInfoForSchemaCacheGetter(
-        "MySQLDump", [](const FormatSettings & settings) { return settings.mysql_dump.table_name; });
+        "MySQLDump", [](const FormatSettings & settings) { return "Table name: " + settings.mysql_dump.table_name; });
 }
 
 void registerMySQLSchemaReader(FormatFactory & factory)

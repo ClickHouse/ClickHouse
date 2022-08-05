@@ -50,4 +50,5 @@ NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
 String getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 Strings getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 
+void splitSchemaCacheKey(const String & key, String & source, String & format, String & additional_format_info);
 }

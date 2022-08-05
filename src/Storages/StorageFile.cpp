@@ -1206,9 +1206,9 @@ NamesAndTypesList StorageFile::getVirtuals() const
         {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
-SchemaCache & StorageFile::getSchemaCache()
+SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
 {
-    static SchemaCache schema_cache;
+    static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_file", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
 }
 
@@ -1216,7 +1216,7 @@ std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(
     const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context)
 {
     /// Check if the cache contains one of the paths.
-    auto & schema_cache = getSchemaCache();
+    auto & schema_cache = getSchemaCache(context);
     struct stat file_stat{};
     for (const auto & path : paths)
     {
@@ -1244,9 +1244,9 @@ void StorageFile::addColumnsToCache(
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
-    auto & schema_cache = getSchemaCache();
+    auto & schema_cache = getSchemaCache(context);
     Strings cache_keys = getKeysForSchemaCache(paths, format_name, format_settings, context);
-    schema_cache.addMany(cache_keys, columns, context->getSettingsRef().cache_ttl_for_file_schema_inference.totalSeconds());
+    schema_cache.addMany(cache_keys, columns);
 }
 
 }

@@ -211,6 +211,8 @@ public:
         S3Settings::ReadWriteSettings rw_settings;
     };
 
+    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
+
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
@@ -258,8 +260,6 @@ private:
         std::unordered_map<String, S3::ObjectInfo> * object_infos = nullptr);
 
     bool supportsSubsetOfColumns() const override;
-
-    static SchemaCache & getSchemaCache();
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings::const_iterator & begin,

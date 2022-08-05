@@ -3351,29 +3351,11 @@ Enable schemas cache for schema inference in `file` table function.
 
 Default value: `true`.
 
-## cache_ttl_for_file_schema_inference {#cache_ttl_for_file_schema_inference}
-
-TTL for schemes in cache in schema inference while using `file` table function. 0 means no ttl.
-Schema will be removed from cache if it was not accessed during specified TTL. 
-
-Type: seconds.
-
-Default value: `3600 * 24`.
-
 ## use_cache_for_s3_schema_inference {use_cache_for_s3_schema_inference}
 
 Enable schemas cache for schema inference in `s3` table function.
 
 Default value: `true`.
-
-## cache_ttl_for_s3_schema_inference {#cache_ttl_for_s3_schema_inference}
-
-TTL for schemes in cache in schema inference while using `s3` table function. 0 means no ttl.
-Schema will be removed from cache if it was not accessed during specified TTL.
-
-Type: seconds.
-
-Default value: `3600 * 24`.
 
 ## use_cache_for_url_schema_inference {use_cache_for_url_schema_inference}
 
@@ -3381,33 +3363,15 @@ Enable schemas cache for schema inference in `url` table function.
 
 Default value: `true`.
 
-## cache_ttl_for_url_schema_inference {#cache_ttl_for_url_schema_inference}
-
-TTL for schemes in cache in schema inference while using `url` table function. 0 means no ttl.
-Schema will be removed from cache if it was not accessed during specified TTL.
-
-Type: seconds.
-
-Default value: `3600 * 24`.
-
 ## use_cache_for_hdfs_schema_inference {use_cache_for_hdfs_schema_inference}
 
 Enable schemas cache for schema inference in `hdfs` table function.
 
 Default value: `true`.
 
-## cache_ttl_for_hdfs_schema_inference {#cache_ttl_for_hdfs_schema_inference}
+## schema_inference_cache_require_modification_time_for_url {#schema_inference_cache_require_modification_time_for_url}
 
-TTL for schemes in cache in schema inference while using `hdfs` table function. 0 means no ttl.
-Schema will be removed from cache if it was not accessed during specified TTL.
-
-Type: seconds.
-
-Default value: `3600 * 24`.
-
-## allow_urls_without_last_mod_time_in_schema_inference_cache {#allow_urls_without_last_mod_time_in_schema_inference_cache}
-
-Use schema from cache without last modification time validation for urls without `Last-Modified` header.
+Use schema from cache for URL with last modification time validation (for urls with Last-Modified header). If this setting is enabled and URL doesn't have Last-Modified header, schema from cache won't be used.
 
 Default value: `true`.
 

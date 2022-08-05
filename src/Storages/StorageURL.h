@@ -49,6 +49,8 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
 
+    static SchemaCache & getSchemaCache(const ContextPtr & context);
+
 protected:
     IStorageURLBase(
         const String & uri_,
@@ -98,8 +100,6 @@ protected:
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
-
-    static SchemaCache & getSchemaCache();
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings & urls,

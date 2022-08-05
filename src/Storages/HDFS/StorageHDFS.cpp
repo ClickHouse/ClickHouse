@@ -729,9 +729,9 @@ NamesAndTypesList StorageHDFS::getVirtuals() const
     return virtual_columns;
 }
 
-SchemaCache & StorageHDFS::getSchemaCache()
+SchemaCache & StorageHDFS::getSchemaCache(const ContextPtr & ctx)
 {
-    static SchemaCache schema_cache;
+    static SchemaCache schema_cache(ctx->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
 }
 
@@ -742,7 +742,7 @@ std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
     const String & format_name,
     const ContextPtr & ctx)
 {
-    auto & schema_cache = getSchemaCache();
+    auto & schema_cache = getSchemaCache(ctx);
     for (const auto & path : paths)
     {
         auto get_last_mod_time = [&]() -> std::optional<time_t>
@@ -770,12 +770,12 @@ void StorageHDFS::addColumnsToCache(
     const String & format_name,
     const ContextPtr & ctx)
 {
-    auto & schema_cache = getSchemaCache();
+    auto & schema_cache = getSchemaCache(ctx);
     Strings sources;
     sources.reserve(paths.size());
     std::transform(paths.begin(), paths.end(), std::back_inserter(sources), [&](const String & path){ return fs::path(uri_without_path) / path; });
     Strings cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
-    schema_cache.addMany(cache_keys, columns, ctx->getSettingsRef().cache_ttl_for_hdfs_schema_inference.totalSeconds());
+    schema_cache.addMany(cache_keys, columns);
 }
 
 }
