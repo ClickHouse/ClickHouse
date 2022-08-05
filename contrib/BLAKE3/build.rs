@@ -2,6 +2,8 @@ extern crate cbindgen;
 use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-changed=./src/lib.rs");
+
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
     let package_name = env::var("CARGO_PKG_NAME").unwrap();
