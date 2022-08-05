@@ -87,14 +87,14 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
 
+    static SchemaCache & getSchemaCache(const ContextPtr & context);
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
 
 private:
     void setStorageMetadata(CommonArguments args);
-
-    static SchemaCache & getSchemaCache();
 
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context);

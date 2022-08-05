@@ -239,6 +239,20 @@ String getKeyForSchemaCache(const String & source, const String & format, const 
     return getKeysForSchemaCache({source}, format, format_settings, context).front();
 }
 
+static String makeSchemaCacheKey(const String & source, const String & format, const String & additional_format_info)
+{
+    return source + "@@" + format + "@@" + additional_format_info;
+}
+
+void splitSchemaCacheKey(const String & key, String & source, String & format, String & additional_format_info)
+{
+    size_t additional_format_info_pos = key.rfind("@@");
+    additional_format_info = key.substr(additional_format_info_pos + 2, key.size() - additional_format_info_pos - 2);
+    size_t format_pos = key.rfind("@@", additional_format_info_pos - 1);
+    format = key.substr(format_pos + 2, additional_format_info_pos - format_pos - 2);
+    source = key.substr(0, format_pos);
+}
+
 Strings getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
 {
     /// For some formats data schema depends on some settings, so it's possible that
@@ -249,7 +263,7 @@ Strings getKeysForSchemaCache(const Strings & sources, const String & format, co
     String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);
     Strings cache_keys;
     cache_keys.reserve(sources.size());
-    std::transform(sources.begin(), sources.end(), std::back_inserter(cache_keys), [&](const auto & source){ return source + format + additional_format_info; });
+    std::transform(sources.begin(), sources.end(), std::back_inserter(cache_keys), [&](const auto & source){ return makeSchemaCacheKey(source, format, additional_format_info); });
     return cache_keys;
 }
 

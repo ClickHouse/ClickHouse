@@ -1327,9 +1327,9 @@ bool StorageS3::supportsPartitionBy() const
     return true;
 }
 
-SchemaCache & StorageS3::getSchemaCache()
+SchemaCache & StorageS3::getSchemaCache(const ContextPtr & ctx)
 {
-    static SchemaCache schema_cache;
+    static SchemaCache schema_cache(ctx->getConfigRef().getUInt("schema_inference_cache_max_elements_for_s3", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
 }
 
@@ -1342,7 +1342,7 @@ std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & ctx)
 {
-    auto & schema_cache = getSchemaCache();
+    auto & schema_cache = getSchemaCache(ctx);
     for (auto it = begin; it < end; ++it)
     {
         String path = fs::path(s3_configuration.uri.bucket) / *it;
@@ -1391,8 +1391,8 @@ void StorageS3::addColumnsToCache(
     sources.reserve(keys.size());
     std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const String & key){ return host_and_bucket / key; });
     Strings cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
-    auto & schema_cache = getSchemaCache();
-    schema_cache.addMany(cache_keys, columns, ctx->getSettingsRef().cache_ttl_for_s3_schema_inference.totalSeconds());
+    auto & schema_cache = getSchemaCache(ctx);
+    schema_cache.addMany(cache_keys, columns);
 }
 
 }

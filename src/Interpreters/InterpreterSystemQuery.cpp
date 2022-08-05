@@ -45,6 +45,10 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageFile.h>
+#include <Storages/StorageS3.h>
+#include <Storages/StorageURL.h>
+#include <Storages/HDFS/StorageHDFS.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -324,6 +328,25 @@ BlockIO InterpreterSystemQuery::execute()
                 auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
                 cache->removeIfReleasable(/* remove_persistent_files */false);
             }
+            break;
+        }
+        case Type::DROP_SCHEMA_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
+            std::unordered_set<String> caches_to_drop;
+            if (query.schema_cache_storage.empty())
+                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
+            else
+                caches_to_drop = {query.schema_cache_storage};
+
+            if (caches_to_drop.contains("FILE"))
+                StorageFile::getSchemaCache(getContext()).clear();
+            if (caches_to_drop.contains("S3"))
+                StorageS3::getSchemaCache(getContext()).clear();
+            if (caches_to_drop.contains("HDFS"))
+                StorageHDFS::getSchemaCache(getContext()).clear();
+            if (caches_to_drop.contains("URL"))
+                StorageURL::getSchemaCache(getContext()).clear();
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -833,6 +856,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::DROP_SCHEMA_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;

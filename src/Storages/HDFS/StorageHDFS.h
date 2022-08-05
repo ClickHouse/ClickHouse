@@ -66,12 +66,12 @@ public:
         const String & compression_method,
         ContextPtr ctx);
 
+    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
+
 protected:
     friend class HDFSSource;
 
 private:
-    static SchemaCache & getSchemaCache();
-
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings & paths,
         const String & uri_without_path,

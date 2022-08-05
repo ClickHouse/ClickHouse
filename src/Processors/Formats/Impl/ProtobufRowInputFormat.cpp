@@ -104,7 +104,7 @@ void registerProtobufSchemaReader(FormatFactory & factory)
 
     for (const auto & name : {"Protobuf", "ProtobufSingle"})
         factory.registerAdditionalInfoForSchemaCacheGetter(
-            name, [](const FormatSettings & settings) { return settings.schema.format_schema; });
+            name, [](const FormatSettings & settings) { return "Format schema: " + settings.schema.format_schema; });
 }
 
 }

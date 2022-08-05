@@ -6,46 +6,57 @@ namespace ProfileEvents
 {
     extern const Event SchemaInferenceCacheHits;
     extern const Event SchemaInferenceCacheMisses;
-    extern const Event SchemaInferenceCacheTTLExpirations;
-    extern const Event SchemaInferenceCacheTTLUpdates;
+    extern const Event SchemaInferenceCacheEvictions;
     extern const Event SchemaInferenceCacheInvalidations;
 }
 
 namespace DB
 {
 
-void SchemaCache::add(const String & key, const ColumnsDescription & columns, time_t ttl)
+SchemaCache::SchemaCache(size_t max_elements_) : max_elements(max_elements_)
+{
+}
+
+void SchemaCache::add(const String & key, const ColumnsDescription & columns)
 {
     std::lock_guard lock(mutex);
-    clean();
-    addUnlocked(key, columns, ttl);
+    addUnlocked(key, columns);
 }
 
 
-void SchemaCache::addMany(const Strings & keys, const ColumnsDescription & columns, time_t ttl)
+void SchemaCache::addMany(const Strings & keys, const ColumnsDescription & columns)
 {
     std::lock_guard lock(mutex);
-    clean();
     for (const auto & key : keys)
-        addUnlocked(key, columns, ttl);
+        addUnlocked(key, columns);
 }
 
-void SchemaCache::addUnlocked(const String & key, const ColumnsDescription & columns, time_t ttl)
+void SchemaCache::addUnlocked(const String & key, const ColumnsDescription & columns)
 {
     /// Do nothing if this key is already in cache;
     if (data.contains(key))
         return;
+
     time_t now = std::time(nullptr);
-    time_t valid_until = now + ttl;
-    data[key] = SchemaInfo{columns, now, ttl, valid_until};
-    if (ttl)
-        expiration_queue.insert({valid_until, key});
+    auto it = queue.insert(queue.end(), key);
+    data[key] = {SchemaInfo{columns, now}, it};
+    checkOverflow();
 }
 
-std::optional<ColumnsDescription> SchemaCache::tryGet(const String & key, std::function<std::optional<time_t>()> get_last_mod_time)
+void SchemaCache::checkOverflow()
+{
+    if (queue.size() <= max_elements)
+        return;
+
+    auto key = queue.front();
+    data.erase(key);
+    queue.pop_front();
+    ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheEvictions);
+}
+
+std::optional<ColumnsDescription> SchemaCache::tryGet(const String & key, LastModificationTimeGetter get_last_mod_time)
 {
     std::lock_guard lock(mutex);
-    clean();
     auto it = data.find(key);
     if (it == data.end())
     {
@@ -53,7 +64,8 @@ std::optional<ColumnsDescription> SchemaCache::tryGet(const String & key, std::f
         return std::nullopt;
     }
 
-    auto & schema_info = it->second;
+    auto & schema_info = it->second.schema_info;
+    auto & queue_iterator = it->second.iterator;
     if (get_last_mod_time)
     {
         /// It's important to call get_last_mod_time only if we have key in cache,
@@ -69,44 +81,34 @@ std::optional<ColumnsDescription> SchemaCache::tryGet(const String & key, std::f
             /// Object was modified after it was added in cache.
             /// So, stored value is no more valid and we should remove it.
             ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheInvalidations);
-            /// If this key had TTL, we should remove it from expiration queue.
-            if (schema_info.ttl)
-                expiration_queue.erase({schema_info.valid_until, key});
+            queue.erase(queue_iterator);
             data.erase(key);
             return std::nullopt;
         }
     }
 
-    if (schema_info.ttl)
-    {
-        /// Current value in cache is valid and we can resume it's TTL by updating it's expiration time.
-        /// We will extract current value from the expiration queue, modify it and insert back to the queue.
-        time_t now = std::time(nullptr);
-        auto jt = expiration_queue.find({schema_info.valid_until, key});
-        auto node = expiration_queue.extract(jt);
-        schema_info.valid_until = now + schema_info.ttl;
-        node.value().first = schema_info.valid_until;
-        ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheTTLUpdates);
-        expiration_queue.insert(std::move(node));
-    }
+    /// Move key to the end of queue.
+    queue.splice(queue.end(), queue, queue_iterator);
 
     ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheHits);
     return schema_info.columns;
 }
 
-void SchemaCache::clean()
+void SchemaCache::clear()
 {
-    time_t now = std::time(nullptr);
-    auto it = expiration_queue.begin();
-    /// Queue is sorted by time, so we need to check only the first
-    /// values that are less than current time.
-    while (it != expiration_queue.end() && it->first < now)
-    {
-        ProfileEvents::increment(ProfileEvents::SchemaInferenceCacheTTLExpirations);
-        data.erase(it->second);
-        ++it;
-    }
-    expiration_queue.erase(expiration_queue.begin(), it);
+    std::lock_guard lock(mutex);
+    data.clear();
+    queue.clear();
+}
+
+std::unordered_map<String, SchemaCache::SchemaInfo> SchemaCache::getAll()
+{
+    std::lock_guard lock(mutex);
+    std::unordered_map<String, SchemaCache::SchemaInfo> result;
+    for (const auto & [key, value] : data)
+        result[key] = value.schema_info;
+
+    return result;
 }
 
 }
