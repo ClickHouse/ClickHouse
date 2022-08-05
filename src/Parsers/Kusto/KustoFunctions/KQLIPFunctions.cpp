@@ -190,10 +190,11 @@ bool ParseIpv6::convertImpl(String & out, IParser::Pos & pos)
 
     const auto ip_address = getArgument(function_name, pos);
     out = std::format(
-        "if(isNull(ifNull(if(isNull({1} as ipv4), null, IPv4ToIPv6(ipv4)), IPv6StringToNumOrNull({0})) as ipv6), null, "
-        "arrayStringConcat(flatten(extractAllGroups(lower(hex(assumeNotNull(ipv6))), '([\\da-f]{{4}})')), ':'))",
+        "if(isNull(ifNull(if(isNull({1} as ipv4_{2}), null, IPv4ToIPv6(ipv4_{2})), IPv6StringToNumOrNull({0})) as ipv6_{2}), null, "
+        "arrayStringConcat(flatten(extractAllGroups(lower(hex(assumeNotNull(ipv6_{2}))), '([\\da-f]{{4}})')), ':'))",
         ip_address,
-        kqlCallToExpression("parse_ipv4", {ip_address}, pos.max_depth));
+        kqlCallToExpression("parse_ipv4", {ip_address}, pos.max_depth),
+        generateUniqueIdentifier());
     return true;
 }
 
