@@ -161,7 +161,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const SelectQueryInfo & query,
     ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(query, context, index.column_names, index.expression)
+    , condition(query.query, query.syntax_analyzer_result, query.sets, context, index.column_names, index.expression)
 {
 }
 
