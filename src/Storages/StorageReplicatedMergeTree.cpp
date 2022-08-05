@@ -5132,9 +5132,28 @@ void StorageReplicatedMergeTree::checkTableCanBeRenamed(const StorageID & new_na
         return;
 
     if (renaming_restrictions == RenamingRestrictions::DO_NOT_ALLOW)
-        throw Exception("Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. "
-                        "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, "
-                        "you should edit metadata file first and restart server or reattach the table.", ErrorCodes::NOT_IMPLEMENTED);
+    {
+        auto old_name = getStorageID();
+        bool is_server_startup = Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
+            && !Context::getGlobalContextInstance()->isServerCompletelyStarted();
+        bool move_to_atomic = old_name.uuid == UUIDHelpers::Nil && new_name.uuid != UUIDHelpers::Nil;
+
+        bool likely_converting_ordinary_to_atomic = is_server_startup && move_to_atomic;
+        if (likely_converting_ordinary_to_atomic)
+        {
+            LOG_INFO(log, "Table {} should not be renamed, because zookeeper_path contains implicit 'database' or 'table' macro. "
+                          "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. "
+                          "However, we allow renaming while converting Ordinary database to Atomic, because all tables will be renamed back",
+                          old_name.getNameForLogs());
+            return;
+        }
+
+        throw Exception(
+            "Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. "
+            "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, "
+            "you should edit metadata file first and restart server or reattach the table.",
+            ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     assert(renaming_restrictions == RenamingRestrictions::ALLOW_PRESERVING_UUID);
     if (!new_name.hasUUID() && getStorageID().hasUUID())
