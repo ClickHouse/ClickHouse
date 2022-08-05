@@ -395,7 +395,14 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     };
 
 
-    LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flash to disk", s.get_last_log_idx());
+    if (keeper_context->server_state == KeeperContext::Phase::SHUTDOWN)
+    {
+        LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+        return;
+    }
+
+    LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flush to disk", s.get_last_log_idx());
     /// Flush snapshot to disk in a separate thread.
     if (!snapshots_queue.push(std::move(snapshot_task)))
         LOG_WARNING(log, "Cannot push snapshot task into queue");
