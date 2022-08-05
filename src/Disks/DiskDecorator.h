@@ -101,6 +101,12 @@ public:
 
     UInt64 getRevision() const override { return delegate->getRevision(); }
 
+    bool supportsStat() const override { return delegate->supportsStat(); }
+    struct stat stat(const String & path) const override { return delegate->stat(path); }
+
+    bool supportsChmod() const override { return delegate->supportsChmod(); }
+    void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
+
 protected:
     Executor & getExecutor() override;
 
