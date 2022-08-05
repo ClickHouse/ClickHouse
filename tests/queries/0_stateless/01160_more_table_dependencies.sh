@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS s"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ta"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS tb"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS tc"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS td"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS v1"
+
+$CLICKHOUSE_CLIENT -q "CREATE TABLE s (n int) ENGINE=Log"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ta (n int) ENGINE=Log"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE tb (n int) ENGINE=Log"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE tc (n int) ENGINE=Log"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE td (n int) ENGINE=Log"
+$CLICKHOUSE_CLIENT -q "CREATE VIEW v1 AS SELECT n FROM s WHERE (n IN ta) AND (n NOT IN tb) AND (n GLOBAL IN tc)  AND (n GLOBAL NOT IN td)"
+
+$CLICKHOUSE_CLIENT -q "SELECT table, arraySort(dependencies_table), arraySort(loading_dependencies_table), arraySort(loading_dependent_table) FROM system.tables WHERE database=currentDatabase() ORDER BY table"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE v1"
+$CLICKHOUSE_CLIENT -q "DROP TABLE s"
+$CLICKHOUSE_CLIENT -q "DROP TABLE ta"
+$CLICKHOUSE_CLIENT -q "DROP TABLE tb"
+$CLICKHOUSE_CLIENT -q "DROP TABLE tc"
+$CLICKHOUSE_CLIENT -q "DROP TABLE td"

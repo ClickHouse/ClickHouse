@@ -93,15 +93,16 @@ bool DDLDependencyVisitor::needChildVisit(const ASTPtr &, const ASTPtr &)
 
 void DDLDependencyVisitor::visit(const ASTFunction & function, Data & data)
 {
-    if (function.name == "joinGet" ||
-        function.name == "dictHas" ||
-        function.name == "dictIsIn" ||
-        function.name.starts_with("dictGet"))
+    if (function.name == "joinGet" || function.name == "dictHas" || function.name == "dictIsIn" || function.name.starts_with("dictGet"))
     {
+        /// dictGet('dict_name', attr_names, id_expr)
+        /// dictHas('dict_name', id_expr)
+        /// joinGet(join_storage_table_name, `value_column`, join_keys)
         extractTableNameFromArgument(function, data, 0);
     }
-    else if (Poco::toLower(function.name) == "in")
+    else if (function.name == "in" || function.name == "notIn" || function.name == "globalIn" || function.name == "globalNotIn")
     {
+        /// in(x, table_name) - function for evaluating (x IN table_name)
         extractTableNameFromArgument(function, data, 1);
     }
 
