@@ -27,10 +27,20 @@ print '-- ipv4_is_in_range(\'192.168.1.6\', \'192.168.1.1/24\')';
 print ipv4_is_in_range('192.168.1.6', '192.168.1.1/24'); -- == true
 print '-- ipv4_is_in_range(\'192.168.1.1\', \'192.168.2.1/24\')';
 print ipv4_is_in_range('192.168.1.1', '192.168.2.1/24'); -- == false
-print 'ipv4_is_in_range(strcat(\'192.\',\'168.\', \'1.1\'), \'192.168.2.1/24\')';
+print '-- ipv4_is_in_range(strcat(\'192.\',\'168.\', \'1.1\'), \'192.168.2.1/24\')';
 print ipv4_is_in_range(strcat('192.','168.', '1.1'), '192.168.2.1/24'); -- == false
+print '-- ipv4_is_in_range(\'abc\', \'127.0.0.1\')'; -- == null
+print ipv4_is_in_range('abc', '127.0.0.1');
 
+print '-- parse_ipv6(127.0.0.1)';
+print parse_ipv6('127.0.0.1');
+print '-- parse_ipv6(fe80::85d:e82c:9446:7994)';
+print parse_ipv6('fe80::85d:e82c:9446:7994');
+print '-- parse_ipv4(\'127.0.0.1\')';
+print parse_ipv4('127.0.0.1');
 -- TODO:
--- print ipv4_is_in_range('abc', '127.0.0.1'); -- == null
--- parse_ipv4()
--- parse_ipv6()
+-- print parse_ipv4('192.1.168.1') < parse_ipv4('192.1.168.2'); -- == true
+
+
+
+
