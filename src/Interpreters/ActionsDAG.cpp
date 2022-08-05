@@ -1924,91 +1924,30 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     return actions;
 }
 
-bool ActionsDAG::isSortingPreserved(const SortDescription & sort_description) const
+bool ActionsDAG::isSortingPreserved() const
 {
-    // traverse the node tree and check if there is any non-monotonic function
-    auto node_preserve_sorting = [&](const Node * column) -> bool
+    if (hasArrayJoin())
+        return false;
+
+    const Field field{};
+    // traverse the node tree and check if there are any non-monotonic function
+    for (const auto & node : nodes)
     {
-        const Field field{};
-        std::unordered_set<const Node *> visited_nodes;
-
-        for (const auto & head : nodes)
+        if (node.type == ActionType::FUNCTION)
         {
-            const auto * root = &head;
-            if (root == column)
-                continue;
-
-            std::stack<const Node *> dfs;
-            dfs.push(root);
-
-            std::stack<const Node *> backtrace;
-
-            while (!dfs.empty())
+            auto func = node.function_base;
+            if (func)
             {
-                const auto * node = dfs.top();
-                dfs.pop();
-                backtrace.push(node);
-
-                /// if found column
-                if (node == column)
-                {
-                    backtrace.pop(); /// pop column itself
-
-                    /// walk back to root and check functions
-                    while (!backtrace.empty())
-                    {
-                        const auto * current = backtrace.top();
-                        backtrace.pop();
-
-                        if (current->type == ActionType::FUNCTION)
-                        {
-                            auto func = current->function_base;
-                            if (func)
-                            {
-                                if (!func->hasInformationAboutMonotonicity())
-                                    return false;
-
-                                const auto & types = func->getArgumentTypes();
-                                if (types.empty())
-                                    return false;
-
-                                const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-                                if (!monotonicity.is_always_monotonic)
-                                    return false;
-                            }
-                        }
-                    }
-                }
-
-                for (const auto * child : node->children)
-                {
-                    if (!visited_nodes.contains(child))
-                    {
-                        dfs.push(child);
-                        visited_nodes.insert(child);
-                    }
-                }
-            }
-        }
-
-        return true;
-    };
-
-    for (const auto & column_sort_desc : sort_description)
-    {
-        for (const auto * node : inputs)
-        {
-            if (!node)
-                continue;
-
-            if (node->result_name == column_sort_desc.column_name || (node->column && isColumnConst(*node->column)))
-            {
-                if (!node_preserve_sorting(node))
+                if (!func->hasInformationAboutMonotonicity())
                     return false;
-            }
-            else
-            {
-                return false;
+
+                const auto & types = func->getArgumentTypes();
+                if (types.empty())
+                    return false;
+
+                const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
+                if (!monotonicity.is_always_monotonic)
+                    return false;
             }
         }
     }
