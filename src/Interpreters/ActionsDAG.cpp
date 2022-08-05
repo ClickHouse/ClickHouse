@@ -144,6 +144,9 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
     if (!array_type)
         throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 
+    if (result_name.empty())
+        result_name = "arrayJoin(" + child.result_name + ")";
+
     Node node;
     node.type = ActionType::ARRAY_JOIN;
     node.result_type = array_type->getNestedType();
@@ -1513,8 +1516,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     }
 
     auto res = split(split_nodes);
-    /// Do not remove array joined columns if they are not used.
-    /// res.first->project_input = false;
+    res.second->project_input = project_input;
     return res;
 }
 

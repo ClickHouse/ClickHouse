@@ -8,13 +8,16 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -26,7 +29,9 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
@@ -35,12 +40,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Storages/VirtualColumnUtils.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
-
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <IO/WriteBufferFromOStream.h>
 
 namespace DB
@@ -184,6 +184,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         query_info.projection->desc->type,
         query_info.projection->desc->name);
 
+    const ASTSelectQuery & select_query = query_info.query->as<ASTSelectQuery &>();
     QueryPlanResourceHolder resources;
 
     auto projection_plan = std::make_unique<QueryPlan>();
@@ -229,6 +230,25 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 = std::make_unique<ExpressionStep>(projection_plan->getCurrentDataStream(), query_info.projection->before_aggregation);
             expression_before_aggregation->setStepDescription("Before GROUP BY");
             projection_plan->addStep(std::move(expression_before_aggregation));
+        }
+
+        /// NOTE: input_order_info (for projection and not) is set only if projection is complete
+        if (query_info.has_order_by && !query_info.need_aggregate && query_info.projection->input_order_info)
+        {
+            chassert(query_info.projection->complete);
+
+            SortDescription output_order_descr = InterpreterSelectQuery::getSortDescription(select_query, context);
+            UInt64 limit = InterpreterSelectQuery::getLimitForSorting(select_query, context);
+
+            auto sorting_step = std::make_unique<SortingStep>(
+                projection_plan->getCurrentDataStream(),
+                query_info.projection->input_order_info->order_key_prefix_descr,
+                output_order_descr,
+                settings.max_block_size,
+                limit);
+
+            sorting_step->setStepDescription("ORDER BY for projections");
+            projection_plan->addStep(std::move(sorting_step));
         }
     }
 
@@ -365,7 +385,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 InputOrderInfoPtr group_by_info = query_info.projection->input_order_info;
                 SortDescription group_by_sort_description;
                 if (group_by_info && settings.optimize_aggregation_in_order)
-                    group_by_sort_description = getSortDescriptionFromGroupBy(query_info.query->as<ASTSelectQuery &>());
+                    group_by_sort_description = getSortDescriptionFromGroupBy(select_query);
                 else
                     group_by_info = nullptr;
 
@@ -750,7 +770,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
         minmax_idx_condition.emplace(
-            query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
+            query_info.query, query_info.syntax_analyzer_result, query_info.sets, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
@@ -1253,6 +1273,8 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
+    const ActionsDAGPtr & added_filter,
+    const std::string & added_filter_column_name,
     ContextPtr context,
     unsigned num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read) const
@@ -1272,6 +1294,9 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
+        query_info.prewhere_info,
+        added_filter,
+        added_filter_column_name,
         metadata_snapshot_base,
         metadata_snapshot,
         query_info,
