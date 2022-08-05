@@ -36,6 +36,24 @@ void SetLastModifiedOperation::undo()
     disk.setLastModified(path, old_timestamp);
 }
 
+ChmodOperation::ChmodOperation(const std::string & path_, mode_t mode_, IDisk & disk_)
+    : path(path_)
+    , mode(mode_)
+    , disk(disk_)
+{
+}
+
+void ChmodOperation::execute(std::unique_lock<std::shared_mutex> &)
+{
+    old_mode = disk.stat(path).st_mode;
+    disk.chmod(path, mode);
+}
+
+void ChmodOperation::undo()
+{
+    disk.chmod(path, old_mode);
+}
+
 UnlinkFileOperation::UnlinkFileOperation(const std::string & path_, IDisk & disk_)
     : path(path_)
     , disk(disk_)
