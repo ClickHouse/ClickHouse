@@ -2,7 +2,7 @@
 
 #include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
-
+#include <unordered_map>
 namespace DB
 {
 
