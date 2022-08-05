@@ -78,14 +78,14 @@ static void writeData(Block data, OutputFormatPtr format)
     executor.execute();
 }
 
-LibraryBridgeRequestHandler::LibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
+ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
     : WithContext(context_)
-    , log(&Poco::Logger::get("LibraryBridgeRequestHandler"))
+    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeRequestHandler"))
     , keep_alive_timeout(keep_alive_timeout_)
 {
 }
 
-void LibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
@@ -340,14 +340,14 @@ void LibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTT
     }
 }
 
-LibraryBridgeExistsHandler::LibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
+ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
-    , log(&Poco::Logger::get("LibraryBridgeExistsHandler"))
+    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeExistsHandler"))
 {
 }
 
-void LibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
