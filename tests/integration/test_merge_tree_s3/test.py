@@ -3,15 +3,11 @@ import time
 import os
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(
-    SCRIPT_DIR,
-    "./{}/node/configs/config.d/storage_conf.xml".format(get_instances_dir()),
-)
 
 
 @pytest.fixture(scope="module")
@@ -577,6 +573,13 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
 
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./{}/node/configs/config.d/storage_conf.xml".format(
+            cluster.instances_dir_name
+        ),
+    )
+
     def get_s3_requests():
         node.query("SYSTEM FLUSH LOGS")
         return int(
@@ -593,7 +596,7 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     # Force multi-part upload mode.
     replace_config(
-        CONFIG_PATH,
+        config_path,
         "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
         "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
     )
