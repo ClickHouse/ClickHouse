@@ -1519,7 +1519,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
-        maybeConvertOrdinaryDatabaseToAtomic(global_context, DatabaseCatalog::instance().getSystemDatabase());
+        maybeConvertSystemDatabase(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1533,6 +1533,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         database_catalog.loadMarkedAsDroppedTables();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
+        convertDatabasesEnginesIfNeed(global_context);
         startupSystemTables();
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
