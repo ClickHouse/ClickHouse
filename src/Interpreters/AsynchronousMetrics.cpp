@@ -34,12 +34,6 @@
 #endif
 
 
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
-
-
 namespace DB
 {
 
