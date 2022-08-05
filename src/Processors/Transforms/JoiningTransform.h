@@ -144,6 +144,9 @@ private:
     size_t inp;
     InputPorts::iterator current_input;
 
+    std::optional<IProcessor::Status> topCheck();
+    std::optional<IProcessor::Status> endOfInputs();
+
     struct SourceStatus
     {
         size_t left_pos = 0;
@@ -152,7 +155,7 @@ private:
         bool right_rest = false;
         Blocks blocks;
         size_t current_block = 0;
-        PaddedPODArray<Int16> right_filt;
+        PaddedPODArray<Int32> right_filt;
         //  1  -  filter the row out
         //  negative -    -1 * (left_position + 1)
     };
