@@ -68,6 +68,7 @@ function(build_cargo target_name project_dir)
         COMMAND export BUILD_FOR_OSX=${OSX_RUST_ROOT}
         COMMAND env CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} cargo build ${CARGO_RELEASE_FLAG} ${TARGET_SPEC}
         COMMAND cp ${output_library} ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND cat ./include/blake3.h
         OUTPUT ${output_library}
         WORKING_DIRECTORY ${project_dir})
 

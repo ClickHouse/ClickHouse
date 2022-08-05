@@ -43,3 +43,9 @@ pub unsafe extern "C" fn blake3_apply_shim_msan_compat(
     reader.fill(std::slice::from_raw_parts_mut(out_char_data, OUT_LEN));
     std::ptr::null_mut()
 }
+
+// Freeing memory according to docs: https://doc.rust-lang.org/std/ffi/struct.CString.html#method.into_raw
+#[no_mangle]
+pub unsafe extern "C" fn blake3_free_char_pointer(ptr_to_free: *mut c_char) {
+    std::mem::drop(CString::from_raw(ptr_to_free));
+}
