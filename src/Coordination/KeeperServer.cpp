@@ -847,7 +847,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
     result.is_follower = !result.is_leader && !result.is_observer;
     result.has_leader = result.is_leader || isLeaderAlive();
-    result.is_standalone = !result.is_follower && getFollowerCount() == 0;
+    result.is_standalone = raft_instance->get_peer_info_all().size() == 0;
     if (result.is_leader)
     {
         result.follower_count = getFollowerCount();
