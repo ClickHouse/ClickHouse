@@ -198,4 +198,16 @@ IFileCache::QueryContextHolder::~QueryContextHolder()
         cache->removeQueryContext(query_id);
 }
 
+ThreadPool & IFileCache::getThreadPoolForAsyncWrite()
+{
+    std::lock_guard lock(mutex);
+    if (!async_write_threadpool)
+    {
+        constexpr size_t pool_size = 50; /// TODO: add a user setting for this
+        constexpr size_t queue_size = 1000000;
+        async_write_threadpool.emplace(pool_size, pool_size, queue_size);
+    }
+    return *async_write_threadpool;
+}
+
 }

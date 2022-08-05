@@ -30,7 +30,7 @@ public:
         const String & cache_base_path_,
         const FileCacheSettings & cache_settings_);
 
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent) override;
+    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings) override;
 
     FileSegmentsHolder get(const Key & key, size_t offset, size_t size) override;
 
@@ -94,7 +94,7 @@ private:
 
     FileSegmentCell * addCell(
         const Key & key, size_t offset, size_t size,
-        FileSegment::State state, bool is_persistent,
+        FileSegment::State state, const CreateFileSegmentSettings & settings,
         std::lock_guard<std::mutex> & cache_lock);
 
     void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
@@ -123,14 +123,14 @@ private:
     void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments splitRangeIntoCells(
-        const Key & key, size_t offset, size_t size, FileSegment::State state, bool is_persistent, std::lock_guard<std::mutex> & cache_lock);
+        const Key & key, size_t offset, size_t size, FileSegment::State state, const CreateFileSegmentSettings & settings, std::lock_guard<std::mutex> & cache_lock);
 
     String dumpStructureUnlocked(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
 
     void fillHolesWithEmptyFileSegments(
-        FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, bool is_persistent, std::lock_guard<std::mutex> & cache_lock);
+        FileSegments & file_segments, const Key & key, const FileSegment::Range & range, bool fill_with_detached_file_segments, const CreateFileSegmentSettings & settings, std::lock_guard<std::mutex> & cache_lock);
 
-    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size, bool is_persistent) override;
+    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings) override;
 
     size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
 

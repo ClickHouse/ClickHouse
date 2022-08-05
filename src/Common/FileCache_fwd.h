@@ -13,5 +13,6 @@ class IFileCache;
 using FileCachePtr = std::shared_ptr<IFileCache>;
 
 struct FileCacheSettings;
+struct CreateFileSegmentSettings;
 
 }

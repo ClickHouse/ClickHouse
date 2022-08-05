@@ -176,7 +176,7 @@ FileSegments LRUFileCache::getImpl(
 }
 
 FileSegments LRUFileCache::splitRangeIntoCells(
-    const Key & key, size_t offset, size_t size, FileSegment::State state, bool is_persistent, std::lock_guard<std::mutex> & cache_lock)
+    const Key & key, size_t offset, size_t size, FileSegment::State state, const CreateFileSegmentSettings & settings, std::lock_guard<std::mutex> & cache_lock)
 {
     assert(size > 0);
 
@@ -192,7 +192,7 @@ FileSegments LRUFileCache::splitRangeIntoCells(
         current_cell_size = std::min(remaining_size, max_file_segment_size);
         remaining_size -= current_cell_size;
 
-        auto * cell = addCell(key, current_pos, current_cell_size, state, is_persistent, cache_lock);
+        auto * cell = addCell(key, current_pos, current_cell_size, state, settings, cache_lock);
         if (cell)
             file_segments.push_back(cell->file_segment);
         assert(cell);
@@ -209,7 +209,7 @@ void LRUFileCache::fillHolesWithEmptyFileSegments(
     const Key & key,
     const FileSegment::Range & range,
     bool fill_with_detached_file_segments,
-    bool is_persistent,
+    const CreateFileSegmentSettings & settings,
     std::lock_guard<std::mutex> & cache_lock)
 {
     /// There are segments [segment1, ..., segmentN]
@@ -256,7 +256,7 @@ void LRUFileCache::fillHolesWithEmptyFileSegments(
 
         if (fill_with_detached_file_segments)
         {
-            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
+            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY, settings);
             {
                 std::lock_guard segment_lock(file_segment->mutex);
                 file_segment->markAsDetached(segment_lock);
@@ -265,7 +265,7 @@ void LRUFileCache::fillHolesWithEmptyFileSegments(
         }
         else
         {
-            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, is_persistent, cache_lock));
+            file_segments.splice(it, splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, settings, cache_lock));
         }
 
         current_pos = segment_range.right + 1;
@@ -283,7 +283,7 @@ void LRUFileCache::fillHolesWithEmptyFileSegments(
 
         if (fill_with_detached_file_segments)
         {
-            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY);
+            auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY, settings);
             {
                 std::lock_guard segment_lock(file_segment->mutex);
                 file_segment->markAsDetached(segment_lock);
@@ -293,12 +293,12 @@ void LRUFileCache::fillHolesWithEmptyFileSegments(
         else
         {
             file_segments.splice(
-                file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, is_persistent, cache_lock));
+                file_segments.end(), splitRangeIntoCells(key, current_pos, hole_size, FileSegment::State::EMPTY, settings, cache_lock));
         }
     }
 }
 
-FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent)
+FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
 
@@ -315,11 +315,11 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     if (file_segments.empty())
     {
-        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, is_persistent, cache_lock);
+        file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock);
     }
     else
     {
-        fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */false, is_persistent, cache_lock);
+        fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */false, settings, cache_lock);
     }
 
     assert(!file_segments.empty());
@@ -343,7 +343,7 @@ FileSegmentsHolder LRUFileCache::get(const Key & key, size_t offset, size_t size
 
     if (file_segments.empty())
     {
-        auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::EMPTY);
+        auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, FileSegment::State::EMPTY, CreateFileSegmentSettings{});
         {
             std::lock_guard segment_lock(file_segment->mutex);
             file_segment->markAsDetached(segment_lock);
@@ -352,7 +352,7 @@ FileSegmentsHolder LRUFileCache::get(const Key & key, size_t offset, size_t size
     }
     else
     {
-        fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */true, /* is_persistent */false, cache_lock);
+        fillHolesWithEmptyFileSegments(file_segments, key, range, /* fill_with_detached */true, {}, cache_lock);
     }
 
     return FileSegmentsHolder(std::move(file_segments));
@@ -360,7 +360,7 @@ FileSegmentsHolder LRUFileCache::get(const Key & key, size_t offset, size_t size
 
 LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     const Key & key, size_t offset, size_t size,
-    FileSegment::State state, bool is_persistent,
+    FileSegment::State state, const CreateFileSegmentSettings & settings,
     std::lock_guard<std::mutex> & cache_lock)
 {
     /// Create a file segment cell and put it in `files` map by [key][offset].
@@ -406,7 +406,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
             }
         }
 
-        return std::make_shared<FileSegment>(offset, size, key, this, result_state, is_persistent);
+        return std::make_shared<FileSegment>(offset, size, key, this, result_state, settings);
     };
 
     FileSegmentCell cell(skip_or_download(), this, cache_lock);
@@ -433,7 +433,7 @@ FileSegmentsHolder LRUFileCache::setDownloading(
     const Key & key,
     size_t offset,
     size_t size,
-    bool is_persistent)
+    const CreateFileSegmentSettings & settings)
 {
     std::lock_guard cache_lock(mutex);
 
@@ -448,7 +448,7 @@ FileSegmentsHolder LRUFileCache::setDownloading(
             "Cache cell already exists for key `{}` and offset {}",
             key.toString(), offset);
 
-    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, is_persistent, cache_lock);
+    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, settings, cache_lock);
     return FileSegmentsHolder(std::move(file_segments));
 }
 
@@ -886,7 +886,9 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
 
                 if (tryReserve(key, offset, size, cache_lock))
                 {
-                    auto * cell = addCell(key, offset, size, FileSegment::State::DOWNLOADED, is_persistent, cache_lock);
+                    auto * cell = addCell(
+                        key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{ .is_persistent = is_persistent }, cache_lock);
+
                     if (cell)
                         queue_entries.emplace_back(*cell->queue_iterator, cell->file_segment);
                 }
@@ -949,7 +951,8 @@ void LRUFileCache::reduceSizeToDownloaded(
             key.toString(), offset);
     }
 
-    cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED);
+    cell->file_segment = std::make_shared<FileSegment>(
+        offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
 }
 
 bool LRUFileCache::isLastFileSegmentHolder(
@@ -1151,7 +1154,7 @@ void LRUFileCache::assertCacheCellsCorrectness(
     for (const auto & [_, cell] : cells_by_offset)
     {
         const auto & file_segment = cell.file_segment;
-        file_segment->assertCorrectness();
+        /// file_segment->assertCorrectness();
 
         if (file_segment->reserved_size != 0)
         {

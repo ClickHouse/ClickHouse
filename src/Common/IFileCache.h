@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/FileCache_fwd.h>
+#include <Common/ThreadPool.h>
 
 #include <boost/noncopyable.hpp>
 #include <list>
@@ -78,7 +79,7 @@ public:
      * As long as pointers to returned file segments are hold
      * it is guaranteed that these file segments are not removed from cache.
      */
-    virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, bool is_persistent) = 0;
+    virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings) = 0;
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -91,7 +92,7 @@ public:
      */
     virtual FileSegmentsHolder get(const Key & key, size_t offset, size_t size) = 0;
 
-    virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size, bool is_persistent) = 0;
+    virtual FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings) = 0;
 
     virtual FileSegments getSnapshot() const = 0;
 
@@ -102,6 +103,8 @@ public:
 
     virtual size_t getFileSegmentsNum() const = 0;
 
+    ThreadPool & getThreadPoolForAsyncWrite();
+
 protected:
     String cache_base_path;
     size_t max_size;
@@ -111,6 +114,8 @@ protected:
     bool is_initialized = false;
 
     mutable std::mutex mutex;
+
+    std::optional<ThreadPool> async_write_threadpool;
 
     virtual bool tryReserve(
         const Key & key, size_t offset, size_t size,

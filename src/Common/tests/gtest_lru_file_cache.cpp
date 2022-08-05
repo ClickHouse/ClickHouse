@@ -108,7 +108,7 @@ TEST(LRUFileCache, get)
     auto key = cache.hash("key1");
 
     {
-        auto holder = cache.getOrSet(key, 0, 10, false);  /// Add range [0, 9]
+        auto holder = cache.getOrSet(key, 0, 10, {});  /// Add range [0, 9]
         auto segments = fromHolder(holder);
         /// Range was not present in cache. It should be added in cache as one while file segment.
         ASSERT_EQ(segments.size(), 1);
@@ -137,7 +137,7 @@ TEST(LRUFileCache, get)
 
     {
         /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
-        auto holder = cache.getOrSet(key, 5, 10, false);
+        auto holder = cache.getOrSet(key, 5, 10, {});
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 2);
 
@@ -157,14 +157,14 @@ TEST(LRUFileCache, get)
     ASSERT_EQ(cache.getUsedCacheSize(), 15);
 
     {
-        auto holder = cache.getOrSet(key, 9, 1, false);  /// Get [9, 9]
+        auto holder = cache.getOrSet(key, 9, 1, {});  /// Get [9, 9]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 1);
         assertRange(7, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
     }
 
     {
-        auto holder = cache.getOrSet(key, 9, 2, false);  /// Get [9, 10]
+        auto holder = cache.getOrSet(key, 9, 2, {});  /// Get [9, 10]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 2);
         assertRange(8, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
@@ -172,14 +172,14 @@ TEST(LRUFileCache, get)
     }
 
     {
-        auto holder = cache.getOrSet(key, 10, 1, false);  /// Get [10, 10]
+        auto holder = cache.getOrSet(key, 10, 1, {});  /// Get [10, 10]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 1);
         assertRange(10, segments[0], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
     }
 
-    complete(cache.getOrSet(key, 17, 4, false)); /// Get [17, 20]
-    complete(cache.getOrSet(key, 24, 3, false)); /// Get [24, 26]
+    complete(cache.getOrSet(key, 17, 4, {})); /// Get [17, 20]
+    complete(cache.getOrSet(key, 24, 3, {})); /// Get [24, 26]
     /// complete(cache.getOrSet(key, 27, 1, false)); /// Get [27, 27]
 
     /// Current cache:    [__________][_____]   [____]    [___][]
@@ -190,7 +190,7 @@ TEST(LRUFileCache, get)
     ASSERT_EQ(cache.getUsedCacheSize(), 22);
 
     {
-        auto holder = cache.getOrSet(key, 0, 26, false); /// Get [0, 25]
+        auto holder = cache.getOrSet(key, 0, 26, {}); /// Get [0, 25]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 6);
 
@@ -224,14 +224,14 @@ TEST(LRUFileCache, get)
         /// as max elements size is reached, next attempt to put something in cache should fail.
         /// This will also check that [27, 27] was indeed evicted.
 
-        auto holder1 = cache.getOrSet(key, 27, 1, false);
+        auto holder1 = cache.getOrSet(key, 27, 1, {});
         auto segments_1 = fromHolder(holder1); /// Get [27, 27]
         ASSERT_EQ(segments_1.size(), 1);
         assertRange(17, segments_1[0], DB::FileSegment::Range(27, 27), DB::FileSegment::State::EMPTY);
     }
 
     {
-        auto holder = cache.getOrSet(key, 12, 10, false); /// Get [12, 21]
+        auto holder = cache.getOrSet(key, 12, 10, {}); /// Get [12, 21]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 4);
 
@@ -255,7 +255,7 @@ TEST(LRUFileCache, get)
     ASSERT_EQ(cache.getFileSegmentsNum(), 5);
 
     {
-        auto holder = cache.getOrSet(key, 23, 5, false); /// Get [23, 28]
+        auto holder = cache.getOrSet(key, 23, 5, {}); /// Get [23, 28]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 3);
 
@@ -276,12 +276,12 @@ TEST(LRUFileCache, get)
     ///                   17      21 2324  26  28
 
     {
-        auto holder5 = cache.getOrSet(key, 2, 3,false); /// Get [2, 4]
+        auto holder5 = cache.getOrSet(key, 2, 3, {}); /// Get [2, 4]
         auto s5 = fromHolder(holder5);
         ASSERT_EQ(s5.size(), 1);
         assertRange(25, s5[0], DB::FileSegment::Range(2, 4), DB::FileSegment::State::EMPTY);
 
-        auto holder1 = cache.getOrSet(key, 30, 2, false); /// Get [30, 31]
+        auto holder1 = cache.getOrSet(key, 30, 2, {}); /// Get [30, 31]
         auto s1 = fromHolder(holder1);
         ASSERT_EQ(s1.size(), 1);
         assertRange(26, s1[0], DB::FileSegment::Range(30, 31), DB::FileSegment::State::EMPTY);
@@ -297,20 +297,20 @@ TEST(LRUFileCache, get)
         ///                   ^   ^       ^  ^   ^  ^   ^  ^
         ///                   2   4       23 24  26 27  30 31
 
-        auto holder2 = cache.getOrSet(key, 23, 1, false); /// Get [23, 23]
+        auto holder2 = cache.getOrSet(key, 23, 1, {}); /// Get [23, 23]
         auto s2 = fromHolder(holder2);
         ASSERT_EQ(s2.size(), 1);
 
-        auto holder3 = cache.getOrSet(key, 24, 3, false); /// Get [24, 26]
+        auto holder3 = cache.getOrSet(key, 24, 3, {}); /// Get [24, 26]
         auto s3 = fromHolder(holder3);
         ASSERT_EQ(s3.size(), 1);
 
-        auto holder4 = cache.getOrSet(key, 27, 1, false); /// Get [27, 27]
+        auto holder4 = cache.getOrSet(key, 27, 1, {}); /// Get [27, 27]
         auto s4 = fromHolder(holder4);
         ASSERT_EQ(s4.size(), 1);
 
         /// All cache is now unreleasable because pointers are still hold
-        auto holder6 = cache.getOrSet(key, 0, 40, false);
+        auto holder6 = cache.getOrSet(key, 0, 40, {});
         auto f = fromHolder(holder6);
         ASSERT_EQ(f.size(), 9);
 
@@ -331,7 +331,7 @@ TEST(LRUFileCache, get)
     }
 
     {
-        auto holder = cache.getOrSet(key, 2, 3, false); /// Get [2, 4]
+        auto holder = cache.getOrSet(key, 2, 3, {}); /// Get [2, 4]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 1);
         assertRange(31, segments[0], DB::FileSegment::Range(2, 4), DB::FileSegment::State::DOWNLOADED);
@@ -342,7 +342,7 @@ TEST(LRUFileCache, get)
     ///                   2   4       23 24  26 27  30 31
 
     {
-        auto holder = cache.getOrSet(key, 25, 5, false); /// Get [25, 29]
+        auto holder = cache.getOrSet(key, 25, 5, {}); /// Get [25, 29]
         auto segments = fromHolder(holder);
         ASSERT_EQ(segments.size(), 3);
 
@@ -366,7 +366,7 @@ TEST(LRUFileCache, get)
             DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
             thread_status_1.attachQueryContext(query_context_1);
 
-            auto holder_2 = cache.getOrSet(key, 25, 5, false); /// Get [25, 29] once again.
+            auto holder_2 = cache.getOrSet(key, 25, 5, {}); /// Get [25, 29] once again.
             auto segments_2 = fromHolder(holder_2);
             ASSERT_EQ(segments.size(), 3);
 
@@ -409,7 +409,7 @@ TEST(LRUFileCache, get)
         /// and notify_all() is also called from destructor of holder.
 
         std::optional<DB::FileSegmentsHolder> holder;
-        holder.emplace(cache.getOrSet(key, 3, 23, false)); /// Get [3, 25]
+        holder.emplace(cache.getOrSet(key, 3, 23, {})); /// Get [3, 25]
 
         auto segments = fromHolder(*holder);
         ASSERT_EQ(segments.size(), 3);
@@ -435,7 +435,7 @@ TEST(LRUFileCache, get)
             DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
             thread_status_1.attachQueryContext(query_context_1);
 
-            auto holder_2 = cache.getOrSet(key, 3, 23, false); /// Get [3, 25] once again
+            auto holder_2 = cache.getOrSet(key, 3, 23, {}); /// Get [3, 25] once again
             auto segments_2 = fromHolder(*holder);
             ASSERT_EQ(segments_2.size(), 3);
 
@@ -482,7 +482,7 @@ TEST(LRUFileCache, get)
         auto cache2 = DB::LRUFileCache(cache_base_path, settings);
         cache2.initialize();
 
-        auto holder1 = cache2.getOrSet(key, 2, 28, false); /// Get [2, 29]
+        auto holder1 = cache2.getOrSet(key, 2, 28, {}); /// Get [2, 29]
 
         auto segments1 = fromHolder(holder1);
         ASSERT_EQ(segments1.size(), 5);
@@ -502,7 +502,7 @@ TEST(LRUFileCache, get)
         auto cache2 = DB::LRUFileCache(caches_dir / "cache2", settings2);
         cache2.initialize();
 
-        auto holder1 = cache2.getOrSet(key, 0, 25, false); /// Get [0, 24]
+        auto holder1 = cache2.getOrSet(key, 0, 25, {}); /// Get [0, 24]
         auto segments1 = fromHolder(holder1);
 
         ASSERT_EQ(segments1.size(), 3);

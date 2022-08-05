@@ -104,7 +104,11 @@ void CachedReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
     }
     else
     {
-        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, is_persistent));
+        CreateFileSegmentSettings create_settings{
+            .is_persistent = is_persistent,
+            .is_async_download = settings.filesystem_cache_asynchronous_write
+        };
+        file_segments_holder.emplace(cache->getOrSet(cache_key, offset, size, create_settings));
     }
 
     /**
@@ -586,7 +590,7 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 else
                 {
                     read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                    file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                    file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                     continue_predownload = false;
                 }
@@ -610,7 +614,7 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 /// TODO: allow seek more than once with seek avoiding.
 
                 bytes_to_predownload = 0;
-                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
@@ -680,7 +684,7 @@ bool CachedReadBufferFromRemoteFS::updateImplementationBufferIfNeeded()
         * ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE means that on previous getImplementationBuffer() call
         * current buffer successfully called file_segment->getOrSetDownloader() and became a downloader
         * for this file segment. However, the downloader's term has a lifespan of 1 nextImpl() call,
-        * e.g. downloader reads buffer_size byte and calls completeBatchAndResetDownloader() and some other
+        * e.g. downloader reads buffer_size byte and calls completePartAndResetDownloader() and some other
         * thread can become a downloader if it calls getOrSetDownloader() faster.
         *
         * So downloader is committed to download only buffer_size bytes and then is not a downloader anymore,
@@ -766,7 +770,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
                 if (need_complete_file_segment)
                 {
                     LOG_TEST(log, "Resetting downloader {} from scope exit", file_segment->getDownloader());
-                    file_segment->completeBatchAndResetDownloader();
+                    file_segment->completePartAndResetDownloader();
                 }
             }
 
@@ -893,7 +897,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
             else
             {
                 LOG_DEBUG(log, "No space left in cache, will continue without cache download");
-                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                file_segment->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
 
             if (!success)
@@ -924,7 +928,7 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
     current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
 
     if (download_current_segment)
-        file_segment->completeBatchAndResetDownloader();
+        file_segment->completePartAndResetDownloader();
 
     assert(!file_segment->isDownloader());
 

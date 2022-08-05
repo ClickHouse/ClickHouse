@@ -98,7 +98,7 @@ void WriteBufferFromS3::nextImpl()
     {
         auto cache_key = cache->hash(key);
 
-        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size, /* is_persistent */false));
+        file_segments_holder.emplace(cache->setDownloading(cache_key, current_download_offset, size, {}));
         current_download_offset += size;
 
         size_t remaining_size = size;
@@ -116,7 +116,7 @@ void WriteBufferFromS3::nextImpl()
             else
             {
                 for (auto reset_segment_it = file_segment_it; reset_segment_it != file_segments.end(); ++reset_segment_it)
-                    (*reset_segment_it)->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                    (*reset_segment_it)->completeWithState(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 file_segments.erase(file_segment_it, file_segments.end());
                 break;
             }

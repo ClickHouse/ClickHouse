@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <list>
+#include <queue>
 
 namespace Poco { class Logger; }
 
@@ -24,7 +25,13 @@ using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 
 
-class FileSegment : boost::noncopyable
+struct CreateFileSegmentSettings
+{
+    bool is_persistent = false;
+    bool is_async_download = false;
+};
+
+class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
 {
 
 friend class LRUFileCache;
@@ -35,6 +42,8 @@ public:
     using Key = IFileCache::Key;
     using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
+    using Downloader = std::string;
+    using DownloaderId = std::string;
 
     enum class State
     {
@@ -76,7 +85,7 @@ public:
         const Key & key_,
         IFileCache * cache_,
         State download_state_,
-        bool is_persistent_ = false);
+        const CreateFileSegmentSettings & create_settings);
 
     ~FileSegment();
 
@@ -99,6 +108,14 @@ public:
         String toString() const { return fmt::format("[{}, {}]", std::to_string(left), std::to_string(right)); }
     };
 
+    static String getCallerId();
+
+    String getInfoForLog() const;
+
+    /**
+     * ========== Methods to get file segment's constant state ==================
+     */
+
     const Range & range() const { return segment_range; }
 
     const Key & key() const { return file_key; }
@@ -107,11 +124,47 @@ public:
 
     bool isPersistent() const { return is_persistent; }
 
+    using UniqueId = std::pair<IFileCache::Key, size_t>;
+    UniqueId getUniqueId() const { return std::pair(key(), offset()); }
+
+    String getPathInLocalCache() const;
+
+    /**
+     * ========== Methods for _any_ file segment's owner ========================
+     */
+
+    String getOrSetDownloader();
+
+    bool isDownloader() const;
+
+    DownloaderId getDownloader() const;
+
+    /// Wait for the change of state from DOWNLOADING to any other.
     State wait();
 
-    bool reserve(size_t size);
+    bool isDownloaded() const { return is_downloaded.load(); }
 
-    void write(const char * from, size_t size, size_t offset_);
+    size_t getHitsCount() const { return hits_count; }
+
+    size_t getRefCount() const { return ref_count; }
+
+    void incrementHitsCount() { ++hits_count; }
+
+    size_t getDownloadOffset() const;
+
+    size_t getDownloadedSize() const;
+
+    void detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+
+    static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
+
+    /**
+     * ========== Methods for _only_ file segment's `writer` ======================
+     */
+
+    void synchronousWrite(const char * from, size_t size, size_t offset, bool is_internal);
+
+    void asynchronousWrite(const char * from, size_t size, size_t offset);
 
     /**
      * writeInMemory and finalizeWrite are used together to write a single file with delay.
@@ -122,95 +175,76 @@ public:
 
     size_t finalizeWrite();
 
+    /**
+     * ========== Methods for _only_ file segment's `downloader` ==================
+     */
+
+    /// Try to reserve exactly `size` bytes.
+    bool reserve(size_t size);
+
+    /// Write data into reserved space.
+    void write(const char * from, size_t size, size_t offset);
+
+    /// Complete file segment with a certain state.
+    void completeWithState(State state);
+
+    /// Complete file segment's part which was last written.
+    void completePartAndResetDownloader();
+
+    void resetDownloader();
+
     RemoteFileReaderPtr getRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
     void resetRemoteFileReader();
 
-    String getOrSetDownloader();
-
-    String getDownloader() const;
-
-    void resetDownloader();
-
-    bool isDownloader() const;
-
-    bool isDownloaded() const { return is_downloaded.load(); }
-
-    static String getCallerId();
-
-    size_t getDownloadOffset() const;
-
-    size_t getDownloadedSize() const;
-
-    void completeBatchAndResetDownloader();
-
-    void complete(State state);
-
-    String getInfoForLog() const;
-
-    size_t getHitsCount() const { return hits_count; }
-
-    size_t getRefCount() const { return ref_count; }
-
-    void incrementHitsCount() { ++hits_count; }
-
-    void assertCorrectness() const;
-
-    static FileSegmentPtr getSnapshot(
-        const FileSegmentPtr & file_segment,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    void detach(
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
-
-    [[noreturn]] void throwIfDetached() const;
-
-    String getPathInLocalCache() const;
-
 private:
-    size_t availableSize() const { return reserved_size - downloaded_size; }
+    size_t availableSizeUnlocked(std::lock_guard<std::mutex> & /* segment_lock */) const { return reserved_size - downloaded_size; }
+    String getInfoForLogUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
-    size_t getDownloadedSize(std::lock_guard<std::mutex> & segment_lock) const;
-    String getInfoForLogImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertCorrectnessImpl(std::lock_guard<std::mutex> & segment_lock) const;
-    bool hasFinalizedState() const;
+    void setDownloadedUnlocked(std::lock_guard<std::mutex> & segment_lock);
+    void setDownloadFailedUnlocked(std::lock_guard<std::mutex> & segment_lock);
+    void setDownloaderUnlocked(bool is_internal, const DownloaderId & new_downloader_id, std::lock_guard<std::mutex> & /* segment_lock */);
+    void setInternalDownloaderUnlocked(const DownloaderId & new_downloader_id, std::lock_guard<std::mutex> & /* download_lock */);
+
+    bool lastFileSegmentHolder() const;
+    void resetDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock);
+
+    bool hasFinalizedStateUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
     bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return is_detached; }
     void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
     [[noreturn]] void throwIfDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
     void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertNotDetached(std::lock_guard<std::mutex> & segment_lock) const;
+    void assertNotDetached() const;
+    void assertNotDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    void assertIsDownloaderUnlocked(bool is_internal, const std::string & operation, std::lock_guard<std::mutex> & segment_lock) const;
+    void assertCorrectnessUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
-    void setDownloaded(std::lock_guard<std::mutex> & segment_lock);
-    void setDownloadFailed(std::lock_guard<std::mutex> & segment_lock);
-    bool isDownloaderImpl(std::lock_guard<std::mutex> & segment_lock) const;
-
-    void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
-
-    bool lastFileSegmentHolder() const;
+    size_t getDownloadedSizeUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    bool isDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock) const;
+    String getDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock) const;
+    size_t getDownloadOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
     /// complete() without any completion state is called from destructor of
     /// FileSegmentsHolder. complete() might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void complete(std::lock_guard<std::mutex> & cache_lock);
-    void completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+    void completeWithoutState(std::lock_guard<std::mutex> & cache_lock);
+    void completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+    void completePartAndResetDownloaderImpl(bool is_internal);
 
-    void completeImpl(
-        std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
-
-    void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
+    void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
 
     const Range segment_range;
 
     State download_state;
 
-    String downloader_id;
+    /// The one who prepares the download
+    DownloaderId downloader_id;
+    DownloaderId background_downloader_id;
 
     RemoteFileReaderPtr remote_file_reader;
     LocalCacheWriterPtr cache_writer;
@@ -249,7 +283,47 @@ private:
     /// Currently no-op. (will be added in PR 36171)
     /// Defined if a file comply by the eviction policy.
     bool is_persistent;
+    /// Should the file segment be downloaded into cache synchronously or asynchronously?
+    bool is_async_download;
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
+
+    struct WriteState
+    {
+        struct Buffer
+        {
+            Buffer() = default;
+
+            explicit Buffer(size_t size, size_t offset_) : memory(size), offset(offset_) {}
+
+            char * data() { return memory.data(); }
+
+            size_t size() const { return memory.size(); }
+
+            /// Buffer data.
+            Memory<> memory;
+
+            /// Offset within a file segment
+            /// where current buffer needs to be written.
+            size_t offset;
+        };
+
+        /// A list of buffers which are waiting to be written
+        /// into cache within current write state.
+        /// Each buffer can be written one after another in direct order.
+        std::queue<Buffer> buffers;
+
+        /// Contains the first exception happened when writing data
+        /// from `buffers`. No further buffer can be written, if there
+        /// was exception while writing previous buffer.
+        std::exception_ptr exception;
+
+        int64_t last_added_offset = -1;
+
+        mutable std::mutex mutex;
+    };
+
+    mutable std::optional<WriteState> async_write_state;
 };
 
 struct FileSegmentsHolder : private boost::noncopyable

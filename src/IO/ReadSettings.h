@@ -82,6 +82,7 @@ struct ReadSettings
     size_t filesystem_cache_max_wait_sec = 1;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
+    bool filesystem_cache_asynchronous_write = false;
 
     size_t max_query_cache_size = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_query_cache = true;
