@@ -646,7 +646,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             std::make_shared<MergeTreeDataPartInMemory>(data, projection_name, new_part_info, projection_part_storage, new_data_part.get());
 
         new_projection_part->is_temp = false;
-        new_projection_part->setColumns(block.getNamesAndTypesList());
+        new_projection_part->setColumns(block.getNamesAndTypesList(), {});
         MergeTreePartition partition{};
         new_projection_part->partition = std::move(partition);
         new_projection_part->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
@@ -676,7 +676,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
 
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
-    new_data_part->setColumns(block.getNamesAndTypesList());
+    new_data_part->setColumns(block.getNamesAndTypesList(), {});
     new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
