@@ -268,4 +268,9 @@ std::unordered_map<String, String> MetadataStorageFromStaticFilesWebServer::getS
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getSerializedMetadata is not implemented for MetadataStorageFromStaticFilesWebServer");
 }
 
+void MetadataStorageFromStaticFilesWebServerTransaction::chmod(const String &, mode_t)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "chmod is not implemented for MetadataStorageFromStaticFilesWebServer");
+}
+
 }
