@@ -53,6 +53,12 @@ public:
     StoredObjects getStorageObjects(const std::string & path) const override;
 
     std::string getObjectStorageRootPath() const override { return ""; }
+
+    bool supportsChmod() const override { return false; }
+
+    bool supportsStat() const override { return false; }
+
+    struct stat stat(const String &) const override { return {}; }
 };
 
 class MetadataStorageFromStaticFilesWebServerTransaction final : public IMetadataTransaction
@@ -104,6 +110,10 @@ public:
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
     void unlinkMetadata(const std::string & path) override;
+
+    bool supportsChmod() const override { return false; }
+
+    void chmod(const String &, mode_t) override;
 };
 
 }
