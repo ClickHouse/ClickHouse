@@ -351,6 +351,12 @@ public:
             getType());
     }
 
+    virtual bool supportsStat() const { return false; }
+    virtual struct stat stat(const String & /*path*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support stat"); }
+
+    virtual bool supportsChmod() const { return false; }
+    virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
+
 protected:
     friend class DiskDecorator;
 
