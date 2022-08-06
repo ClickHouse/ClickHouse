@@ -237,10 +237,9 @@ def minify_website(args):
 def process_benchmark_results(args):
     benchmark_root = os.path.join(args.website_dir, "benchmark")
     required_keys = {
-        "hardware": ["result", "system", "system_full", "kind"],
         "versions": ["version", "system"],
     }
-    for benchmark_kind in ["hardware", "versions"]:
+    for benchmark_kind in ["versions"]:
         results = []
         results_root = os.path.join(benchmark_root, benchmark_kind, "results")
         for result in sorted(os.listdir(results_root)):
