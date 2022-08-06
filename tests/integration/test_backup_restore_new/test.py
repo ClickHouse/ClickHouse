@@ -2,6 +2,7 @@ import pytest
 import asyncio
 import re
 import os.path
+import random
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, TSV
 
@@ -1005,3 +1006,71 @@ def test_mutation():
     instance.query("DROP TABLE test.table")
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+
+
+def test_table_dependencies():
+    instance.query("CREATE DATABASE test")
+    instance.query("CREATE DATABASE test2")
+
+    # For this test we use random names of tables to check they're created according to their dependency (not just in alphabetic order).
+    random_table_names = [f"{chr(ord('A')+i)}" for i in range(0, 10)]
+    random.shuffle(random_table_names)
+    random_table_names = [
+        random.choice(["test", "test2"]) + "." + table_name
+        for table_name in random_table_names
+    ]
+    print(f"random_table_names={random_table_names}")
+
+    t1 = random_table_names[0]
+    t2 = random_table_names[1]
+    t3 = random_table_names[2]
+    t4 = random_table_names[3]
+    t5 = random_table_names[4]
+    t6 = random_table_names[5]
+
+    # Create a materialized view and a dictionary with a local table as source.
+    instance.query(
+        f"CREATE TABLE {t1} (x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
+    )
+
+    instance.query(
+        f"CREATE TABLE {t2} (x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
+    )
+
+    instance.query(f"CREATE MATERIALIZED VIEW {t3} TO {t2} AS SELECT x, y FROM {t1}")
+
+    instance.query(
+        f"CREATE DICTIONARY {t4} (x Int64, y String) PRIMARY KEY x SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE '{t1.split('.')[1]}' DB '{t1.split('.')[0]}')) LAYOUT(FLAT()) LIFETIME(0)"
+    )
+
+    instance.query(f"CREATE TABLE {t5} AS dictionary({t4})")
+
+    instance.query(
+        f"CREATE TABLE {t6}(x Int64, y String DEFAULT dictGet({t4}, 'y', x)) ENGINE=MergeTree ORDER BY tuple()"
+    )
+
+    # Make backup.
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP DATABASE test, DATABASE test2 TO {backup_name}")
+
+    # Drop everything in reversive order.
+    def drop():
+        instance.query(f"DROP TABLE {t6} NO DELAY")
+        instance.query(f"DROP TABLE {t5} NO DELAY")
+        instance.query(f"DROP DICTIONARY {t4}")
+        instance.query(f"DROP TABLE {t3} NO DELAY")
+        instance.query(f"DROP TABLE {t2} NO DELAY")
+        instance.query(f"DROP TABLE {t1} NO DELAY")
+        instance.query("DROP DATABASE test NO DELAY")
+        instance.query("DROP DATABASE test2 NO DELAY")
+
+    drop()
+
+    # Restore everything and check.
+    instance.query(f"RESTORE ALL FROM {backup_name}")
+
+    assert instance.query(
+        "SELECT concat(database, '.', name) AS c FROM system.tables WHERE database IN ['test', 'test2'] ORDER BY c"
+    ) == TSV(sorted([t1, t2, t3, t4, t5, t6]))
+
+    drop()
