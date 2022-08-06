@@ -12,7 +12,7 @@ class ASTStorage;
 
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
-TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast);
+TableNamesSet getDependenciesSetFromCreateQuery(const ASTPtr & ast, const ContextPtr & global_context);
 
 /// Visits ASTCreateQuery and extracts names of table (or dictionary) dependencies
 /// from column default expressions (joinGet, dictGet, etc)
@@ -23,10 +23,11 @@ class DDLDependencyVisitor
 public:
     struct Data
     {
-        String default_database;
-        TableNamesSet dependencies;
-        ContextPtr global_context;
         ASTPtr create_query;
+        QualifiedTableName table_name;
+        String default_database;
+        ContextPtr global_context;
+        TableNamesSet dependencies;
     };
 
     using Visitor = ConstInDepthNodeVisitor<DDLDependencyVisitor, true>;

@@ -203,7 +203,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 }
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
-                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
+                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(ast, getContext());
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
@@ -319,7 +319,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         out.close();
     }
 
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(ast, local_context->getGlobalContext());
     DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);

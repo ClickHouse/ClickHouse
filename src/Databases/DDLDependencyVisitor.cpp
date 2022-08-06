@@ -18,6 +18,18 @@ namespace
     /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
     void visitCreateQuery(const ASTCreateQuery & create, DDLDependencyVisitor::Data & data)
     {
+        if (create.table && !create.temporary)
+        {
+            /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW
+            data.table_name.table = create.getTable();
+            if (!data.table_name.table.empty())
+            {
+                data.table_name.database = create.getDatabase();
+                if (data.table_name.database.empty())
+                    data.table_name.database = data.default_database;
+            }
+        }
+
         QualifiedTableName to_table{create.to_table_id.database_name, create.to_table_id.table_name};
         if (!to_table.table.empty())
         {
@@ -58,7 +70,7 @@ namespace
 }
 
 
-TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast)
+TableNamesSet getDependenciesSetFromCreateQuery(const ASTPtr & ast, const ContextPtr & global_context)
 {
     assert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
@@ -67,7 +79,7 @@ TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const
     data.global_context = global_context;
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
-    data.dependencies.erase(table);
+    data.dependencies.erase(data.table_name);
     return data.dependencies;
 }
 

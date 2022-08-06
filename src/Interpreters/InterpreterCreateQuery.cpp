@@ -1165,7 +1165,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// If table has dependencies - add them to the graph
     QualifiedTableName qualified_name{database_name, create.getTable()};
-    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
+    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(query_ptr, getContext()->getGlobalContext());
     if (!loading_dependencies.empty())
         DatabaseCatalog::instance().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
 
