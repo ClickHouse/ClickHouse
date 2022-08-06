@@ -1413,7 +1413,7 @@ void TCPHandler::receiveQuery()
     /// so we have to apply the changes first.
     query_context->setCurrentQueryId(state.query_id);
 
-    query_context->setQueryParameters(convertToQueryParameters(passed_params));
+    query_context->addQueryParameters(convertToQueryParameters(passed_params));
 
     /// For testing hedged requests
     if (unlikely(sleep_after_receiving_query.totalMilliseconds()))

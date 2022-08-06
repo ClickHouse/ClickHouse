@@ -56,3 +56,21 @@ $CLICKHOUSE_CLIENT \
   --param_db="system" \
   --param_col="number" \
   -q "select {col:Identifier} from {db:Identifier}.{tbl:Identifier} limit 1 offset 5"
+
+
+# it is possible to set parameter for the current session
+$CLICKHOUSE_CLIENT -n -q "set param_n = 42; select {n: UInt8}"
+# and it will not be visible to other sessions
+$CLICKHOUSE_CLIENT -n -q "select {n: UInt8} -- { serverError 456 }"
+
+
+# the same parameter could be set multiple times within one session (new value overrides the previous one)
+$CLICKHOUSE_CLIENT -n -q "set param_n = 12; set param_n = 13; select {n: UInt8}"
+
+
+# but multiple different parameters could be defined within each session
+$CLICKHOUSE_CLIENT -n -q "
+  set param_a = 13, param_b = 'str';
+  set param_c = '2022-08-04 18:30:53';
+  set param_d = '{\'10\': [11, 12], \'13\': [14, 15]}';
+  select {a: UInt32}, {b: String}, {c: DateTime}, {d: Map(String, Array(UInt8))}"
