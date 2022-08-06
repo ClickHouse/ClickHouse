@@ -30,8 +30,6 @@ class IExecutableTask
 public:
     using TaskResultCallback = std::function<void(bool)>;
     virtual bool executeStep() = 0;
-    virtual void onSuspend() {}
-    virtual void onResume() {}
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() = 0;
     virtual UInt64 getPriority() = 0;
