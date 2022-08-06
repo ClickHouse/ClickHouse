@@ -42,6 +42,10 @@ function configure()
     export USE_DATABASE_ORDINARY=1
     /usr/share/clickhouse-test/config/install.sh
 
+    # NOTE: temporary disable metadata cache since rocksdb does not uses
+    # ClickHouse's MemoryTracker and hence may lead to OOM
+    rm /etc/clickhouse-server/config.d/metadata_cache.xml
+
     # we mount tests folder from repo to /usr/share
     ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
     ln -s /usr/share/clickhouse-test/ci/download_release_packets.py /usr/bin/download_release_packets
