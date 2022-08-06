@@ -105,7 +105,11 @@ void DDLDependencyVisitor::visit(const ASTFunction & function, Data & data)
         /// in(x, table_name) - function for evaluating (x IN table_name)
         extractTableNameFromArgument(function, data, 1);
     }
-
+    else if (function.name == "dictionary")
+    {
+        /// dictionary(dict_name)
+        extractTableNameFromArgument(function, data, 0);
+    }
 }
 
 void DDLDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_source, Data & data)

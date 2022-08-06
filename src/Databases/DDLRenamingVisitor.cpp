@@ -285,6 +285,11 @@ namespace
             /// in(x, table_name) - function for evaluating (x IN table_name)
             replaceTableNameInArgument(function, data, 1);
         }
+        else if (function.name == "dictionary")
+        {
+            /// dictionary(dict_name)
+            replaceTableNameInArgument(function, data, 0);
+        }
         else if (function.name == "merge")
         {
             /// Syntax: merge('db_name', 'tables_regexp')
