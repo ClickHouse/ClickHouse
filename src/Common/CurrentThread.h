@@ -104,15 +104,24 @@ public:
 
     class ScopedAttach : private boost::noncopyable
     {
+    private:
+        bool attached = false;
     public:
         explicit ScopedAttach(const ThreadGroupStatusPtr & thread_group)
         {
-            CurrentThread::attachTo(thread_group);
+            if (!CurrentThread::getGroup())
+            {
+                CurrentThread::attachToIfDetached(thread_group);
+                attached = true;
+            }
         }
 
         ~ScopedAttach()
         {
-            CurrentThread::detachQuery();
+            if (attached)
+            {
+                CurrentThread::detachQuery();
+            }
         }
     };
 
