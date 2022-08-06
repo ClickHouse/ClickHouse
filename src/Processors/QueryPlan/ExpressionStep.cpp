@@ -35,7 +35,8 @@ static bool isSortingPreserved(const Block& header, const ActionsDAGPtr & action
 
 static ITransformingStep::Traits getTraits(const Block& header, const ActionsDAGPtr & actions, const SortDescription& sort_description)
 {
-    return ITransformingStep::Traits{
+    return ITransformingStep::Traits
+    {
         {
             .preserves_distinct_columns = !actions->hasArrayJoin(),
             .returns_single_stream = false,
@@ -44,7 +45,8 @@ static ITransformingStep::Traits getTraits(const Block& header, const ActionsDAG
         },
         {
             .preserves_number_of_rows = !actions->hasArrayJoin(),
-        }};
+        }
+    };
 }
 
 ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDAGPtr & actions_dag_)
