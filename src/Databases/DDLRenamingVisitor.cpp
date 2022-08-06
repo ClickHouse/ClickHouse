@@ -188,7 +188,7 @@ namespace
 
     /// Replaces a qualified table name in a specified function's argument.
     /// It can be either a string or an identifier with a dot in the middle.
-    void replaceTableNameInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
+    void replaceQualifiedTableNameInArgument(ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
     {
         /// Just ignore incorrect arguments, proper exception will be thrown later
         if (!function.arguments || function.arguments->children.size() <= arg_idx)
@@ -232,11 +232,39 @@ namespace
         }
     }
 
-    /// Replaces a qualified database name in a specified function's argument.
-    void replaceDatabaseNameInArguments(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
+    /// Replaces a table name with database written in the form 'db_name', 'table_name' (two strings).
+    void replaceDatabaseAndTableNameInArguments(ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t database_arg_idx, size_t table_arg_idx)
     {
         /// Just ignore incorrect arguments, proper exception will be thrown later
-        if (!function.arguments || function.arguments->children.size() <= arg_idx)
+        if (!function.arguments || (function.arguments->children.size() <= database_arg_idx)
+            || (function.arguments->children.size() <= table_arg_idx))
+            return;
+
+        auto * expr_list = function.arguments->as<ASTExpressionList>();
+        if (!expr_list)
+            return;
+
+        auto database_literal = expr_list->children[database_arg_idx]->as<ASTLiteral>();
+        auto table_name_literal = expr_list->children[table_arg_idx]->as<ASTLiteral>();
+
+        if (!database_literal || !table_name_literal || (database_literal->value.getType() != Field::Types::String)
+            || (table_name_literal->value.getType() != Field::Types::String))
+            return;
+
+        QualifiedTableName qualified_name{database_literal->value.get<String>(), table_name_literal->value.get<String>()};
+        if (qualified_name.table.empty() || qualified_name.database.empty())
+            return;
+
+        auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
+        database_literal->value = new_qualified_name.database;
+        table_name_literal->value = new_qualified_name.table;
+    }
+
+    /// Replaces a database name in a specified function's argument.
+    void replaceDatabaseNameInArgument(ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
+    {
+        /// Just ignore incorrect arguments, proper exception will be thrown later
+        if (!function.arguments || (function.arguments->children.size() <= arg_idx))
             return;
 
         auto & arg = function.arguments->as<ASTExpressionList>()->children[arg_idx];
@@ -261,40 +289,46 @@ namespace
         {
             /// Syntax: CREATE TABLE table_name(<fields>) engine = Dictionary('dictionary_name')
             /// We'll try to replace the dictionary name.
-            replaceTableNameInArgument(*storage.engine, data, 0);
+            replaceQualifiedTableNameInArgument(*storage.engine, data, 0);
         }
         else if (storage.engine->name == "Merge")
         {
             /// Syntax: CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
             /// We'll try to replace the database name but we can do nothing to 'tables_regexp'.
-            replaceDatabaseNameInArguments(*storage.engine, data, 0);
+            replaceDatabaseNameInArgument(*storage.engine, data, 0);
+        }
+        else if (storage.engine->name == "Buffer")
+        {
+            /// Syntax: CREATE TABLE ... Engine=Buffer(db_name, table_name, ...)
+            /// We'll try to replace the target table name.
+            replaceDatabaseAndTableNameInArguments(*storage.engine, data, 0, 1);
         }
     }
 
-    void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
+    void visitFunction(ASTFunction & function, const DDLRenamingVisitor::Data & data)
     {
         if (function.name == "joinGet" || function.name == "dictHas" || function.name == "dictIsIn" || function.name.starts_with("dictGet"))
         {
             /// dictGet('dict_name', attr_names, id_expr)
             /// dictHas('dict_name', id_expr)
             /// joinGet(join_storage_table_name, `value_column`, join_keys)
-            replaceTableNameInArgument(function, data, 0);
+            replaceQualifiedTableNameInArgument(function, data, 0);
         }
         else if (function.name == "in" || function.name == "notIn" || function.name == "globalIn" || function.name == "globalNotIn")
         {
             /// in(x, table_name) - function for evaluating (x IN table_name)
-            replaceTableNameInArgument(function, data, 1);
+            replaceQualifiedTableNameInArgument(function, data, 1);
         }
         else if (function.name == "dictionary")
         {
             /// dictionary(dict_name)
-            replaceTableNameInArgument(function, data, 0);
+            replaceQualifiedTableNameInArgument(function, data, 0);
         }
         else if (function.name == "merge")
         {
             /// Syntax: merge('db_name', 'tables_regexp')
             /// We'll try to replace the database name but we can do nothing to 'tables_regexp'.
-            replaceDatabaseNameInArguments(function, data, 0);
+            replaceDatabaseNameInArgument(function, data, 0);
         }
     }
 }

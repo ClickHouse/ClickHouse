@@ -38,6 +38,15 @@ namespace
                 to_table.database = data.default_database;
             data.dependencies.emplace(to_table);
         }
+
+        QualifiedTableName as_table{create.as_database, create.as_table};
+        if (!as_table.table.empty())
+        {
+            /// AS table_name
+            if (as_table.database.empty())
+                as_table.database = data.default_database;
+            data.dependencies.emplace(as_table);
+        }
     }
 
     /// ASTTableExpression represents a reference to a table in SELECT query.
@@ -69,7 +78,8 @@ namespace
         data.dependencies.emplace(qualified_name);
     }
 
-    void extractTableNameFromArgument(const ASTFunction & function, DDLDependencyVisitor::Data & data, size_t arg_idx)
+    /// Extracts a table name with optional database written in the form db_name.table_name (as identifier) or 'db_name.table_name' (as string).
+    void extractQualifiedTableNameFromArgument(const ASTFunction & function, DDLDependencyVisitor::Data & data, size_t arg_idx)
     {
         /// Just ignore incorrect arguments, proper exception will be thrown later
         if (!function.arguments || function.arguments->children.size() <= arg_idx)
@@ -119,6 +129,35 @@ namespace
         data.dependencies.emplace(std::move(qualified_name));
     }
 
+    /// Extracts a table name with database written in the form 'db_name', 'table_name' (two strings).
+    void extractDatabaseAndTableNameFromArguments(const ASTFunction & function, DDLDependencyVisitor::Data & data, size_t database_arg_idx, size_t table_arg_idx)
+    {
+        /// Just ignore incorrect arguments, proper exception will be thrown later
+        if (!function.arguments || (function.arguments->children.size() <= database_arg_idx)
+            || (function.arguments->children.size() <= table_arg_idx))
+            return;
+
+        const auto * expr_list = function.arguments->as<ASTExpressionList>();
+        if (!expr_list)
+            return;
+
+        auto database_literal = expr_list->children[database_arg_idx]->as<ASTLiteral>();
+        auto table_name_literal = expr_list->children[table_arg_idx]->as<ASTLiteral>();
+
+        if (!database_literal || !table_name_literal || (database_literal->value.getType() != Field::Types::String)
+            || (table_name_literal->value.getType() != Field::Types::String))
+            return;
+
+        QualifiedTableName qualified_name{database_literal->value.get<String>(), table_name_literal->value.get<String>()};
+        if (qualified_name.table.empty())
+            return;
+
+        if (qualified_name.database.empty())
+            qualified_name.database = data.default_database;
+
+        data.dependencies.emplace(qualified_name);
+    }
+
     void visitFunction(const ASTFunction & function, DDLDependencyVisitor::Data & data)
     {
         if (function.name == "joinGet" || function.name == "dictHas" || function.name == "dictIsIn" || function.name.starts_with("dictGet"))
@@ -126,17 +165,17 @@ namespace
             /// dictGet('dict_name', attr_names, id_expr)
             /// dictHas('dict_name', id_expr)
             /// joinGet(join_storage_table_name, `value_column`, join_keys)
-            extractTableNameFromArgument(function, data, 0);
+            extractQualifiedTableNameFromArgument(function, data, 0);
         }
         else if (function.name == "in" || function.name == "notIn" || function.name == "globalIn" || function.name == "globalNotIn")
         {
             /// in(x, table_name) - function for evaluating (x IN table_name)
-            extractTableNameFromArgument(function, data, 1);
+            extractQualifiedTableNameFromArgument(function, data, 1);
         }
         else if (function.name == "dictionary")
         {
             /// dictionary(dict_name)
-            extractTableNameFromArgument(function, data, 0);
+            extractQualifiedTableNameFromArgument(function, data, 0);
         }
     }
 
@@ -144,10 +183,12 @@ namespace
     {
         if (!storage.engine)
             return;
-        if (storage.engine->name != "Dictionary")
-            return;
 
-        extractTableNameFromArgument(*storage.engine, data, 0);
+        if (storage.engine->name == "Dictionary")
+            extractQualifiedTableNameFromArgument(*storage.engine, data, 0);
+
+        if (storage.engine->name == "Buffer")
+            extractDatabaseAndTableNameFromArguments(*storage.engine, data, 0, 1);
     }
 
     void visitDictionaryDef(const ASTDictionary & dictionary, DDLDependencyVisitor::Data & data)
