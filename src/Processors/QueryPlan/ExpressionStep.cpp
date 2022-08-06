@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -6,6 +7,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
+#include "Core/SortDescription.h"
 
 namespace DB
 {
@@ -16,14 +18,29 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
-static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions)
+static bool isSortingPreserved(const Block& header, const ActionsDAGPtr & actions, const SortDescription& sort_description)
+{
+    if (actions->hasArrayJoin())
+        return false;
+
+    const Block & output_header = actions->updateHeader(header);
+    for (const auto & desc : sort_description)
+    {
+        if (!output_header.findByName(desc.column_name))
+            return false;
+    }
+
+    return true;
+}
+
+static ITransformingStep::Traits getTraits(const Block& header, const ActionsDAGPtr & actions, const SortDescription& sort_description)
 {
     return ITransformingStep::Traits{
         {
             .preserves_distinct_columns = !actions->hasArrayJoin(),
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = actions->isSortingPreserved(),
+            .preserves_sorting = isSortingPreserved(header, actions, sort_description),
         },
         {
             .preserves_number_of_rows = !actions->hasArrayJoin(),
@@ -34,7 +51,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
     : ITransformingStep(
         input_stream_,
         ExpressionTransform::transformHeader(input_stream_.header, *actions_dag_),
-        getTraits(actions_dag_))
+        getTraits(input_stream_.header, actions_dag_, input_stream_.sort_description))
     , actions_dag(actions_dag_)
 {
     LOG_DEBUG(getLogger(), "ActionsDAG:\n{}", actions_dag->dumpDAG());
