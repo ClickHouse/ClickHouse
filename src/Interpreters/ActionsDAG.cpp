@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Core/SortDescription.h>
 
 #include <stack>
 #include <base/sort.h>
@@ -1922,36 +1921,6 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
 
     removeUnusedActions(false);
     return actions;
-}
-
-bool ActionsDAG::isSortingPreserved() const
-{
-    if (hasArrayJoin())
-        return false;
-
-    const Field field{};
-    // traverse the node tree and check if there are any non-monotonic function
-    for (const auto & node : nodes)
-    {
-        if (node.type == ActionType::FUNCTION)
-        {
-            auto func = node.function_base;
-            if (func)
-            {
-                if (!func->hasInformationAboutMonotonicity())
-                    return false;
-
-                const auto & types = func->getArgumentTypes();
-                if (types.empty())
-                    return false;
-
-                const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-                if (!monotonicity.is_always_monotonic)
-                    return false;
-            }
-        }
-    }
-    return true;
 }
 
 }
