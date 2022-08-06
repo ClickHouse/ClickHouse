@@ -637,9 +637,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
 
-    if (as_table_function)
-        query->as_table_function = as_table_function;
-
     query->attach = attach;
     query->replace_table = replace;
     query->create_or_replace = or_replace;
@@ -658,6 +655,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
+    query->set(query->as_table_function, as_table_function);
 
     if (comment)
         query->set(query->comment, comment);
