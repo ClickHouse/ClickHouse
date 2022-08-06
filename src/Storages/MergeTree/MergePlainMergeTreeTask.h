@@ -5,7 +5,6 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Storages/MergeTree/TaskObserverMetrics.h>
 
 
 namespace DB
@@ -36,18 +35,7 @@ public:
             priority += item->getBytesOnDisk();
     }
 
-    void onResume() override
-    {
-        observer.doResume();
-    }
-
     bool executeStep() override;
-
-    void onSuspend() override
-    {
-        observer.doSuspend();
-    }
-
     void onCompleted() override;
     StorageID getStorageID() override;
     UInt64 getPriority() override { return priority; }
@@ -59,7 +47,6 @@ public:
     }
 
 private:
-
     void prepare();
     void finish();
 
@@ -96,7 +83,7 @@ private:
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
 
-    TaskObserverMetrics observer;
+    ThreadGroupStatusPtr thread_group = std::make_shared<ThreadGroupStatus>();
 };
 
 
