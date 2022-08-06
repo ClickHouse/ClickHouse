@@ -202,8 +202,21 @@ public:
     template <typename Func>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
-        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        const auto end = this->end();
+
+        constexpr size_t prefetch_look_ahead = 8;
+        auto prefetch_it = this->begin();
+        for (size_t i = 0; i < prefetch_look_ahead && prefetch_it != end; ++i, ++prefetch_it)
+            ;
+
+        for (auto it = this->begin(); it != end; ++it)
         {
+            if (prefetch_it != end)
+            {
+                that.prefetchByHash(prefetch_it.getHash());
+                ++prefetch_it;
+            }
+
             typename Self::LookupResult res_it;
             bool inserted;
             that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
