@@ -39,8 +39,7 @@ public:
 
     CacheBase(size_t max_size, size_t max_elements_size = 0) : CacheBase(default_cache_policy_name, max_size, max_elements_size) {}
 
-    /// TODO: Rewrite "Args... args" to custom struct with fields for all cache policies.
-    template <class... Args>
+    /// TODO: Rewrite to custom struct with fields for all cache policies.
     CacheBase(String cache_policy_name, size_t max_size, size_t max_elements_size = 0, double size_ratio = 0.5)
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
