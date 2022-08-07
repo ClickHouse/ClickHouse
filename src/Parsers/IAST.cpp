@@ -28,34 +28,86 @@ const char * IAST::hilite_none         = "\033[0m";
 
 IAST::~IAST()
 {
-    /// If deleter was set, move our children to it.
-    /// Will avoid recursive destruction.
-    if (deleter)
-    {
-        deleter->push_back(std::move(children));
-        return;
-    }
+    /** Create intrusive linked list of children to delete.
+      * Each ASTPtr child contains pointer to next child to delete.
+      */
+    ASTPtr delete_list_head_holder = nullptr;
+    bool delete_directly = next_to_delete_list_head == nullptr;
+    ASTPtr & delete_list_head_reference = next_to_delete_list_head ? *next_to_delete_list_head : delete_list_head_holder;
 
-    std::list<ASTs> queue;
-    queue.push_back(std::move(children));
-    while (!queue.empty())
+    /// Move children into intrusive list
+    for (auto & child : children)
     {
-        for (auto & node : queue.front())
+        /** If two threads remove ASTPtr concurrently,
+          * it is possible that neither thead will see use_count == 1.
+          * It is ok. Will need one more extra stack frame in this case.
+          */
+        if (child.use_count() != 1)
+            continue;
+
+        ASTPtr child_to_delete;
+        child_to_delete.swap(child);
+
+        if (!delete_list_head_reference)
         {
-            /// If two threads remove ASTPtr concurrently,
-            /// it is possible that neither thead will see use_count == 1.
-            /// It is ok. Will need one more extra stack frame in this case.
-            if (node.use_count() == 1)
-            {
-                /// Deleter is only set when current thread is the single owner.
-                /// No extra synchronisation is needed.
-                ASTPtr to_delete;
-                node.swap(to_delete);
-                to_delete->deleter = &queue;
-            }
+            /// Initialize list first time
+            delete_list_head_reference = std::move(child_to_delete);
+            continue;
         }
 
-        queue.pop_front();
+        ASTPtr previous_head = std::move(delete_list_head_reference);
+        delete_list_head_reference = std::move(child_to_delete);
+        delete_list_head_reference->next_to_delete = std::move(previous_head);
+    }
+
+    if (!delete_directly)
+        return;
+
+    while (delete_list_head_reference)
+    {
+        auto next_node_to_delete = std::move(delete_list_head_reference->next_to_delete);
+
+        /** Pass list head into child before destruction.
+          * It is important to properly handle cases where subclass has member same as one of its children.
+          *
+          * class ASTSubclass : IAST
+          * {
+          *     ASTPtr first_child; /// Same as first child
+          * }
+          *
+          * In such case we must move children into list only in IAST destructor.
+          * If we try to move child to delete children into list before subclasses desruction,
+          * first child use count will be 2.
+          */
+        {
+            ASTPtr child_to_delete;
+            child_to_delete.swap(delete_list_head_reference);
+            child_to_delete->next_to_delete_list_head = &delete_list_head_reference;
+        }
+
+        /** Here we have 2 cases:
+          * 1. Child during deletion does not move any node into list, then just replace current head with next node to delete.
+          * 2. Child during deletion moved some nodes into hist, then iterate list and add next to delete node in list tail.
+          */
+        if (delete_list_head_reference == nullptr)
+        {
+            delete_list_head_reference = std::move(next_node_to_delete);
+        }
+        else
+        {
+            ASTPtr delete_list_tail = delete_list_head_reference;
+
+            while (delete_list_tail)
+            {
+                if (delete_list_tail->next_to_delete == nullptr)
+                {
+                    delete_list_tail->next_to_delete = std::move(next_node_to_delete);
+                    break;
+                }
+
+                delete_list_tail = delete_list_tail->next_to_delete;
+            }
+        }
     }
 }
 
