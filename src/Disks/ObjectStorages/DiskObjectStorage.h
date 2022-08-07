@@ -168,6 +168,12 @@ public:
 
     bool supportsCache() const override;
 
+    bool supportsStat() const override { return metadata_storage->supportsStat(); }
+    struct stat stat(const String & path) const override;
+
+    bool supportsChmod() const override { return metadata_storage->supportsChmod(); }
+    void chmod(const String & path, mode_t mode) override;
+
 private:
 
     /// Create actual disk object storage transaction for operations
