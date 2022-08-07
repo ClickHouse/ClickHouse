@@ -2,8 +2,8 @@ DROP TABLE IF EXISTS dest_table_mv;
 DROP TABLE IF EXISTS left_table;
 DROP TABLE IF EXISTS right_table;
 DROP TABLE IF EXISTS dest_table;
-DROP TABLE IF EXISTS src_table;
 DROP VIEW IF EXISTS dst_mv;
+DROP TABLE IF EXISTS src_table;
 
 create table src_table Engine=Memory as system.numbers;
 CREATE MATERIALIZED VIEW dst_mv Engine=Memory as select *, (SELECT count() FROM src_table) AS cnt FROM src_table;
@@ -36,5 +36,5 @@ drop table dest_table_mv;
 drop table left_table;
 drop table right_table;
 drop table dest_table;
-drop table src_table;
 drop view dst_mv;
+drop table src_table;

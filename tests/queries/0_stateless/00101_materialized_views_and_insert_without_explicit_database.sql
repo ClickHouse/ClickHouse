@@ -4,9 +4,9 @@ CREATE DATABASE IF NOT EXISTS test_00101_0;
 
 USE test_00101_0;
 
-DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS test_view;
 DROP TABLE IF EXISTS test_view_filtered;
+DROP TABLE IF EXISTS test_table;
 
 set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime('America/Los_Angeles'), UTCEventTime DateTime('UTC')) ENGINE = MergeTree(EventDate, CounterID, 8192);
@@ -19,9 +19,9 @@ SELECT * FROM test_table;
 SELECT * FROM test_view;
 SELECT * FROM test_view_filtered;
 
-DROP TABLE test_table;
 DROP TABLE test_view;
 DROP TABLE test_view_filtered;
+DROP TABLE test_table;
 
 -- Check only sophisticated constructors and desctructors:
 
@@ -45,10 +45,10 @@ CREATE TABLE tmp_mv2 AS tmp_mv;
 CREATE TABLE tmp_mv3 AS tmp_mv ENGINE = Memory;
 CREATE MATERIALIZED VIEW tmp_mv4 ENGINE = AggregatingMergeTree(date, date, 8192) POPULATE AS SELECT DISTINCT * FROM tmp_mv;
 
+DROP TABLE tmp_mv4;
 DROP TABLE tmp_mv;
 DROP TABLE tmp_mv2;
 DROP TABLE tmp_mv3;
-DROP TABLE tmp_mv4;
 
 EXISTS TABLE `.inner.tmp_mv`;
 EXISTS TABLE `.inner.tmp_mv2`;

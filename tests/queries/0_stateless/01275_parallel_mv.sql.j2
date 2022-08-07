@@ -4,10 +4,10 @@
 -- avoid settings randomization by clickhouse-test
 set max_threads = 0;
 
-drop table if exists testX;
 drop table if exists testXA;
 drop table if exists testXB;
 drop table if exists testXC;
+drop table if exists testX;
 
 create table testX (A Int64) engine=MergeTree order by tuple();
 
@@ -44,7 +44,7 @@ select count() from testXC;
 {% endfor %}
 -- { echoOff }
 
-drop table testX;
 drop view testXA;
 drop view testXB;
 drop view testXC;
+drop table testX;

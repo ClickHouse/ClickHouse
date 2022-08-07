@@ -1,8 +1,8 @@
 -- Tags: no-parallel
 
+DROP TABLE IF EXISTS dictionary_source_view;
 DROP TABLE IF EXISTS dictionary_source_en;
 DROP TABLE IF EXISTS dictionary_source_ru;
-DROP TABLE IF EXISTS dictionary_source_view;
 DROP DICTIONARY IF EXISTS flat_dictionary;
 
 CREATE TABLE dictionary_source_en
@@ -43,7 +43,7 @@ SELECT
     dictGet(concat(currentDatabase(), '.flat_dictionary'), 'value_ru', number + 1)
 FROM numbers(3);
 
+DROP TABLE dictionary_source_view;
 DROP TABLE dictionary_source_en;
 DROP TABLE dictionary_source_ru;
-DROP TABLE dictionary_source_view;
 DROP DICTIONARY flat_dictionary;

@@ -16,10 +16,10 @@ EXPLAIN SYNTAX SELECT alias AS name FROM ( SELECT name AS alias FROM system.sett
 SELECT alias AS name FROM ( SELECT name AS alias FROM system.settings ) ANY INNER JOIN ( SELECT name FROM system.settings ) USING (name) WHERE name = 'enable_optimize_predicate_expression';
 
 -- https://github.com/ClickHouse/ClickHouse/issues/6767
+DROP TABLE IF EXISTS view1;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
-DROP TABLE IF EXISTS view1;
 
 CREATE TABLE t1 (id UInt32, value1 String ) ENGINE ReplacingMergeTree() ORDER BY id;
 CREATE TABLE t2 (id UInt32, value2 String ) ENGINE ReplacingMergeTree() ORDER BY id;
@@ -32,10 +32,10 @@ INSERT INTO t3 (id, value3) VALUES (1, 'val31');
 CREATE VIEW IF NOT EXISTS view1 AS SELECT t1.id AS id, t1.value1 AS value1, t2.value2 AS value2, t3.value3 AS value3 FROM t1 LEFT JOIN t2 ON t1.id = t2.id LEFT JOIN t3 ON t1.id = t3.id WHERE t1.id > 0;
 SELECT * FROM view1 WHERE id = 1;
 
+DROP TABLE IF EXISTS view1;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
-DROP TABLE IF EXISTS view1;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/7136
 EXPLAIN SYNTAX SELECT ccc FROM ( SELECT 1 AS ccc UNION ALL SELECT * FROM ( SELECT 2 AS ccc ) ANY INNER JOIN ( SELECT 2 AS ccc ) USING (ccc) ) WHERE ccc > 1;

@@ -14,6 +14,6 @@ select * from information_schema.views where table_schema=currentDatabase();
 -- SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE (TABLE_SCHEMA=currentDatabase() OR TABLE_SCHEMA='') AND TABLE_NAME NOT LIKE '%inner%';
 SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE (table_schema=currentDatabase() OR table_schema='') AND table_name NOT LIKE '%inner%';
 
-drop table t;
 drop view v;
+drop table t;
 drop view mv;

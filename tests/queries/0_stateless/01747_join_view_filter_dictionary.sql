@@ -1,8 +1,8 @@
 -- Tags: no-parallel
 
+drop view if exists agg_view01747;
 drop table if exists summing_table01747;
 drop view if exists rates01747;
-drop view if exists agg_view01747;
 drop table if exists dictst01747;
 drop DICTIONARY if exists default.dict01747;
 
@@ -44,8 +44,8 @@ select * from agg_view01747;
 
 SELECT field2 FROM agg_view01747 WHERE field1 = 'test';
 
+drop view agg_view01747;
 drop table summing_table01747;
 drop view rates01747;
-drop view agg_view01747;
 drop table dictst01747;
 drop DICTIONARY default.dict01747;

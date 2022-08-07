@@ -1,6 +1,6 @@
+DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS test1;
 DROP TABLE IF EXISTS test2;
-DROP TABLE IF EXISTS mv;
 
 CREATE TABLE test1 (a UInt8, b String) ENGINE MergeTree ORDER BY a;
 CREATE TABLE test2 (c UInt8, d String) ENGINE MergeTree ORDER BY c;
@@ -10,6 +10,6 @@ INSERT INTO test2 VALUES (1, 'test');
 
 SELECT * FROM test1;
 
+DROP TABLE mv;
 DROP TABLE test1;
 DROP TABLE test2;
-DROP TABLE mv;

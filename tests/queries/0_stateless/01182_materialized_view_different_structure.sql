@@ -1,9 +1,9 @@
+DROP TABLE IF EXISTS test_mv;
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS numbers;
-DROP TABLE IF EXISTS test_mv;
+DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;
-DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS dist;
 
 CREATE TABLE test_table (key UInt32, value Decimal(16, 6)) ENGINE = SummingMergeTree() ORDER BY key;
@@ -33,10 +33,10 @@ SELECT count(), sum(toInt64(n)), max(n), min(n) FROM mv;
 SELECT count(), sum(toInt64(n)), max(n), min(n) FROM dist; -- { serverError 70 }
 SELECT count(), sum(toInt64(n)), max(toUInt32(n)), min(toInt128(n)) FROM dist;
 
+DROP TABLE test_mv;
 DROP TABLE test_table;
 DROP TABLE numbers;
-DROP TABLE test_mv;
+DROP TABLE mv;
 DROP TABLE src;
 DROP TABLE dst;
-DROP TABLE mv;
 DROP TABLE dist;

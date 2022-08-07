@@ -1,8 +1,8 @@
 -- Tags: no-ordinary-database
 
 drop table if exists t;
-drop table if exists dist;
 drop table if exists buf;
+drop table if exists dist;
 drop table if exists join;
 
 select 'test flush on replace';
@@ -48,6 +48,6 @@ select * from numbers(10) as t any join join on t.number=join.n order by n;
 select name from system.tables where database=currentDatabase() order by name;
 
 drop table t;
-drop table dist;
 drop table buf;
+drop table dist;
 drop table join;

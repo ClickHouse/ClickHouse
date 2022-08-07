@@ -20,6 +20,7 @@ SELECT CAST(ALow, 'String') AS AStr
 FROM testView
 GROUP BY AStr ORDER BY AStr;
 
+DROP TABLE testView;
 DROP TABLE testTable;
 
 CREATE TABLE IF NOT EXISTS testTable (
@@ -27,6 +28,13 @@ CREATE TABLE IF NOT EXISTS testTable (
  B Int64
 ) ENGINE MergeTree()
 ORDER BY (A);
+
+CREATE VIEW testView AS 
+SELECT
+ A as ALow, -- like account
+ B
+FROM
+   testTable;
 
 SELECT CAST(ALow, 'String') AS AStr
 FROM testView
@@ -38,5 +46,5 @@ SELECT CAST(ALow, 'String') AS AStr
 FROM testView
 GROUP BY AStr ORDER BY AStr;
 
-DROP TABLE IF EXISTS testView;
-DROP TABLE IF EXISTS testTable;
+DROP TABLE testView;
+DROP TABLE testTable;

@@ -28,8 +28,8 @@ ALTER TABLE `01746_merge_tree`
 ALTER TABLE `01746_merge_tree`
     DROP COLUMN n4;
 
-DROP TABLE `01746_merge_tree`;
 DROP TABLE `01746_merge_tree_mv`;
+DROP TABLE `01746_merge_tree`;
 
 -- Null 
 DROP TABLE IF EXISTS `01746_null`;
@@ -59,8 +59,8 @@ ALTER TABLE `01746_null`
 ALTER TABLE `01746_null`
     DROP COLUMN n3;
 
-DROP TABLE `01746_null`;
 DROP TABLE `01746_null_mv`;
+DROP TABLE `01746_null`;
 
 -- Distributed
 
@@ -96,8 +96,8 @@ ALTER TABLE `01746_dist`
     DROP COLUMN n3;
 
 DROP TABLE `01746_local`;
-DROP TABLE `01746_dist`;
 DROP TABLE `01746_dist_mv`;
+DROP TABLE `01746_dist`;
 
 -- Merge
 DROP TABLE IF EXISTS `01746_merge_t`;
@@ -132,8 +132,8 @@ ALTER TABLE `01746_merge`
     DROP COLUMN n3;
 
 DROP TABLE `01746_merge_t`;
-DROP TABLE `01746_merge`;
 DROP TABLE `01746_merge_mv`;
+DROP TABLE `01746_merge`;
 
 -- Buffer
 DROP TABLE IF EXISTS `01746_buffer_t`;
@@ -167,6 +167,6 @@ ALTER TABLE `01746_buffer`
 ALTER TABLE `01746_buffer`
     DROP COLUMN n3;
 
-DROP TABLE `01746_buffer_t`;
-DROP TABLE `01746_buffer`;
 DROP TABLE `01746_buffer_mv`;
+DROP TABLE `01746_buffer`;
+DROP TABLE `01746_buffer_t`;

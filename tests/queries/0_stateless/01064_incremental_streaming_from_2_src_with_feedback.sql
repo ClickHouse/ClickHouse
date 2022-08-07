@@ -3,11 +3,11 @@ SET joined_subquery_requires_alias = 0;
 -- incremental streaming usecase
 -- that has sense only if data filling order has guarantees of chronological order
 
-DROP TABLE IF EXISTS target_table;
-DROP TABLE IF EXISTS logins;
 DROP TABLE IF EXISTS mv_logins2target;
-DROP TABLE IF EXISTS checkouts;
+DROP TABLE IF EXISTS logins;
 DROP TABLE IF EXISTS mv_checkouts2target;
+DROP TABLE IF EXISTS checkouts;
+DROP TABLE IF EXISTS target_table;
 
 -- that is the final table, which is filled incrementally from 2 different sources
 
@@ -135,8 +135,8 @@ where id in (1,2)
 GROUP BY id
 ORDER BY id;
 
-DROP TABLE IF EXISTS logins;
 DROP TABLE IF EXISTS mv_logins2target;
-DROP TABLE IF EXISTS checkouts;
+DROP TABLE IF EXISTS logins;
 DROP TABLE IF EXISTS mv_checkouts2target;
+DROP TABLE IF EXISTS checkouts;
 DROP TABLE target_table;

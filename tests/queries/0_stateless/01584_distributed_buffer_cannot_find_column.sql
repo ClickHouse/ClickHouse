@@ -1,8 +1,8 @@
 -- Tags: distributed
 
 DROP TABLE IF EXISTS realtimedrep;
-DROP TABLE IF EXISTS realtimedistributed;
 DROP TABLE IF EXISTS realtimebuff;
+DROP TABLE IF EXISTS realtimedistributed;
 
 CREATE TABLE realtimedrep(amount Int64,transID String,userID String,appID String,appName String,transType String,orderSource String,nau String,fau String,transactionType String,supplier String,fMerchant String,bankConnCode String,reqDate DateTime) ENGINE = MergeTree PARTITION BY toDate(reqDate) ORDER BY transID SETTINGS index_granularity = 8192;
 CREATE TABLE realtimedistributed(amount Int64,transID String,userID String,appID String,appName String,transType String,orderSource String,nau String,fau String,transactionType String,supplier String,fMerchant String,bankConnCode String,reqDate DateTime) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), realtimedrep, rand());
@@ -23,5 +23,5 @@ SYSTEM FLUSH DISTRIBUTED realtimedistributed;
 select sum(amount) = 200 from realtimebuff;
 
 DROP TABLE realtimedrep;
-DROP TABLE realtimedistributed;
 DROP TABLE realtimebuff;
+DROP TABLE realtimedistributed;

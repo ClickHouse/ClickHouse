@@ -11,8 +11,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # otherwise flaky check will not pass.
 uuid=$(${CLICKHOUSE_CLIENT} --query "SELECT reinterpretAsUUID(currentDatabase())")
 
-echo "DROP TABLE IF EXISTS tab_00738 SYNC;
+echo "
 DROP TABLE IF EXISTS mv SYNC;
+DROP TABLE IF EXISTS tab_00738 SYNC;
 CREATE TABLE tab_00738(a Int) ENGINE = MergeTree() ORDER BY a;
 -- The matview will take at least 2 seconds to be finished (10000000 * 0.0000002)
 CREATE MATERIALIZED VIEW mv UUID '$uuid' ENGINE = Log AS SELECT sleepEachRow(0.0000002) FROM tab_00738;" | ${CLICKHOUSE_CLIENT} -n
@@ -46,5 +47,5 @@ drop &
 
 wait
 
-echo "DROP TABLE IF EXISTS tab_00738;
-DROP TABLE IF EXISTS mv;" | ${CLICKHOUSE_CLIENT} -n
+echo "DROP TABLE IF EXISTS mv;
+DROP TABLE IF EXISTS tab_00738;" | ${CLICKHOUSE_CLIENT} -n

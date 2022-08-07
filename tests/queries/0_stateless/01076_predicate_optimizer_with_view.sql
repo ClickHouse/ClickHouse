@@ -1,5 +1,5 @@
-DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test_view;
+DROP TABLE IF EXISTS test;
 
 set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE test(date Date, id Int8, name String, value Int64) ENGINE = MergeTree(date, (id, date), 8192);
@@ -15,5 +15,5 @@ EXPLAIN SYNTAX SELECT s.id FROM test_view AS s WHERE s.id = 1;
 
 SELECT * FROM (SELECT toUInt64(b), sum(id) AS b FROM test) WHERE `toUInt64(sum(id))` = 3; -- { serverError 47 }
 
-DROP TABLE IF EXISTS test;
-DROP TABLE IF EXISTS test_view;
+DROP TABLE test_view;
+DROP TABLE test;

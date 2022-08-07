@@ -35,9 +35,7 @@ CREATE VIEW test_view_different_db AS SELECT id, value, dictGet('2025_test_db.te
 SELECT * FROM test_view_different_db;
 
 DROP TABLE 2025_test_db.test_table;
+DROP VIEW test_view_different_db;
 DROP DICTIONARY 2025_test_db.test_dictionary;
 DROP TABLE 2025_test_db.view_table;
-
-DROP VIEW test_view_different_db;
-
 DROP DATABASE 2025_test_db;

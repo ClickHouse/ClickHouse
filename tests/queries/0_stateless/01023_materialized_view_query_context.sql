@@ -35,8 +35,8 @@ SELECT count() FROM output;
 
 DROP TABLE mv;
 DROP TABLE output;
-DROP TABLE dist_out;
 DROP TABLE buffer_;
+DROP TABLE dist_out;
 DROP TABLE null_;
 DROP TABLE input;
 DROP DICTIONARY dict_in_01023.dict;

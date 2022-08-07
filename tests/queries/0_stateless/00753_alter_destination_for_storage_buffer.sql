@@ -1,5 +1,5 @@
-DROP TABLE IF EXISTS dst_00753;
 DROP TABLE IF EXISTS buffer_00753;
+DROP TABLE IF EXISTS dst_00753;
 SET send_logs_level = 'error';
 
 CREATE TABLE dst_00753 (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -28,5 +28,5 @@ SELECT '-';
 SELECT * FROM buffer_00753 ORDER BY y;
 
 SET send_logs_level = 'warning';
-DROP TABLE IF EXISTS dst_00753;
-DROP TABLE IF EXISTS buffer_00753;
+DROP TABLE buffer_00753;
+DROP TABLE dst_00753;

@@ -1,8 +1,8 @@
 -- Tags: no-replicated-database
 
-DROP TABLE IF EXISTS null_;
 DROP TABLE IF EXISTS buffer_;
 DROP TABLE IF EXISTS aggregation_;
+DROP TABLE IF EXISTS null_;
 
 -- Each UInt64  is 8    bytes
 -- So 10e6 rows is 80e6 bytes
@@ -44,6 +44,6 @@ INSERT INTO buffer_ SELECT toUInt64(number) FROM system.numbers LIMIT toUInt64(1
 -- Check that 10e6 rows had been flushed from the query, not from the background worker.
 SELECT count() FROM buffer_;
 
-DROP TABLE null_;
 DROP TABLE buffer_;
 DROP TABLE aggregation_;
+DROP TABLE null_;

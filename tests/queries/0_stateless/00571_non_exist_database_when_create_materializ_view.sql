@@ -5,8 +5,8 @@ CREATE DATABASE test_00571;
 USE test_00571;
 
 DROP DATABASE IF EXISTS none;
-DROP TABLE IF EXISTS test_00571;
 DROP TABLE IF EXISTS test_materialized_00571;
+DROP TABLE IF EXISTS test_00571;
 
 set allow_deprecated_syntax_for_merge_tree=1;
 CREATE DATABASE none;
@@ -25,8 +25,8 @@ ATTACH TABLE test_00571.test_materialized_00571;
 
 SELECT * FROM test_00571.test_materialized_00571;
 
-DROP DATABASE IF EXISTS none;
-DROP TABLE IF EXISTS test_00571.test_00571;
-DROP TABLE IF EXISTS test_00571.test_materialized_00571;
+DROP DATABASE none;
+DROP TABLE test_00571.test_materialized_00571;
+DROP TABLE test_00571.test_00571;
 
 DROP DATABASE test_00571;

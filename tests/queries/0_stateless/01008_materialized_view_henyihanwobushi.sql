@@ -1,6 +1,6 @@
+DROP TABLE IF EXISTS view_foo_bar;
 DROP TABLE IF EXISTS foo;
 DROP TABLE IF EXISTS bar;
-DROP TABLE IF EXISTS view_foo_bar;
 
 set allow_deprecated_syntax_for_merge_tree=1;
 create table foo (ddate Date, id Int64, n String) ENGINE = ReplacingMergeTree(ddate, (id), 8192);
@@ -10,6 +10,6 @@ create MATERIALIZED view view_foo_bar ENGINE = ReplacingMergeTree(ddate, (bar_id
 insert into bar (id, n, foo_id) values (1, 'bar_n_1', 1);
 SELECT * FROM view_foo_bar;
 
+DROP TABLE view_foo_bar;
 DROP TABLE foo;
 DROP TABLE bar;
-DROP TABLE view_foo_bar;

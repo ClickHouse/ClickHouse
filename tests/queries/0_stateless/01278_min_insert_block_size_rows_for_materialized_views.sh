@@ -22,8 +22,8 @@ TEST_01278_MEMORY=$((100<<20))
 function cleanup()
 {
     for i in $(seq 1 $TEST_01278_PARTS); do
-        echo "drop table if exists part_01278_$i;"
         echo "drop table if exists mv_01278_$i;"
+        echo "drop table if exists part_01278_$i;"
     done | execute
     echo 'drop table if exists data_01278;' | execute
     echo 'drop table if exists out_01278;' | execute
