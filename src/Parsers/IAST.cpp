@@ -87,7 +87,7 @@ IAST::~IAST()
 
         /** Here we have 2 cases:
           * 1. Child during deletion does not move any node into list, then just replace current head with next node to delete.
-          * 2. Child during deletion moved some nodes into hist, then iterate list and add next to delete node in list tail.
+          * 2. Child during deletion moved some nodes into list, then iterate list and add next to delete node in list tail.
           */
         if (delete_list_head_reference == nullptr)
         {
