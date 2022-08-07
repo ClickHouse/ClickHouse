@@ -1,6 +1,7 @@
 #include "HashedDictionary.h"
 
 #include <Common/ArenaUtils.h>
+#include <Common/ThreadPool.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -183,8 +184,9 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     {
         for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
         {
-            auto requested_key = extractor.extractCurrentKey();
-            out[requested_key_index] = no_attributes_container.find(requested_key) != no_attributes_container.end();
+            auto key = extractor.extractCurrentKey();
+            const auto & container = no_attributes_containers[getShard(key)];
+            out[requested_key_index] = container.find(key) != container.end();
             keys_found += out[requested_key_index];
             extractor.rollbackCurrentKey();
         }
@@ -197,18 +199,19 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     const auto & attribute = attributes.front();
     bool is_attribute_nullable = attribute.is_nullable_set.has_value();
 
-    getAttributeContainer(0, [&](const auto & container)
+    getAttributeContainer(0, [&](const auto & containers)
     {
         for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
         {
-            auto requested_key = extractor.extractCurrentKey();
+            auto key = extractor.extractCurrentKey();
+            const auto & container = containers[getShard(key)];
 
-            out[requested_key_index] = container.find(requested_key) != container.end();
+            out[requested_key_index] = container.find(key) != container.end();
 
             keys_found += out[requested_key_index];
 
             if (is_attribute_nullable && !out[requested_key_index])
-                out[requested_key_index] = attribute.is_nullable_set->find(requested_key) != nullptr;
+                out[requested_key_index] = attribute.is_nullable_set->find(key) != nullptr;
 
             extractor.rollbackCurrentKey();
         }
@@ -238,14 +241,15 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         if (!dictionary_attribute.null_value.isNull())
             null_value = dictionary_attribute.null_value.get<UInt64>();
 
-        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+        const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
 
         auto is_key_valid_func = [&](auto & hierarchy_key)
         {
             if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
                 return true;
 
-            return child_key_to_parent_key_map.find(hierarchy_key) != child_key_to_parent_key_map.end();
+            const auto & map = child_key_to_parent_key_maps[getShard(hierarchy_key)];
+            return map.find(hierarchy_key) != map.end();
         };
 
         size_t keys_found = 0;
@@ -254,9 +258,9 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         {
             std::optional<UInt64> result;
 
-            auto it = child_key_to_parent_key_map.find(hierarchy_key);
-
-            if (it == child_key_to_parent_key_map.end())
+            const auto & map = child_key_to_parent_key_maps[getShard(hierarchy_key)];
+            auto it = map.find(hierarchy_key);
+            if (it == map.end())
                 return result;
 
             UInt64 parent_key = getValueFromCell(it);
@@ -309,14 +313,15 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         if (!dictionary_attribute.null_value.isNull())
             null_value = dictionary_attribute.null_value.get<UInt64>();
 
-        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+        const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
 
         auto is_key_valid_func = [&](auto & hierarchy_key)
         {
             if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
                 return true;
 
-            return child_key_to_parent_key_map.find(hierarchy_key) != child_key_to_parent_key_map.end();
+            const auto & map = child_key_to_parent_key_maps[getShard(hierarchy_key)];
+            return map.find(hierarchy_key) != map.end();
         };
 
         size_t keys_found = 0;
@@ -325,9 +330,9 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         {
             std::optional<UInt64> result;
 
-            auto it = child_key_to_parent_key_map.find(hierarchy_key);
-
-            if (it == child_key_to_parent_key_map.end())
+            const auto & map = child_key_to_parent_key_maps[getShard(hierarchy_key)];
+            auto it = map.find(hierarchy_key);
+            if (it == map.end())
                 return result;
 
             UInt64 parent_key = getValueFromCell(it);
@@ -361,13 +366,22 @@ DictionaryHierarchyParentToChildIndexPtr HashedDictionary<dictionary_key_type, s
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
-        const CollectionType<UInt64> & child_key_to_parent_key_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+        const CollectionsHolder<UInt64> & child_key_to_parent_key_maps = std::get<CollectionsHolder<UInt64>>(hierarchical_attribute.containers);
+
+        size_t size = 0;
+        for (const auto & map : child_key_to_parent_key_maps)
+            size += map.size();
 
         HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
-        parent_to_child.reserve(child_key_to_parent_key_map.size());
+        parent_to_child.reserve(size);
 
-        for (const auto & [child_key, parent_key] : child_key_to_parent_key_map)
-            parent_to_child[parent_key].emplace_back(child_key);
+        for (const auto & map : child_key_to_parent_key_maps)
+        {
+            for (const auto & [child_key, parent_key] : map)
+            {
+                parent_to_child[parent_key].emplace_back(child_key);
+            }
+        }
 
         return std::make_shared<DictionaryHierarchicalParentToChildIndex>(parent_to_child);
     }
@@ -418,12 +432,21 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
             using ValueType = DictionaryValueType<AttributeType>;
 
             auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
-            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), CollectionType<ValueType>()};
+            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), CollectionsHolder<ValueType>(configuration.shards)};
             attributes.emplace_back(std::move(attribute));
         };
 
         callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
     }
+
+    if (unlikely(attributes.size()) == 0)
+    {
+        no_attributes_containers.resize(configuration.shards);
+    }
+
+    string_arenas.resize(configuration.shards);
+    for (auto & arena : string_arenas)
+        arena = std::make_unique<Arena>();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -465,14 +488,15 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
     if (update_field_loaded_block)
     {
         resize(update_field_loaded_block->rows());
-        blockToAttributes(*update_field_loaded_block.get());
+        blockToAttributes(*update_field_loaded_block.get(), /* current_shard= */{});
     }
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Block & block [[maybe_unused]])
+void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Block & block, std::optional<UInt64> current_shard)
 {
     size_t skip_keys_size_offset = dict_struct.getKeysSize();
+    size_t new_element_count = 0;
 
     Columns key_columns;
     key_columns.reserve(skip_keys_size_offset);
@@ -495,10 +519,15 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
         {
             auto key = keys_extractor.extractCurrentKey();
 
-            if constexpr (std::is_same_v<KeyType, StringRef>)
-                key = copyStringInArena(string_arena, key);
+            if (current_shard && getShard(key) != *current_shard)
+                continue;
 
-            no_attributes_container.insert(key);
+            size_t shard = getShard(key);
+
+            if constexpr (std::is_same_v<KeyType, StringRef>)
+                key = copyStringInArena(*string_arenas[shard], key);
+
+            no_attributes_containers[shard].insert(key);
             keys_extractor.rollbackCurrentKey();
         }
 
@@ -511,14 +540,19 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
         auto & attribute = attributes[attribute_index];
         bool attribute_is_nullable = attribute.is_nullable_set.has_value();
 
-        getAttributeContainer(attribute_index, [&](auto & container)
+        getAttributeContainer(attribute_index, [&](auto & containers)
         {
-            using ContainerType = std::decay_t<decltype(container)>;
+            using ContainerType = std::decay_t<decltype(containers.front())>;
             using AttributeValueType = typename ContainerType::mapped_type;
 
             for (size_t key_index = 0; key_index < keys_size; ++key_index)
             {
                 auto key = keys_extractor.extractCurrentKey();
+                if (current_shard && getShard(key) != *current_shard)
+                    continue;
+
+                size_t shard = getShard(key);
+                auto & container = containers[shard];
 
                 auto it = container.find(key);
                 bool key_is_nullable_and_already_exists = attribute_is_nullable && attribute.is_nullable_set->find(key) != nullptr;
@@ -530,7 +564,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                 }
 
                 if constexpr (std::is_same_v<KeyType, StringRef>)
-                    key = copyStringInArena(string_arena, key);
+                    key = copyStringInArena(*string_arenas[shard], key);
 
                 attribute_column.get(key_index, column_value_to_insert);
 
@@ -544,7 +578,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
                     String & value_to_insert = column_value_to_insert.get<String>();
-                    StringRef arena_value = copyStringInArena(string_arena, value_to_insert);
+                    StringRef arena_value = copyStringInArena(*string_arenas[shard], value_to_insert);
                     container.insert({key, arena_value});
                 }
                 else
@@ -553,7 +587,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                     container.insert({key, value_to_insert});
                 }
 
-                ++element_count;
+                ++new_element_count;
 
                 keys_extractor.rollbackCurrentKey();
             }
@@ -561,6 +595,8 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
             keys_extractor.reset();
         });
     }
+
+    element_count += new_element_count;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -569,30 +605,35 @@ void HashedDictionary<dictionary_key_type, sparse>::resize(size_t added_rows)
     if (unlikely(!added_rows))
         return;
 
+    /// In multi shards configuration it is pointless.
+    if (configuration.shards > 1)
+        return;
+
     size_t attributes_size = attributes.size();
 
     if (unlikely(attributes_size == 0))
     {
-        size_t reserve_size = added_rows + no_attributes_container.size();
+        size_t reserve_size = added_rows + no_attributes_containers.front().size();
 
         if constexpr (sparse)
-            no_attributes_container.resize(reserve_size);
+            no_attributes_containers.front().resize(reserve_size);
         else
-            no_attributes_container.reserve(reserve_size);
+            no_attributes_containers.front().reserve(reserve_size);
 
         return;
     }
 
     for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
-        getAttributeContainer(attribute_index, [added_rows](auto & attribute_map)
+        getAttributeContainer(attribute_index, [added_rows](auto & containers)
         {
-            size_t reserve_size = added_rows + attribute_map.size();
+            auto & container = containers.front();
+            size_t reserve_size = added_rows + container.size();
 
             if constexpr (sparse)
-                attribute_map.resize(reserve_size);
+                container.resize(reserve_size);
             else
-                attribute_map.reserve(reserve_size);
+                container.reserve(reserve_size);
         });
     }
 }
@@ -605,7 +646,7 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     ValueSetter && set_value [[maybe_unused]],
     DefaultValueExtractor & default_value_extractor) const
 {
-    const auto & attribute_container = std::get<CollectionType<AttributeType>>(attribute.container);
+    const auto & attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers);
     const size_t keys_size = keys_extractor.getKeysSize();
 
     size_t keys_found = 0;
@@ -614,9 +655,10 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     {
         auto key = keys_extractor.extractCurrentKey();
 
-        const auto it = attribute_container.find(key);
+        const auto & container = attribute_containers[getShard(key)];
+        const auto it = container.find(key);
 
-        if (it != attribute_container.end())
+        if (it != container.end())
         {
             set_value(key_index, getValueFromCell(it), false);
             ++keys_found;
@@ -644,6 +686,13 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
+        std::optional<ThreadPool> pool;
+        if (configuration.shards > 1)
+        {
+            pool.emplace(configuration.shards);
+            LOG_TRACE(&Poco::Logger::get("HashedDictionary"), "Will load the dictionary with {} threads", configuration.shards);
+        }
+
         std::atomic<size_t> new_size = 0;
 
         QueryPipeline pipeline;
@@ -670,7 +719,24 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
                 resize(block.rows());
             }
 
-            blockToAttributes(block);
+            if (pool)
+            {
+                for (size_t shard = 0; shard < configuration.shards; ++shard)
+                {
+                    pool->scheduleOrThrowOnError([this, &block, shard, thread_group = CurrentThread::getGroup()]
+                    {
+                        if (thread_group)
+                            CurrentThread::attachToIfDetached(thread_group);
+
+                        blockToAttributes(block, shard);
+                    });
+                }
+                pool->wait();
+            }
+            else
+            {
+                blockToAttributes(block, /* current_shard= */ {});
+            }
         }
     }
     else
@@ -702,26 +768,29 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 
     for (size_t i = 0; i < attributes_size; ++i)
     {
-        getAttributeContainer(i, [&](const auto & container)
+        getAttributeContainer(i, [&](const auto & containers)
         {
-            using ContainerType = std::decay_t<decltype(container)>;
-            using AttributeValueType = typename ContainerType::mapped_type;
-
-            bytes_allocated += sizeof(container);
-
-            if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
+            for (const auto & container : containers)
             {
-                /// bucket_count() - Returns table size, that includes empty and deleted
-                /// size()         - Returns table size, without empty and deleted
-                /// and since this is sparsehash, empty cells should not be significant,
-                /// and since items cannot be removed from the dictionary, deleted is also not important.
-                bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
-                bucket_count = container.bucket_count();
-            }
-            else
-            {
-                bytes_allocated += container.getBufferSizeInBytes();
-                bucket_count = container.getBufferSizeInCells();
+                using ContainerType = std::decay_t<decltype(container)>;
+                using AttributeValueType = typename ContainerType::mapped_type;
+
+                bytes_allocated += sizeof(container);
+
+                if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
+                {
+                    /// bucket_count() - Returns table size, that includes empty and deleted
+                    /// size()         - Returns table size, without empty and deleted
+                    /// and since this is sparsehash, empty cells should not be significant,
+                    /// and since items cannot be removed from the dictionary, deleted is also not important.
+                    bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
+                    bucket_count = container.bucket_count();
+                }
+                else
+                {
+                    bytes_allocated += container.getBufferSizeInBytes();
+                    bucket_count = container.getBufferSizeInCells();
+                }
             }
         });
 
@@ -733,17 +802,20 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 
     if (unlikely(attributes_size == 0))
     {
-        bytes_allocated += sizeof(no_attributes_container);
+        for (const auto & container : no_attributes_containers)
+        {
+            bytes_allocated += sizeof(container);
 
-        if constexpr (sparse)
-        {
-            bytes_allocated += no_attributes_container.size() * (sizeof(KeyType));
-            bucket_count = no_attributes_container.bucket_count();
-        }
-        else
-        {
-            bytes_allocated += no_attributes_container.getBufferSizeInBytes();
-            bucket_count = no_attributes_container.getBufferSizeInCells();
+            if constexpr (sparse)
+            {
+                bytes_allocated += container.size() * (sizeof(KeyType));
+                bucket_count = container.bucket_count();
+            }
+            else
+            {
+                bytes_allocated += container.getBufferSizeInBytes();
+                bucket_count = container.getBufferSizeInCells();
+            }
         }
     }
 
@@ -756,7 +828,8 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
         bytes_allocated += hierarchical_index_bytes_allocated;
     }
 
-    bytes_allocated += string_arena.size();
+    for (const auto & arena : string_arenas)
+        bytes_allocated += arena->size();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -764,40 +837,47 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
 {
     PaddedPODArray<HashedDictionary::KeyType> keys;
 
+    /// NOTE: could read multiple shards in parallel
     if (!attributes.empty())
     {
         const auto & attribute = attributes.front();
 
-        getAttributeContainer(0, [&](auto & container)
+        getAttributeContainer(0, [&](auto & containers)
         {
-            keys.reserve(container.size());
-
-            for (const auto & [key, value] : container)
+            for (const auto & container : containers)
             {
-                (void)(value);
-                keys.emplace_back(key);
-            }
+                keys.reserve(container.size());
 
-            if (attribute.is_nullable_set)
-            {
-                const auto & is_nullable_set = *attribute.is_nullable_set;
-                keys.reserve(is_nullable_set.size());
+                for (const auto & [key, value] : container)
+                {
+                    (void)(value);
+                    keys.emplace_back(key);
+                }
 
-                for (auto & node : is_nullable_set)
-                    keys.emplace_back(node.getKey());
+                if (attribute.is_nullable_set)
+                {
+                    const auto & is_nullable_set = *attribute.is_nullable_set;
+                    keys.reserve(is_nullable_set.size());
+
+                    for (auto & node : is_nullable_set)
+                        keys.emplace_back(node.getKey());
+                }
             }
         });
     }
     else
     {
-        keys.reserve(no_attributes_container.size());
-
-        for (const auto & key : no_attributes_container)
+        for (const auto & container : no_attributes_containers)
         {
-            if constexpr (sparse)
-                keys.emplace_back(key);
-            else
-                keys.emplace_back(key.getKey());
+            keys.reserve(keys.size() + container.size());
+
+            for (const auto & key : container)
+            {
+                if constexpr (sparse)
+                    keys.emplace_back(key);
+                else
+                    keys.emplace_back(key.getKey());
+            }
         }
     }
 
@@ -834,8 +914,8 @@ void HashedDictionary<dictionary_key_type, sparse>::getAttributeContainer(size_t
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
 
-        auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
-        std::forward<GetContainerFunc>(get_container_func)(attribute_container);
+        auto & attribute_containers = std::get<CollectionsHolder<ValueType>>(attribute.containers);
+        std::forward<GetContainerFunc>(get_container_func)(attribute_containers);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -894,7 +974,18 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const std::string dictionary_layout_prefix = ".layout." + dictionary_layout_name;
         const bool preallocate = config.getBool(config_prefix + dictionary_layout_prefix + ".preallocate", false);
 
-        HashedDictionaryStorageConfiguration configuration{preallocate, require_nonempty, dict_lifetime};
+        Int64 shards = config.getInt(config_prefix + dictionary_layout_prefix + ".shards", 1);
+        if (!shards)
+            shards = 1;
+        if (shards < 0 || shards > 128)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter should be within [0, 128]", full_name);
+
+        HashedDictionaryStorageConfiguration configuration{
+            preallocate,
+            static_cast<UInt64>(shards),
+            require_nonempty,
+            dict_lifetime,
+        };
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {

@@ -27,6 +27,7 @@ namespace DB
 struct HashedDictionaryStorageConfiguration
 {
     const bool preallocate;
+    const UInt64 shards;
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
 };
@@ -156,6 +157,9 @@ private:
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
 
+    template <typename Value>
+    using CollectionsHolder = std::vector<CollectionType<Value>>;
+
     using NoAttributesCollectionType = std::conditional_t<sparse, NoAttributesCollectionTypeSparse, NoAttributesCollectionTypeNonSparse>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
@@ -166,36 +170,36 @@ private:
         std::optional<NullableSet> is_nullable_set;
 
         std::variant<
-            CollectionType<UInt8>,
-            CollectionType<UInt16>,
-            CollectionType<UInt32>,
-            CollectionType<UInt64>,
-            CollectionType<UInt128>,
-            CollectionType<UInt256>,
-            CollectionType<Int8>,
-            CollectionType<Int16>,
-            CollectionType<Int32>,
-            CollectionType<Int64>,
-            CollectionType<Int128>,
-            CollectionType<Int256>,
-            CollectionType<Decimal32>,
-            CollectionType<Decimal64>,
-            CollectionType<Decimal128>,
-            CollectionType<Decimal256>,
-            CollectionType<DateTime64>,
-            CollectionType<Float32>,
-            CollectionType<Float64>,
-            CollectionType<UUID>,
-            CollectionType<IPv4>,
-            CollectionType<IPv6>,
-            CollectionType<StringRef>,
-            CollectionType<Array>>
-            container;
+            CollectionsHolder<UInt8>,
+            CollectionsHolder<UInt16>,
+            CollectionsHolder<UInt32>,
+            CollectionsHolder<UInt64>,
+            CollectionsHolder<UInt128>,
+            CollectionsHolder<UInt256>,
+            CollectionsHolder<Int8>,
+            CollectionsHolder<Int16>,
+            CollectionsHolder<Int32>,
+            CollectionsHolder<Int64>,
+            CollectionsHolder<Int128>,
+            CollectionsHolder<Int256>,
+            CollectionsHolder<Decimal32>,
+            CollectionsHolder<Decimal64>,
+            CollectionsHolder<Decimal128>,
+            CollectionsHolder<Decimal256>,
+            CollectionsHolder<DateTime64>,
+            CollectionsHolder<Float32>,
+            CollectionsHolder<Float64>,
+            CollectionsHolder<UUID>,
+            CollectionsHolder<IPv4>,
+            CollectionsHolder<IPv6>,
+            CollectionsHolder<StringRef>,
+            CollectionsHolder<Array>>
+            containers;
     };
 
     void createAttributes();
 
-    void blockToAttributes(const Block & block);
+    void blockToAttributes(const Block & block, std::optional<UInt64> current_shard);
 
     void updateData();
 
@@ -204,6 +208,19 @@ private:
     void buildHierarchyParentToChildIndexIfNeeded();
 
     void calculateBytesAllocated();
+
+    UInt64 getShard(UInt64 key) const
+    {
+        if (configuration.shards > 1)
+            return key % configuration.shards;
+        return 0;
+    }
+    UInt64 getShard(StringRef key) const
+    {
+        if (configuration.shards > 1)
+            return getShard(StringRefHash()(key));
+        return 0;
+    }
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
@@ -228,14 +245,14 @@ private:
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
-    size_t element_count = 0;
+    std::atomic<size_t> element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    Arena string_arena;
-    NoAttributesCollectionType no_attributes_container;
+    std::vector<std::unique_ptr<Arena>> string_arenas;
+    std::vector<NoAttributesCollectionType> no_attributes_containers;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
