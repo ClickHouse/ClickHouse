@@ -232,30 +232,3 @@ def minify_website(args):
     with open(js_out, "rb") as f:
         js_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
         logging.info(js_digest)
-
-
-def process_benchmark_results(args):
-    benchmark_root = os.path.join(args.website_dir, "benchmark")
-    required_keys = {
-        "versions": ["version", "system"],
-    }
-    for benchmark_kind in ["versions"]:
-        results = []
-        results_root = os.path.join(benchmark_root, benchmark_kind, "results")
-        for result in sorted(os.listdir(results_root)):
-            result_file = os.path.join(results_root, result)
-            logging.info(f"Reading benchmark result from {result_file}")
-            with open(result_file, "r") as f:
-                result = json.loads(f.read())
-                for item in result:
-                    for required_key in required_keys[benchmark_kind]:
-                        assert (
-                            required_key in item
-                        ), f'No "{required_key}" in {result_file}'
-                results += result
-        results_js = os.path.join(
-            args.output_dir, "benchmark", benchmark_kind, "results.js"
-        )
-        with open(results_js, "w") as f:
-            data = json.dumps(results)
-            f.write(f"var results = {data};")
