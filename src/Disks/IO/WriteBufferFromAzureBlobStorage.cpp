@@ -2,7 +2,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <IO/WriteBufferFromAzureBlobStorage.h>
+#include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>

@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <filesystem>
 
 #if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
 #   include <machine/endian.h>
@@ -162,7 +163,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
 
 
 /// Read data about files and decomrpess them.
-int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge)
+int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
@@ -221,7 +222,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         files_pointer += sizeof(FileData);
 
         size_t file_name_len =
-            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13);
+            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13 + 7);
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
 
@@ -236,7 +237,16 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         files_pointer += le64toh(file_info.name_length);
         if (file_name_len != le64toh(file_info.name_length))
         {
-            strcat(file_name, ".decompressed");
+            strcat(file_name, ".decompressed.XXXXXX");
+            int fd = mkstemp(file_name);
+            if (fd == -1)
+            {
+                perror(nullptr);
+                return 1;
+            }
+            close(fd);
+            strncpy(decompressed_suffix, file_name + strlen(file_name) - 6, 6);
+            *decompressed_umask = le64toh(file_info.umask);
             have_compressed_analoge = true;
         }
 
@@ -295,45 +305,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     return 0;
 }
 
-/// Copy particular part of command and update shift
-void fill(char * dest, char * source, size_t length, size_t& shift)
-{
-    memcpy(dest + shift, source, length);
-    shift += length;
-}
 
-/// Set command to `mv filename.decompressed filename && filename agrs...`
-void fillCommand(char command[], int argc, char * argv[], size_t length)
-{
-    memset(command, '\0', 3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc);
-
-    /// position in command
-    size_t shift = 0;
-
-    /// Support variables to create command
-    char mv[] = "mv ";
-    char decompressed[] = ".decompressed ";
-    char add_command[] = " && ";
-    char space[] = " ";
-
-    fill(command, mv, 3, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, decompressed, 14, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, add_command, 4, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, space, 1, shift);
-
-    /// forward all arguments
-    for (int i = 1; i < argc; ++i)
-    {
-        fill(command, argv[i], strlen(argv[i]), shift);
-        if (i != argc - 1)
-            fill(command, space, 1, shift);
-    }
-}
-
-int main(int argc, char* argv[])
+int main(int/* argc*/, char* argv[])
 {
     char file_path[strlen(argv[0]) + 1];
     memset(file_path, 0, sizeof(file_path));
@@ -358,9 +331,11 @@ int main(int argc, char* argv[])
     }
 
     bool have_compressed_analoge = false;
+    char decompressed_suffix[7] = {0};
+    uint64_t decompressed_umask = 0;
 
     /// Decompress all files
-    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge))
+    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge, decompressed_suffix, &decompressed_umask))
     {
         printf("Error happened during decompression.\n");
         if (0 != close(input_fd))
@@ -371,38 +346,42 @@ int main(int argc, char* argv[])
     if (0 != close(input_fd))
         perror(nullptr);
 
-    /// According to documentation `mv` will rename file if it
-    /// doesn't move to other directory.
-    /// Sometimes `rename` doesn't exist by default and
-    /// `rename.ul` is set instead. It will lead to errors
-    /// that can be easily avoided with help of `mv`
-
-    if (!have_compressed_analoge)
+    if (unlink(argv[0]))
     {
-        printf("No target executable - decompression only was performed.\n");
-        /// remove file
-        execlp("rm", "rm", argv[0], NULL);
         perror(nullptr);
         return 1;
     }
+
+    if (!have_compressed_analoge)
+        printf("No target executable - decompression only was performed.\n");
     else
     {
-        /// move decompressed file instead of this binary and apply command
-        char bash[] = "sh";
-        char executable[] = "-c";
+        const char * const decompressed_name_fmt = "%s.decompressed.%s";
+        int decompressed_name_len = snprintf(nullptr, 0, decompressed_name_fmt, argv[0], decompressed_suffix);
+        char decompressed_name[decompressed_name_len + 1];
+        (void)snprintf(decompressed_name, decompressed_name_len + 1, decompressed_name_fmt, argv[0], decompressed_suffix);
 
-        /// length of forwarded args
-        size_t length = 0;
-        for (int i = 1; i < argc; ++i)
-            length += strlen(argv[i]);
+        std::error_code ec;
+        std::filesystem::copy_file(static_cast<char *>(decompressed_name), argv[0], ec);
+        if (ec)
+        {
+            std::cerr << ec.message() << std::endl;
+            return 1;
+        }
 
-        /// mv filename.decompressed filename && filename agrs...
-        char command[3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc];
-        fillCommand(command, argc, argv, length);
+        if (chmod(argv[0], decompressed_umask))
+        {
+            perror(nullptr);
+            return 1;
+        }
 
-        /// replace file and call executable
-        char * newargv[] = { bash, executable, command, nullptr };
-        execvp(bash, newargv);
+        if (unlink(decompressed_name))
+        {
+            perror(nullptr);
+            return 1;
+        }
+
+        execv(argv[0], argv);
 
         /// This part of code will be reached only if error happened
         perror(nullptr);

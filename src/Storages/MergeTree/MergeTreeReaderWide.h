@@ -38,17 +38,21 @@ public:
 private:
     FileStreams streams;
 
-    void addStreams(const NameAndTypePair & name_and_type,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
+    void addStreams(
+        const NameAndTypePair & name_and_type,
+        const SerializationPtr & serialization,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback,
+        clockid_t clock_type);
 
     void readData(
-        const NameAndTypePair & name_and_type, ColumnPtr & column,
+        const NameAndTypePair & name_and_type, const SerializationPtr & serialization, ColumnPtr & column,
         size_t from_mark, bool continue_reading, size_t current_task_last_mark, size_t max_rows_to_read,
         ISerialization::SubstreamsCache & cache, bool was_prefetched);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetch(
         const NameAndTypePair & name_and_type,
+        const SerializationPtr & serialization,
         size_t from_mark,
         bool continue_reading,
         size_t current_task_last_mark,

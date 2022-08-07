@@ -180,7 +180,7 @@ if __name__ == "__main__":
         logging.info("Skipping '%s' (no pr-bugfix)", check_name)
         sys.exit(0)
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
     if rerun_helper.is_already_finished_by_status():
