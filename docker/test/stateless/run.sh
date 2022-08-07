@@ -18,24 +18,7 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-ARM="arm64"
-if [[ "$(uname -m)" == "$ARM" ]]; then
-    cat <<EOF > /etc/clickhouse-server/config.d/erase_azure.xml
- <clickhouse>
-    <storage_configuration>
-        <disks>
-            <azure remove="remove"/>
-            <azure_cache remove="remove"/>
-        </disks>
-        <policies>
-            <azure_cache remove="remove"/>
-        <policies>
-    </storage_configuration>
-</clickhouse>
-EOF
-else
-    azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
-fi
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
