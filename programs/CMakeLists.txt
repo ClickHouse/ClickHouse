@@ -18,7 +18,12 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
+if (SPLIT_SHARED_LIBRARIES)
+    # Don't create self-extracting clickhouse for split build
+    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" OFF)
+else ()
+    option (ENABLE_CLICKHOUSE_SELF_EXTRACTING "Self-extracting executable" ON)
+endif ()
 
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
