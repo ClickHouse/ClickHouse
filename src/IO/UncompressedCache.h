@@ -42,7 +42,7 @@ private:
     using Base = CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 public:
-    explicit UncompressedCache(size_t max_size_in_bytes, String uncompressed_cache_policy = "")
+    explicit UncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy = "")
         : Base(uncompressed_cache_policy, max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.

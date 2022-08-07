@@ -36,9 +36,9 @@ public:
 
     /// TODO: Rewrite "Args... args" to custom struct with fields for all cache policies.
     template <class... Args>
-    CacheBase(String cache_policy_name, Args... args)
+    CacheBase(String cache_policy_name, size_t max_size, size_t max_elements_size = 0, double size_ratio = 0.5)
     {
-        auto onWeightLossFunction = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
+        auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
         if (cache_policy_name == "")
         {
@@ -48,17 +48,16 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(onWeightLossFunction, args...);
+            cache_policy = std::make_unique<LRUPolicy>(max_size, max_elements_size, on_weight_loss_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(onWeightLossFunction, args...);
+            cache_policy = std::make_unique<SLRUPolicy>(max_size, max_elements_size, size_ratio, on_weight_loss_function);
         }
         else
         {
-            LOG_ERROR(&Poco::Logger::get("CacheBase"), "Undeclared cache policy name \"{}\"", cache_policy_name);
-            abort();
+            throw Exception("Undeclared cache policy name: " + cache_policy_name, ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -223,14 +222,16 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<std::mutex> & /* cache_lock */)
+            TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             key = key_;
             token = token_;
             ++token->refcount;
         }
 
-        void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        void cleanup(std::lock_guard<std::mutex> & token_lock, std::lock_guard<std::mutex> & /* cache_lock */)
+            TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;

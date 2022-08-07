@@ -40,7 +40,7 @@ private:
     using Base = CacheBase<UInt128, MarksInCompressedFile, UInt128TrivialHash, MarksWeightFunction>;
 
 public:
-    explicit MarkCache(size_t max_size_in_bytes, String mark_cache_policy = "")
+    explicit MarkCache(size_t max_size_in_bytes, const String & mark_cache_policy = "")
         : Base(mark_cache_policy, max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.

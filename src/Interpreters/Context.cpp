@@ -1657,7 +1657,7 @@ ProcessList::Element * Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(size_t max_size_in_bytes, String uncompressed_cache_policy)
+void Context::setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy)
 {
     auto lock = getLock();
 
@@ -1683,7 +1683,7 @@ void Context::dropUncompressedCache() const
 }
 
 
-void Context::setMarkCache(size_t cache_size_in_bytes, String mark_cache_policy)
+void Context::setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy)
 {
     auto lock = getLock();
 
