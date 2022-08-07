@@ -694,13 +694,13 @@ Pipe StorageFile::read(
             if (fetch_columns.empty())
                 fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
             columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
-            block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         }
         else
         {
             columns_description = storage_snapshot->metadata->getColumns();
-            block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
         }
+        
+        block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
 
         /// In case of reading from fd we have to check whether we have already created
         /// the read buffer from it in Storage constructor (for schema inference) or not.
