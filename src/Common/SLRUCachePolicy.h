@@ -187,7 +187,7 @@ protected:
         {
             if (is_protected)
             {
-                /// Check if after remove all elements from probationary part there will be no more then max elements
+                /// Check if after remove all elements from probationary part there will be no more than max elements
                 /// in protected queue and weight of all protected elements will be less then max protected weight.
                 /// It's not possible to check only cells.size() > max_elements_size
                 /// because protected elements move to probationary part and still remain in cache.
