@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/ICachePolicy.h>
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
@@ -17,6 +18,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 /// Thread-safe cache that evicts entries using special cache policy
 /// (default policy evicts entries which are not used for a long time).
@@ -230,7 +235,7 @@ private:
             ++token->refcount;
         }
 
-        void cleanup(std::lock_guard<std::mutex> & token_lock, std::lock_guard<std::mutex> & /* cache_lock */)
+        void cleanup(std::lock_guard<std::mutex> & /* token_lock */, std::lock_guard<std::mutex> & /* cache_lock */)
             TSA_NO_THREAD_SAFETY_ANALYSIS // disabled only because we can't reference the parent-level cache mutex from here
         {
             token->cache.insert_tokens.erase(*key);
