@@ -34,24 +34,20 @@ public:
       * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
       */
     /// TODO: construct from special struct with cache policy parametrs (also with max_protected_size).
-    SLRUCachePolicy(size_t max_size_, size_t max_elements_size_ = 0)
-        : max_protected_size(max_size_ / 2)
-        , max_size(std::max(max_protected_size + 1, max_size_))
+    SLRUCachePolicy(size_t max_size_, size_t max_elements_size_ = 0, double size_ratio = 0.5, OnWeightLossFunction on_weight_loss_function_ = {})
+        : max_protected_size(max_size_ * std::min(1.0, size_ratio))
+        , max_size(max_size_)
         , max_elements_size(max_elements_size_)
-        {}
+        {
+            Base::on_weight_loss_function = on_weight_loss_function_;
+        }
 
-    template <class... Args>
-    SLRUCachePolicy(OnWeightLossFunction on_weight_loss_function_, Args... args) : SLRUCachePolicy(args...)
-    {
-        Base::on_weight_loss_function = on_weight_loss_function_;
-    }
-
-    size_t weight([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
+    size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const override
     {
         return current_size;
     }
 
-    size_t count([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
+    size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const override
     {
         return cells.size();
     }
@@ -61,7 +57,7 @@ public:
         return max_size;
     }
 
-    void reset([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         cells.clear();
         probationary_queue.clear();
@@ -70,7 +66,7 @@ public:
         current_protected_size = 0;
     }
 
-    void remove(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -86,7 +82,7 @@ public:
         cells.erase(it);
     }
 
-    MappedPtr get(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    MappedPtr get(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -105,14 +101,13 @@ public:
             cell.is_protected = true;
             current_protected_size += cell.size;
             protected_queue.splice(protected_queue.end(), probationary_queue, cell.queue_iterator);
+            removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         }
-
-        removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
 
         return cell.value;
     }
 
-    void set(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -165,7 +160,7 @@ protected:
 
     struct Cell
     {
-        bool is_protected;
+        bool is_protected = false;
         MappedPtr value;
         size_t size;
         SLRUQueueIterator queue_iterator;
@@ -192,7 +187,11 @@ protected:
         {
             if (is_protected)
             {
-                return ((max_elements_size != 0 && cells.size() - probationary_queue.size() > max_elements_size - probationary_queue.size())
+                /// Check if after remove all elements from probationary part there will be no more then max elements
+                /// in protected queue and weight of all protected elements will be less then max protected weight.
+                /// It's not possible to check only cells.size() > max_elements_size
+                /// because protected elements move to probationary part and still remain in cache.
+                return ((max_elements_size != 0 && cells.size() - probationary_queue.size() > max_elements_size)
                         || (current_weight_size > max_weight_size))
                     && (queue_size > 0);
             }

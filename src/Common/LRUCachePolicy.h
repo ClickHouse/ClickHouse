@@ -30,23 +30,18 @@ public:
     /** Initialize LRUCachePolicy with max_size and max_elements_size.
       * max_elements_size == 0 means no elements size restrictions.
       */
-    explicit LRUCachePolicy(size_t max_size_, size_t max_elements_size_ = 0)
+    explicit LRUCachePolicy(size_t max_size_, size_t max_elements_size_ = 0, OnWeightLossFunction on_weight_loss_function_ = {})
         : max_size(std::max(static_cast<size_t>(1), max_size_)), max_elements_size(max_elements_size_)
-    {
-    }
-
-    template <class... Args>
-    LRUCachePolicy(OnWeightLossFunction on_weight_loss_function_, Args... args) : LRUCachePolicy(args...)
     {
         Base::on_weight_loss_function = on_weight_loss_function_;
     }
 
-    size_t weight([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
+    size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const override
     {
         return current_size;
     }
 
-    size_t count([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) const override
+    size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const override
     {
         return cells.size();
     }
@@ -56,14 +51,14 @@ public:
         return max_size;
     }
 
-    void reset([[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    void reset(std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         queue.clear();
         cells.clear();
         current_size = 0;
     }
 
-    void remove(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -74,7 +69,7 @@ public:
         cells.erase(it);
     }
 
-    MappedPtr get(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    MappedPtr get(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -90,7 +85,7 @@ public:
         return cell.value;
     }
 
-    void set(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override
+    void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) override
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
