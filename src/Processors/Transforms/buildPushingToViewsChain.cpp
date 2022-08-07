@@ -410,6 +410,14 @@ Chain buildPushingToViewsChain(
     if (result_chain.empty())
         result_chain.addSink(std::make_shared<NullSinkToStorage>(storage_header));
 
+    if (result_chain.getOutputHeader().columns() != 0)
+    {
+        /// Convert result header to empty block.
+        auto dag = ActionsDAG::makeConvertingActions(result_chain.getOutputHeader().getColumnsWithTypeAndName(), {}, ActionsDAG::MatchColumnsMode::Name);
+        auto actions = std::make_shared<ExpressionActions>(std::move(dag));
+        result_chain.addSink(std::make_shared<ConvertingTransform>(result_chain.getOutputHeader(), std::move(actions)));
+    }
+
     return result_chain;
 }
 
