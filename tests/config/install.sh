@@ -98,7 +98,12 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 fi
 
+ARM="arm64"
 if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
+    if [[ "$(uname -m)" == "$ARM" ]]; then
+        ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
+    fi
+
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
 fi
