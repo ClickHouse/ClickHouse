@@ -210,14 +210,11 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
     }
 }
 
-static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePtr context, const DatabasePtr & database)
+static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePtr context, const DatabasePtr & database,
+                                            const String & name, const String tmp_name)
 {
     /// It's kind of C++ script that creates temporary database with Atomic engine,
     /// moves all tables to it, drops old database and then renames new one to old name.
-
-    String name = database->getDatabaseName();
-
-    String tmp_name = fmt::format(".tmp_convert.{}.{}", name, thread_local_rng());
 
     String name_quoted = backQuoteIfNeed(name);
     String tmp_name_quoted = backQuoteIfNeed(tmp_name);
@@ -276,6 +273,7 @@ static void convertOrdinaryDatabaseToAtomic(Poco::Logger * log, ContextMutablePt
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} is not empty after moving tables", name_quoted);
 
     String drop_query = fmt::format("DROP DATABASE {}", name_quoted);
+    context->setSetting("force_remove_data_recursively_on_drop", false);
     res = executeQuery(drop_query, context, true);
     executeTrivialBlockIO(res, context);
     res = {};
@@ -303,6 +301,17 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     if (database->getEngineName() != "Ordinary")
         return;
 
+    Strings permanently_detached_tables = database->getNamesOfPermanentlyDetachedTables();
+    if (!permanently_detached_tables.empty())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot automatically convert database {} from Ordinary to Atomic, "
+                        "because it contains permanently detached tables ({}) that were not loaded during startup. "
+                        "Attach these tables, so server will load and convert them",
+                        database_name, fmt::join(permanently_detached_tables, ", "));
+    }
+
+    String tmp_name = fmt::format(".tmp_convert.{}.{}", database_name, thread_local_rng());
+
     try
     {
         if (!tables_started)
@@ -314,7 +323,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         auto local_context = Context::createCopy(context);
         local_context->setSetting("check_table_dependencies", false);
-        convertOrdinaryDatabaseToAtomic(log, local_context, database);
+        convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);
 
         auto new_database = DatabaseCatalog::instance().getDatabase(database_name);
         UUID db_uuid = new_database->getUUID();
@@ -351,7 +360,10 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     }
     catch (Exception & e)
     {
-        e.addMessage("While trying to convert {} to Atomic", database_name);
+        e.addMessage("Exception while trying to convert database {} from Ordinary to Atomic. It may be in some intermediate state."
+            "You can finish conversion manually by moving the rest tables from {} to {} (using RENAME TABLE)"
+            "and executing DROP DATABASE {} and RENAME DATABASE {} TO {}.",
+            database_name, database_name, tmp_name, database_name, tmp_name, database_name);
         throw;
     }
 }
