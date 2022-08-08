@@ -293,7 +293,6 @@
             max-width: none;
             background-color: var(--table-hover-color);
             border: 2px solid var(--border-color);
-            display: block;
         }
 
         td.transposed
@@ -852,19 +851,6 @@
 
         const start_time = performance.now();
 
-        function tdMouseEnter(e) {
-            let elem = e.target;
-            elem.classList.add('td-hover-hysteresis');
-            elem.onmouseleave = _ => {
-                setTimeout(() => { elem && elem.classList.remove('td-hover-hysteresis') }, 1000);
-            }
-        }
-
-        function tdClick(e) {
-            let elem = e.target;
-            elem.classList.add('td-selected');
-        }
-
         let tbody = document.createElement('tbody');
         for (let row_idx in response.data) {
             let tr = document.createElement('tr');
@@ -877,8 +863,15 @@
             for (let col_idx in response.data[row_idx]) {
                 let cell = response.data[row_idx][col_idx];
                 const td = renderCell(cell, col_idx, settings);
-                td.onmouseenter = tdMouseEnter;
-                td.onclick = tdClick;
+
+                td.onclick = () => { td.classList.add('td-selected') };
+                td.onmouseenter = () => {
+                    td.classList.add('td-hover-hysteresis');
+                    td.onmouseleave = () => {
+                        setTimeout(() => { td && td.classList.remove('td-hover-hysteresis') }, 1000);
+                    };
+                };
+
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);
