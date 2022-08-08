@@ -34,7 +34,6 @@
 #include <Common/Exception.h>
 #include <base/sort.h>
 
-#include <rocksdb/db.h>
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
 #include <rocksdb/utilities/db_ttl.h>
