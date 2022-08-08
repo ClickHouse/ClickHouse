@@ -1,5 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.ssl_context import WrapSSLContextWithSNI
 import urllib.request, urllib.parse
 import ssl
 import os.path
@@ -35,19 +36,9 @@ def started_cluster():
         cluster.shutdown()
 
 
-class WrapSSLContext(ssl.SSLContext):
-    def __new__(cls, ssl_host, *args, **kwargs):
-        self = super().__new__(cls, *args, **kwargs)
-        self._server_hostname = ssl_host
-        return self
-
-    def wrap_socket(self, sock, *args, **kwargs):
-        kwargs["server_hostname"] = self._server_hostname
-        return super().wrap_socket(sock, *args, **kwargs)
-
 
 def get_ssl_context(cert_name):
-    context = WrapSSLContext(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
+    context = WrapSSLContextWithSNI(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=f"{SCRIPT_DIR}/certs/ca-cert.pem")
     if cert_name:
         context.load_cert_chain(
