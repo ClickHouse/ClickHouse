@@ -75,6 +75,9 @@
         *
         {
             box-sizing: border-box;
+            /* For iPad */
+            margin: 0;
+            border-radius: 0;
         }
 
         html, body
@@ -501,7 +504,6 @@
 
         const server_address = document.getElementById('url').value;
 
-        
         var url = server_address +
             (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
@@ -641,10 +643,9 @@
         clearElement('chart');
         clearElement('data-unparsed');
         clearElement('error');
-        clearElement('hourglass');
 
-        document.getElementById('check-mark').innerText = '';
-        document.getElementById('hourglass').innerText = '';
+        document.getElementById('check-mark').display = 'none';
+        document.getElementById('hourglass').display = 'none';
         document.getElementById('stats').innerText = '';
         document.getElementById('logo-container').style.display = 'block';
     }
