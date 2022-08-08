@@ -17,6 +17,20 @@ export RUNNER_URL="https://github.com/ClickHouse"
 INSTANCE_ID=$(ec2metadata --instance-id)
 export INSTANCE_ID
 
+# Add cloudflare DNS as a fallback
+# Get default gateway interface
+IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
+# `Link 2 (eth0): 172.31.0.2`
+ETH_DNS=$(resolvectl dns "$IFACE") || :
+CLOUDFLARE_NS=1.1.1.1
+if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
+  # Cut the leading legend
+  ETH_DNS=${ETH_DNS#*: }
+  # shellcheck disable=SC2206
+  new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
+  resolvectl dns "$IFACE" "${new_dns[@]}"
+fi
+
 # combine labels
 RUNNER_TYPE=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:runner-type'].Value" --output text)
 LABELS="self-hosted,Linux,$(uname -m),$RUNNER_TYPE"

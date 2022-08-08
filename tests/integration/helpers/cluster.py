@@ -30,6 +30,7 @@ try:
     import pymongo
     import pymysql
     import nats
+    import ssl
     import meilisearch
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
@@ -215,9 +216,27 @@ def check_rabbitmq_is_available(rabbitmq_id):
     return p.returncode == 0
 
 
-async def check_nats_is_available(nats_ip):
-    nc = await nats.connect("{}:4444".format(nats_ip), user="click", password="house")
-    return nc.is_connected
+async def check_nats_is_available(nats_port, ssl_ctx=None):
+    nc = await nats_connect_ssl(
+        nats_port, user="click", password="house", ssl_ctx=ssl_ctx
+    )
+    available = nc.is_connected
+    await nc.close()
+    return available
+
+
+async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
+    if not ssl_ctx:
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+    nc = await nats.connect(
+        "tls://localhost:{}".format(nats_port),
+        user=user,
+        password=password,
+        tls=ssl_ctx,
+    )
+    return nc
 
 
 def enable_consistent_hash_plugin(rabbitmq_id):
@@ -237,6 +256,24 @@ def enable_consistent_hash_plugin(rabbitmq_id):
     return p.returncode == 0
 
 
+def get_instances_dir(name):
+    instances_dir_name = "_instances"
+
+    worker_name = os.environ.get("PYTEST_XDIST_WORKER", "")
+    run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
+
+    if worker_name:
+        instances_dir_name += "_" + worker_name
+
+    if name:
+        instances_dir_name += "_" + name
+
+    if run_id:
+        instances_dir_name += "_" + shlex.quote(run_id)
+
+    return instances_dir_name
+
+
 def extract_test_name(base_path):
     """Extracts the name of the test based to a path to its test*.py file
     Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
@@ -247,16 +284,6 @@ def extract_test_name(base_path):
     elif name.startswith("test_") and name.endswith(".py"):
         name = name[len("test_") : (len(name) - len(".py"))]
     return name
-
-
-def get_instances_dir():
-    if (
-        "INTEGRATION_TESTS_RUN_ID" in os.environ
-        and os.environ["INTEGRATION_TESTS_RUN_ID"]
-    ):
-        return "_instances_" + shlex.quote(os.environ["INTEGRATION_TESTS_RUN_ID"])
-    else:
-        return "_instances"
 
 
 class ClickHouseCluster:
@@ -318,24 +345,14 @@ class ClickHouseCluster:
         )
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
-        instances_dir_name = "_instances"
-        if self.name:
-            instances_dir_name += "_" + self.name
-
-        if (
-            "INTEGRATION_TESTS_RUN_ID" in os.environ
-            and os.environ["INTEGRATION_TESTS_RUN_ID"]
-        ):
-            instances_dir_name += "_" + shlex.quote(
-                os.environ["INTEGRATION_TESTS_RUN_ID"]
-            )
-
-        self.instances_dir = p.join(self.base_dir, instances_dir_name)
+        self.instances_dir_name = get_instances_dir(self.name)
+        self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
         self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
+        self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(
@@ -464,9 +481,11 @@ class ClickHouseCluster:
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
 
         self.nats_host = "nats1"
-        self.nats_ip = None
         self.nats_port = 4444
         self.nats_docker_id = None
+        self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
+        self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
+        self.nats_ssl_context = None
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -551,8 +570,41 @@ class ClickHouseCluster:
         self.is_up = False
         self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
+        if p.exists(self.instances_dir):
+            shutil.rmtree(self.instances_dir, ignore_errors=True)
+            logging.debug(f"Removed :{self.instances_dir}")
+        os.mkdir(self.instances_dir)
+
+    def print_all_docker_pieces(self):
+        res_networks = subprocess.check_output(
+            f"docker network ls --filter name='{self.project_name}*'",
+            shell=True,
+            universal_newlines=True,
+        )
+        logging.debug(
+            f"Docker networks for project {self.project_name} are {res_networks}"
+        )
+        res_containers = subprocess.check_output(
+            f"docker container ls -a --filter name='{self.project_name}*'",
+            shell=True,
+            universal_newlines=True,
+        )
+        logging.debug(
+            f"Docker containers for project {self.project_name} are {res_containers}"
+        )
+        res_volumes = subprocess.check_output(
+            f"docker volume ls --filter name='{self.project_name}*'",
+            shell=True,
+            universal_newlines=True,
+        )
+        logging.debug(
+            f"Docker volumes for project {self.project_name} are {res_volumes}"
+        )
 
     def cleanup(self):
+        logging.debug("Cleanup called")
+        self.print_all_docker_pieces()
+
         if (
             os.environ
             and "DISABLE_CLEANUP" in os.environ
@@ -564,7 +616,8 @@ class ClickHouseCluster:
         # Just in case kill unstopped containers from previous launch
         try:
             unstopped_containers = self.get_running_containers()
-            if unstopped_containers:
+            logging.debug(f"Unstopped containers: {unstopped_containers}")
+            if len(unstopped_containers):
                 logging.debug(
                     f"Trying to kill unstopped containers: {unstopped_containers}"
                 )
@@ -578,26 +631,33 @@ class ClickHouseCluster:
                     logging.debug(f"Unstopped containers killed.")
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
+        except Exception as ex:
+            logging.debug(f"Got exception removing containers {str(ex)}")
+
+        # # Just in case remove unused networks
+        try:
+            logging.debug("Trying to prune unused networks...")
+
+            list_networks = subprocess.check_output(
+                f"docker network ls -q --filter name='{self.project_name}'",
+                shell=True,
+                universal_newlines=True,
+            ).splitlines()
+            if list_networks:
+                logging.debug(f"Trying to remove networks: {list_networks}")
+                run_and_check(f"docker network rm {' '.join(list_networks)}")
+                logging.debug(f"Networks removed: {list_networks}")
         except:
             pass
 
-        # # Just in case remove unused networks
-        # try:
-        #     logging.debug("Trying to prune unused networks...")
-
-        #     run_and_check(['docker', 'network', 'prune', '-f'])
-        #     logging.debug("Networks pruned")
-        # except:
-        #     pass
-
         # Remove unused images
-        # try:
-        #     logging.debug("Trying to prune unused images...")
+        try:
+            logging.debug("Trying to prune unused images...")
 
-        #     run_and_check(['docker', 'image', 'prune', '-f'])
-        #     logging.debug("Images pruned")
-        # except:
-        #     pass
+            run_and_check(["docker", "image", "prune", "-f"])
+            logging.debug("Images pruned")
+        except:
+            pass
 
         # Remove unused volumes
         try:
@@ -640,9 +700,7 @@ class ClickHouseCluster:
             f"docker container list --all --filter name='{filter_name}' --format '{format}'",
             shell=True,
         )
-        containers = dict(
-            line.split(":", 1) for line in containers.decode("utf8").splitlines()
-        )
+        containers = dict(line.split(":", 1) for line in containers.splitlines())
         return containers
 
     def copy_file_from_container_to_container(
@@ -1046,6 +1104,7 @@ class ClickHouseCluster:
         env_variables["NATS_HOST"] = self.nats_host
         env_variables["NATS_INTERNAL_PORT"] = "4444"
         env_variables["NATS_EXTERNAL_PORT"] = str(self.nats_port)
+        env_variables["NATS_CERT_DIR"] = self.nats_cert_dir
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
@@ -1818,7 +1877,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(0.5)
 
-        run_and_check(["docker-compose", "ps", "--services", "--all"])
+        run_and_check(["docker", "ps", "--all"])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
@@ -1840,7 +1899,7 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to MySQL 8 " + str(ex))
                 time.sleep(0.5)
 
-        run_and_check(["docker-compose", "ps", "--services", "--all"])
+        run_and_check(["docker", "ps", "--all"])
         raise Exception("Cannot wait MySQL 8 container")
 
     def wait_mysql_cluster_to_start(self, timeout=180):
@@ -1865,7 +1924,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(0.5)
 
-        run_and_check(["docker-compose", "ps", "--services", "--all"])
+        run_and_check(["docker", "ps", "--all"])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
@@ -1967,10 +2026,12 @@ class ClickHouseCluster:
             raise Exception("Cannot wait RabbitMQ container")
         return False
 
-    def wait_nats_is_available(self, nats_ip, max_retries=5):
+    def wait_nats_is_available(self, max_retries=5):
         retries = 0
         while True:
-            if asyncio.run(check_nats_is_available(nats_ip)):
+            if asyncio.run(
+                check_nats_is_available(self.nats_port, ssl_ctx=self.nats_ssl_context)
+            ):
                 break
             else:
                 retries += 1
@@ -2180,6 +2241,14 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Minio: %s", str(ex))
                 time.sleep(1)
 
+        try:
+            with open(os.path.join(self.minio_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_minio_cmd + ["logs"], stdout=f
+                )
+        except Exception as e:
+            logging.debug("Unable to get logs from docker.")
+
         raise Exception("Can't wait Minio to start")
 
     def wait_azurite_to_start(self, timeout=180):
@@ -2250,15 +2319,13 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Cassandra to start")
 
-    def start(self, destroy_dirs=True):
+    def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
 
-        logging.debug(
-            "Cluster start called. is_up={}, destroy_dirs={}".format(
-                self.is_up, destroy_dirs
-            )
-        )
+        logging.debug(f"Cluster start called. is_up={self.is_up}")
+        self.print_all_docker_pieces()
+
         if self.is_up:
             return
 
@@ -2268,23 +2335,9 @@ class ClickHouseCluster:
             logging.warning("Cleanup failed:{e}")
 
         try:
-            # clickhouse_pull_cmd = self.base_cmd + ['pull']
-            # print(f"Pulling images for {self.base_cmd}")
-            # retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
-
-            if destroy_dirs and p.exists(self.instances_dir):
-                logging.debug(f"Removing instances dir {self.instances_dir}")
-                shutil.rmtree(self.instances_dir)
-
             for instance in list(self.instances.values()):
-                logging.debug(
-                    (
-                        "Setup directory for instance: {} destroy_dirs: {}".format(
-                            instance.name, destroy_dirs
-                        )
-                    )
-                )
-                instance.create_dir(destroy_dir=destroy_dirs)
+                logging.debug(f"Setup directory for instance: {instance.name}")
+                instance.create_dir()
 
             _create_env_file(os.path.join(self.env_file), self.env_variables)
             self.docker_client = docker.DockerClient(
@@ -2453,11 +2506,24 @@ class ClickHouseCluster:
 
             if self.with_nats and self.base_nats_cmd:
                 logging.debug("Setup NATS")
+                os.makedirs(self.nats_cert_dir)
+                env = os.environ.copy()
+                env["NATS_CERT_DIR"] = self.nats_cert_dir
+                run_and_check(
+                    p.join(self.base_dir, "nats_certs.sh"),
+                    env=env,
+                    detach=False,
+                    nothrow=False,
+                )
+
+                self.nats_ssl_context = ssl.create_default_context()
+                self.nats_ssl_context.load_verify_locations(
+                    p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
+                )
                 subprocess_check_call(self.base_nats_cmd + common_opts)
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
-                self.nats_ip = self.get_instance_ip("nats1")
-                self.wait_nats_is_available(self.nats_ip)
+                self.wait_nats_is_available()
 
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug("Setup HDFS")
@@ -2684,12 +2750,8 @@ class ClickHouseCluster:
     def pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
-    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGSTOP', instance_name])
-
     def unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
-
-    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGCONT', instance_name])
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
@@ -3626,14 +3688,14 @@ class ClickHouseInstance:
                     "bash",
                     "-c",
                     "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql",
-                ],
+                ]
             )
             self.exec_in_container(
                 [
                     "bash",
                     "-c",
                     "echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql",
-                ],
+                ]
             )
         self.exec_in_container(
             ["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)],
@@ -3788,13 +3850,8 @@ class ClickHouseInstance:
             ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
         )
 
-    def create_dir(self, destroy_dir=True):
+    def create_dir(self):
         """Create the instance directory and all the needed files there."""
-
-        if destroy_dir:
-            self.destroy_dir()
-        elif p.exists(self.path):
-            return
 
         os.makedirs(self.path)
 
@@ -4058,10 +4115,6 @@ class ClickHouseInstance:
                     net_alias1=net_alias1,
                 )
             )
-
-    def destroy_dir(self):
-        if p.exists(self.path):
-            shutil.rmtree(self.path)
 
     def wait_for_path_exists(self, path, seconds):
         while seconds > 0:

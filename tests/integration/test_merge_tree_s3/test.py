@@ -3,15 +3,11 @@ import time
 import os
 
 import pytest
-from helpers.cluster import ClickHouseCluster, get_instances_dir
+from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(
-    SCRIPT_DIR,
-    "./{}/node/configs/config.d/storage_conf.xml".format(get_instances_dir()),
-)
 
 
 @pytest.fixture(scope="module")
@@ -24,6 +20,7 @@ def cluster():
                 "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
             ],
+            stay_alive=True,
             with_minio=True,
         )
 
@@ -577,6 +574,13 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
 
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./{}/node/configs/config.d/storage_conf.xml".format(
+            cluster.instances_dir_name
+        ),
+    )
+
     def get_s3_requests():
         node.query("SYSTEM FLUSH LOGS")
         return int(
@@ -593,7 +597,7 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     # Force multi-part upload mode.
     replace_config(
-        CONFIG_PATH,
+        config_path,
         "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
         "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
     )
@@ -709,3 +713,27 @@ def test_cache_with_full_disk_space(cluster, node_name):
         "Insert into cache is skipped due to insufficient disk space"
     )
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_store_cleanup_disk_s3(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
+    node.query(
+        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
+    )
+    node.query("INSERT INTO s3_test SELECT 1")
+
+    node.stop_clickhouse(kill=True)
+    path_to_data = "/var/lib/clickhouse/"
+    node.exec_in_container(["rm", f"{path_to_data}/metadata/default/s3_test.sql"])
+    node.start_clickhouse()
+
+    node.wait_for_log_line(
+        "Removing unused directory", timeout=90, look_behind_lines=1000
+    )
+    node.wait_for_log_line("directories from store")
+    node.query(
+        "CREATE TABLE s3_test UUID '00000000-1000-4000-8000-000000000001' (n UInt64) Engine=MergeTree() ORDER BY n SETTINGS storage_policy='s3';"
+    )
+    node.query("INSERT INTO s3_test SELECT 1")
