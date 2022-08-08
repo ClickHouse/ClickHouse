@@ -699,7 +699,7 @@ Pipe StorageFile::read(
         {
             columns_description = storage_snapshot->metadata->getColumns();
         }
-        
+
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
 
         /// In case of reading from fd we have to check whether we have already created
