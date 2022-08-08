@@ -7,11 +7,14 @@
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
 #include "validateODBCConnectionString.h"
 #include "ODBCPooledConnectionFactory.h"
 #include <sql.h>
 #include <sqlext.h>
+
+#include <charconv>
 
 
 namespace DB
@@ -39,6 +42,29 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
             *response.send() << message << std::endl;
         LOG_WARNING(log, fmt::runtime(message));
     };
+
+    if (!params.has("version"))
+    {
+        process_error("No 'version' in request URL");
+        return;
+    }
+    else
+    {
+        String version_str = params.get("version");
+        size_t version;
+        auto [_, ec] = std::from_chars(version_str.data(), version_str.data() + version_str.size(), version);
+        if (ec != std::errc())
+        {
+            process_error("Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
+            return;
+        }
+        if (version != XDBC_BRIDGE_PROTOCOL_VERSION)
+        {
+            // backwards compatibility is for now deemed unnecessary, just let the user upgrade the server and bridge to the same version
+            process_error("Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+            return;
+        }
+    }
 
     if (!params.has("connection_string"))
     {

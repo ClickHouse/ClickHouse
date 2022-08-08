@@ -59,6 +59,7 @@ Poco::URI ExternalDictionaryLibraryBridgeHelper::getMainURI() const
 Poco::URI ExternalDictionaryLibraryBridgeHelper::createRequestURI(const String & method) const
 {
     auto uri = getMainURI();
+    uri.addQueryParameter("version", std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION));
     uri.addQueryParameter("dictionary_id", toString(dictionary_id));
     uri.addQueryParameter("method", method);
     return uri;

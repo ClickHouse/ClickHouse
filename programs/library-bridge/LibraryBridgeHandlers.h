@@ -9,7 +9,6 @@
 namespace DB
 {
 
-
 /// Handler for requests to Library Dictionary Source, returns response in RowBinary format.
 /// When a library dictionary source is created, it sends 'extDict_libNew' request to library bridge (which is started on first
 /// request to it, if it was not yet started). On this request a new sharedLibrayHandler is added to a
