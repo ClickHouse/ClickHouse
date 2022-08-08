@@ -1,20 +1,13 @@
 #pragma once
 
 #include <atomic>
-#include <list>
-#include <memory>
-#include <mutex>
-#include <unordered_map>
-
-#include <base/defines.h>
-#include <base/scope_guard.h>
 
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
-#include <Access/IAccessStorage.h>
+#include <Access/MemoryAccessStorage.h>
 
 
 namespace DB
@@ -77,20 +70,13 @@ private:
     void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity) TSA_REQUIRES(mutex);
     void removeEntityNoLock(const UUID & id) TSA_REQUIRES(mutex);
 
-    struct Entry
-    {
-        UUID id;
-        AccessEntityPtr entity;
-    };
-
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
 
     mutable std::mutex mutex;
-    std::unordered_map<UUID, Entry> entries_by_id TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)] TSA_GUARDED_BY(mutex);
+    MemoryAccessStorage memory_storage TSA_GUARDED_BY(mutex);
     AccessChangesNotifier & changes_notifier;
-    bool backup_allowed = false;
+    const bool backup_allowed = false;
 };
 }

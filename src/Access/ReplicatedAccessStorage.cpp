@@ -46,6 +46,7 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
+    , memory_storage(storage_name_, changes_notifier_, false)
     , changes_notifier(changes_notifier_)
     , backup_allowed(allow_backup_)
 {
@@ -373,11 +374,6 @@ void ReplicatedAccessStorage::resetAfterError()
 
     UUID id;
     while (watched_queue->tryPop(id)) {}
-
-    std::lock_guard lock{mutex};
-    for (const auto type : collections::range(AccessEntityType::MAX))
-        entries_by_name_and_type[static_cast<size_t>(type)].clear();
-    entries_by_id.clear();
 }
 
 void ReplicatedAccessStorage::initializeZookeeper()
@@ -437,30 +433,17 @@ void ReplicatedAccessStorage::refreshEntities(const zkutil::ZooKeeperPtr & zooke
     Coordination::Stat stat;
     const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
 
-    std::unordered_set<UUID> entity_uuids;
+    std::vector<UUID> entity_uuids;
     entity_uuids.reserve(entity_uuid_strs.size());
     for (const String & entity_uuid_str : entity_uuid_strs)
-        entity_uuids.insert(parseUUID(entity_uuid_str));
+        entity_uuids.emplace_back(parseUUID(entity_uuid_str));
 
     std::lock_guard lock{mutex};
-
-    std::vector<UUID> entities_to_remove;
-    /// Locally remove entities that were removed from ZooKeeper
-    for (const auto & pair : entries_by_id)
+    memory_storage.removeAllExcept(entity_uuids);
+    for (const auto & uuid : entity_uuids)
     {
-        const UUID & entity_uuid = pair.first;
-        if (!entity_uuids.contains(entity_uuid))
-            entities_to_remove.push_back(entity_uuid);
-    }
-    for (const auto & entity_uuid : entities_to_remove)
-        removeEntityNoLock(entity_uuid);
-
-    /// Locally add entities that were added to ZooKeeper
-    for (const auto & entity_uuid : entity_uuids)
-    {
-        const auto it = entries_by_id.find(entity_uuid);
-        if (it == entries_by_id.end())
-            refreshEntityNoLock(zookeeper, entity_uuid);
+        if (!initialized || !memory_storage.exists(uuid))
+            refreshEntityNoLock(zookeeper, uuid);
     }
 
     LOG_DEBUG(getLogger(), "Refreshing entities list finished");
@@ -500,122 +483,42 @@ void ReplicatedAccessStorage::refreshEntityNoLock(const zkutil::ZooKeeperPtr & z
 void ReplicatedAccessStorage::setEntityNoLock(const UUID & id, const AccessEntityPtr & entity)
 {
     LOG_DEBUG(getLogger(), "Setting id {} to entity named {}", toString(id), entity->getName());
-    const AccessEntityType type = entity->getType();
-    const String & name = entity->getName();
-
-    /// If the type+name already exists and is a different entity, remove old entity
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    if (auto it = entries_by_name.find(name); it != entries_by_name.end() && it->second->id != id)
-    {
-        removeEntityNoLock(it->second->id);
-    }
-
-    /// If the entity already exists under a different type+name, remove old type+name
-    bool existed_before = false;
-    if (auto it = entries_by_id.find(id); it != entries_by_id.end())
-    {
-        existed_before = true;
-        const AccessEntityPtr & existing_entity = it->second.entity;
-        const AccessEntityType existing_type = existing_entity->getType();
-        const String & existing_name = existing_entity->getName();
-        if (existing_type != type || existing_name != name)
-        {
-            auto & existing_entries_by_name = entries_by_name_and_type[static_cast<size_t>(existing_type)];
-            existing_entries_by_name.erase(existing_name);
-        }
-    }
-
-    auto & entry = entries_by_id[id];
-    entry.id = id;
-    entry.entity = entity;
-    entries_by_name[name] = &entry;
-
-    if (initialized)
-    {
-        if (existed_before)
-            changes_notifier.onEntityUpdated(id, entity);
-        else
-            changes_notifier.onEntityAdded(id, entity);
-    }
+    memory_storage.insertWithID(id, entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
 }
 
 
 void ReplicatedAccessStorage::removeEntityNoLock(const UUID & id)
 {
     LOG_DEBUG(getLogger(), "Removing entity with id {}", toString(id));
-    const auto it = entries_by_id.find(id);
-    if (it == entries_by_id.end())
-    {
-        LOG_DEBUG(getLogger(), "Id {} not found, ignoring removal", toString(id));
-        return;
-    }
-
-    const Entry & entry = it->second;
-    const AccessEntityType type = entry.entity->getType();
-    const String & name = entry.entity->getName();
-
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    const auto name_it = entries_by_name.find(name);
-    if (name_it == entries_by_name.end())
-        LOG_WARNING(getLogger(), "Entity {} not found in names, ignoring removal of name", toString(id));
-    else if (name_it->second != &(it->second))
-        LOG_WARNING(getLogger(), "Name {} not pointing to entity {}, ignoring removal of name", name, toString(id));
-    else
-        entries_by_name.erase(name);
-
-    UUID removed_id = id;
-    entries_by_id.erase(id);
-    LOG_DEBUG(getLogger(), "Removed entity with id {}", toString(id));
-
-    changes_notifier.onEntityRemoved(removed_id, type);
+    memory_storage.remove(id, /* throw_if_exists= */ false);
 }
 
 
 std::optional<UUID> ReplicatedAccessStorage::findImpl(AccessEntityType type, const String & name) const
 {
     std::lock_guard lock{mutex};
-    const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    const auto it = entries_by_name.find(name);
-    if (it == entries_by_name.end())
-        return {};
-
-    const Entry * entry = it->second;
-    return entry->id;
+    return memory_storage.find(type, name);
 }
 
 
 std::vector<UUID> ReplicatedAccessStorage::findAllImpl(AccessEntityType type) const
 {
     std::lock_guard lock{mutex};
-    std::vector<UUID> result;
-    result.reserve(entries_by_id.size());
-    for (const auto & [id, entry] : entries_by_id)
-        if (entry.entity->isTypeOf(type))
-            result.emplace_back(id);
-    return result;
+    return memory_storage.findAll(type);
 }
 
 
 bool ReplicatedAccessStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return entries_by_id.contains(id);
+    return memory_storage.exists(id);
 }
 
 
 AccessEntityPtr ReplicatedAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
     std::lock_guard lock{mutex};
-    const auto it = entries_by_id.find(id);
-    if (it == entries_by_id.end())
-    {
-        if (throw_if_not_exists)
-            throwNotFound(id);
-        else
-            return nullptr;
-    }
-    const Entry & entry = it->second;
-    return entry.entity;
+    return memory_storage.read(id, throw_if_not_exists);
 }
 
 
