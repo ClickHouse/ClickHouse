@@ -18,22 +18,7 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
-static bool isSortingPreserved(const Block& header, const ActionsDAGPtr & actions, const SortDescription& sort_description)
-{
-    if (actions->hasArrayJoin())
-        return false;
-
-    const Block & output_header = actions->updateHeader(header);
-    for (const auto & desc : sort_description)
-    {
-        if (!output_header.findByName(desc.column_name))
-            return false;
-    }
-
-    return true;
-}
-
-static ITransformingStep::Traits getTraits(const Block& header, const ActionsDAGPtr & actions, const SortDescription& sort_description)
+static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const Block & header, const SortDescription & sort_description)
 {
     return ITransformingStep::Traits
     {
@@ -41,7 +26,7 @@ static ITransformingStep::Traits getTraits(const Block& header, const ActionsDAG
             .preserves_distinct_columns = !actions->hasArrayJoin(),
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = isSortingPreserved(header, actions, sort_description),
+            .preserves_sorting = actions->isSortingPreserved(header, sort_description),
         },
         {
             .preserves_number_of_rows = !actions->hasArrayJoin(),
@@ -53,7 +38,7 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
     : ITransformingStep(
         input_stream_,
         ExpressionTransform::transformHeader(input_stream_.header, *actions_dag_),
-        getTraits(input_stream_.header, actions_dag_, input_stream_.sort_description))
+        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
     , actions_dag(actions_dag_)
 {
     LOG_DEBUG(getLogger(), "ActionsDAG:\n{}", actions_dag->dumpDAG());

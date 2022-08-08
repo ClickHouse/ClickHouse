@@ -18,7 +18,9 @@ SELECT a+1 as a from optimize_sorting order by a;
 SELECT toFloat64(a) as a from optimize_sorting order by a;
 SELECT sipHash64(a) as a from optimize_sorting order by a;
 -- queries with filter+expression
--- SELECT a FROM (SELECT a FROM optimize_sorting) WHERE a != 0 ORDER BY a;
--- SELECT a FROM (SELECT sipHash64(a) AS a FROM optimize_sorting) WHERE a != 0 ORDER BY a;
+SELECT a FROM optimize_sorting WHERE a > 0 ORDER BY a;
+SELECT a > 0 FROM optimize_sorting WHERE a > 0;
+SELECT a FROM (SELECT a FROM optimize_sorting) WHERE a != 0 ORDER BY a;
+SELECT a FROM (SELECT sipHash64(a) AS a FROM optimize_sorting) WHERE a != 0 ORDER BY a;
 -- { echoOff }
 -- DROP TABLE IF EXISTS optimize_sorting;

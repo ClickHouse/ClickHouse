@@ -336,7 +336,7 @@ static void explainStep(
             settings.out << prefix << "Sort Mode: " << step.getOutputStream().sort_mode;
             if (step.getOutputStream().sort_mode != DataStream::SortMode::None)
             {
-                settings.out << ", ";
+                settings.out << ": ";
                 dumpSortDescription(step.getOutputStream().sort_description, settings.out);
             }
             settings.out.write('\n');
