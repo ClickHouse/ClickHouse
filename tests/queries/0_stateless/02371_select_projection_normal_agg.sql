@@ -47,6 +47,27 @@ INSERT INTO video_log SELECT
 FROM rng
 LIMIT 10;
 
+DROP TABLE IF EXISTS video_log_result;
+
+CREATE TABLE video_log_result
+(
+    `hour` DateTime,
+    `sum_bytes` UInt64,
+    `avg_duration` Float64
+)
+ENGINE = MergeTree
+PARTITION BY toDate(hour)
+ORDER BY sum_bytes;
+
+INSERT INTO video_log_result SELECT
+    toStartOfHour(datetime) AS hour,
+    sum(bytes),
+    avg(duration)
+FROM video_log
+WHERE (toDate(hour) = '2022-07-22') AND (device_id = '100') --(device_id = '100') Make sure it's not good and doesn't go into prewhere.
+GROUP BY hour;
+
+
 ALTER TABLE video_log ADD PROJECTION p_norm
 (
     SELECT
@@ -57,7 +78,7 @@ ALTER TABLE video_log ADD PROJECTION p_norm
     ORDER BY device_id
 );
 
-ALTER TABLE video_log MATERIALIZE PROJECTION p_norm;
+ALTER TABLE video_log MATERIALIZE PROJECTION p_norm settings mutations_sync=1;
 
 ALTER TABLE video_log ADD PROJECTION p_agg
 (
@@ -71,15 +92,33 @@ ALTER TABLE video_log ADD PROJECTION p_agg
         domain
 );
 
-ALTER TABLE video_log MATERIALIZE PROJECTION p_agg;
-
-SELECT sleep(3);
-SELECT sleep(3);
+ALTER TABLE video_log MATERIALIZE PROJECTION p_agg settings mutations_sync=1;
 
 SELECT
-    toStartOfHour(datetime) AS hour,
-    ignore(sum(bytes)),
-    ignore(avg(duration))
-FROM video_log
-WHERE (toDate(hour) = '2022-07-22') AND (device_id = '100') --(device_id = '100') Make sure it's not good and doesn't go into prewhere.
-GROUP BY hour;
+    equals(sum_bytes1, sum_bytes2),
+    equals(avg_duration1, avg_duration2)
+FROM
+(
+    SELECT
+        toStartOfHour(datetime) AS hour,
+        sum(bytes) AS sum_bytes1,
+        avg(duration) AS avg_duration1
+    FROM video_log
+    WHERE (toDate(hour) = '2022-07-22') AND (device_id = '100') --(device_id = '100') Make sure it's not good and doesn't go into prewhere.
+    GROUP BY hour
+)
+LEFT JOIN
+(
+    SELECT
+        `hour`,
+        `sum_bytes` AS sum_bytes2,
+        `avg_duration` AS avg_duration2
+    FROM video_log_result
+)
+USING (hour) settings joined_subquery_requires_alias=0;
+
+DROP TABLE IF EXISTS video_log;
+
+DROP TABLE IF EXISTS rng;
+
+DROP TABLE IF EXISTS video_log_result;
