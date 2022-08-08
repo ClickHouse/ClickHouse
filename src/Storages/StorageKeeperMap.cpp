@@ -24,7 +24,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
-#include "Common/ZooKeeper/ZooKeeper.h"
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -293,13 +293,13 @@ public:
 namespace
 {
 
-    zkutil::ZooKeeperPtr getZooKeeperClient(const std::string & hosts, const ContextPtr & context)
-    {
-        if (hosts == default_host)
-            return context->getZooKeeper()->startNewSession();
+zkutil::ZooKeeperPtr getZooKeeperClient(const std::string & hosts, const ContextPtr & context)
+{
+    if (hosts == default_host)
+        return context->getZooKeeper()->startNewSession();
 
-        return std::make_shared<zkutil::ZooKeeper>(hosts);
-    }
+    return std::make_shared<zkutil::ZooKeeper>(hosts);
+}
 
 }
 
@@ -384,7 +384,6 @@ StorageKeeperMap::StorageKeeperMap(
     {
         throw zkutil::KeeperException(status, keys_limit_path);
     }
-    LOG_INFO(&Poco::Logger::get("LOGGER"), "Keys limit set to {}", keys_limit);
 }
 
 
@@ -561,7 +560,7 @@ namespace
 StoragePtr create(const StorageFactory::Arguments & args)
 {
     ASTs & engine_args = args.engine_args;
-    if (engine_args.empty() || engine_args.size() > 3)
+    if (engine_args.empty() || engine_args.size() > 4)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage KeeperMap requires 1-4 arguments:\n"
@@ -577,7 +576,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (engine_args.size() > 1)
         hosts = checkAndGetLiteralArgument<std::string>(engine_args[1], "hosts");
 
-    [[maybe_unused]] size_t keys_limit = 0;
+    size_t keys_limit = 0;
     if (engine_args.size() > 2)
         keys_limit = checkAndGetLiteralArgument<UInt64>(engine_args[2], "keys_limit");
 
