@@ -1,0 +1,26 @@
+-- disable optimize_sorting_for_input_stream
+-- PIPELINE: sorting order is NOT propagated from subquery -> full sort
+MergeSortingTransform
+LimitsCheckingTransform
+PartialSortingTransform
+-- enable optimize_sorting_for_input_stream
+-- PIPELINE: sorting order is propagated from subquery -> merge sort
+MergeSortingTransform
+-- PLAN: ExpressionStep preserves sort mode
+Sort Mode: Stream: a ASC
+Sort Mode: Stream: a ASC
+Sort Mode: Port: a ASC
+Sort Mode: Port: a ASC
+-- PLAN: ExpressionStep breaks sort mode
+Sort Mode: Stream: plus(a, 1) ASC
+Sort Mode: Stream: plus(a, 1) ASC
+Sort Mode: None
+Sort Mode: Chunk: a ASC
+-- PLAN: FilterStep preserves sort mode
+Sort Mode: Chunk: a ASC
+Sort Mode: Chunk: a ASC
+Sort Mode: Chunk: a ASC
+-- PLAN: FilterStep breaks sort mode
+Sort Mode: None
+Sort Mode: None
+Sort Mode: Chunk: a ASC

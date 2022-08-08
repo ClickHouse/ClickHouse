@@ -235,8 +235,10 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
 
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// we consider that a caller has more information what sorting to apply (depends on what constructor was used)
-    /// so we'll try to infer what sorting to use only in case of Full sorting
+    /// We consider that a caller has more information what type of sorting to apply.
+    /// The type depends on constructor used to create sorting step.
+    /// So we'll try to infer sorting to use only in case of Full sorting
+
     if (type == Type::MergingSorted)
     {
         mergingSorted(pipeline, result_description, limit);
