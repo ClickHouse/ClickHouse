@@ -63,6 +63,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
@@ -728,12 +729,28 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 }
 
 
-void ClientBase::processOrdinaryQuery(const String & query, ASTPtr parsed_query)
+void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     if (fake_drop)
     {
         if (parsed_query->as<ASTDropQuery>())
             return;
+    }
+
+    /// Rewrite query only when we have query parameters.
+    /// Note that if query is rewritten, comments in query are lost.
+    /// But the user often wants to see comments in server logs, query log, processlist, etc.
+    /// For recent versions of the server query parameters will be transfered by network and applied on the server side.
+    auto query = query_to_execute;
+    if (!query_parameters.empty()
+        && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    {
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        ReplaceQueryParameterVisitor visitor(query_parameters);
+        visitor.visit(parsed_query);
+
+        /// Get new query after substitutions.
+        query = serializeAST(*parsed_query);
     }
 
     int retries_left = 10;
@@ -1070,8 +1087,20 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 }
 
 
-void ClientBase::processInsertQuery(const String & query, ASTPtr parsed_query)
+void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
+    auto query = query_to_execute;
+    if (!query_parameters.empty()
+        && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    {
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        ReplaceQueryParameterVisitor visitor(query_parameters);
+        visitor.visit(parsed_query);
+
+        /// Get new query after substitutions.
+        query = serializeAST(*parsed_query);
+    }
+
     /// Process the query that requires transferring data blocks to the server.
     const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
