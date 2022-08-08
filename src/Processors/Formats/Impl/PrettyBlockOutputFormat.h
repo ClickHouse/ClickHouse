@@ -63,28 +63,29 @@ private:
 template <class OutputFormat>
 void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, const String & base_name)
 {
-    for (bool no_escapes : {true, false})
+    auto creator = [&](FormatFactory & fact, const String & name, bool no_escapes, bool mono_block)
     {
-        String name = no_escapes ? base_name + "NoEscapes" : base_name;
-        for (bool mono_block : {true, false})
+        fact.registerOutputFormat(name, [no_escapes, mono_block](
+            WriteBuffer & buf,
+            const Block & sample,
+            const RowOutputFormatParams &,
+            const FormatSettings & format_settings)
         {
-            factory.registerOutputFormat(mono_block ? name + "MonoBlock" : name, [no_escapes, mono_block](
-                WriteBuffer & buf,
-                const Block & sample,
-                const RowOutputFormatParams &,
-                const FormatSettings & format_settings)
+            if (no_escapes)
             {
-                if (no_escapes)
-                {
-                    FormatSettings changed_settings = format_settings;
-                    changed_settings.pretty.color = false;
-                    return std::make_shared<OutputFormat>(buf, sample, changed_settings, mono_block);
-                }
-                return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block);
-            });
-        }
-        factory.markOutputFormatSupportsParallelFormatting(name);
-    }
+                FormatSettings changed_settings = format_settings;
+                changed_settings.pretty.color = false;
+                return std::make_shared<OutputFormat>(buf, sample, changed_settings, mono_block);
+            }
+            return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block);
+        });
+        if (!mono_block)
+            factory.markOutputFormatSupportsParallelFormatting(name);
+    };
+    creator(factory, base_name, false, false);
+    creator(factory, base_name + "NoEscapes", true, false);
+    creator(factory, base_name + "MonoBlock", false, true);
+    creator(factory, base_name + "NoEscapesMonoBlock", true, true);
 }
 
 }
