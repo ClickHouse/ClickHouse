@@ -152,20 +152,15 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
     {
         if (port_kind == PortKind::Main)
         {
-            if (!mono_chunk)
-            {
+            if (mono_chunk)
+                mono_chunk.append(chunk);
+            else
                 mono_chunk = std::move(chunk);
-                return;
-            }
-
-            mono_chunk.append(chunk);
             return;
         }
-        else
-        {
-            /// Should be written from writeSuffix()
-            assert(!mono_chunk);
-        }
+
+        /// Should be written from writeSuffix()
+        assert(!mono_chunk);
     }
 
     writeChunk(chunk, port_kind);
