@@ -6,7 +6,7 @@
 TEST(LRUCache, set)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size*/ 10, /*max_elements_size*/ 10);
+    auto lru_cache = SimpleCacheBase(/*max_size*/ 10, /*max_elements_size*/ 10, "LRU");
     lru_cache.set(1, std::make_shared<int>(2));
     lru_cache.set(2, std::make_shared<int>(3));
 
@@ -19,7 +19,7 @@ TEST(LRUCache, set)
 TEST(LRUCache, update)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size*/ 10, /*max_elements_size*/ 10);
+    auto lru_cache = SimpleCacheBase(/*max_size*/ 10, /*max_elements_size*/ 10, "LRU");
     lru_cache.set(1, std::make_shared<int>(2));
     lru_cache.set(1, std::make_shared<int>(3));
     auto val = lru_cache.get(1);
@@ -30,7 +30,7 @@ TEST(LRUCache, update)
 TEST(LRUCache, get)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size*/ 10, /*max_elements_size*/ 10);
+    auto lru_cache = SimpleCacheBase(/*max_size*/ 10, /*max_elements_size*/ 10, "LRU");
     lru_cache.set(1, std::make_shared<int>(2));
     lru_cache.set(2, std::make_shared<int>(3));
     SimpleCacheBase::MappedPtr value = lru_cache.get(1);
@@ -50,7 +50,7 @@ struct ValueWeight
 TEST(LRUCache, evictOnSize)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size*/ 20, /*max_elements_size*/ 3);
+    auto lru_cache = SimpleCacheBase(/*max_size*/ 20, /*max_elements_size*/ 3, "LRU");
     lru_cache.set(1, std::make_shared<size_t>(2));
     lru_cache.set(2, std::make_shared<size_t>(3));
     lru_cache.set(3, std::make_shared<size_t>(4));
@@ -66,7 +66,7 @@ TEST(LRUCache, evictOnSize)
 TEST(LRUCache, evictOnWeight)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size*/ 10, /*max_elements_size*/ 10);
+    auto lru_cache = SimpleCacheBase(/*max_size*/ 10, /*max_elements_size*/ 10, "LRU");
     lru_cache.set(1, std::make_shared<size_t>(2));
     lru_cache.set(2, std::make_shared<size_t>(3));
     lru_cache.set(3, std::make_shared<size_t>(4));
@@ -87,7 +87,7 @@ TEST(LRUCache, evictOnWeight)
 TEST(LRUCache, getOrSet)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto lru_cache = SimpleCacheBase("LRU", /*max_size*/ 10, /*max_elements_size*/ 10);
+    auto lru_cache = SimpleCacheBase(/*max_size*/ 10, /*max_elements_size*/ 10, "LRU");
     size_t x = 10;
     auto load_func = [&] { return std::make_shared<size_t>(x); };
     auto [value, loaded] = lru_cache.getOrSet(1, load_func);

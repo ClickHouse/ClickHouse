@@ -37,14 +37,12 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    CacheBase(size_t max_size, size_t max_elements_size = 0) : CacheBase(default_cache_policy_name, max_size, max_elements_size) {}
-
     /// TODO: Rewrite to custom struct with fields for all cache policies.
-    CacheBase(String cache_policy_name, size_t max_size, size_t max_elements_size = 0, double size_ratio = 0.5)
+    CacheBase(size_t max_size, size_t max_elements_size = 0, String cache_policy_name = "", double size_ratio = 0.5)
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
-        if (cache_policy_name == "")
+        if (cache_policy_name.empty())
         {
             cache_policy_name = default_cache_policy_name;
         }
