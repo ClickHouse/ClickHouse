@@ -32,7 +32,7 @@ IAST::~IAST()
       * Each ASTPtr child contains pointer to next child to delete.
       */
     ASTPtr delete_list_head_holder = nullptr;
-    bool delete_directly = next_to_delete_list_head == nullptr;
+    const bool delete_directly = next_to_delete_list_head == nullptr;
     ASTPtr & delete_list_head_reference = next_to_delete_list_head ? *next_to_delete_list_head : delete_list_head_holder;
 
     /// Move children into intrusive list
@@ -65,7 +65,14 @@ IAST::~IAST()
 
     while (delete_list_head_reference)
     {
-        auto next_node_to_delete = std::move(delete_list_head_reference->next_to_delete);
+        /** Extract child to delete from current list head.
+          * Child will be destroyed at the end of scope.
+          */
+        ASTPtr child_to_delete;
+        child_to_delete.swap(delete_list_head_reference);
+
+        /// Update list head
+        delete_list_head_reference = std::move(child_to_delete->next_to_delete);
 
         /** Pass list head into child before destruction.
           * It is important to properly handle cases where subclass has member same as one of its children.
@@ -79,35 +86,7 @@ IAST::~IAST()
           * If we try to move child to delete children into list before subclasses desruction,
           * first child use count will be 2.
           */
-        {
-            ASTPtr child_to_delete;
-            child_to_delete.swap(delete_list_head_reference);
-            child_to_delete->next_to_delete_list_head = &delete_list_head_reference;
-        }
-
-        /** Here we have 2 cases:
-          * 1. Child during deletion does not move any node into list, then just replace current head with next node to delete.
-          * 2. Child during deletion moved some nodes into list, then iterate list and add next to delete node in list tail.
-          */
-        if (delete_list_head_reference == nullptr)
-        {
-            delete_list_head_reference = std::move(next_node_to_delete);
-        }
-        else
-        {
-            ASTPtr delete_list_tail = delete_list_head_reference;
-
-            while (delete_list_tail)
-            {
-                if (delete_list_tail->next_to_delete == nullptr)
-                {
-                    delete_list_tail->next_to_delete = std::move(next_node_to_delete);
-                    break;
-                }
-
-                delete_list_tail = delete_list_tail->next_to_delete;
-            }
-        }
+        child_to_delete->next_to_delete_list_head = &delete_list_head_reference;
     }
 }
 
