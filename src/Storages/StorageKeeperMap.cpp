@@ -24,6 +24,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
+#include "Common/ZooKeeper/ZooKeeper.h"
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -69,6 +70,65 @@ std::string base64Decode(const std::string & encoded)
 }
 
 constexpr std::string_view default_host = "default";
+
+std::string_view getBaseName(const std::string_view path)
+{
+    auto last_slash = path.find_last_of('/');
+    if (last_slash == std::string_view::npos)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get basename of path '{}'", path);
+
+    return path.substr(last_slash + 1);
+}
+
+struct ZooKeeperLock
+{
+    explicit ZooKeeperLock(std::string lock_path_, zkutil::ZooKeeperPtr client_)
+        : lock_path(std::move(lock_path_)), client(std::move(client_))
+    {
+        lock();
+    }
+
+    ~ZooKeeperLock()
+    {
+        if (locked)
+            unlock();
+    }
+
+    void lock()
+    {
+        assert(!locked);
+        sequence_path = client->create(std::filesystem::path(lock_path) / "lock-", "", zkutil::CreateMode::EphemeralSequential);
+        auto node_name = getBaseName(sequence_path);
+
+        while (true)
+        {
+            auto children = client->getChildren(lock_path);
+            assert(!children.empty());
+            ::sort(children.begin(), children.end());
+
+            auto node_it = std::find(children.begin(), children.end(), node_name);
+            if (node_it == children.begin())
+            {
+                locked = true;
+                return;
+            }
+
+            client->waitForDisappear(*(node_it - 1));
+        }
+    }
+
+    void unlock()
+    {
+        assert(locked);
+        client->remove(sequence_path);
+    }
+
+private:
+    std::string lock_path;
+    std::string sequence_path;
+    zkutil::ZooKeeperPtr client;
+    bool locked{false};
+};
 
 }
 
@@ -117,16 +177,58 @@ public:
     void onFinish() override
     {
         auto & zookeeper = storage.getClient();
-        Coordination::Requests requests;
-        for (const auto & [key, value] : new_values)
-        {
-            auto path = storage.fullPathForKey(key);
 
-            if (zookeeper->exists(path))
-                requests.push_back(zkutil::makeSetRequest(path, value, -1));
-            else
-                requests.push_back(zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent));
+        auto keys_limit = storage.keysLimit();
+
+        Coordination::Requests requests;
+
+        if (!keys_limit)
+        {
+            for (const auto & [key, value] : new_values)
+            {
+                auto path = storage.fullPathForKey(key);
+
+                if (zookeeper->exists(path))
+                    requests.push_back(zkutil::makeSetRequest(path, value, -1));
+                else
+                    requests.push_back(zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent));
+            }
         }
+        else
+        {
+            ZooKeeperLock lock(storage.lockPath(), zookeeper);
+
+            auto children = zookeeper->getChildren(storage.rootKeeperPath());
+            std::unordered_set<std::string_view> children_set(children.begin(), children.end());
+
+            size_t created_nodes = 0;
+            for (const auto & [key, value] : new_values)
+            {
+                auto path = storage.fullPathForKey(key);
+
+                if (children_set.contains(key))
+                {
+                    requests.push_back(zkutil::makeSetRequest(path, value, -1));
+                }
+                else
+                {
+                    requests.push_back(zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent));
+                    ++created_nodes;
+                }
+            }
+
+            size_t keys_num_after_insert = children.size() - 1 + created_nodes;
+            if (keys_limit && keys_num_after_insert > keys_limit)
+            {
+                throw Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot insert values. {} key would be created setting the total keys number to {} exceeding the limit of {}",
+                    created_nodes,
+                    keys_num_after_insert,
+                    keys_limit);
+            }
+        }
+
 
         zookeeper->multi(requests);
     }
@@ -191,13 +293,13 @@ public:
 namespace
 {
 
-zkutil::ZooKeeperPtr getZooKeeperClient(const std::string & hosts, const ContextPtr & context)
-{
-    if (hosts == default_host)
-        return context->getZooKeeper()->startNewSession();
+    zkutil::ZooKeeperPtr getZooKeeperClient(const std::string & hosts, const ContextPtr & context)
+    {
+        if (hosts == default_host)
+            return context->getZooKeeper()->startNewSession();
 
-    return std::make_shared<zkutil::ZooKeeper>(hosts);
-}
+        return std::make_shared<zkutil::ZooKeeper>(hosts);
+    }
 
 }
 
@@ -208,7 +310,8 @@ StorageKeeperMap::StorageKeeperMap(
     std::string_view primary_key_,
     std::string_view keeper_path_,
     const std::string & hosts,
-    bool create_missing_root_path)
+    bool create_missing_root_path,
+    size_t keys_limit_)
     : IKeyValueStorage(table_id), keeper_path(keeper_path_), primary_key(primary_key_), zookeeper_client(getZooKeeperClient(hosts, context))
 {
     setInMemoryMetadata(metadata);
@@ -219,6 +322,7 @@ StorageKeeperMap::StorageKeeperMap(
         throw Exception("keeper_path should start with '/'", ErrorCodes::BAD_ARGUMENTS);
 
     auto client = getClient();
+
     if (keeper_path != "/" && !client->exists(keeper_path))
     {
         if (!create_missing_root_path)
@@ -241,12 +345,46 @@ StorageKeeperMap::StorageKeeperMap(
                     throw Exception("keeper_path is invalid, contains subsequent '/'", ErrorCodes::BAD_ARGUMENTS);
 
                 auto path = keeper_path.substr(0, cur_pos);
-                auto status = client->tryCreate(path, "", zkutil::CreateMode::Persistent);
-                if (status != Coordination::Error::ZOK && status != Coordination::Error::ZNODEEXISTS)
-                    throw zkutil::KeeperException(status, path);
+                client->createIfNotExists(path, "");
             } while (cur_pos != std::string_view::npos);
         }
     }
+
+    // create metadata nodes
+    std::filesystem::path root_path{keeper_path};
+
+    auto metadata_path_fs = root_path / "__ch_metadata";
+    metadata_path = metadata_path_fs;
+    client->createIfNotExists(metadata_path, "");
+
+    lock_path = metadata_path_fs / "lock";
+    client->createIfNotExists(lock_path, "");
+
+    auto keys_limit_path = metadata_path_fs / "keys_limit";
+    auto status = client->tryCreate(keys_limit_path, toString(keys_limit_), zkutil::CreateMode::Persistent);
+    if (status == Coordination::Error::ZNODEEXISTS)
+    {
+        auto data = client->get(keys_limit_path, nullptr, nullptr);
+        UInt64 stored_keys_limit = parse<UInt64>(data);
+        if (stored_keys_limit != keys_limit_)
+        {
+            keys_limit = stored_keys_limit;
+            LOG_WARNING(
+                &Poco::Logger::get("StorageKeeperMap"),
+                "Keys limit is already set for {} to {}. Going to use already set value",
+                keeper_path,
+                stored_keys_limit);
+        }
+    }
+    else if (status == Coordination::Error::ZOK)
+    {
+        keys_limit = keys_limit_;
+    }
+    else
+    {
+        throw zkutil::KeeperException(status, keys_limit_path);
+    }
+    LOG_INFO(&Poco::Logger::get("LOGGER"), "Keys limit set to {}", keys_limit);
 }
 
 
@@ -254,7 +392,7 @@ Pipe StorageKeeperMap::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr /*context*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
@@ -266,7 +404,7 @@ Pipe StorageKeeperMap::read(
 
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
     auto primary_key_type = sample_block.getByName(primary_key).type;
-    std::tie(filtered_keys, all_scan) = getFilterKeys(primary_key, primary_key_type, query_info);
+    std::tie(filtered_keys, all_scan) = getFilterKeys(primary_key, primary_key_type, query_info, context);
 
     const auto process_keys = [&]<typename KeyContainerPtr>(KeyContainerPtr keys) -> Pipe
     {
@@ -329,6 +467,16 @@ std::string StorageKeeperMap::fullPathForKey(const std::string_view key) const
     return fmt::format("{}/{}", keeper_path, key);
 }
 
+const std::string & StorageKeeperMap::lockPath() const
+{
+    return lock_path;
+}
+
+UInt64 StorageKeeperMap::keysLimit() const
+{
+    return keys_limit;
+}
+
 Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map) const
 {
     if (keys.size() != 1)
@@ -361,7 +509,14 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
 
     for (const auto & key : keys)
     {
-        values.emplace_back(client->asyncTryGet(fullPathForKey(key)));
+        const auto full_path = fullPathForKey(key);
+        if (full_path == metadata_path)
+        {
+            values.emplace_back();
+            continue;
+        }
+
+        values.emplace_back(client->asyncTryGet(full_path));
     }
 
     auto wait_until = std::chrono::system_clock::now() + std::chrono::milliseconds(Coordination::DEFAULT_OPERATION_TIMEOUT_MS);
@@ -369,6 +524,9 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
     for (size_t i = 0; i < keys.size(); ++i)
     {
         auto & value = values[i];
+        if (!value.valid())
+            continue;
+
         if (value.wait_until(wait_until) != std::future_status::ready)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Failed to fetch values: timeout");
 
@@ -440,7 +598,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_shared<StorageKeeperMap>(
-        args.getContext(), args.table_id, metadata, primary_key_names[0], keeper_path, hosts, create_missing_root_path);
+        args.getContext(), args.table_id, metadata, primary_key_names[0], keeper_path, hosts, create_missing_root_path, keys_limit);
 }
 }
 

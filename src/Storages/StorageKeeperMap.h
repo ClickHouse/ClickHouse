@@ -25,7 +25,8 @@ public:
         std::string_view primary_key_,
         std::string_view keeper_path_,
         const std::string & hosts,
-        bool create_missing_root_path);
+        bool create_missing_root_path,
+        size_t keys_limit);
 
     Pipe read(
         const Names & column_names,
@@ -56,9 +57,15 @@ public:
     const std::string & rootKeeperPath() const;
     std::string fullPathForKey(std::string_view key) const;
 
+    const std::string & lockPath() const;
+    UInt64 keysLimit() const;
+
 private:
     std::string keeper_path;
     std::string primary_key;
+    std::string metadata_path;
+    std::string lock_path;
+    UInt64 keys_limit{0};
 
     mutable zkutil::ZooKeeperPtr zookeeper_client;
 };
