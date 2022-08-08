@@ -16,17 +16,19 @@ class WriteBuffer;
 /// See Progress.
 struct ProgressValues
 {
-    size_t read_rows;
-    size_t read_bytes;
+    UInt64 read_rows;
+    UInt64 read_bytes;
 
-    size_t total_rows_to_read;
-    size_t total_bytes_to_read;
+    UInt64 total_rows_to_read;
+    UInt64 total_bytes_to_read;
 
-    size_t written_rows;
-    size_t written_bytes;
+    UInt64 written_rows;
+    UInt64 written_bytes;
 
-    size_t result_rows;
-    size_t result_bytes;
+    UInt64 result_rows;
+    UInt64 result_bytes;
+
+    UInt64 elapsed_ns;
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
@@ -35,39 +37,39 @@ struct ProgressValues
 
 struct ReadProgress
 {
-    size_t read_rows;
-    size_t read_bytes;
-    size_t total_rows_to_read;
+    UInt64 read_rows;
+    UInt64 read_bytes;
+    UInt64 total_rows_to_read;
 
-    ReadProgress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
+    ReadProgress(UInt64 read_rows_, UInt64 read_bytes_, UInt64 total_rows_to_read_ = 0)
         : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
 };
 
 struct WriteProgress
 {
-    size_t written_rows;
-    size_t written_bytes;
+    UInt64 written_rows;
+    UInt64 written_bytes;
 
-    WriteProgress(size_t written_rows_, size_t written_bytes_)
+    WriteProgress(UInt64 written_rows_, UInt64 written_bytes_)
         : written_rows(written_rows_), written_bytes(written_bytes_) {}
 };
 
 struct ResultProgress
 {
-    size_t result_rows;
-    size_t result_bytes;
+    UInt64 result_rows;
+    UInt64 result_bytes;
 
-    ResultProgress(size_t result_rows_, size_t result_bytes_)
+    ResultProgress(UInt64 result_rows_, UInt64 result_bytes_)
         : result_rows(result_rows_), result_bytes(result_bytes_) {}
 };
 
 struct FileProgress
 {
     /// Here read_bytes (raw bytes) - do not equal ReadProgress::read_bytes, which are calculated according to column types.
-    size_t read_bytes;
-    size_t total_bytes_to_read;
+    UInt64 read_bytes;
+    UInt64 total_bytes_to_read;
 
-    explicit FileProgress(size_t read_bytes_, size_t total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
+    explicit FileProgress(UInt64 read_bytes_, UInt64 total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
 };
 
 
@@ -77,24 +79,26 @@ struct FileProgress
   */
 struct Progress
 {
-    std::atomic<size_t> read_rows {0};        /// Rows (source) processed.
-    std::atomic<size_t> read_bytes {0};       /// Bytes (uncompressed, source) processed.
+    std::atomic<UInt64> read_rows {0};        /// Rows (source) processed.
+    std::atomic<UInt64> read_bytes {0};       /// Bytes (uncompressed, source) processed.
 
     /** How much rows/bytes must be processed, in total, approximately. Non-zero value is sent when there is information about
       * some new part of job. Received values must be summed to get estimate of total rows to process.
       */
-    std::atomic<size_t> total_rows_to_read {0};
-    std::atomic<size_t> total_bytes_to_read {0};
+    std::atomic<UInt64> total_rows_to_read {0};
+    std::atomic<UInt64> total_bytes_to_read {0};
 
-    std::atomic<size_t> written_rows {0};
-    std::atomic<size_t> written_bytes {0};
+    std::atomic<UInt64> written_rows {0};
+    std::atomic<UInt64> written_bytes {0};
 
-    std::atomic<size_t> result_rows {0};
-    std::atomic<size_t> result_bytes {0};
+    std::atomic<UInt64> result_rows {0};
+    std::atomic<UInt64> result_bytes {0};
+
+    std::atomic<UInt64> elapsed_ns {0};
 
     Progress() = default;
 
-    Progress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
+    Progress(UInt64 read_rows_, UInt64 read_bytes_, UInt64 total_rows_to_read_ = 0)
         : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
 
     explicit Progress(ReadProgress read_progress)
