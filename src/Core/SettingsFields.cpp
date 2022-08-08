@@ -156,29 +156,85 @@ template struct SettingFieldNumber<bool>;
 
 namespace
 {
-    UInt64 stringToMaxThreads(const String & str)
+    bool isAutoSetting(const String & str)
+    {
+        return startsWith(str, "auto");
+    }
+
+    bool isAutoSetting(const Field & f)
+    {
+        return f.getType() == Field::Types::String && isAutoSetting(f.get<const String &>());
+    }
+
+    template <typename T>
+    T stringToNumberWithAuto(const String & str)
     {
         if (startsWith(str, "auto"))
             return 0;
-        return parseFromString<UInt64>(str);
+        return parseFromString<T>(str);
     }
 
-    UInt64 fieldToMaxThreads(const Field & f)
+    template <typename T>
+    T fieldToNumberWithAuto(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return stringToMaxThreads(f.get<const String &>());
+            return stringToNumberWithAuto<T>(f.get<const String &>());
         else
-            return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), f);
+            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 }
 
-SettingFieldMaxThreads::SettingFieldMaxThreads(const Field & f) : SettingFieldMaxThreads(fieldToMaxThreads(f))
+template <typename T>
+SettingFieldNumberWithAuto<T>::SettingFieldNumberWithAuto(const Field & f)
+    : is_auto(isAutoSetting(f)), value(fieldToNumberWithAuto<T>(f))
+{
+}
+
+template <typename T>
+SettingFieldNumberWithAuto<T> & SettingFieldNumberWithAuto<T>::operator=(const Field & f)
+{
+    is_auto = isAutoSetting(f);
+    value = fieldToNumberWithAuto<T>(f);
+    return *this;
+}
+
+template <typename T>
+String SettingFieldNumberWithAuto<T>::toString() const
+{
+    if (is_auto)
+        return "auto";
+    else
+        return ::DB::toString(value);
+}
+
+template <typename T>
+void SettingFieldNumberWithAuto<T>::parseFromString(const String & str)
+{
+    is_auto = isAutoSetting(str);
+    value = stringToNumberWithAuto<T>(str);
+}
+
+template <typename T>
+void SettingFieldNumberWithAuto<T>::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(toString(), out);
+}
+
+template <typename T>
+void SettingFieldNumberWithAuto<T>::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in);
+    parseFromString(str);
+}
+
+SettingFieldMaxThreads::SettingFieldMaxThreads(const Field & f) : SettingFieldMaxThreads(fieldToNumberWithAuto<UInt64>(f))
 {
 }
 
 SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 {
-    *this = fieldToMaxThreads(f);
+    *this = fieldToNumberWithAuto<UInt64>(f);
     return *this;
 }
 
@@ -192,7 +248,7 @@ String SettingFieldMaxThreads::toString() const
 
 void SettingFieldMaxThreads::parseFromString(const String & str)
 {
-    *this = stringToMaxThreads(str);
+    *this = stringToNumberWithAuto<UInt64>(str);
 }
 
 void SettingFieldMaxThreads::writeBinary(WriteBuffer & out) const
