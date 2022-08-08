@@ -12,12 +12,6 @@
 namespace DB
 {
 
-static Poco::Logger * getLogger()
-{
-    static Poco::Logger & logger = Poco::Logger::get("ExpressionStep");
-    return &logger;
-}
-
 static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const Block & header, const SortDescription & sort_description)
 {
     return ITransformingStep::Traits
@@ -41,8 +35,6 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
         getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
     , actions_dag(actions_dag_)
 {
-    LOG_DEBUG(getLogger(), "ActionsDAG:\n{}", actions_dag->dumpDAG());
-
     /// Some columns may be removed by expression.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }

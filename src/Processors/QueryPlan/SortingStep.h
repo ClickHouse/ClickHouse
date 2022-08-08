@@ -65,11 +65,11 @@ private:
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
-        bool skip_partial_sort = false); /// if chunks already sorted according to result_sort_desc, then skip chunk sorting
+        bool skip_partial_sort = false);
 
     enum class Type
     {
-        Auto,
+        Full,
         FinishSorting,
         MergingSorted,
     };
