@@ -80,7 +80,7 @@ if __name__ == "__main__":
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
         event = json.load(event_file)
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo(event)
     commit = get_commit(gh, pr_info.sha)
 
