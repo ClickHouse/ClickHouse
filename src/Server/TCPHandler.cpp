@@ -195,7 +195,6 @@ void TCPHandler::runImpl()
             break;
         }
 
-        Stopwatch watch;
         state.reset();
 
         /// Initialized later.
@@ -374,7 +373,7 @@ void TCPHandler::runImpl()
 
                 /// Send final progress
                 ///
-                /// NOTE: we cannot send Progress for regular INSERT (w/ VALUES)
+                /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
                 /// without breaking protocol compatibility, but it can be done
                 /// by increasing revision.
                 sendProgress();
@@ -385,8 +384,7 @@ void TCPHandler::runImpl()
             /// Do it before sending end of stream, to have a chance to show log message in client.
             query_scope->logPeakMemoryUsage();
 
-            watch.stop();
-            LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
+            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
             query_duration_already_logged = true;
 
             if (state.is_connection_closed)
@@ -500,6 +498,11 @@ void TCPHandler::runImpl()
             LOG_WARNING(log, "Can't skip data packets after query failure.");
         }
 
+        if (!query_duration_already_logged)
+        {
+            LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
+        }
+
         try
         {
             /// QueryState should be cleared before QueryScope, since otherwise
@@ -515,12 +518,6 @@ void TCPHandler::runImpl()
              *  For example, a pipeline could run in multiple threads, and an exception could occur in each of them.
              *  Ignore it.
              */
-        }
-
-        if (!query_duration_already_logged)
-        {
-            watch.stop();
-            LOG_DEBUG(log, "Processed in {} sec.", watch.elapsedSeconds());
         }
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
@@ -1782,6 +1779,9 @@ void TCPHandler::sendProgress()
 {
     writeVarUInt(Protocol::Server::Progress, *out);
     auto increment = state.progress.fetchValuesAndResetPiecewiseAtomically();
+    UInt64 current_elapsed_ns = state.watch.elapsedNanoseconds();
+    increment.elapsed_ns = current_elapsed_ns - state.prev_elapsed_ns;
+    state.prev_elapsed_ns = current_elapsed_ns;
     increment.write(*out, client_tcp_protocol_version);
     out->next();
 }
