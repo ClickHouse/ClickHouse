@@ -19,4 +19,4 @@ select a, b, c, sum(a) as s
 from remote('127.0.0.{1,2}', currentDatabase(), t_2354_dist_with_external_aggr)
 group by a, b, c
 format Null
-settings max_memory_usage = '4G';
+settings max_memory_usage = '4Gi';
