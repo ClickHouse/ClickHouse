@@ -5,7 +5,7 @@
 #include <Storages/IKVStorage.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include "Common/PODArray_fwd.h"
+#include <Common/PODArray_fwd.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <span>
