@@ -39,12 +39,11 @@ bool Ipv4Compare::convertImpl(String & out, IParser::Pos & pos)
     const auto lhs = getArgument(function_name, pos);
     const auto rhs = getArgument(function_name, pos);
     const auto mask = getOptionalArgument(function_name, pos);
-
     out = std::format(
-        "multiIf(isNull({0} as lhs_ip_{5}) or isNull({1} as lhs_mask_{5}), null, "
-        "isNull({2} as rhs_ip_{5}) or isNull({3} as rhs_mask_{5}), null, "
-        "ignore(toUInt8(min2({4}, min2(assumeNotNull(lhs_mask_{5}), assumeNotNull(rhs_mask_{5})))) as mask_{5}), null, "
-        "sign(toInt64(tupleElement(IPv4CIDRToRange(assumeNotNull(lhs_ip_{5}), mask_{5}), 1))"
+        "if(isNull({0} as lhs_ip_{5}) or isNull({1} as lhs_mask_{5}) "
+        "or isNull({2} as rhs_ip_{5}) or isNull({3} as rhs_mask_{5}), null, "
+        "sign(toInt64(tupleElement(IPv4CIDRToRange(assumeNotNull(lhs_ip_{5}), "
+        "toUInt8(min2({4}, min2(assumeNotNull(lhs_mask_{5}), assumeNotNull(rhs_mask_{5})))) as mask_{5}), 1))"
         "   - toInt64(tupleElement(IPv4CIDRToRange(assumeNotNull(rhs_ip_{5}), mask_{5}), 1))))",
         kqlCallToExpression("parse_ipv4", {lhs}, pos.max_depth),
         kqlCallToExpression("ipv4_netmask_suffix", {lhs}, pos.max_depth),
@@ -64,8 +63,8 @@ bool Ipv4IsInRange::convertImpl(String & out, IParser::Pos & pos)
     const auto ip_address = getArgument(function_name, pos);
     const auto ip_range = getArgument(function_name, pos);
     out = std::format(
-        "multiIf(isNull(IPv4StringToNumOrNull({0}) as ip_{3}), null, "
-        "isNull({1} as range_start_ip_{3}) or isNull({2} as range_mask_{3}), null, "
+        "if(isNull(IPv4StringToNumOrNull({0}) as ip_{3}) "
+        "or isNull({1} as range_start_ip_{3}) or isNull({2} as range_mask_{3}), null, "
         "bitXor(range_start_ip_{3}, bitAnd(ip_{3}, bitNot(toUInt32(intExp2(32 - range_mask_{3}) - 1)))) = 0)",
         ip_address,
         kqlCallToExpression("parse_ipv4", {ip_range}, pos.max_depth),
@@ -83,7 +82,6 @@ bool Ipv4IsMatch::convertImpl(String & out, IParser::Pos & pos)
     const auto lhs = getArgument(function_name, pos);
     const auto rhs = getArgument(function_name, pos);
     const auto mask = getOptionalArgument(function_name, pos);
-
     out = std::format("{} = 0", kqlCallToExpression("ipv4_compare", {lhs, rhs, mask ? *mask : "32"}, pos.max_depth));
     return true;
 }
@@ -97,26 +95,30 @@ bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto ip_address = getArgument(function_name, pos);
+    const auto unique_identifier = generateUniqueIdentifier();
 
     out += std::format(
-        "multiIf(length(splitByChar('/', {0}) as tokens_{1}) > 2 or isNull(toIPv4OrNull(tokens_{1}[1]) as nullable_ip_{1}), null, "
-        "length(tokens_{1}) = 2 and isNull(toUInt8OrNull(tokens_{1}[-1]) as mask_{1}), null, "
+        "multiIf(length(splitByChar('/', {0}) as tokens_{1}) > 2 or isNull(toIPv4OrNull(tokens_{1}[1]) as nullable_ip_{1}) "
+        "or length(tokens_{1}) = 2 and isNull(toUInt8OrNull(tokens_{1}[-1]) as mask_{1}), null, "
         "ignore(assumeNotNull(nullable_ip_{1}) as ip_{1}, "
         "IPv4CIDRToRange(ip_{1}, assumeNotNull(mask_{1})) as range_{1}, IPv4NumToString(tupleElement(range_{1}, 1)) as begin_{1}, "
         "IPv4NumToString(tupleElement(range_{1}, 2)) as end_{1}), null, ",
         ip_address,
-        generateUniqueIdentifier());
+        unique_identifier);
     for (int i = 0; i < std::ssize(s_private_subnets); ++i)
     {
+        if (i > 0)
+            out += " or";
+
         const auto & subnet = s_private_subnets[i];
         out += std::format(
             "length(tokens_{1}) = 1 and isIPAddressInRange(IPv4NumToString(ip_{1}), '{0}') or "
-            "isIPAddressInRange(begin_{1}, '{0}') and isIPAddressInRange(end_{1}, '{0}'), true, ",
+            "length(tokens_{1}) = 2 and isIPAddressInRange(begin_{1}, '{0}') and isIPAddressInRange(end_{1}, '{0}')",
             subnet,
-            generateUniqueIdentifier());
+            unique_identifier);
     }
 
-    out += "false)";
+    out += ")";
     return true;
 }
 
@@ -214,8 +216,8 @@ bool FormatIpv4::convertImpl(String & out, IParser::Pos & pos)
     const auto ip_address = getArgument(function_name, pos);
     const auto mask = getOptionalArgument(function_name, pos);
     out = std::format(
-        "ifNull(multiIf(isNotNull(toUInt32OrNull(toString({0})) as param_as_uint32_{3}) and toTypeName({0}) = 'String' or {1} < 0, null, "
-        "isNull(ifNull(param_as_uint32_{3}, {2}) as ip_as_number_{3}), null, "
+        "ifNull(if(isNotNull(toUInt32OrNull(toString({0})) as param_as_uint32_{3}) and toTypeName({0}) = 'String' or {1} < 0 "
+        "or isNull(ifNull(param_as_uint32_{3}, {2}) as ip_as_number_{3}), null, "
         "IPv4NumToString(bitAnd(ip_as_number_{3}, bitNot(toUInt32(intExp2(32 - {1}) - 1))))), '')",
         ip_address,
         mask ? *mask : "32",
