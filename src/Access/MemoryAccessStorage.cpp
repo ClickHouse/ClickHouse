@@ -90,6 +90,9 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
     auto it_by_name = entries_by_name.find(name);
     bool name_collision = (it_by_name != entries_by_name.end());
+    UUID id_by_name;
+    if (name_collision)
+        id_by_name = it_by_name->second->id;
 
     if (name_collision && !replace_if_exists)
     {
@@ -100,16 +103,43 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     }
 
     auto it_by_id = entries_by_id.find(id);
-    if (it_by_id != entries_by_id.end())
+    bool id_collision = (it_by_id != entries_by_id.end());
+    if (id_collision && !replace_if_exists)
     {
         const auto & existing_entry = it_by_id->second;
-        throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
+        if (throw_if_exists)
+            throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
+        else
+            return false;
     }
 
-    if (name_collision && replace_if_exists)
+    /// Remove collisions if necessary.
+    if (name_collision && (id_by_name != id))
     {
-        const auto & existing_entry = *(it_by_name->second);
-        removeNoLock(existing_entry.id, /* throw_if_not_exists = */ false);
+        assert(replace_if_exists);
+        removeNoLock(id_by_name, /* throw_if_not_exists = */ false);
+    }
+    
+    if (id_collision)
+    {
+        assert(replace_if_exists);
+        auto & existing_entry = it_by_id->second;
+        if (existing_entry.entity->getType() == new_entity->getType())
+        {
+            if (existing_entry.entity->getName() != new_entity->getName())
+            {
+                entries_by_name.erase(existing_entry.entity->getName());
+                bool inserted = entries_by_name.emplace(new_entity->getName(), &existing_entry).second;
+                assert(inserted);
+            }
+            if (*existing_entry.entity != *new_entity)
+            {
+                existing_entry.entity = new_entity;
+                changes_notifier.onEntityUpdated(id, new_entity);
+            }
+            return true;
+        }
+        removeNoLock(id, /* throw_if_not_exists = */ false);
     }
 
     /// Do insertion.
@@ -198,6 +228,28 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
 
     changes_notifier.onEntityUpdated(id, new_entity);
     return true;
+}
+
+
+void MemoryAccessStorage::removeAllExcept(const std::vector<UUID> & ids_to_keep)
+{
+    std::lock_guard lock{mutex};
+    removeAllExceptNoLock(ids_to_keep);
+}
+
+void MemoryAccessStorage::removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep)
+{
+    boost::container::flat_set<UUID> ids_to_keep_set{ids_to_keep.begin(), ids_to_keep.end()};
+    for (auto it = entries_by_id.begin(); it != entries_by_id.end();)
+    {
+        const auto & id = it->first;
+        ++it;
+        if (!ids_to_keep_set.contains(id))
+        {
+            UUID id_to_remove = id;
+            removeNoLock(id_to_remove, /* throw_if_not_exists */ false);
+        }
+    }
 }
 
 
