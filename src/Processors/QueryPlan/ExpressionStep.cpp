@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -7,7 +6,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
-#include "Core/SortDescription.h"
 
 namespace DB
 {
