@@ -285,4 +285,9 @@ If you are not interested in functionality provided by third-party libraries, yo
 -DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
 ```
 
+Compressing the binary at the end of the build may take a while, disable the self-extraction feature via
+```
+-DENABLE_CLICKHOUSE_SELF_EXTRACTING=0
+```
+
 In case of problems with any of the development options, you are on your own!
