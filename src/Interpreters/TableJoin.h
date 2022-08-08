@@ -140,7 +140,7 @@ private:
 
     std::shared_ptr<StorageJoin> right_storage_join;
 
-    std::shared_ptr<IKeyValueEntity> right_kv_storage;
+    std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
     std::string right_storage_name;
 
@@ -304,14 +304,14 @@ public:
     void setRightStorageName(const std::string & storage_name);
     const std::string & getRightStorageName() const;
 
-    void setStorageJoin(std::shared_ptr<IKeyValueEntity> storage);
+    void setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() { return right_storage_join; }
 
     bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
 
-    std::shared_ptr<IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
+    std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 };
 
 }

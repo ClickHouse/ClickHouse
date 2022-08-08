@@ -5,16 +5,18 @@
 
 #include <Core/Names.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/castColumn.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
 
-
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -52,7 +54,7 @@ enum class DictionarySpecialKeyType
 /**
  * Base class for Dictionaries implementation.
  */
-class IDictionary : public IExternalLoadable
+class IDictionary : public IExternalLoadable, public IKeyValueEntity
 {
 public:
     explicit IDictionary(const StorageID & dictionary_id_)
@@ -289,6 +291,11 @@ public:
         std::lock_guard lock{mutex};
         return dictionary_comment;
     }
+
+    /// IKeyValueEntity implementation
+    Names getPrimaryKey() const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & out_null_map, const Names & result_names) const override;
+    Block getSampleBlock(const Names & result_names) const override;
 
 private:
     mutable std::mutex mutex;
