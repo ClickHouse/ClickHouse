@@ -859,9 +859,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             for (const auto & kv : stage.column_to_updated)
             {
                 auto column_name = kv.second->getColumnName();
-                const auto & dag_node = actions->findInIndex(column_name);
+                const auto & dag_node = actions->findInOutputs(column_name);
                 const auto & alias = actions->addAlias(dag_node, kv.first);
-                actions->addOrReplaceInIndex(alias);
+                actions->addOrReplaceInOutputs(alias);
             }
         }
 
