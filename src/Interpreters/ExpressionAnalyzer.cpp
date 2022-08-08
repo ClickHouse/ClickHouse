@@ -1100,7 +1100,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
                 rename_dag->getIndex()[pos] = &alias;
             }
         }
-
+        rename_dag->projectInput();
         auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
