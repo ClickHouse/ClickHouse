@@ -84,7 +84,7 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
     const auto & expression = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
 
-    const auto * filter_node = expression->tryFindInIndex(filter_column_name);
+    const auto * filter_node = expression->tryFindInOutputs(filter_column_name);
     if (!filter_node && !filter->removesFilterColumn())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
@@ -102,7 +102,8 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
     /// Expression/Filter -> Aggregating -> Filter -> Something
 
     /// New filter column is the first one.
-    String split_filter_column_name = split_filter->getIndex().front()->result_name;
+    String split_filter_column_name = split_filter->getOutputs().front()->result_name;
+
     node.step = std::make_unique<FilterStep>(
         node.children.at(0)->step->getOutputStream(), split_filter, std::move(split_filter_column_name), can_remove_filter);
 
