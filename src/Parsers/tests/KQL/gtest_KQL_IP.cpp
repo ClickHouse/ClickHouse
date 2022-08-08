@@ -1,4 +1,4 @@
-#include "gtest_common.h"
+#include <Parsers/tests/gtest_common.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
