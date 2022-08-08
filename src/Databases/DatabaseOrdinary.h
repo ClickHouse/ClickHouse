@@ -36,6 +36,8 @@ public:
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
+    Strings getNamesOfPermanentlyDetachedTables() const override { return permanently_detached_tables; }
+
 protected:
     virtual void commitAlterTable(
         const StorageID & table_id,
@@ -43,6 +45,8 @@ protected:
         const String & table_metadata_path,
         const String & statement,
         ContextPtr query_context);
+
+    Strings permanently_detached_tables;
 };
 
 }

@@ -126,6 +126,7 @@ def create_some_tables(db):
     node.query(
         "CREATE TABLE {}.merge (n int) ENGINE=Merge('{}', '(mt)|(mv)')".format(db, db)
     )
+    node.query("CREATE TABLE {}.detached (n int) ENGINE=Log".format(db))
 
 
 def check_convert_all_dbs_to_atomic():
@@ -145,7 +146,7 @@ def check_convert_all_dbs_to_atomic():
     node.query("CREATE DATABASE mem ENGINE=Memory")
     node.query("CREATE DATABASE lazy ENGINE=Lazy(1)")
 
-    tables_with_data = ["mt1", "mt2", "rmt1", "rmt2", "mv1", "mv2"]
+    tables_with_data = ["mt1", "mt2", "rmt1", "rmt2", "mv1", "mv2", "detached"]
 
     for db in ["ordinary", "other", "atomic"]:
         create_some_tables(db)
@@ -181,6 +182,18 @@ def check_convert_all_dbs_to_atomic():
     assert "8\t{}\n".format(8 * len("atomic")) == node.query(
         "SELECT count(), sum(n) FROM atomic.merge".format(db)
     )
+
+    node.query("DETACH TABLE ordinary.detached PERMANENTLY")
+
+    node.exec_in_container(
+        ["bash", "-c", f"touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+    )
+    node.restart_clickhouse()
+
+    assert "Ordinary\n" == node.query(
+        "SELECT engine FROM system.databases where name='ordinary'"
+    )
+    node.query("ATTACH TABLE ordinary.detached")
 
     node.exec_in_container(
         ["bash", "-c", f"touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
@@ -218,6 +231,9 @@ def check_convert_all_dbs_to_atomic():
     for db in ["ordinary", "other", "atomic"]:
         assert "16\t{}\n".format(16 * len(db) * 2) == node.query(
             "SELECT count(), sum(n) FROM {}.merge".format(db)
+        )
+        assert "2\t{}\n".format(2 * len(db) * 2) == node.query(
+            "SELECT count(), sum(n) FROM {}.detached".format(db)
         )
 
 

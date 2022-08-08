@@ -223,6 +223,13 @@ public:
         throw Exception("There is no DETACH TABLE PERMANENTLY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Returns list of table names that were permanently detached.
+    /// This list may not be updated in runtime and may be filled only on server startup
+    virtual Strings getNamesOfPermanentlyDetachedTables() const
+    {
+        throw Exception("Cannot get names of permanently detached tables for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(
         ContextPtr /*context*/,
