@@ -44,7 +44,10 @@ void SortColumnDescription::explain(JSONBuilder::JSONMap & map) const
 
 bool SortDescription::hasPrefix(const SortDescription & prefix) const
 {
-    if (prefix.empty() || prefix.size() > size())
+    if (prefix.empty())
+        return true;
+
+    if (prefix.size() > size())
         return false;
 
     for (size_t i = 0; i < prefix.size(); ++i)
