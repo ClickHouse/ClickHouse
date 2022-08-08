@@ -1338,8 +1338,6 @@ EOF
     set -x
 }
 
-# clickhouse may be compressed - run once to decompress
-/workspace/right/clickhouse ||:
 # Check that local and client are in PATH
 clickhouse-local --version > /dev/null
 clickhouse-client --version > /dev/null
