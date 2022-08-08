@@ -23,6 +23,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
+#include <Common/getMultipleKeysFromConfig.h>
 
 namespace DB
 {
@@ -259,7 +260,7 @@ void KeeperServer::forceRecovery()
     raft_instance->update_params(params);
 }
 
-void KeeperServer::launchRaftServer(bool enable_ipv6)
+void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
 {
     nuraft::raft_params params;
     params.heart_beat_interval_
@@ -311,10 +312,25 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
 
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
-    asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
 
-    if (!asio_listener)
-        return;
+    std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
+
+    if (listen_hosts.empty())
+    {
+        auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
+        if (!asio_listener)
+            return;
+        asio_listeners.emplace_back(std::move(asio_listener));
+    }
+    else
+    {
+        for (const auto & listen_host : listen_hosts)
+        {
+            auto asio_listener = asio_service->create_rpc_listener(listen_host, state_manager->getPort(), logger);
+            if (asio_listener)
+                asio_listeners.emplace_back(std::move(asio_listener));
+        }
+    }
 
     nuraft::ptr<nuraft::delayed_task_scheduler> scheduler = asio_service;
     nuraft::ptr<nuraft::rpc_client_factory> rpc_cli_factory = asio_service;
@@ -324,14 +340,18 @@ void KeeperServer::launchRaftServer(bool enable_ipv6)
 
     /// raft_server creates unique_ptr from it
     nuraft::context * ctx
-        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listener, logger, rpc_cli_factory, scheduler, params);
+        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
     nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
-    asio_listener->listen(casted_raft_server);
+
+    for (const auto & asio_listener : asio_listeners)
+    {
+        asio_listener->listen(casted_raft_server);
+    }
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
@@ -364,7 +384,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     last_local_config = state_manager->parseServersConfiguration(config, true).cluster_config;
 
-    launchRaftServer(enable_ipv6);
+    launchRaftServer(config, enable_ipv6);
 
     keeper_context->server_state = KeeperContext::Phase::RUNNING;
 }
@@ -388,10 +408,13 @@ void KeeperServer::shutdownRaftServer()
 
     raft_instance.reset();
 
-    if (asio_listener)
+    for (const auto & asio_listener : asio_listeners)
     {
-        asio_listener->stop();
-        asio_listener->shutdown();
+        if (asio_listener)
+        {
+            asio_listener->stop();
+            asio_listener->shutdown();
+        }
     }
 
     if (asio_service)
