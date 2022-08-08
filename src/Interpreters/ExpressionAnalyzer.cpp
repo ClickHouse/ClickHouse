@@ -1008,7 +1008,6 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
-std::shared_ptr<DirectKeyValueJoin> tryDictJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block, ContextPtr context);
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block);
 
 static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
@@ -1017,10 +1016,7 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> ana
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
     {
-        JoinPtr direct_join = nullptr;
-        direct_join = direct_join ? direct_join : tryKeyValueJoin(analyzed_join, right_sample_block);
-        direct_join = direct_join ? direct_join : tryDictJoin(analyzed_join, right_sample_block, context);
-
+        JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
         if (direct_join)
         {
             /// Do not need to execute plan for right part, it's ready.
@@ -1112,67 +1108,6 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     return joined_plan;
 }
 
-std::shared_ptr<DirectKeyValueJoin> tryDictJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block, ContextPtr context)
-{
-    bool allowed_inner = isInner(analyzed_join->kind()) && analyzed_join->strictness() == JoinStrictness::All;
-    bool allowed_left = isLeft(analyzed_join->kind()) && (analyzed_join->strictness() == JoinStrictness::Any ||
-                                                          analyzed_join->strictness() == JoinStrictness::All ||
-                                                          analyzed_join->strictness() == JoinStrictness::Semi ||
-                                                          analyzed_join->strictness() == JoinStrictness::Anti);
-    if (!allowed_inner && !allowed_left)
-    {
-        LOG_TRACE(getLogger(), "Can't use dictionary join: {} {} is not supported",
-            analyzed_join->kind(), analyzed_join->strictness());
-        return nullptr;
-    }
-
-    if (analyzed_join->getClauses().size() != 1 || analyzed_join->getClauses()[0].key_names_right.size() != 1)
-    {
-        LOG_TRACE(getLogger(), "Can't use dictionary join: only one key is supported");
-        return nullptr;
-    }
-
-    const auto & right_key = analyzed_join->getOnlyClause().key_names_right[0];
-
-    const auto & dictionary_name = analyzed_join->getRightStorageName();
-    if (dictionary_name.empty())
-    {
-        LOG_TRACE(getLogger(), "Can't use dictionary join: dictionary was not found");
-        return nullptr;
-    }
-
-    FunctionDictHelper dictionary_helper(context);
-
-    auto dictionary = dictionary_helper.getDictionary(dictionary_name);
-    if (!dictionary)
-    {
-        LOG_TRACE(getLogger(), "Can't use dictionary join: dictionary was not found");
-        return nullptr;
-    }
-
-    const auto & dict_keys = dictionary->getStructure().getKeysNames();
-    if (dict_keys.size() != 1 || dict_keys[0] != analyzed_join->getOriginalName(right_key))
-    {
-        LOG_TRACE(getLogger(), "Can't use dictionary join: join key '{}' doesn't natch to dictionary key ({})",
-            right_key, fmt::join(dict_keys, ", "));
-        return nullptr;
-    }
-
-    Names attr_names;
-    for (const auto & col : right_sample_block)
-    {
-        if (col.name == right_key)
-            continue;
-
-        const auto & original_name = analyzed_join->getOriginalName(col.name);
-        if (dictionary->getStructure().hasAttribute(original_name))
-            attr_names.push_back(original_name);
-    }
-
-    auto dict_reader = std::make_shared<DictionaryJoinAdapter>(dictionary, attr_names);
-    return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, dict_reader);
-}
-
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block)
 {
     if (!analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
@@ -1180,19 +1115,17 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
 
     auto storage = analyzed_join->getStorageKeyValue();
     if (!storage)
-    {
         return nullptr;
-    }
 
-    if (!isInnerOrLeft(analyzed_join->kind()))
+    bool allowed_inner = isInner(analyzed_join->kind()) && analyzed_join->strictness() == JoinStrictness::All;
+    bool allowed_left = isLeft(analyzed_join->kind()) && (analyzed_join->strictness() == JoinStrictness::Any ||
+                                                          analyzed_join->strictness() == JoinStrictness::All ||
+                                                          analyzed_join->strictness() == JoinStrictness::Semi ||
+                                                          analyzed_join->strictness() == JoinStrictness::Anti);
+    if (!allowed_inner && !allowed_left)
     {
-        return nullptr;
-    }
-
-    if (analyzed_join->strictness() != JoinStrictness::All &&
-        analyzed_join->strictness() != JoinStrictness::Any &&
-        analyzed_join->strictness() != JoinStrictness::RightAny)
-    {
+        LOG_TRACE(getLogger(), "Can't use direct join: {} {} is not supported",
+            analyzed_join->kind(), analyzed_join->strictness());
         return nullptr;
     }
 
@@ -1205,6 +1138,7 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
 
     if (!only_one_key)
     {
+        LOG_TRACE(getLogger(), "Can't use direct join: only one key is supported");
         return nullptr;
     }
 
@@ -1213,6 +1147,8 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
     const auto & storage_primary_key = storage->getPrimaryKey();
     if (storage_primary_key.size() != 1 || storage_primary_key[0] != original_key_name)
     {
+        LOG_TRACE(getLogger(), "Can't use direct join: join key '{}' doesn't match to storage key ({})",
+            original_key_name, fmt::join(storage_primary_key, ", "));
         return nullptr;
     }
 

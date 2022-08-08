@@ -559,7 +559,8 @@ std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<
 
 Chunk StorageEmbeddedRocksDB::getByKeys(
     const ColumnsWithTypeAndName & keys,
-    PaddedPODArray<UInt8> & null_map) const
+    PaddedPODArray<UInt8> & null_map,
+    const Names &) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageEmbeddedRocksDB supports only one key, got: {}", keys.size());
@@ -572,7 +573,7 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     return getBySerializedKeys(raw_keys, &null_map);
 }
 
-Block StorageEmbeddedRocksDB::getSampleBlock() const
+Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
 {
     auto metadata = getInMemoryMetadataPtr();
     return metadata ? metadata->getSampleBlock() : Block();

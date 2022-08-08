@@ -63,9 +63,9 @@ public:
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
     Names getPrimaryKey() const override { return {primary_key}; }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map) const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
 
-    Block getSampleBlock() const override;
+    Block getSampleBlock(const Names &) const override;
 
     /// Return chunk with data for given serialized keys.
     /// If out_null_map is passed, fill it with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
