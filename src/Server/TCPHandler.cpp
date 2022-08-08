@@ -377,6 +377,7 @@ void TCPHandler::runImpl()
                 /// without breaking protocol compatibility, but it can be done
                 /// by increasing revision.
                 sendProgress();
+                sendSelectProfileEvents();
             }
 
             state.io.onFinish();
