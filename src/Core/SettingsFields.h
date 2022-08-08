@@ -59,10 +59,46 @@ using SettingFieldFloat = SettingFieldNumber<float>;
 using SettingFieldBool = SettingFieldNumber<bool>;
 
 
-/** Unlike SettingFieldUInt64, supports the value of 'auto' - the number of processor cores without taking into account SMT.
-  * A value of 0 is also treated as auto.
-  * When serializing, `auto` is written in the same way as 0.
+/** Like SettingFieldNumber, but also supports the value of 'auto'.
+  * Note: 0 and 'auto' are not equal. By default when 'auto' is set the value is set to 0.
+  * But if you need to distinguish between 0 and 'auto', you can use the 'is_auto' flag.
+  * Serialized as string.
   */
+template <typename T>
+struct SettingFieldNumberWithAuto
+{
+    using Type = T;
+
+    bool is_auto;
+    T value;
+    bool changed = false;
+
+    explicit SettingFieldNumberWithAuto() : is_auto(true), value(0)  {}
+    explicit SettingFieldNumberWithAuto(T x) : is_auto(false), value(x)  {}
+    explicit SettingFieldNumberWithAuto(const Field & f);
+
+    SettingFieldNumberWithAuto & operator=(T x) { is_auto = false; value = x; changed = true; return *this; }
+    SettingFieldNumberWithAuto & operator=(const Field & f);
+
+    operator T() const { return value; } /// NOLINT
+    explicit operator Field() const { return is_auto ? Field("auto") : Field(value); }
+
+    String toString() const;
+    void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+
+    T valueOr(T default_value) const { return is_auto ? default_value : value; }
+};
+
+using SettingFieldUInt64WithAuto = SettingFieldNumberWithAuto<UInt64>;
+using SettingFieldInt64WithAuto = SettingFieldNumberWithAuto<Int64>;
+
+/* Similar to SettingFieldNumberWithAuto with small differences to behave like regular UInt64, supported to compatibility.
+ * When setting to 'auto' it becames equal to  the number of processor cores without taking into account SMT.
+ * A value of 0 is also treated as 'auto', so 'auto' is parsed and serialized in the same way as 0.
+ */
 struct SettingFieldMaxThreads
 {
     bool is_auto;
