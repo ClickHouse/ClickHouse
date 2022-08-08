@@ -303,6 +303,8 @@ public:
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs);
 
+    bool isSortingPreserved(const Block & header, const SortDescription & sort_description) const;
+
 private:
     Node & addNode(Node node);
 

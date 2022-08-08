@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Core/SortDescription.h>
 
 #include <stack>
 #include <base/sort.h>
@@ -1921,6 +1922,23 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
 
     removeUnusedActions(false);
     return actions;
+}
+
+bool ActionsDAG::isSortingPreserved(const Block & header, const SortDescription & sort_description) const
+{
+    if (sort_description.empty())
+        return true;
+
+    if (hasArrayJoin())
+        return false;
+
+    const Block & output_header = updateHeader(header);
+    for (const auto & desc : sort_description)
+    {
+        if (!output_header.findByName(desc.column_name))
+            return false;
+    }
+    return true;
 }
 
 }
