@@ -60,6 +60,8 @@ public:
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
+        const ActionsDAGPtr & added_filter,
+        const std::string & added_filter_column_name,
         ContextPtr context,
         unsigned num_streams,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;

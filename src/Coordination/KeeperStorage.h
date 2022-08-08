@@ -73,10 +73,11 @@ public:
     enum DigestVersion : uint8_t
     {
         NO_DIGEST = 0,
-        V0 = 1
+        V1 = 1,
+        V2 = 2  // added system nodes that modify the digest on startup so digest from V0 is invalid
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V0;
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
 
     struct ResponseForSession
     {
@@ -380,7 +381,7 @@ public:
         int64_t new_last_zxid,
         bool check_acl = true,
         std::optional<Digest> digest = std::nullopt);
-    void rollbackRequest(int64_t rollback_zxid);
+    void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
 
     void finalize();
 
