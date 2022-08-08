@@ -740,7 +740,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
-    /// For recent versions of the server query parameters will be transfered by network and applied on the server side.
+    /// For recent versions of the server query parameters will be transferred by network and applied on the server side.
     auto query = query_to_execute;
     if (!query_parameters.empty()
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
