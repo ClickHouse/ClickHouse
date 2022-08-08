@@ -1,0 +1,39 @@
+1
+2
+3
+1
+2
+3
+majority_insert_quorum	1	1	Choose number_of_replicas/2 + 1 as insert_quorum. Note if insert_quorum and majority_insert_quorum both are specified max(insert_quorum, number_of_replicas/2+1) will be used	\N	\N	0	Bool
+majority_insert_quorum	0	1	Choose number_of_replicas/2 + 1 as insert_quorum. Note if insert_quorum and majority_insert_quorum both are specified max(insert_quorum, number_of_replicas/2+1) will be used	\N	\N	0	Bool
+majority_insert_quorum	1	1	Choose number_of_replicas/2 + 1 as insert_quorum. Note if insert_quorum and majority_insert_quorum both are specified max(insert_quorum, number_of_replicas/2+1) will be used	\N	\N	0	Bool
+1
+1
+1
+1
+1
+1
+1
+2
+3
+1
+2
+3
+1
+2
+3
+11
+11
+11
+11
+11
+11
+11
+12
+13
+11
+12
+13
+11
+12
+13
