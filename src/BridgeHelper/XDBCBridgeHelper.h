@@ -53,6 +53,8 @@ class XDBCBridgeHelper : public IXDBCBridgeHelper
 
 public:
     static constexpr inline auto DEFAULT_PORT = BridgeHelperMixin::DEFAULT_PORT;
+    static constexpr inline auto PING_HANDLER = "/ping";
+    static constexpr inline auto MAIN_HANDLER = "/";
     static constexpr inline auto COL_INFO_HANDLER = "/columns_info";
     static constexpr inline auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
@@ -72,6 +74,22 @@ public:
     }
 
 protected:
+    Poco::URI getPingURI() const override
+    {
+        auto uri = createBaseURI();
+        uri.setPath(PING_HANDLER);
+        return uri;
+    }
+
+
+    Poco::URI getMainURI() const override
+    {
+        auto uri = createBaseURI();
+        uri.setPath(MAIN_HANDLER);
+        return uri;
+    }
+
+
     bool bridgeHandShake() override
     {
         try

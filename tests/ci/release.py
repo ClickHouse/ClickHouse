@@ -96,10 +96,17 @@ class Release:
 
     def check_prerequisites(self):
         """
-        Check tooling installed in the system
+        Check tooling installed in the system, `git` is checked by Git() init
         """
-        self.run("gh auth status")
-        self.run("git status")
+        try:
+            self.run("gh auth status")
+        except subprocess.SubprocessError:
+            logging.error(
+                "The github-cli either not installed or not setup, please follow "
+                "the instructions on https://github.com/cli/cli#installation and "
+                "https://cli.github.com/manual/"
+            )
+            raise
 
     def do(self, check_dirty: bool, check_branch: bool, with_release_branch: bool):
         self.check_prerequisites()
@@ -141,6 +148,7 @@ class Release:
                 with self.stable():
                     logging.info("Stable part of the releasing is done")
 
+        self.log_post_workflows()
         self.log_rollback()
 
     def check_no_tags_after(self):
@@ -178,12 +186,21 @@ class Release:
 
     def log_rollback(self):
         if self._rollback_stack:
-            rollback = self._rollback_stack
+            rollback = self._rollback_stack.copy()
             rollback.reverse()
             logging.info(
                 "To rollback the action run the following commands:\n  %s",
                 "\n  ".join(rollback),
             )
+
+    def log_post_workflows(self):
+        logging.info(
+            "To verify all actions are running good visit the following links:\n  %s",
+            "\n  ".join(
+                f"https://github.com/{self.repo}/actions/workflows/{action}.yml"
+                for action in ("release", "tags_stable")
+            ),
+        )
 
     @contextmanager
     def create_release_branch(self):
@@ -335,7 +352,7 @@ class Release:
             yield
         except (Exception, KeyboardInterrupt):
             logging.warning("Rolling back checked out %s for %s", ref, orig_ref)
-            self.run(f"git reset --hard; git checkout {orig_ref}")
+            self.run(f"git reset --hard; git checkout -f {orig_ref}")
             raise
         else:
             if with_checkout_back and need_rollback:

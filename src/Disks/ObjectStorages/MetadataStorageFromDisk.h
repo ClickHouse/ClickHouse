@@ -39,6 +39,12 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
+    bool supportsChmod() const override { return disk->supportsChmod(); }
+
+    bool supportsStat() const override { return disk->supportsStat(); }
+
+    struct stat stat(const String & path) const override { return disk->stat(path); }
+
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
@@ -93,6 +99,10 @@ public:
     void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
+
+    bool supportsChmod() const override { return metadata_storage.supportsChmod(); }
+
+    void chmod(const String & path, mode_t mode) override;
 
     void setReadOnly(const std::string & path) override;
 
