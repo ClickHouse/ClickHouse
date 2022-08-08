@@ -183,21 +183,27 @@ protected:
         size_t current_weight_lost = 0;
         size_t queue_size = queue.size();
 
-        auto need_remove = [&]() -> bool
+        std::function<bool()> need_remove;
+        if (is_protected)
         {
-            if (is_protected)
+            /// Check if after remove all elements from probationary part there will be no more than max elements
+            /// in protected queue and weight of all protected elements will be less then max protected weight.
+            /// It's not possible to check only cells.size() > max_elements_size
+            /// because protected elements move to probationary part and still remain in cache.
+            need_remove = [&]()
             {
-                /// Check if after remove all elements from probationary part there will be no more than max elements
-                /// in protected queue and weight of all protected elements will be less then max protected weight.
-                /// It's not possible to check only cells.size() > max_elements_size
-                /// because protected elements move to probationary part and still remain in cache.
                 return ((max_elements_size != 0 && cells.size() - probationary_queue.size() > max_elements_size)
-                        || (current_weight_size > max_weight_size))
-                    && (queue_size > 0);
-            }
-            return ((max_elements_size != 0 && cells.size() > max_elements_size) || (current_weight_size > max_weight_size))
-                && (queue_size > 0);
-        };
+                || (current_weight_size > max_weight_size)) && (queue_size > 0);
+            };
+        }
+        else
+        {
+            need_remove = [&]()
+            {
+                return ((max_elements_size != 0 && cells.size() > max_elements_size)
+                || (current_weight_size > max_weight_size)) && (queue_size > 0);
+            };
+        }
 
         while (need_remove())
         {

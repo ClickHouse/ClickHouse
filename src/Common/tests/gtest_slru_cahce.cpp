@@ -6,7 +6,7 @@
 TEST(SLRUCache, set)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<int>(2));
     slru_cache.set(2, std::make_shared<int>(3));
 
@@ -19,7 +19,7 @@ TEST(SLRUCache, set)
 TEST(SLRUCache, update)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<int>(2));
     slru_cache.set(1, std::make_shared<int>(3));
 
@@ -31,7 +31,7 @@ TEST(SLRUCache, update)
 TEST(SLRUCache, get)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<int>(2));
     slru_cache.set(2, std::make_shared<int>(3));
 
@@ -47,7 +47,7 @@ TEST(SLRUCache, get)
 TEST(SLRUCache, remove)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<int>(2));
     slru_cache.set(2, std::make_shared<int>(3));
 
@@ -63,7 +63,7 @@ TEST(SLRUCache, remove)
 TEST(SLRUCache, removeFromProtected)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/2, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/2, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<int>(2));
     slru_cache.set(1, std::make_shared<int>(3));
 
@@ -96,7 +96,7 @@ TEST(SLRUCache, removeFromProtected)
 TEST(SLRUCache, reset)
 {
     using SimpleCacheBase = DB::CacheBase<int, int>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<int>(2));
     slru_cache.set(2, std::make_shared<int>(3));
 
@@ -119,7 +119,7 @@ struct ValueWeight
 TEST(SLRUCache, evictOnElements)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/1);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/1, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<size_t>(2));
     slru_cache.set(2, std::make_shared<size_t>(3));
 
@@ -140,7 +140,7 @@ TEST(SLRUCache, evictOnElements)
 TEST(SLRUCache, evictOnWeight)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<size_t>(2));
     slru_cache.set(2, std::make_shared<size_t>(3));
     slru_cache.set(3, std::make_shared<size_t>(4));
@@ -161,7 +161,7 @@ TEST(SLRUCache, evictOnWeight)
 TEST(SLRUCache, evictFromProtectedPart)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<size_t>(2));
     slru_cache.set(1, std::make_shared<size_t>(2));
 
@@ -177,7 +177,7 @@ TEST(SLRUCache, evictFromProtectedPart)
 TEST(SLRUCache, evictStreamProtected)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     slru_cache.set(1, std::make_shared<size_t>(2));
     slru_cache.set(1, std::make_shared<size_t>(2));
 
@@ -201,7 +201,7 @@ TEST(SLRUCache, evictStreamProtected)
 TEST(SLRUCache, getOrSet)
 {
     using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
-    auto slru_cache = SimpleCacheBase("SLRU", /*max_total_size=*/10, /*max_elements_size=*/0, /*size_ratio*/0.5);
+    auto slru_cache = SimpleCacheBase(/*max_total_size=*/10, /*max_elements_size=*/0, "SLRU", /*size_ratio*/0.5);
     size_t x = 5;
     auto load_func = [&] { return std::make_shared<size_t>(x); };
     auto [value, loaded] = slru_cache.getOrSet(1, load_func);
