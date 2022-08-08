@@ -4,16 +4,16 @@ import urllib.request, urllib.parse
 import ssl
 import os.path
 
+
+# The test cluster is configured with certificate for that host name, see 'server-cert.pem'.
+# The client have to verify server certificate against that name. Client uses SNI
+SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
-# It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
-NODE_IP = "10.5.172.77"  # Never copy-paste this line
-NODE_IP_WITH_HTTPS_PORT = NODE_IP + ":" + str(HTTPS_PORT)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "node",
-    ipv4_address=NODE_IP,
     main_configs=[
         "configs/ssl_config.xml",
         "certs/server-key.pem",
@@ -35,8 +35,19 @@ def started_cluster():
         cluster.shutdown()
 
 
+class WrapSSLContext(ssl.SSLContext):
+    def __new__(cls, ssl_host, *args, **kwargs):
+        self = super().__new__(cls, *args, **kwargs)
+        self._server_hostname = ssl_host
+        return self
+
+    def wrap_socket(self, sock, *args, **kwargs):
+        kwargs["server_hostname"] = self._server_hostname
+        return super().wrap_socket(sock, *args, **kwargs)
+
+
 def get_ssl_context(cert_name):
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context = WrapSSLContext(SSL_HOST, ssl.PROTOCOL_TLS_CLIENT)
     context.load_verify_locations(cafile=f"{SCRIPT_DIR}/certs/ca-cert.pem")
     if cert_name:
         context.load_cert_chain(
@@ -51,7 +62,7 @@ def get_ssl_context(cert_name):
 def execute_query_https(
     query, user, enable_ssl_auth=True, cert_name=None, password=None
 ):
-    url = f"https://{NODE_IP_WITH_HTTPS_PORT}/?query={urllib.parse.quote(query)}"
+    url = f"https://{instance.ip_address}:{HTTPS_PORT}/?query={urllib.parse.quote(query)}"
     request = urllib.request.Request(url)
     request.add_header("X-ClickHouse-User", user)
     if enable_ssl_auth:

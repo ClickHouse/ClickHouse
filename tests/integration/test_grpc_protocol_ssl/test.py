@@ -4,9 +4,10 @@ import sys
 import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 
+# The test cluster is configured with certificate for that host name, see 'server-cert.pem'.
+# The client have to verify server certificate against that name. Client uses SNI
 SSL_HOST = "integration-tests.clickhouse.com"
 GRPC_PORT = 9100
-# It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
