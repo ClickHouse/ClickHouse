@@ -5,6 +5,7 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Common/BridgeProtocolVersion.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
@@ -18,6 +19,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <IO/ReadBufferFromString.h>
+#include <charconv>
 
 
 namespace DB
@@ -89,6 +91,29 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
+
+    if (!params.has("version"))
+    {
+        processError(response, "No 'version' in request URL");
+        return;
+    }
+    else
+    {
+        String version_str = params.get("version");
+        size_t version;
+        auto [_, ec] = std::from_chars(version_str.data(), version_str.data() + version_str.size(), version);
+        if (ec != std::errc())
+        {
+            processError(response, "Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
+            return;
+        }
+        if (version != LIBRARY_BRIDGE_PROTOCOL_VERSION)
+        {
+            // backwards compatibility is for now deemed unnecessary, just let the user upgrade the server and bridge to the same version
+            processError(response, "Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+            return;
+        }
+    }
 
     if (!params.has("method"))
     {
@@ -361,6 +386,7 @@ void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerReque
         }
 
         std::string dictionary_id = params.get("dictionary_id");
+
         auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
 
         String res = library_handler ? "1" : "0";

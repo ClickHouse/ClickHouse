@@ -6,6 +6,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <BridgeHelper/IBridgeHelper.h>
+#include <Common/BridgeProtocolVersion.h>
 
 namespace DB
 {

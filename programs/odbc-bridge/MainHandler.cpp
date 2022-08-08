@@ -17,10 +17,12 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Common/config.h>
 
+#include <charconv>
 #include <mutex>
 #include <memory>
 
@@ -54,6 +56,29 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 {
     HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());
+
+    if (!params.has("version"))
+    {
+        processError(response, "No 'version' in request URL");
+        return;
+    }
+    else
+    {
+        String version_str = params.get("version");
+        size_t version;
+        auto [_, ec] = std::from_chars(version_str.data(), version_str.data() + version_str.size(), version);
+        if (ec != std::errc())
+        {
+            processError(response, "Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
+            return;
+        }
+        if (version != XDBC_BRIDGE_PROTOCOL_VERSION)
+        {
+            // backwards compatibility is for now deemed unnecessary, just let the user upgrade the server and bridge to the same version
+            processError(response, "Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+            return;
+        }
+    }
 
     if (mode == "read")
         params.read(request.getStream());
