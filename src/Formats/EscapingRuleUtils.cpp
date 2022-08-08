@@ -288,8 +288,13 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
             }
         }
 
-        /// If we have date/datetimes and smth else, convert them to string.
         /// If we have only dates and datetimes, convert dates to datetime.
+        /// If we have date/datetimes and smth else, convert them to string, because
+        /// There is a special case when we inferred both Date/DateTime and Int64 from Strings,
+        /// for example: "arr: ["2020-01-01", "2000"]" -> Tuple(Date, Int64),
+        /// so if we have Date/DateTime and smth else (not only String) we should
+        /// convert Date/DateTime back to String, so then we will be able to
+        /// convert Int64 back to String as well.
         if (settings.try_infer_dates || settings.try_infer_datetimes)
         {
             bool have_dates = false;
@@ -349,6 +354,9 @@ void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings 
 
         if (settings.json.read_bools_as_numbers)
         {
+            /// Note that have_floats and have_integers both cannot be
+            /// equal to true as in one of previous checks we convert
+            /// integers to floats if we have both.
             bool have_floats = false;
             bool have_integers = false;
             bool have_bools = false;
