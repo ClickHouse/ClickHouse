@@ -5,7 +5,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/IKVStorage.h>
 #include <rocksdb/status.h>
-#include "base/types.h"
 
 
 namespace rocksdb
