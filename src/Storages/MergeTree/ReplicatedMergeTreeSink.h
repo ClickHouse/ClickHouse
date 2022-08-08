@@ -32,6 +32,7 @@ public:
         size_t max_parts_per_block_,
         bool quorum_parallel_,
         bool deduplicate_,
+        bool majority_quorum_,
         ContextPtr context_,
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
@@ -68,7 +69,8 @@ private:
     };
 
     QuorumInfo quorum_info;
-    void checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper);
+    /// set quorum if majority_quorum is true and checks active replicas
+    void setMajorityQuorumAndCheckQuorum(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
     void commitPart(
@@ -93,6 +95,7 @@ private:
     bool quorum_parallel = false;
     const bool deduplicate = true;
     bool last_block_is_duplicate = false;
+    bool majority_quorum = false;
 
     using Logger = Poco::Logger;
     Poco::Logger * log;
@@ -107,6 +110,10 @@ private:
     std::unique_ptr<DelayedChunk> delayed_chunk;
 
     void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
+    bool quorumEnabled() const
+    {
+        return majority_quorum || quorum != 0;
+    }
 };
 
 }

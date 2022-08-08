@@ -1196,6 +1196,16 @@ See also:
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
+## majority_insert_quorum {#settings-majority_insert_quorum}
+
+Use majority number as quorum number. Majority is defined as (number_of_replicas/2) + 1. If insert_quorum and majority_insert_quorum both are specified, max(insert_quorum , majority number) will be used as quorum.
+
+Default value: false
+
+See also:
+
+-   [insert_quorum](#settings-insert_quorum)
+
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.

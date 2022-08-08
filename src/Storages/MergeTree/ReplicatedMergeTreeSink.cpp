@@ -52,6 +52,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
+    bool majority_quorum_,
     ContextPtr context_,
     bool is_attach_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
@@ -63,6 +64,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , is_attach(is_attach_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
+    , majority_quorum(majority_quorum_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshot(metadata_snapshot, context))
@@ -86,7 +88,7 @@ static void assertSessionIsNotExpired(zkutil::ZooKeeperPtr & zookeeper)
 }
 
 
-void ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zookeeper)
+void ReplicatedMergeTreeSink::setMajorityQuorumAndCheckQuorum(zkutil::ZooKeeperPtr & zookeeper)
 {
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
@@ -104,6 +106,9 @@ void ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zoo
     for (auto & status : replicas_status_futures)
         if (status.get().error == Coordination::Error::ZOK)
             ++active_replicas;
+
+    if (majority_quorum)
+        quorum = std::max(quorum, replicas.size() / 2 + 1);
 
     if (active_replicas < quorum)
         throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS, "Number of alive replicas ({}) is less than requested quorum ({}).",
@@ -148,8 +153,8 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
       * And also check that during the insertion, the replica was not reinitialized or disabled (by the value of `is_active` node).
       * TODO Too complex logic, you can do better.
       */
-    if (quorum)
-        checkQuorumPrecondition(zookeeper);
+    if (quorumEnabled())
+        setMajorityQuorumAndCheckQuorum(zookeeper);
 
     storage.writer.deduceTypesOfObjectColumns(storage_snapshot, block);
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
@@ -281,8 +286,8 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
 
-    if (quorum)
-        checkQuorumPrecondition(zookeeper);
+    if (quorumEnabled())
+        setMajorityQuorumAndCheckQuorum(zookeeper);
 
     Stopwatch watch;
 
@@ -384,7 +389,7 @@ void ReplicatedMergeTreeSink::commitPart(
               *  but for it the quorum has not yet been reached.
               *  You can not do the next quorum record at this time.)
               */
-            if (quorum)
+            if (quorumEnabled())
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry;
                 quorum_entry.part_name = part->name;
@@ -436,7 +441,7 @@ void ReplicatedMergeTreeSink::commitPart(
             {
                 part->is_duplicate = true;
                 ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                if (quorum)
+                if (quorumEnabled())
                 {
                     LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it, but checking quorum.", block_id, existing_part_name);
 
@@ -593,7 +598,7 @@ void ReplicatedMergeTreeSink::commitPart(
         break;
     }
 
-    if (quorum)
+    if (quorumEnabled())
     {
         if (is_already_existing_part)
         {
