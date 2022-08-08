@@ -341,10 +341,14 @@ BlockIO InterpreterSystemQuery::execute()
 
             if (caches_to_drop.contains("FILE"))
                 StorageFile::getSchemaCache(getContext()).clear();
+#if USE_AWS_S3
             if (caches_to_drop.contains("S3"))
                 StorageS3::getSchemaCache(getContext()).clear();
+#endif
+#if USE_HDFS
             if (caches_to_drop.contains("HDFS"))
                 StorageHDFS::getSchemaCache(getContext()).clear();
+#endif
             if (caches_to_drop.contains("URL"))
                 StorageURL::getSchemaCache(getContext()).clear();
             break;

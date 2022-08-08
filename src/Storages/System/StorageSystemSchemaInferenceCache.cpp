@@ -43,8 +43,12 @@ NamesAndTypesList StorageSystemSchemaInferenceCache::getNamesAndTypes()
 void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     fillDataImpl(res_columns, StorageFile::getSchemaCache(context), "File");
+#if USE_AWS_S3
     fillDataImpl(res_columns, StorageS3::getSchemaCache(context), "S3");
+#endif
+#if USE_HDFS
     fillDataImpl(res_columns, StorageHDFS::getSchemaCache(context), "HDFS");
+#endif
     fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
 }
 
