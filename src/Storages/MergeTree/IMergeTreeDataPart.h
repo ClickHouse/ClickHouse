@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
@@ -133,15 +134,18 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns);
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+    const ColumnsDescription & getColumnsDescription() const { return columns_description; }
 
-    void setSerializationInfos(const SerializationInfoByName & new_infos);
+    NameAndTypePair getColumn(const String & name) const;
+    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const;
+    SerializationPtr getSerialization(const String & column_name) const;
+    SerializationPtr tryGetSerialization(const String & column_name) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -168,8 +172,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinimumCompressedSize(
-        const StorageSnapshotPtr & storage_snapshot, bool with_subcolumns) const;
+    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -526,6 +529,13 @@ private:
 
     /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos;
+
+    /// Serializations for every columns and subcolumns by their names.
+    SerializationByName serializations;
+
+    /// Columns description for more convenient access
+    /// to columns by name and getting subcolumns.
+    ColumnsDescription columns_description;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

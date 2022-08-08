@@ -105,6 +105,8 @@ public:
         std::vector<Node *> children = {};
     };
 
+    const Node * getRootNode() const { return root; }
+
     using Nodes = std::list<Node>;
 
 private:

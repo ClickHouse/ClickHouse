@@ -317,4 +317,10 @@ private:
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 };
 
+/// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.
+struct ActionDAGNodes
+{
+    ActionsDAG::NodeRawConstPtrs nodes;
+};
+
 }

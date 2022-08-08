@@ -115,6 +115,12 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
+    void addFilter(ActionsDAGPtr expression, std::string column_name)
+    {
+        added_filter = std::move(expression);
+        added_filter_column_name = std::move(column_name);
+    }
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
@@ -122,6 +128,9 @@ public:
 
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
+        const PrewhereInfoPtr & prewhere_info,
+        const ActionsDAGPtr & added_filter,
+        const std::string & added_filter_column_name,
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -160,6 +169,9 @@ private:
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
+
+    ActionsDAGPtr added_filter;
+    std::string added_filter_column_name;
 
     StorageSnapshotPtr storage_snapshot;
     StorageMetadataPtr metadata_for_reading;
