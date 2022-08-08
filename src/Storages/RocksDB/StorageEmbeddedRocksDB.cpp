@@ -37,6 +37,7 @@
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
+#include <rocksdb/utilities/db_ttl.h>
 
 #include <cstddef>
 #include <filesystem>
@@ -348,10 +349,14 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const StorageInMemoryMetadata & metadata_,
         bool attach,
         ContextPtr context_,
-        const String & primary_key_)
+        const String & primary_key_,
+        Int32 ttl_,
+        bool read_only_)
     : IKeyValueStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
+    , ttl(ttl_)
+    , read_only(read_only_)
 {
     setInMemoryMetadata(metadata_);
     rocksdb_dir = context_->getPath() + relative_data_path_;
@@ -377,7 +382,7 @@ void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
     rocksdb::Options base;
-    rocksdb::DB * db;
+    rocksdb::DBWithTTL * db;
 
     base.create_if_missing = true;
     base.compression = rocksdb::CompressionType::kZSTD;
@@ -448,7 +453,7 @@ void StorageEmbeddedRocksDB::initDB()
         }
     }
 
-    status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+    status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
 
     if (!status.ok())
     {
@@ -456,7 +461,7 @@ void StorageEmbeddedRocksDB::initDB()
             rocksdb_dir, status.ToString());
     }
     /// It's ok just to wrap db with unique_ptr, from rdb documentation: "when you are done with a database, just delete the database object"
-    rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
+    rocksdb_ptr = std::unique_ptr<rocksdb::DBWithTTL>(db);
 }
 
 Pipe StorageEmbeddedRocksDB::read(

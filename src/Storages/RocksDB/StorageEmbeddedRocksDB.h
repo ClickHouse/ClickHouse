@@ -5,11 +5,12 @@
 #include <Storages/IStorage.h>
 #include <Storages/IKVStorage.h>
 #include <rocksdb/status.h>
+#include "base/types.h"
 
 
 namespace rocksdb
 {
-    class DB;
+    class DBWithTTL;
     class Statistics;
 }
 
@@ -32,7 +33,9 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool attach,
         ContextPtr context_,
-        const String & primary_key_);
+        const String & primary_key_,
+        Int32 ttl_ = 0,
+        bool read_only = false);
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
@@ -74,10 +77,12 @@ public:
 
 private:
     const String primary_key;
-    using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
+    using RocksDBPtr = std::unique_ptr<rocksdb::DBWithTTL>;
     RocksDBPtr rocksdb_ptr;
     mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;
+    Int32 ttl;
+    bool read_only;
 
     void initDB();
 };
