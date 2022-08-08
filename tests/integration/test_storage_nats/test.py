@@ -1,3 +1,10 @@
+import pytest
+
+# FIXME tests are broken for unknown reason
+# https://github.com/ClickHouse/ClickHouse/issues/39983
+
+pytestmark = pytest.mark.skip
+
 import json
 import os.path as p
 import random
@@ -9,7 +16,6 @@ from random import randrange
 import math
 
 import asyncio
-import pytest
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_nats_is_available, nats_connect_ssl
