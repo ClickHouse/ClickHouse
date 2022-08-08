@@ -878,8 +878,6 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 
 `MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
 
-This feature is under development and not ready for production. There are known drawbacks such as very low performance.
-
 Configuration markup:
 ``` xml
 <storage_configuration>
