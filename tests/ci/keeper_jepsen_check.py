@@ -159,7 +159,7 @@ if __name__ == "__main__":
         logging.info("Not jepsen test label in labels list, skipping")
         sys.exit(0)
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
     if rerun_helper.is_already_finished_by_status():
