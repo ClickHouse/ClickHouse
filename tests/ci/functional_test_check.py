@@ -205,7 +205,7 @@ if __name__ == "__main__":
     flaky_check = "flaky" in check_name.lower()
 
     run_changed_tests = flaky_check or validate_bugix_check
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     pr_info = PRInfo(need_changed_files=run_changed_tests)
 

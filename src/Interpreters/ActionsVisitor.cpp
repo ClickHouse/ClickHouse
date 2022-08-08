@@ -9,6 +9,7 @@
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/indexHint.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -932,8 +933,44 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     /// A special function `indexHint`. Everything that is inside it is not calculated
     if (node.name == "indexHint")
     {
+        if (data.only_consts)
+            return;
+
+        /// Here we create a separate DAG for indexHint condition.
+        /// It will be used only for index analysis.
+        Data index_hint_data(
+            data.getContext(),
+            data.set_size_limit,
+            data.subquery_depth,
+            data.source_columns,
+            std::make_shared<ActionsDAG>(data.source_columns),
+            data.prepared_sets,
+            data.subqueries_for_sets,
+            data.no_subqueries,
+            data.no_makeset,
+            data.only_consts,
+            /*create_source_for_in*/ false,
+            data.aggregation_keys_info);
+
+        NamesWithAliases args;
+
+        if (node.arguments)
+        {
+            for (const auto & arg : node.arguments->children)
+            {
+                visit(arg, index_hint_data);
+                args.push_back({arg->getColumnNameWithoutAlias(), {}});
+            }
+        }
+
+        auto dag = index_hint_data.getActions();
+        dag->project(args);
+
+        auto index_hint = std::make_shared<FunctionIndexHint>();
+        index_hint->setActions(std::move(dag));
+
         // Arguments are removed. We add function instead of constant column to avoid constant folding.
-        data.addFunction(FunctionFactory::instance().get("indexHint", data.getContext()), {}, column_name);
+        data.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(index_hint), {}, column_name);
         return;
     }
 

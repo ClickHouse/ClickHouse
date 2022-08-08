@@ -284,6 +284,9 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         else
         {
             context = Context::createCopy(global_context);
+
+            if (created_from_ddl)
+                context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
         }
 
         context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));

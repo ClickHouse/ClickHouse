@@ -5009,7 +5009,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
                 if (covering_part)
                 {
-                    LOG_WARNING(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
+                    /// It's totally fine for zero-level parts, because of possible race condition between ReplicatedMergeTreeSink and
+                    /// background queue execution (new part is added to ZK before this function is called,
+                    /// so other replica may produce covering part and replication queue may download covering part).
+                    if (part->info.level)
+                        LOG_WARNING(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
+                    else
+                        LOG_INFO(data.log, "Tried to commit obsolete part {} covered by {}", part->name, covering_part->getNameWithState());
 
                     part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
                     data.modifyPartState(part, DataPartState::Outdated);
@@ -5136,6 +5142,8 @@ static void selectBestProjection(
     const MergeTreeDataSelectExecutor & reader,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
+    const ActionsDAGPtr & added_filter,
+    const std::string & added_filter_column_name,
     const Names & required_columns,
     ProjectionCandidate & candidate,
     ContextPtr query_context,
@@ -5166,6 +5174,8 @@ static void selectBestProjection(
         storage_snapshot->metadata,
         candidate.desc->metadata,
         query_info,
+        added_filter,
+        added_filter_column_name,
         query_context,
         settings.max_threads,
         max_added_blocks);
@@ -5188,6 +5198,8 @@ static void selectBestProjection(
             storage_snapshot->metadata,
             storage_snapshot->metadata,
             query_info, // TODO syntax_analysis_result set in index
+            added_filter,
+            added_filter_column_name,
             query_context,
             settings.max_threads,
             max_added_blocks);
@@ -5281,7 +5293,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             minmax_columns_types = getMinMaxColumnsTypes(partition_key);
 
             minmax_idx_condition.emplace(
-                query_info,
+                query_info.query, query_info.syntax_analyzer_result, query_info.sets,
                 query_context,
                 minmax_columns_names,
                 getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(query_context)));
@@ -5507,6 +5519,12 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         query_options,
         query_info.prepared_sets);
     const auto & analysis_result = select.getAnalysisResult();
+
+    query_info.prepared_sets = select.getQueryAnalyzer()->getPreparedSets();
+    query_info.prewhere_info = analysis_result.prewhere_info;
+
+    const auto & before_where = analysis_result.before_where;
+    const auto & where_column_name = analysis_result.where_column_name;
 
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
@@ -5776,6 +5794,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                 metadata_snapshot,
                 metadata_snapshot,
                 query_info,
+                before_where,
+                where_column_name,
                 query_context,
                 settings.max_threads,
                 max_added_blocks);
@@ -5807,6 +5827,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             metadata_snapshot,
             metadata_snapshot,
             query_info,
+            before_where,
+            where_column_name,
             query_context,
             settings.max_threads,
             max_added_blocks);
@@ -5832,6 +5854,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                     reader,
                     storage_snapshot,
                     query_info,
+                    before_where,
+                    where_column_name,
                     analysis_result.required_columns,
                     candidate,
                     query_context,
@@ -5852,6 +5876,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                     reader,
                     storage_snapshot,
                     query_info,
+                    before_where,
+                    where_column_name,
                     analysis_result.required_columns,
                     candidate,
                     query_context,
@@ -5881,6 +5907,8 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
     }
 
+    /// Just in case, reset prewhere info calculated from projection.
+    query_info.prewhere_info.reset();
     return *selected_candidate;
 }
 

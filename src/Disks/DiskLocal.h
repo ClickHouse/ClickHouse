@@ -122,6 +122,12 @@ public:
     bool canRead() const noexcept;
     bool canWrite() const noexcept;
 
+    bool supportsStat() const override { return true; }
+    struct stat stat(const String & path) const override;
+
+    bool supportsChmod() const override { return true; }
+    void chmod(const String & path, mode_t mode) override;
+
 private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
 

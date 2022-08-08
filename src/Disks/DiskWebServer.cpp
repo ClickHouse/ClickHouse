@@ -6,6 +6,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -172,7 +173,19 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     StoredObjects objects;
     objects.emplace_back(remote_path, iter->second.size);
 
-    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, objects, getContext(), read_settings);
+    auto read_buffer_creator =
+        [this, read_settings]
+        (const std::string & path_, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_shared<ReadBufferFromWebServer>(
+            fs::path(url) / path_,
+            getContext(),
+            read_settings,
+            /* use_external_buffer */true,
+            read_until_position);
+    };
+
+    auto web_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
