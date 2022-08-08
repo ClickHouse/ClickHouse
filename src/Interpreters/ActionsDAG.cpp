@@ -145,6 +145,9 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
     if (!array_type)
         throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 
+    if (result_name.empty())
+        result_name = "arrayJoin(" + child.result_name + ")";
+
     Node node;
     node.type = ActionType::ARRAY_JOIN;
     node.result_type = array_type->getNestedType();

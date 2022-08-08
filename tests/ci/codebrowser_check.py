@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
