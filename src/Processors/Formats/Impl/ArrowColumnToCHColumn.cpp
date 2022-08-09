@@ -353,6 +353,12 @@ static ColumnWithTypeAndName createLCOfNullableColumnFromArrowDictionaryValues(
     const String & column_name
 )
 {
+    /*
+     * ArrowColumn format handles nulls by maintaining a nullmap column, there is no nullable type.
+     * Therefore, dict_values->type is the actual data type/ non-nullable. It needs to be transformed into nullable
+     * so LC column is created from nullable type and a null value at the beginning of the collection
+     * is automatically added.
+     * */
     auto lc_type = std::make_shared<DataTypeLowCardinality>(makeNullable(dict_values->type));
 
     auto lc_column = lc_type->createColumn();
@@ -521,12 +527,6 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
             if (contains_null)
             {
-                /*
-                 * ArrowColumn format handles nulls by maintaining a nullmap column.
-                 * Dictionary type is nested type of nullable. It needs to be transformed into nullable
-                 * so LC column is created from nullable type and a null value at the beginning of the collection
-                 * is automatically added.
-                 * */
                 auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
 
                 return createLCOfNullableColumnFromArrowDictionaryValues(dict_values, indexes_column, nullmap_column, column_name);
