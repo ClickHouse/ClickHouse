@@ -1449,11 +1449,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
                     auto add_create_set = [&settings, crosswise_connection](QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
                     {
-                        /// Small number of rows is unreasonable
-                        size_t max_rows = std::max<size_t>(100, settings.max_rows_in_set_to_optimize_join);
-
                         auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
-                            plan.getCurrentDataStream(), key_names, max_rows, crosswise_connection, join_pos);
+                            plan.getCurrentDataStream(), key_names, settings.max_rows_in_set_to_optimize_join, crosswise_connection, join_pos);
                         creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos));
 
                         auto * step_raw_ptr = creating_set_step.get();
@@ -1468,7 +1465,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         auto join_kind = table_join.kind();
                         bool kind_allows_filtering = isInner(join_kind) || isLeft(join_kind) || isRight(join_kind);
-                        if (settings.max_rows_in_set_to_optimize_join >= 0 && kind_allows_filtering)
+                        if (settings.max_rows_in_set_to_optimize_join > 0 && kind_allows_filtering)
                         {
                             auto * left_set = add_create_set(query_plan, join_clause.key_names_left, JoinTableSide::Left);
                             auto * right_set = add_create_set(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
