@@ -49,5 +49,5 @@
   "test_zookeeper_config_load_balancing/test.py::test_round_robin",
 
   "test_user_ip_restrictions/test.py::test_ipv4",
-  "test_user_ip_restrictions/test.py::test_ipv6",
+  "test_user_ip_restrictions/test.py::test_ipv6"
 ]
