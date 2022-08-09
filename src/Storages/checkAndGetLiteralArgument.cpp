@@ -33,6 +33,7 @@ T checkAndGetLiteralArgument(const ASTLiteral & arg, const String & arg_name)
 
 template String checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template UInt64 checkAndGetLiteralArgument(const ASTPtr &, const String &);
+template Int32 checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template UInt8 checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template bool checkAndGetLiteralArgument(const ASTPtr &, const String &);
 template String checkAndGetLiteralArgument(const ASTLiteral &, const String &);
