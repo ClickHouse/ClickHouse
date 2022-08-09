@@ -163,51 +163,79 @@ bool ReplicatedAccessStorage::insertZooKeeper(
 
     if (res == Coordination::Error::ZNODEEXISTS)
     {
+        if (!throw_if_exists && !replace_if_exists)
+            return false; /// Couldn't insert a new entity.
+
+        if (throw_if_exists)
+        {
+            if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+            {
+                /// To fail with a nice error message, we need info about what already exists.
+                /// This itself could fail if the conflicting uuid disappears in the meantime.
+                /// If that happens, then we'll just retry from the start.
+                String existing_entity_definition = zookeeper->get(entity_path);
+
+                AccessEntityPtr existing_entity = deserializeAccessEntity(existing_entity_definition, entity_path);
+                AccessEntityType existing_type = existing_entity->getType();
+                String existing_name = existing_entity->getName();
+                throwIDCollisionCannotInsert(id, type, name, existing_type, existing_name);
+            }
+            else
+            {
+                /// Couldn't insert the new entity because there is an existing entity with such name.
+                throwNameCollisionCannotInsert(type, name);
+            }
+        }
+
+        assert(replace_if_exists);
+        Coordination::Requests replace_ops;
         if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
         {
-            /// The UUID already exists, simply fail.
-
-            /// To fail with a nice error message, we need info about what already exists.
-            /// This itself could fail if the conflicting uuid disappears in the meantime.
+            /// The UUID is already associated with some existing entity, we will get rid of the conflicting entity first.
+            /// This itself could fail if the conflicting entity disappears in the meantime.
             /// If that happens, then we'll just retry from the start.
-            String existing_entity_definition = zookeeper->get(entity_path);
+            Coordination::Stat stat;
+            String existing_entity_definition = zookeeper->get(entity_path, &stat);
+            auto existing_entity = deserializeAccessEntity(existing_entity_definition, entity_path);
+            const String & existing_entity_name = existing_entity->getName();
+            const AccessEntityType existing_entity_type = existing_entity->getType();
+            const AccessEntityTypeInfo existing_entity_type_info = AccessEntityTypeInfo::get(existing_entity_type);
+            const String existing_name_path = zookeeper_path + "/" + existing_entity_type_info.unique_char + "/" + escapeForFileName(existing_entity_name);
 
-            AccessEntityPtr existing_entity = deserializeAccessEntity(existing_entity_definition, entity_path);
-            AccessEntityType existing_type = existing_entity->getType();
-            String existing_name = existing_entity->getName();
-            throwIDCollisionCannotInsert(id, type, name, existing_type, existing_name);
-        }
-        else if (replace_if_exists)
-        {
-            /// The name already exists for this type.
-            /// If asked to, we need to replace the existing entity.
+            if (existing_name_path != name_path)
+                replace_ops.emplace_back(zkutil::makeRemoveRequest(existing_name_path, -1));
 
-            /// First get the uuid of the existing entity
-            /// This itself could fail if the conflicting name disappears in the meantime.
-            /// If that happens, then we'll just retry from the start.
-            Coordination::Stat name_stat;
-            String existing_entity_uuid = zookeeper->get(name_path, &name_stat);
-
-            const String existing_entity_path = zookeeper_path + "/uuid/" + existing_entity_uuid;
-            Coordination::Requests replace_ops;
-            replace_ops.emplace_back(zkutil::makeRemoveRequest(existing_entity_path, -1));
-            replace_ops.emplace_back(zkutil::makeCreateRequest(entity_path, new_entity_definition, zkutil::CreateMode::Persistent));
-            replace_ops.emplace_back(zkutil::makeSetRequest(name_path, entity_uuid, name_stat.version));
-
-            /// If this fails, then we'll just retry from the start.
-            zookeeper->multi(replace_ops);
-
-            /// Everything's fine, the new entity has been inserted instead of an existing entity.
-            return true;
+            replace_ops.emplace_back(zkutil::makeSetRequest(entity_path, new_entity_definition, stat.version));
         }
         else
         {
-            /// Couldn't insert the new entity because there is an existing entity with such name.
-            if (throw_if_exists)
-                throwNameCollisionCannotInsert(type, name);
-            else
-                return false;
+            replace_ops.emplace_back(zkutil::makeCreateRequest(entity_path, new_entity_definition, zkutil::CreateMode::Persistent));
         }
+
+        if (responses[1]->error == Coordination::Error::ZNODEEXISTS)
+        {
+            /// The name is already associated with some existing entity, we will get rid of the conflicting entity first.
+            /// This itself could fail if the conflicting entity disappears in the meantime.
+            /// If that happens, then we'll just retry from the start.
+            Coordination::Stat stat;
+            String existing_entity_uuid = zookeeper->get(name_path, &stat);
+            const String existing_entity_path = zookeeper_path + "/uuid/" + existing_entity_uuid;
+
+            if (existing_entity_path != entity_path)
+                replace_ops.emplace_back(zkutil::makeRemoveRequest(existing_entity_path, -1));
+
+            replace_ops.emplace_back(zkutil::makeSetRequest(name_path, entity_uuid, stat.version));
+        }
+        else
+        {
+            replace_ops.emplace_back(zkutil::makeCreateRequest(name_path, entity_uuid, zkutil::CreateMode::Persistent));
+        }
+
+        /// If this fails, then we'll just retry from the start.
+        zookeeper->multi(replace_ops);
+
+        /// Everything's fine, the new entity has been inserted instead of an existing entity.
+        return true;
     }
 
     /// If this fails, then we'll just retry from the start.
@@ -418,6 +446,8 @@ zkutil::ZooKeeperPtr ReplicatedAccessStorage::getZooKeeperNoLock()
 
 void ReplicatedAccessStorage::reload()
 {
+    /// TODO: Disabled because reload() is called by SYSTEM RELOAD CONFIG and replicated access storage is not a config-based.
+    /// We need a separate SYSTEM RELOAD USES command.
 #if 0
     /// Reinitialize ZooKeeper and reread everything.
     std::lock_guard lock{cached_zookeeper_mutex};
@@ -568,7 +598,7 @@ void ReplicatedAccessStorage::setEntityNoLock(const UUID & id, const AccessEntit
 void ReplicatedAccessStorage::removeEntityNoLock(const UUID & id)
 {
     LOG_DEBUG(getLogger(), "Removing entity with id {}", toString(id));
-    memory_storage.remove(id, /* throw_if_exists= */ false);
+    memory_storage.remove(id, /* throw_if_not_exists= */ false);
 }
 
 
