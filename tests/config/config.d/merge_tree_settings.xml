@@ -2,5 +2,7 @@
     <merge_tree>
         <!-- 10 seconds (default is 1 minute) -->
         <zookeeper_session_expiration_check_period>10</zookeeper_session_expiration_check_period>
+        <!-- Default is 86400 (1 day), but we have protection from removal of tmp dirs in use -->
+        <temporary_directories_lifetime>0</temporary_directories_lifetime>
     </merge_tree>
 </clickhouse>

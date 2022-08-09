@@ -142,10 +142,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (global_ctx->data_part_storage_builder->exists())
         throw Exception("Directory " + global_ctx->data_part_storage_builder->getFullPath() + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
-    global_ctx->data->temporary_parts.add(local_tmp_part_basename);
-    SCOPE_EXIT(
-        global_ctx->data->temporary_parts.remove(local_tmp_part_basename);
-    );
+    global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
