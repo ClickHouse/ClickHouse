@@ -103,12 +103,14 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     if (ZSTD_isError(check_result))
     {
         std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
+        ZSTD_freeCCtx(cctx);
         return 1;
     }
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
     if (ZSTD_isError(check_result))
     {
         std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
+        ZSTD_freeCCtx(cctx);
         return 1;
     }
 
@@ -129,11 +131,13 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     if (output == MAP_FAILED)
     {
         perror(nullptr);
+        ZSTD_freeCCtx(cctx);
         return 1;
     }
     if (-1 == lseek(out_fd, 0, SEEK_END))
     {
         perror(nullptr);
+        ZSTD_freeCCtx(cctx);
         return 1;
     }
 
@@ -154,6 +158,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
                 perror(nullptr);
             if (0 != munmap(output, 2 * max_block_size))
                 perror(nullptr);
+            ZSTD_freeCCtx(cctx);
             return 1;
         }
 
@@ -161,6 +166,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         if (current_block_size != write_data(out_fd, output, current_block_size))
         {
             perror(nullptr);
+            ZSTD_freeCCtx(cctx);
             return 1;
         }
         pointer += current_block_size;
@@ -172,8 +178,11 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         0 != munmap(output, 2 * max_block_size))
     {
         perror(nullptr);
+        ZSTD_freeCCtx(cctx);
         return 1;
     }
+
+    ZSTD_freeCCtx(cctx);
     return 0;
 }
 

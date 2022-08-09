@@ -80,7 +80,7 @@ protected:
 
     size_t field_number = 0;
     size_t row_count = 0;
-    NamesAndTypes fields;
+    NamesAndTypes fields;   /// The field names are pre-escaped to be put into JSON string literal.
 
     Statistics statistics;
     FormatSettings settings;

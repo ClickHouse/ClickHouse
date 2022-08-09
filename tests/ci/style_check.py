@@ -5,6 +5,7 @@ import logging
 import os
 import subprocess
 import sys
+import atexit
 
 
 from clickhouse_helper import (
@@ -12,7 +13,7 @@ from clickhouse_helper import (
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from commit_status_helper import fail_simple_check, post_commit_status
+from commit_status_helper import post_commit_status, update_mergeable_check
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from get_robot_token import get_best_robot_token
@@ -150,10 +151,16 @@ if __name__ == "__main__":
 
     gh = GitHub(get_best_robot_token())
 
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
+
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
+        # Finish with the same code as previous
+        state = rerun_helper.get_finished_status().state  # type: ignore
+        # state == "success" -> code = 0
+        code = int(state != "success")
+        sys.exit(code)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -198,5 +205,4 @@ if __name__ == "__main__":
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state in ["error", "failure"]:
-        fail_simple_check(gh, pr_info, f"{NAME} failed")
         sys.exit(1)

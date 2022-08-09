@@ -180,7 +180,8 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     try
     {
@@ -863,11 +864,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.event_time_microseconds = time_in_microseconds(finish_time);
                 status_info_to_query_log(elem, info, ast, context);
 
-                auto progress_callback = context->getProgressCallback();
-
-                if (progress_callback)
-                    progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
-
                 if (pulling_pipeline)
                 {
                     query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
@@ -877,6 +873,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto progress_out = process_list_elem->getProgressOut();
                     elem.result_rows = progress_out.written_rows;
                     elem.result_bytes = progress_out.written_bytes;
+                }
+
+                auto progress_callback = context->getProgressCallback();
+                if (progress_callback)
+                {
+                    Progress p(WriteProgress{info.written_rows, info.written_bytes});
+                    p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+                    progress_callback(p);
                 }
 
                 if (elem.read_rows != 0)

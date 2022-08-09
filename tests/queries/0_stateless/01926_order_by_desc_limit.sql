@@ -1,5 +1,4 @@
--- Tags: no-random-settings, no-tsan
--- FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
+-- Tags: no-random-settings
 
 DROP TABLE IF EXISTS order_by_desc;
 

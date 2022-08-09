@@ -81,7 +81,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
     };
 
     ISerialization::SubstreamPath path;
-    data_part->getSerialization(column)->enumerateStreams(path, callback, column.type);
+    data_part->getSerialization(column.name)->enumerateStreams(path, callback, column.type);
 }
 
 namespace
@@ -222,7 +222,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeIntBinary(static_cast<UInt64>(0), marks);
 
             writeColumnSingleGranule(
-                block.getByName(name_and_type->name), data_part->getSerialization(*name_and_type),
+                block.getByName(name_and_type->name), data_part->getSerialization(name_and_type->name),
                 stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream

@@ -127,7 +127,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     };
 
     ISerialization::SubstreamPath path;
-    data_part->getSerialization(column)->enumerateStreams(path, callback, column.type);
+    data_part->getSerialization(column.name)->enumerateStreams(path, callback, column.type);
 }
 
 
@@ -222,7 +222,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     {
         auto & column = block_to_write.getByName(it->name);
 
-        if (data_part->getSerialization(*it)->getKind() != ISerialization::Kind::SPARSE)
+        if (data_part->getSerialization(it->name)->getKind() != ISerialization::Kind::SPARSE)
             column.column = recursiveRemoveSparse(column.column);
 
         if (permutation)
@@ -284,7 +284,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
     ISerialization::SubstreamPath & path)
 {
     StreamsWithMarks result;
-    data_part->getSerialization(column)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
+    data_part->getSerialization(column.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
 
@@ -319,7 +319,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     ISerialization::SerializeBinaryBulkSettings & serialize_settings,
     const Granule & granule)
 {
-    const auto & serialization = data_part->getSerialization(name_and_type);
+    const auto & serialization = data_part->getSerialization(name_and_type.name);
     serialization->serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.rows_to_write, serialize_settings, serialization_state);
 
     /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
@@ -349,7 +349,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     const auto & [name, type] = name_and_type;
     auto [it, inserted] = serialization_states.emplace(name, nullptr);
-    auto serialization = data_part->getSerialization(name_and_type);
+    auto serialization = data_part->getSerialization(name_and_type.name);
 
     if (inserted)
     {
@@ -411,7 +411,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePair & name_type)
 {
     const auto & [name, type] = name_type;
-    const auto & serialization = data_part->getSerialization(name_type);
+    const auto & serialization = data_part->getSerialization(name_type.name);
 
     if (!type->isValueRepresentedByNumber() || type->haveSubtypes() || serialization->getKind() != ISerialization::Kind::DEFAULT)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type->getName());
@@ -555,7 +555,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(IMergeTreeDataPart::Checksum
             if (!serialization_states.empty())
             {
                 serialize_settings.getter = createStreamGetter(*it, written_offset_columns ? *written_offset_columns : offset_columns);
-                data_part->getSerialization(*it)->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
+                data_part->getSerialization(it->name)->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }
 
             if (write_final_mark)
@@ -589,7 +589,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
     {
         if (column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
-            && data_part->getSerialization(column)->getKind() == ISerialization::Kind::DEFAULT)
+            && data_part->getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
         {
             validateColumnOfFixedSize(column);
         }
@@ -629,7 +629,7 @@ void MergeTreeDataPartWriterWide::writeFinalMark(
 {
     writeSingleMark(column, offset_columns, 0, path);
     /// Memoize information about offsets
-    data_part->getSerialization(column)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
+    data_part->getSerialization(column.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
         if (is_offsets)

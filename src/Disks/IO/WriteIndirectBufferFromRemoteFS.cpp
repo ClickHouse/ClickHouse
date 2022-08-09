@@ -1,6 +1,5 @@
 #include "WriteIndirectBufferFromRemoteFS.h"
 
-
 namespace DB
 {
 

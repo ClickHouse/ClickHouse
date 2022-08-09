@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <filesystem>
 
 #if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
 #   include <machine/endian.h>
@@ -20,9 +21,14 @@
 #endif
 
 #if defined OS_DARWIN
+#   include <mach-o/dyld.h>
 #   include <libkern/OSByteOrder.h>
     // define 64 bit macros
 #   define le64toh(x) OSSwapLittleToHostInt64(x)
+#endif
+
+#if defined(OS_FREEBSD)
+#   include <sys/sysctl.h>
 #endif
 
 #include "types.h"
@@ -81,7 +87,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         pid = fork();
         if (-1 == pid)
         {
-            perror(nullptr);
+            perror("fork");
             /// If fork failed just decompress data in main process.
             if (0 != doDecompress(input, output, in_pointer, out_pointer, size, decompressed_size, dctx))
             {
@@ -151,6 +157,8 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         --number_of_forks;
     }
 
+    ZSTD_freeDCtx(dctx);
+
     /// If error happen end of processed part will not reach end
     if (in_pointer < end || error_happened)
         return 1;
@@ -160,14 +168,14 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
 
 
 /// Read data about files and decomrpess them.
-int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge)
+int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
     struct stat info_in;
     if (0 != fstat(input_fd, &info_in))
     {
-        perror(nullptr);
+        perror("fstat");
         return 1;
     }
 
@@ -175,7 +183,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     char * input = static_cast<char*>(mmap(nullptr, info_in.st_size, PROT_READ, MAP_PRIVATE, input_fd, 0));
     if (input == MAP_FAILED)
     {
-        perror(nullptr);
+        perror("mmap");
         return 1;
     }
 
@@ -199,9 +207,9 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     struct statfs fs_info;
     if (0 != fstatfs(input_fd, &fs_info))
     {
-        perror(nullptr);
+        perror("fstatfs");
         if (0 != munmap(input, info_in.st_size))
-                perror(nullptr);
+                perror("munmap");
         return 1;
     }
     if (fs_info.f_blocks * info_in.st_blksize < decompressed_full_size)
@@ -219,7 +227,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         files_pointer += sizeof(FileData);
 
         size_t file_name_len =
-            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13);
+            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13 + 7);
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
 
@@ -234,7 +242,16 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         files_pointer += le64toh(file_info.name_length);
         if (file_name_len != le64toh(file_info.name_length))
         {
-            strcat(file_name, ".decompressed");
+            strcat(file_name, ".decompressed.XXXXXX");
+            int fd = mkstemp(file_name);
+            if (fd == -1)
+            {
+                perror("mkstemp");
+                return 1;
+            }
+            close(fd);
+            strncpy(decompressed_suffix, file_name + strlen(file_name) - 6, 6);
+            *decompressed_umask = le64toh(file_info.umask);
             have_compressed_analoge = true;
         }
 
@@ -242,18 +259,18 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
         if (output_fd == -1)
         {
-            perror(nullptr);
+            perror("open");
             if (0 != munmap(input, info_in.st_size))
-                perror(nullptr);
+                perror("munmap");
             return 1;
         }
 
         /// Prepare output file
         if (0 != ftruncate(output_fd, le64toh(file_info.uncompressed_size)))
         {
-            perror(nullptr);
+            perror("ftruncate");
             if (0 != munmap(input, info_in.st_size))
-                perror(nullptr);
+                perror("munmap");
             return 1;
         }
 
@@ -266,9 +283,9 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             );
         if (output == MAP_FAILED)
         {
-            perror(nullptr);
+            perror("mmap");
             if (0 != munmap(input, info_in.st_size))
-                perror(nullptr);
+                perror("munmap");
             return 1;
         }
 
@@ -276,66 +293,70 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         if (0 != decompress(input, output, le64toh(file_info.start), le64toh(file_info.end)))
         {
             if (0 != munmap(input, info_in.st_size))
-                perror(nullptr);
+                perror("munmap");
             if (0 != munmap(output, le64toh(file_info.uncompressed_size)))
-                perror(nullptr);
+                perror("munmap");
             return 1;
         }
 
         if (0 != fsync(output_fd))
-            perror(nullptr);
+            perror("fsync");
         if (0 != close(output_fd))
-            perror(nullptr);
+            perror("close");
     }
 
     if (0 != munmap(input, info_in.st_size))
-        perror(nullptr);
+        perror("munmap");
     return 0;
 }
 
-/// Copy particular part of command and update shift
-void fill(char * dest, char * source, size_t length, size_t& shift)
-{
-    memcpy(dest + shift, source, length);
-    shift += length;
-}
+#if defined(OS_DARWIN)
 
-/// Set command to `mv filename.decompressed filename && filename agrs...`
-void fillCommand(char command[], int argc, char * argv[], size_t length)
-{
-    memset(command, '\0', 3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc);
-
-    /// position in command
-    size_t shift = 0;
-
-    /// Support variables to create command
-    char mv[] = "mv ";
-    char decompressed[] = ".decompressed ";
-    char add_command[] = " && ";
-    char space[] = " ";
-
-    fill(command, mv, 3, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, decompressed, 14, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, add_command, 4, shift);
-    fill(command, argv[0], strlen(argv[0]), shift);
-    fill(command, space, 1, shift);
-
-    /// forward all arguments
-    for (int i = 1; i < argc; ++i)
+    int read_exe_path(char *exe, size_t buf_sz)
     {
-        fill(command, argv[i], strlen(argv[i]), shift);
-        if (i != argc - 1)
-            fill(command, space, 1, shift);
+        uint32_t size = buf_sz;
+        char apple[size];
+        if (_NSGetExecutablePath(apple, &size) != 0)
+            return 1;
+        if (realpath(apple, exe) == nullptr)
+            return 1;
+        return 0;
     }
-}
 
-int main(int argc, char* argv[])
+#elif defined(OS_FREEBSD)
+
+    int read_exe_path(char *exe, size_t buf_sz)
+    {
+        int name[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
+        size_t length = buf_sz;
+        int error = sysctl(name, 4, exe, &length, nullptr, 0);
+        if (error < 0 || length <= 1)
+            return 1;
+        return 0;
+    }
+
+#else
+
+    int read_exe_path(char *exe, size_t/* buf_sz*/)
+    {
+        if (realpath("/proc/self/exe", exe) == nullptr)
+            return 1;
+        return 0;
+    }
+
+#endif
+
+int main(int/* argc*/, char* argv[])
 {
-    char file_path[strlen(argv[0]) + 1];
-    memset(file_path, 0, sizeof(file_path));
-    strcpy(file_path, argv[0]);
+    char self[4096] = {0};
+    if (read_exe_path(self, 4096) == -1)
+    {
+        perror("read_exe_path");
+        return 1;
+    }
+
+    char file_path[strlen(self) + 1];
+    strcpy(file_path, self);
 
     char * path = nullptr;
     char * name = strrchr(file_path, '/');
@@ -348,62 +369,68 @@ int main(int argc, char* argv[])
     else
         name = file_path;
 
-    int input_fd = open(argv[0], O_RDONLY);
+    int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
     {
-        perror(nullptr);
+        perror("open");
         return 1;
     }
 
     bool have_compressed_analoge = false;
+    char decompressed_suffix[7] = {0};
+    uint64_t decompressed_umask = 0;
 
     /// Decompress all files
-    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge))
+    if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge, decompressed_suffix, &decompressed_umask))
     {
         printf("Error happened during decompression.\n");
         if (0 != close(input_fd))
-            perror(nullptr);
+            perror("close");
         return 1;
     }
 
     if (0 != close(input_fd))
-        perror(nullptr);
+        perror("close");
 
-    /// According to documentation `mv` will rename file if it
-    /// doesn't move to other directory.
-    /// Sometimes `rename` doesn't exist by default and
-    /// `rename.ul` is set instead. It will lead to errors
-    /// that can be easily avoided with help of `mv`
-
-    if (!have_compressed_analoge)
+    if (unlink(self))
     {
-        printf("No target executable - decompression only was performed.\n");
-        /// remove file
-        execlp("rm", "rm", argv[0], NULL);
-        perror(nullptr);
+        perror("unlink");
         return 1;
     }
+
+    if (!have_compressed_analoge)
+        printf("No target executable - decompression only was performed.\n");
     else
     {
-        /// move decompressed file instead of this binary and apply command
-        char bash[] = "sh";
-        char executable[] = "-c";
+        const char * const decompressed_name_fmt = "%s.decompressed.%s";
+        int decompressed_name_len = snprintf(nullptr, 0, decompressed_name_fmt, self, decompressed_suffix);
+        char decompressed_name[decompressed_name_len + 1];
+        (void)snprintf(decompressed_name, decompressed_name_len + 1, decompressed_name_fmt, self, decompressed_suffix);
 
-        /// length of forwarded args
-        size_t length = 0;
-        for (int i = 1; i < argc; ++i)
-            length += strlen(argv[i]);
+        std::error_code ec;
+        std::filesystem::copy_file(static_cast<char *>(decompressed_name), static_cast<char *>(self), ec);
+        if (ec)
+        {
+            std::cerr << ec.message() << std::endl;
+            return 1;
+        }
 
-        /// mv filename.decompressed filename && filename agrs...
-        char command[3 + strlen(argv[0]) + 14 + strlen(argv[0]) + 4 + strlen(argv[0]) + length + argc];
-        fillCommand(command, argc, argv, length);
+        if (chmod(self, decompressed_umask))
+        {
+            perror("chmod");
+            return 1;
+        }
 
-        /// replace file and call executable
-        char * newargv[] = { bash, executable, command, nullptr };
-        execvp(bash, newargv);
+        if (unlink(decompressed_name))
+        {
+            perror("unlink");
+            return 1;
+        }
+
+        execv(self, argv);
 
         /// This part of code will be reached only if error happened
-        perror(nullptr);
+        perror("execv");
         return 1;
     }
 }
