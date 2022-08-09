@@ -367,6 +367,18 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
     return metadata_storage->getLastChanged(path);
 }
 
+struct stat DiskObjectStorage::stat(const String & path) const
+{
+    return metadata_storage->stat(path);
+}
+
+void DiskObjectStorage::chmod(const String & path, mode_t mode)
+{
+    auto transaction = createObjectStorageTransaction();
+    transaction->chmod(path, mode);
+    transaction->commit();
+}
+
 void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
