@@ -66,10 +66,10 @@ void CachedObjectStorage::startup()
 
 bool CachedObjectStorage::exists(const StoredObject & object) const
 {
-    fs::path cache_path = getCachePath(object.getPathKeyForCache());
+    // fs::path cache_path = getCachePath(object.getPathKeyForCache());
 
-    if (fs::exists(cache_path) && !cache_path.empty())
-        return true;
+    // if (fs::exists(cache_path) && !cache_path.empty())
+    //     return true;
 
     return object_storage->exists(object);
 }

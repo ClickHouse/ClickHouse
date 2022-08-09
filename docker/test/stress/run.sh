@@ -317,6 +317,7 @@ else
     rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
     # Remove s3 related configs to avoid "there is no disk type `cache`"
     rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
+    rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
 
     start
 

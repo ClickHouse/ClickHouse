@@ -16,6 +16,18 @@ namespace ProfileEvents
 namespace DB
 {
 
+class SwapHelper
+{
+public:
+    SwapHelper(WriteBuffer & b1_, WriteBuffer & b2_) : b1(b1_), b2(b2_) { b1.swap(b2); }
+    ~SwapHelper() { b1.swap(b2); }
+
+private:
+    WriteBuffer & b1;
+    WriteBuffer & b2;
+};
+
+
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     std::unique_ptr<WriteBuffer> impl_,
     FileCachePtr cache_,
@@ -39,10 +51,10 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
 void CachedOnDiskWriteBufferFromFile::nextImpl()
 {
     size_t size = offset();
-    swap(*impl);
 
     try
     {
+        SwapHelper swap(*this, *impl);
         /// Write data to the underlying buffer.
         impl->next();
     }
@@ -54,8 +66,6 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 
         throw;
     }
-
-    swap(*impl);
 
     /// Write data to cache.
     cacheData(working_buffer.begin(), size);
@@ -133,33 +143,31 @@ void CachedOnDiskWriteBufferFromFile::appendFilesystemCacheLog(const FileSegment
     }
 }
 
-void CachedOnDiskWriteBufferFromFile::preFinalize()
+void CachedOnDiskWriteBufferFromFile::finalizeImpl()
 {
+    try
+    {
+        SwapHelper swap(*this, *impl);
+        impl->finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        if (cache_writer)
+        {
+            cache_writer->finalize();
+            cache_writer.reset();
+        }
+
+        throw;
+    }
+
     if (cache_writer)
     {
         cache_writer->finalize();
         cache_writer.reset();
     }
 }
-
-/// void CachedOnDiskWriteBufferFromFile::finalizeImpl()
-/// {
-///     // try
-///     // {
-///     //     next();
-///     // }
-///     // catch (...)
-///     // {
-///     //     tryLogCurrentException(__PRETTY_FUNCTION__);
-///
-///     //     if (cache_writer)
-///     //         cache_writer->finalize();
-///
-///     //     throw;
-///     // }
-///
-///     if (cache_writer)
-///         cache_writer->finalize();
-/// }
 
 }
