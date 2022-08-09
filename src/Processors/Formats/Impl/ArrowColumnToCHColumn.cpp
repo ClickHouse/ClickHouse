@@ -346,6 +346,15 @@ static ColumnWithTypeAndName createLCColumnFromArrowDictionaryValues(
     return {std::move(lc_column), std::move(lc_type), column_name};
 }
 
+/*
+ * Dictionary(Nullable(X)) in ArrowColumn format is composed of a nullmap, dictionary and an index.
+ * It doesn't have the concept of null or default values.
+ * An empty string is just a regular value appended at any position of the dictionary.
+ * Null values have an index of 0, but it should be ignored since the nullmap will return null.
+ * In ClickHouse LowCardinality, it's different. The dictionary contains null and default values at the beginning.
+ * [null, default, ...]. Therefore, null values have an index of 0 and default values have an index of 1.
+ * No nullmap is used.
+ * */
 static ColumnWithTypeAndName createLCOfNullableColumnFromArrowDictionaryValues(
     const std::shared_ptr<ColumnWithTypeAndName> & dict_values,
     const ColumnPtr & indexes_column,
