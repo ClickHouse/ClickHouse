@@ -514,6 +514,19 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 }
 )
 
+namespace
+{
+template <typename T, typename Container>
+void reserve(Container & res_data, size_t reserve_size)
+{
+#if defined(MEMORY_SANITIZER)
+    res_data.resize_fill(reserve_size, static_cast<T>(0)); // MSan doesn't recognize that all allocated memory is written by AVX-512 intrinsics.
+#else
+    res_data.resize(reserve_size);
+#endif
+}
+}
+
 DECLARE_AVX512VBMI2_SPECIFIC_CODE(
 template <size_t ELEMENT_WIDTH>
 inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
@@ -547,7 +560,7 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
         if (reserve_size - current_offset < SIMD_BYTES)
         {
             reserve_size += alloc_size;
-            res_data.resize(reserve_size);
+            reserve<T>(res_data, reserve_size);
             alloc_size *= 2;
         }
 
