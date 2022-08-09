@@ -326,35 +326,52 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr
     return std::make_shared<arrow::ChunkedArray>(array_vector);
 }
 
-static ColumnPtr shift_dictionary_indexes(const ColumnPtr & indexes)
+static ColumnWithTypeAndName createLCColumnFromArrowDictionaryValues(
+    const std::shared_ptr<ColumnWithTypeAndName> & dict_values,
+    const ColumnPtr & indexes_column,
+    const String & column_name
+)
 {
-    auto indexes_shifted = indexes->cloneEmpty();
+    auto lc_type = std::make_shared<DataTypeLowCardinality>(dict_values->type);
 
-    for (std::size_t i = 0; i < indexes->size(); i++)
+    auto lc_column = lc_type->createColumn();
+
+    for (auto i = 0u; i < indexes_column->size(); i++)
     {
-        indexes_shifted->insert(indexes->getUInt(i) + 1);
+        Field f;
+        dict_values->column->get(indexes_column->getUInt(i), f);
+        lc_column->insert(f);
     }
 
-    return indexes_shifted;
+    return {std::move(lc_column), std::move(lc_type), column_name};
 }
 
-static ColumnPtr shift_dictionary_indexes_and_handle_nullable(const ColumnPtr & indexes, const ColumnPtr & nullmap_column)
+static ColumnWithTypeAndName createLCOfNullableColumnFromArrowDictionaryValues(
+    const std::shared_ptr<ColumnWithTypeAndName> & dict_values,
+    const ColumnPtr & indexes_column,
+    const ColumnPtr & nullmap_column,
+    const String & column_name
+)
 {
-    auto indexes_shifted = indexes->cloneEmpty();
+    auto lc_type = std::make_shared<DataTypeLowCardinality>(makeNullable(dict_values->type));
 
-    for (std::size_t i = 0; i < indexes->size(); i++)
+    auto lc_column = lc_type->createColumn();
+
+    for (auto i = 0u; i < indexes_column->size(); i++)
     {
-        if (nullmap_column->getBool(i))
+        if (nullmap_column && nullmap_column->getBool(i))
         {
-            indexes_shifted->insertDefault();
+            lc_column->insertDefault();
         }
         else
         {
-            indexes_shifted->insert(indexes->getUInt(i) + 1);
+            Field f;
+            dict_values->column->get(indexes_column->getUInt(i), f);
+            lc_column->insert(f);
         }
     }
 
-    return indexes_shifted;
+    return {std::move(lc_column), std::move(lc_type), column_name};
 }
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -487,12 +504,6 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                 }
                 auto arrow_dict_column = std::make_shared<arrow::ChunkedArray>(dict_array);
                 auto dict_column = readColumnFromArrowColumn(arrow_dict_column, column_name, format_name, false, dictionary_values, read_ints_as_dates, allow_null_type, skip_columns_with_unsupported_types, skipped);
-
-                /// We should convert read column to ColumnUnique.
-                auto tmp_lc_column = DataTypeLowCardinality(dict_column.type).createColumn();
-                auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
-                static_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
-                dict_column.column = std::move(tmp_dict_column);
                 dict_values = std::make_shared<ColumnWithTypeAndName>(std::move(dict_column));
             }
 
@@ -508,25 +519,22 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
             const auto contains_null = arrow_column->null_count() > 0;
 
-            /*
-             * LC contains a default item at the 0th position. Indexes need to be shifted by one.
-             * CH doesn't maintain a nullmap. Instead, it points to the default/ null item.
-             * The below shifting could be omitted / optimized away if the indexes are shifted in-place when reading
-             * from the ArrowColumn
-             * */
             if (contains_null)
             {
+                /*
+                 * ArrowColumn format handles nulls by maintaining a nullmap column.
+                 * Dictionary type is nested type of nullable. It needs to be transformed into nullable
+                 * so LC column is created from nullable type and a null value at the beginning of the collection
+                 * is automatically added.
+                 * */
                 auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
-                indexes_column = shift_dictionary_indexes_and_handle_nullable(indexes_column, nullmap_column);
+
+                return createLCOfNullableColumnFromArrowDictionaryValues(dict_values, indexes_column, nullmap_column, column_name);
             }
             else
             {
-                indexes_column = shift_dictionary_indexes(indexes_column);
+                return createLCColumnFromArrowDictionaryValues(dict_values, indexes_column, column_name);
             }
-
-            auto lc_column = ColumnLowCardinality::create(dict_values->column, indexes_column);
-            auto lc_type = std::make_shared<DataTypeLowCardinality>(dict_values->type);
-            return {std::move(lc_column), std::move(lc_type), column_name};
         }
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
         case ARROW_NUMERIC_TYPE: \
