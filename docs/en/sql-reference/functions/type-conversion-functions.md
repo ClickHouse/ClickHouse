@@ -1072,7 +1072,7 @@ For all of the formats with separator the function parses months names expressed
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('12/12/2020 12:12:57')
+SELECT parseDateTimeBestEffort('23/10/2020 12:12:57')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1080,7 +1080,7 @@ Result:
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2020-12-12 12:12:57 │
+│     2020-10-23 12:12:57 │
 └─────────────────────────┘
 ```
 
@@ -1117,7 +1117,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('2018-12-12 10:12:12')
+SELECT parseDateTimeBestEffort('2018-10-23 10:12:12')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1125,7 +1125,7 @@ Result:
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2018-12-12 10:12:12 │
+│     2018-10-23 10:12:12 │
 └─────────────────────────┘
 ```
 

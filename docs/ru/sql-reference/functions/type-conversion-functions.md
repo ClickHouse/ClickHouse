@@ -994,7 +994,7 @@ parseDateTimeBestEffort(time_string[, time_zone])
 Запрос:
 
 ``` sql
-SELECT parseDateTimeBestEffort('12/12/2020 12:12:57')
+SELECT parseDateTimeBestEffort('23/10/2020 12:12:57')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1002,7 +1002,7 @@ AS parseDateTimeBestEffort;
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2020-12-12 12:12:57 │
+│     2020-10-23 12:12:57 │
 └─────────────────────────┘
 ```
 
@@ -1039,7 +1039,7 @@ AS parseDateTimeBestEffort;
 Запрос:
 
 ``` sql
-SELECT parseDateTimeBestEffort('2018-12-12 10:12:12')
+SELECT parseDateTimeBestEffort('2018-10-23 10:12:12')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1047,7 +1047,7 @@ AS parseDateTimeBestEffort;
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2018-12-12 10:12:12 │
+│     2018-10-23 10:12:12 │
 └─────────────────────────┘
 ```
 
