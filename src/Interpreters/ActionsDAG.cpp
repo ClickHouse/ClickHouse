@@ -144,6 +144,9 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
     if (!array_type)
         throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
 
+    if (result_name.empty())
+        result_name = "arrayJoin(" + child.result_name + ")";
+
     Node node;
     node.type = ActionType::ARRAY_JOIN;
     node.result_type = array_type->getNestedType();
@@ -448,17 +451,7 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            // bool all_args_are_const = true;
-
-            // for (const auto & argument : arguments)
-            //     if (typeid_cast<const ColumnConst *>(argument.column.get()) == nullptr)
-            //         all_args_are_const = false;
-
             res_column.column = node->function->execute(arguments, res_column.type, 0, true);
-
-            // if (!all_args_are_const)
-            //     res_column.column = res_column.column->convertToFullColumnIfConst();
-
             break;
         }
 
@@ -1523,8 +1516,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     }
 
     auto res = split(split_nodes);
-    /// Do not remove array joined columns if they are not used.
-    /// res.first->project_input = false;
+    res.second->project_input = project_input;
     return res;
 }
 

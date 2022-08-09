@@ -129,15 +129,7 @@ def started_cluster(request):
 def _check_timeout_and_exception(node, user, query_base, query):
     repeats = EXPECTED_BEHAVIOR[user]["times"]
 
-    extra_repeats = 1
-    # Table function remote() are executed two times.
-    # It tries to get table structure from remote shards.
-    # On 'node2' it will firstly try to get structure from 'node1' (which is not available),
-    # so there are 1 extra connection attempts for 'node2' and 'remote'
-    if node.name == "node2" and query_base == "remote":
-        extra_repeats = 2
-
-    expected_timeout = EXPECTED_BEHAVIOR[user]["timeout"] * repeats * extra_repeats
+    expected_timeout = EXPECTED_BEHAVIOR[user]["timeout"] * repeats
 
     start = timeit.default_timer()
     exception = node.query_and_get_error(query, user=user)

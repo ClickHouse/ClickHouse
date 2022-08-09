@@ -290,7 +290,7 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Build type</th>
 <th>Sanitizer</th>
 <th>Bundled</th>
-<th>Splitted</th>
+<th>Libraries</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -335,7 +335,7 @@ def create_build_html_report(
             row += "<td>{}</td>".format("none")
 
         row += "<td>{}</td>".format(build_result.bundled)
-        row += "<td>{}</td>".format(build_result.splitted)
+        row += "<td>{}</td>".format(build_result.libraries)
 
         if build_result.status:
             style = _get_status_style(build_result.status)

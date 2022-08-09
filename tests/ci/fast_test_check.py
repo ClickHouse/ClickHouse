@@ -5,6 +5,7 @@ import subprocess
 import os
 import csv
 import sys
+import atexit
 
 from github import Github
 
@@ -16,7 +17,7 @@ from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import (
     post_commit_status,
-    fail_simple_check,
+    update_mergeable_check,
 )
 from clickhouse_helper import (
     ClickHouseHelper,
@@ -28,7 +29,7 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
-NAME = "Fast test (actions)"
+NAME = "Fast test"
 
 
 def get_fasttest_cmd(
@@ -93,7 +94,9 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
+
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -222,5 +225,4 @@ if __name__ == "__main__":
         if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
-            fail_simple_check(gh, pr_info, f"{NAME} failed")
             sys.exit(1)

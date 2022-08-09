@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfWeekImpl>;
 
-void registerFunctionToDayOfWeek(FunctionFactory & factory)
+REGISTER_FUNCTION(ToDayOfWeek)
 {
     factory.registerFunction<FunctionToDayOfWeek>();
 
