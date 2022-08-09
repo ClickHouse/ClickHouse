@@ -18,8 +18,6 @@ using Codecs = std::vector<CompressionCodecPtr>;
 
 class IDataType;
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
-
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
 */
@@ -114,8 +112,6 @@ public:
     virtual bool isNone() const { return false; }
 
 protected:
-    /// This is used for fuzz testing
-    friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
     /// Return size of compressed data without header
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }

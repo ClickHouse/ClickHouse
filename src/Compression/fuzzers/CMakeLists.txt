@@ -1,3 +1,5 @@
+add_executable (compressed_buffer_fuzzer compressed_buffer_fuzzer.cpp)
+
 # Our code has strong cohesion and target associated with `Compression` also depends on `DataTypes`.
 # But we can exclude some files which have dependencies in case of
 # fuzzer related build (we are interested in fuzzing only particular part of our code).

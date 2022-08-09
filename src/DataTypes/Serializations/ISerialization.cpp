@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Compression/CompressionFactory.h>
 #include <Columns/IColumn.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>

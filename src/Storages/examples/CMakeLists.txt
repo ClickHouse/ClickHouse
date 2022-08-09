@@ -14,3 +14,4 @@ if (TARGET ch_contrib::hdfs)
     clickhouse_add_executable (async_read_buffer_from_hdfs async_read_buffer_from_hdfs.cpp)
     target_link_libraries (async_read_buffer_from_hdfs PRIVATE dbms ch_contrib::hdfs)
 endif ()
+
