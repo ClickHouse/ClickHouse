@@ -14,10 +14,10 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & expression, con
     bool preserves_sorting = expression->isSortingPreserved(header, sort_description);
     if (remove_filter_column)
     {
-        preserves_sorting = find_if(
-                                begin(sort_description),
-                                end(sort_description),
-                                [&](const auto & column_desc) { return column_desc.column_name == filter_column_name; })
+        preserves_sorting &= find_if(
+                                 begin(sort_description),
+                                 end(sort_description),
+                                 [&](const auto & column_desc) { return column_desc.column_name == filter_column_name; })
             == sort_description.end();
     }
     return ITransformingStep::Traits

@@ -37,3 +37,13 @@ $CLICKHOUSE_CLIENT -nq "EXPLAIN PLAN sortmode=1 SELECT a FROM optimize_sorting W
 
 $CLICKHOUSE_CLIENT -q "select '-- PLAN: FilterStep breaks sort mode'"
 $CLICKHOUSE_CLIENT -nq "EXPLAIN PLAN sortmode=1 SELECT a > 0 FROM optimize_sorting WHERE a > 0" | eval $FIND_SORTMODE
+
+$CLICKHOUSE_CLIENT -q "select '-- PLAN: aliases break sorting order'"
+$CLICKHOUSE_CLIENT -nq "EXPLAIN PLAN sortmode=1 SELECT a FROM (SELECT sipHash64(a) AS a FROM (SELECT a FROM optimize_sorting ORDER BY a)) ORDER BY a" | eval $FIND_SORTMODE
+
+# FIXME: we still do full sort here, - it's because, for most inner subqueury, sorting description contains original column names but header contains only aliases on those columns:
+#|     Header: x Int32                                                 │
+#│             y Int32                                                 │
+#│     Sort Mode: Chunk: a ASC, b ASC                                  │
+$CLICKHOUSE_CLIENT -q "select '-- PLAN: aliases DONT break sorting order'"
+$CLICKHOUSE_CLIENT -nq "EXPLAIN PLAN sortmode=1 SELECT a, b FROM (SELECT x AS a, y AS b FROM (SELECT a AS x, b AS y FROM optimize_sorting) ORDER BY x, y)" | eval $FIND_SORTMODE
