@@ -613,6 +613,15 @@ void DiskObjectStorageTransaction::setLastModified(const std::string & path, con
         }));
 }
 
+void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
+{
+    operations_to_execute.emplace_back(
+        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path, mode](MetadataTransactionPtr tx)
+        {
+            tx->chmod(path, mode);
+        }));
+}
+
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
     operations_to_execute.emplace_back(
