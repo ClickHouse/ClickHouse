@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import atexit
 
 from github import Github
 
@@ -22,6 +23,7 @@ from commit_status_helper import (
     get_commit,
     override_status,
     post_commit_status_to_file,
+    update_mergeable_check,
 )
 from clickhouse_helper import (
     ClickHouseHelper,
@@ -205,9 +207,11 @@ if __name__ == "__main__":
     flaky_check = "flaky" in check_name.lower()
 
     run_changed_tests = flaky_check or validate_bugix_check
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     pr_info = PRInfo(need_changed_files=run_changed_tests)
+
+    atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
