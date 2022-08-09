@@ -37,10 +37,7 @@ public:
 
     using enum Order;
 
-    /// The `aux_header` is a header from another instance of procssor.
-    /// It's required because all outputs should have the same structure.
-    /// We don't care about structure of another processor, because we send just empty chunk, but need to follow the contract.
-    PingPongProcessor(const Block & header, const Block & aux_header, size_t num_ports, Order order_);
+    PingPongProcessor(const Block & header, size_t num_ports, Order order_);
 
     String getName() const override { return "PingPongProcessor"; }
 
@@ -88,9 +85,10 @@ protected:
 class ReadHeadBalancedProcessor : public PingPongProcessor
 {
 public:
-    ReadHeadBalancedProcessor(const Block & header, const Block & aux_header, size_t num_ports, size_t size_to_wait_, Order order_)
-        : PingPongProcessor(header, aux_header, num_ports, order_) , data_consumed(0) , size_to_wait(size_to_wait_)
-    {}
+    ReadHeadBalancedProcessor(const Block & header, size_t num_ports, size_t size_to_wait_, Order order_)
+        : PingPongProcessor(header, num_ports, order_) , data_consumed(0) , size_to_wait(size_to_wait_)
+    {
+    }
 
     bool isReady(const Chunk & chunk) override
     {

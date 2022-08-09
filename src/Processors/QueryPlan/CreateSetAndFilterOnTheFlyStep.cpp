@@ -89,7 +89,6 @@ CreateSetAndFilterOnTheFlyStep::CrosswiseConnectionPtr CreateSetAndFilterOnTheFl
 
 CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     const DataStream & input_stream_,
-    const DataStream & rhs_input_stream_,
     const Names & column_names_,
     size_t max_rows_in_set_,
     CrosswiseConnectionPtr crosswise_connection_,
@@ -97,7 +96,6 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , column_names(column_names_)
     , max_rows_in_set(max_rows_in_set_)
-    , rhs_input_stream_header(rhs_input_stream_.header)
     , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), false, true))
     , filtering_set(nullptr)
     , crosswise_connection(crosswise_connection_)
@@ -136,7 +134,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
 
         /// Add balancing transform
         auto idx = position == JoinTableSide::Left ? PingPongProcessor::First : PingPongProcessor::Second;
-        auto stream_balancer = std::make_shared<ReadHeadBalancedProcessor>(input_header, rhs_input_stream_header, num_ports, max_rows_in_set, idx);
+        auto stream_balancer = std::make_shared<ReadHeadBalancedProcessor>(input_header, num_ports, max_rows_in_set, idx);
         stream_balancer->setDescription(getStepDescription());
 
         /// Regular inputs just bypass data for respective ports

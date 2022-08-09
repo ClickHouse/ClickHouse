@@ -23,7 +23,6 @@ public:
 
     CreateSetAndFilterOnTheFlyStep(
         const DataStream & input_stream_,
-        const DataStream & rhs_input_stream_,
         const Names & column_names_,
         size_t max_rows_in_set_,
         CrosswiseConnectionPtr crosswise_connection_,
@@ -46,8 +45,6 @@ private:
     Names column_names;
 
     size_t max_rows_in_set;
-
-    Block rhs_input_stream_header;
 
     SetWithStatePtr own_set;
     SetWithStatePtr filtering_set;

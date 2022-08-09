@@ -3,15 +3,18 @@
 namespace DB
 {
 
-static InputPorts createPortsList(const Block & header, const Block & last_header, size_t num_ports)
+/// Create list with `num_ports` of regular ports and 1 auxiliary port with empty header.
+template <typename T> requires std::is_same_v<T, InputPorts> || std::is_same_v<T, OutputPorts>
+static T createPortsWithSpecial(const Block & header, size_t num_ports)
 {
-    InputPorts res(num_ports, header);
-    res.emplace_back(last_header);
+    T res(num_ports, header);
+    res.emplace_back(Block());
     return res;
 }
 
-PingPongProcessor::PingPongProcessor(const Block & header, const Block & aux_header, size_t num_ports, Order order_)
-    : IProcessor(createPortsList(header, aux_header, num_ports), OutputPorts(num_ports + 1, header))
+PingPongProcessor::PingPongProcessor(const Block & header, size_t num_ports, Order order_)
+    : IProcessor(createPortsWithSpecial<InputPorts>(header, num_ports),
+                 createPortsWithSpecial<OutputPorts>(header, num_ports))
     , aux_in_port(inputs.back())
     , aux_out_port(outputs.back())
     , order(order_)
