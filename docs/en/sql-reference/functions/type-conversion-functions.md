@@ -1458,7 +1458,19 @@ Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort) except that 
 
 ## parseDateTime64BestEffortOrZero
 
-Same as for [parseDateTime64BestEffort](#parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+
+## parseDateTime64BestEffortUS
+
+Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
+
+## parseDateTime64BestEffortUSOrNull
+
+Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns `NULL` when it encounters a date format that cannot be processed.
+
+## parseDateTime64BestEffortUSOrZero
+
+Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns zero date or zero date time when it encounters a date format that cannot be processed.
 
 
 ## toLowCardinality
