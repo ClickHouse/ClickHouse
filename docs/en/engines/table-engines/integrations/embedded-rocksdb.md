@@ -15,11 +15,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = EmbeddedRocksDB PRIMARY KEY(primary_key_name)
+) ENGINE = EmbeddedRocksDB([ttl, read_only]) PRIMARY KEY(primary_key_name)
 ```
 
-Required parameters:
+Engine parameters:
 
+- `ttl` - time to live. TTL is accepted in seconds. Not specifying/passing or non-positive TTL behaves like TTL = infinity.
+- `read_only` - when `read_only` be set `true` opens in the usual read-only mode. Compactions will not be triggered(neither manual nor automatic), so no expired entries removed.
 - `primary_key_name` – any column name in the column list.
 - `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
 - columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
