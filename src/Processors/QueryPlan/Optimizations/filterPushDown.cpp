@@ -303,8 +303,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             if (updated_steps > 0)
             {
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Pushed down filter {} to the {} side of join", split_filter_column_name, kind);
-                return updated_steps;
             }
+            return updated_steps;
         };
 
         if (size_t updated_steps = join_push_down(JoinKind::Left))
