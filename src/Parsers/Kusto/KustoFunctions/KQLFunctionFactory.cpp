@@ -35,7 +35,7 @@ namespace DB
         {"format_timespan", KQLFunctionValue::format_timespan},
         {"getmonth", KQLFunctionValue::getmonth},
         {"getyear", KQLFunctionValue::getyear},
-        {"hoursofday", KQLFunctionValue::hoursofday},
+        {"hourofday", KQLFunctionValue::hourofday},
         {"make_timespan", KQLFunctionValue::make_timespan},
         {"make_datetime", KQLFunctionValue::make_datetime},
         {"now", KQLFunctionValue::now},
@@ -49,8 +49,8 @@ namespace DB
         {"unixtime_milliseconds_todatetime", KQLFunctionValue::unixtime_milliseconds_todatetime},
         {"unixtime_nanoseconds_todatetime", KQLFunctionValue::unixtime_nanoseconds_todatetime},
         {"unixtime_seconds_todatetime", KQLFunctionValue::unixtime_seconds_todatetime},
-        {"weekofyear", KQLFunctionValue::weekofyear},
-
+        {"week_of_year", KQLFunctionValue::week_of_year},
+        {"monthofyear", KQLFunctionValue::monthofyear},
         {"base64_encode_tostring", KQLFunctionValue::base64_encode_tostring},
         {"base64_encode_fromguid", KQLFunctionValue::base64_encode_fromguid},
         {"base64_decode_tostring", KQLFunctionValue::base64_decode_tostring},
@@ -269,6 +269,9 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
 
         case KQLFunctionValue::endofyear:
             return std::make_unique<EndOfYear>();
+        
+        case KQLFunctionValue::monthofyear:
+            return std::make_unique<MonthOfYear>();
 
         case KQLFunctionValue::format_datetime:
             return std::make_unique<FormatDateTime>();
@@ -282,7 +285,7 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
         case KQLFunctionValue::getyear:
             return std::make_unique<GetYear>();
 
-        case KQLFunctionValue::hoursofday:
+        case KQLFunctionValue::hourofday:
             return std::make_unique<HoursOfDay>();
 
         case KQLFunctionValue::make_timespan:
@@ -318,7 +321,7 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
         case KQLFunctionValue::unixtime_seconds_todatetime:
             return std::make_unique<UnixTimeSecondsToDateTime>();
 
-        case KQLFunctionValue::weekofyear:
+        case KQLFunctionValue::week_of_year:
             return std::make_unique<WeekOfYear>();
 
         case KQLFunctionValue::base64_encode_tostring:
