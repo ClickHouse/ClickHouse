@@ -39,19 +39,19 @@ struct HashMethodOneNumber
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     const char * vec;
-    bool is_column_const;
+    bool column_is_const = false;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
         vec = key_columns[0]->getRawData().data;
-        is_column_const = isColumnConst(*key_columns[0]);
+        column_is_const = isColumnConst(*key_columns[0]);
     }
 
     explicit HashMethodOneNumber(const IColumn * column)
     {
         vec = column->getRawData().data;
-        is_column_const = isColumnConst(*column);
+        column_is_const = isColumnConst(*column);
     }
 
     /// Creates context. Method is called once and result context is used in all threads.
@@ -71,7 +71,7 @@ struct HashMethodOneNumber
     /// Is used for default implementation in HashMethodBase.
     FieldType getKeyHolder(size_t row, Arena &) const
     {
-        size_t pos = is_column_const ? 0 : row;
+        size_t pos = column_is_const ? 0 : row;
         return unalignedLoad<FieldType>(vec + pos * sizeof(FieldType));
     }
 
@@ -89,12 +89,16 @@ struct HashMethodString
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
+    bool column_is_const = false;
 
     HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
         const IColumn * column = key_columns[0];
         if (isColumnConst(*column))
+        {
+            column_is_const = true;
             column = &assert_cast<const ColumnConst &>(*column).getDataColumn();
+        }
 
         const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
         offsets = column_string.getOffsets().data();
@@ -103,7 +107,8 @@ struct HashMethodString
 
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
-        StringRef key(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
+        ssize_t pos = column_is_const ? 0 : row;
+        StringRef key(chars + offsets[pos - 1], offsets[pos] - offsets[pos - 1] - 1);
 
         if constexpr (place_string_to_arena)
         {
@@ -131,6 +136,7 @@ struct HashMethodFixedString
 
     size_t n;
     const ColumnFixedString::Chars * chars;
+    bool column_is_const = false;
 
     HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
@@ -138,11 +144,13 @@ struct HashMethodFixedString
         const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(column);
         n = column_string.getN();
         chars = &column_string.getChars();
+        column_is_const = isColumnConst(column);
     }
 
     auto getKeyHolder(size_t row, [[maybe_unused]] Arena & pool) const
     {
-        StringRef key(&(*chars)[row * n], n);
+        size_t pos = column_is_const ? 0 : row;
+        StringRef key(&(*chars)[pos * n], n);
 
         if constexpr (place_string_to_arena)
         {
