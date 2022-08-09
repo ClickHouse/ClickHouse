@@ -120,7 +120,7 @@ protected:
 class HoursOfDay : public IParserKQLFunction
 {
 protected:
-    const char * getName() const override { return "hoursofday()"; }
+    const char * getName() const override { return "hourofday()"; }
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 
@@ -204,7 +204,14 @@ protected:
 class WeekOfYear : public IParserKQLFunction
 {
 protected:
-    const char * getName() const override { return "weekofyear()"; }
+    const char * getName() const override { return "week_of_year()"; }
+    bool convertImpl(String &out,IParser::Pos &pos) override;
+};
+
+class MonthOfYear : public IParserKQLFunction
+{
+protected:
+    const char * getName() const override { return "monthofyear()"; }
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 
