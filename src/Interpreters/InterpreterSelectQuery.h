@@ -186,8 +186,6 @@ private:
     void executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct);
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void
-    executeMergeSorted(QueryPlan & query_plan, const SortDescription & sort_description, UInt64 limit, const std::string & description);
 
     enum class Modificator
     {
