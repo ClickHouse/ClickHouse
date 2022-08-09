@@ -39,8 +39,6 @@ public:
 
     PingPongProcessor(const Block & header, size_t num_ports, Order order_);
 
-    String getName() const override { return "PingPongProcessor"; }
-
     Status prepare() override;
 
     std::pair<InputPort *, OutputPort *> getAuxPorts();
@@ -89,6 +87,8 @@ public:
         : PingPongProcessor(header, num_ports, order_) , data_consumed(0) , size_to_wait(size_to_wait_)
     {
     }
+
+    String getName() const override { return "ReadHeadBalancedProcessor"; }
 
     bool isReady(const Chunk & chunk) override
     {
