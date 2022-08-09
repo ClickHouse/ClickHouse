@@ -5,7 +5,7 @@ import urllib.request, urllib.parse
 import ssl
 import os.path
 
-# The test cluster is configured with certificate for that host name, see 'server-cert.pem'.
+# The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
 # The client have to verify server certificate against that name. Client uses SNI
 SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
