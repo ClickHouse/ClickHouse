@@ -60,19 +60,19 @@ struct JoinedElement
 
     void rewriteCommaToCross()
     {
-        if (join && join->kind == ASTTableJoin::Kind::Comma)
-            join->kind = ASTTableJoin::Kind::Cross;
+        if (join && join->kind == JoinKind::Comma)
+            join->kind = JoinKind::Cross;
     }
 
-    ASTTableJoin::Kind getOriginalKind() const { return original_kind; }
+    JoinKind getOriginalKind() const { return original_kind; }
 
     bool rewriteCrossToInner(ASTPtr on_expression)
     {
-        if (join->kind != ASTTableJoin::Kind::Cross)
+        if (join->kind != JoinKind::Cross)
             return false;
 
-        join->kind = ASTTableJoin::Kind::Inner;
-        join->strictness = ASTTableJoin::Strictness::All;
+        join->kind = JoinKind::Inner;
+        join->strictness = JoinStrictness::All;
 
         join->on_expression = on_expression;
         join->children.push_back(join->on_expression);
@@ -89,7 +89,7 @@ private:
     const ASTTablesInSelectQueryElement & element;
     ASTTableJoin * join = nullptr;
 
-    ASTTableJoin::Kind original_kind;
+    JoinKind original_kind;
 };
 
 bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
@@ -243,7 +243,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
         for (size_t i = 1; i < joined_tables.size(); ++i)
         {
             auto & joined = joined_tables[i];
-            if (joined.tableJoin()->kind != ASTTableJoin::Kind::Cross)
+            if (joined.tableJoin()->kind != JoinKind::Cross)
                 continue;
 
             String query_before = queryToString(*joined.tableJoin());
@@ -258,7 +258,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                 }
             }
 
-            if (joined.getOriginalKind() == ASTTableJoin::Kind::Comma &&
+            if (joined.getOriginalKind() == JoinKind::Comma &&
                 data.cross_to_inner_join_rewrite > 1 &&
                 !rewritten)
             {

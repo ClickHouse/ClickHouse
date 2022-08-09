@@ -28,7 +28,7 @@ IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
 MAX_GLIBC_VERSION = "2.4"
 DOWNLOAD_RETRIES_COUNT = 5
-CHECK_NAME = "Compatibility check (actions)"
+CHECK_NAME = "Compatibility check"
 
 
 def process_os_check(log_path):
@@ -119,7 +119,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
     if rerun_helper.is_already_finished_by_status():

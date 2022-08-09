@@ -99,7 +99,7 @@ public:
     }
 };
 
-void registerFunctionSvg(FunctionFactory & factory)
+REGISTER_FUNCTION(Svg)
 {
     factory.registerFunction<FunctionSvg>();
     factory.registerAlias("SVG", "svg");

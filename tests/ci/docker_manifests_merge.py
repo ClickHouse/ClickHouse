@@ -18,7 +18,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Push multi-arch images to Dockerhub (actions)"
+NAME = "Push multi-arch images to Dockerhub"
 CHANGED_IMAGES = "changed_images_{}.json"
 Images = Dict[str, List[str]]
 
@@ -221,7 +221,7 @@ def main():
     if len(description) >= 140:
         description = description[:136] + "..."
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(

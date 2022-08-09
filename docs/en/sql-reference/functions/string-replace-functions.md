@@ -96,7 +96,7 @@ For more information, see the link: [RE2](https://github.com/google/re2/blob/mas
 
 ## translate(s, from, to)
 
-The function replaces characters in the string ‘s’ in accordance with one-to-one character mapping defined by ‘from’ and ‘to’ strings. ‘from’ and ‘to’ must be ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
+The function replaces characters in the string ‘s’ in accordance with one-to-one character mapping defined by ‘from’ and ‘to’ strings. ‘from’ and ‘to’ must be constant ASCII strings of the same size. Non-ASCII characters in the original string are not modified.
 
 Example:
 
@@ -112,7 +112,7 @@ SELECT translate('Hello, World!', 'delor', 'DELOR') AS res
 
 ## translateUTF8(string, from, to)
 
-Similar to previous function, but works with UTF-8 arguments. ‘from’ and ‘to’ must be valid UTF-8 strings of the same size.
+Similar to previous function, but works with UTF-8 arguments. ‘from’ and ‘to’ must be valid constant UTF-8 strings of the same size.
 
 Example:
 

@@ -73,7 +73,7 @@ public:
         size_t threads_, size_t sum_marks_, size_t min_marks_for_concurrent_read_,
         RangesInDataParts && parts_, const MergeTreeData & data_, const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        const Names & column_names_,
+        const Names & column_names_, const Names & virtual_column_names_,
         const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
         bool do_not_steal_tasks_ = false);
 
@@ -97,6 +97,7 @@ private:
     const MergeTreeData & data;
     StorageSnapshotPtr storage_snapshot;
     const Names column_names;
+    const Names virtual_column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
 

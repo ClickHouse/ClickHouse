@@ -506,9 +506,19 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     if (replicas.empty())
         return;
 
+    /// Current replica must always be present in the list as the first element because we use local mutation status
+    /// to check for mutation errors. So if it is not there, just add it.
+    const Strings * all_required_replicas = &replicas;
+    Strings extended_list_of_replicas;
+    if (replicas.front() != replica_name)
+    {
+        extended_list_of_replicas.push_back(replica_name);
+        extended_list_of_replicas.insert(extended_list_of_replicas.end(), replicas.begin(), replicas.end());
+        all_required_replicas = &extended_list_of_replicas;
+    }
 
     std::set<String> inactive_replicas;
-    for (const String & replica : replicas)
+    for (const String & replica : *all_required_replicas)
     {
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
         zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
@@ -1584,8 +1594,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;    /// NOTE Deletion from `virtual_parts` is not done, but it is only necessary for merge.
     }
 
-    // bool do_fetch = false;
-
     switch (entry.type)
     {
         case LogEntry::ATTACH_PART:
@@ -1593,7 +1601,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             [[fallthrough]];
         case LogEntry::GET_PART:
             return executeFetch(entry);
-            // do_fetch = true;
         case LogEntry::MERGE_PARTS:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
@@ -1609,8 +1616,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
     }
-
-    // return true;
 }
 
 
@@ -5979,7 +5984,7 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
         {
             if (*it == replica_name)
             {
-                std::iter_swap(it, replicas.rbegin());
+                std::iter_swap(it, replicas.begin());
                 break;
             }
         }
@@ -6018,6 +6023,11 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
         getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, block_number);
     }
     return CancellationCode::CancelSent;
+}
+
+bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
+{
+    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
@@ -7867,7 +7877,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     if (settings->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns);
+    new_data_part->setColumns(columns, {});
     new_data_part->rows_count = block.rows();
 
     {
