@@ -340,15 +340,6 @@ public:
             return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(toLUTIndex(v).toUnderType() - daynum_offset_epoch)};
     }
 
-    static UInt16 normalizeDayNum(Int64 d)
-    {
-        if (d < 0)
-            return 0;
-        if (d > 65535)
-            return 65535;
-        return static_cast<UInt16>(d);
-    }
-
     /// Round down to start of monday.
     template <typename DateOrTime>
     inline Time toFirstDayOfWeek(DateOrTime v) const
