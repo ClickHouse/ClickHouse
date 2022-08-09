@@ -48,17 +48,6 @@
   "test_system_replicated_fetches/test.py::test_system_replicated_fetches",
   "test_zookeeper_config_load_balancing/test.py::test_round_robin",
 
-  "test_tlsv1_3/test.py::test_https",
-  "test_tlsv1_3/test.py::test_https_wrong_cert",
-  "test_tlsv1_3/test.py::test_https_non_ssl_auth",
-  "test_tlsv1_3/test.py::test_create_user",
   "test_user_ip_restrictions/test.py::test_ipv4",
   "test_user_ip_restrictions/test.py::test_ipv6",
-  "test_ssl_cert_authentication/test.py::test_https",
-  "test_ssl_cert_authentication/test.py::test_https_wrong_cert",
-  "test_ssl_cert_authentication/test.py::test_https_non_ssl_auth",
-  "test_ssl_cert_authentication/test.py::test_create_user",
-  "test_grpc_protocol_ssl/test.py::test_secure_channel",
-  "test_grpc_protocol_ssl/test.py::test_insecure_channel",
-  "test_grpc_protocol_ssl/test.py::test_wrong_client_certificate"
 ]
