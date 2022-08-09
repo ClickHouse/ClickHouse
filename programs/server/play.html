@@ -75,6 +75,9 @@
         *
         {
             box-sizing: border-box;
+            /* For iPad */
+            margin: 0;
+            border-radius: 0;
         }
 
         html, body
@@ -275,11 +278,21 @@
             display: none;
         }
 
-        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut. */
-        td.left:hover
+        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
+         * We also keep it for some time on mouseout for "hysteresis" effect.
+         */
+        td.left:hover, .td-hover-hysteresis
         {
             white-space: pre-wrap;
             max-width: none;
+        }
+
+        .td-selected
+        {
+            white-space: pre-wrap;
+            max-width: none;
+            background-color: var(--table-hover-color);
+            border: 2px solid var(--border-color);
         }
 
         td.transposed
@@ -293,6 +306,14 @@
         {
             text-align: center;
             vertical-align: middle;
+        }
+
+        .row-number
+        {
+            width: 1%;
+            text-align: right;
+            background-color: var(--table-header-color);
+            color: var(--misc-text-color);
         }
 
         div.empty-result
@@ -501,20 +522,27 @@
 
         const server_address = document.getElementById('url').value;
 
-        const url = server_address +
+        var url = server_address +
             (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
             'add_http_cors_header=1' +
-            '&user=' + encodeURIComponent(user) +
-            '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
+        // If play.html is opened locally, append username and password to the URL parameter to avoid CORS issue.
+        if (document.location.href.startsWith("file://")) {
+            url += '&user=' + encodeURIComponent(user) +
+            '&password=' + encodeURIComponent(password)
+        }
+
         const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
-
+        // If play.html is open normally, use Basic auth to prevent username and password being exposed in URL parameters
+        if (!document.location.href.startsWith("file://")) {
+            xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
+        }
         xhr.onreadystatechange = function()
         {
             if (posted_request_num != request_num) {
@@ -633,10 +661,9 @@
         clearElement('chart');
         clearElement('data-unparsed');
         clearElement('error');
-        clearElement('hourglass');
 
-        document.getElementById('check-mark').innerText = '';
-        document.getElementById('hourglass').innerText = '';
+        document.getElementById('check-mark').display = 'none';
+        document.getElementById('hourglass').display = 'none';
         document.getElementById('stats').innerText = '';
         document.getElementById('logo-container').style.display = 'block';
     }
@@ -784,7 +811,17 @@
             return;
         }
 
+        const should_display_row_numbers = response.data.length > 3;
+
         let thead = document.createElement('thead');
+
+        if (should_display_row_numbers) {
+            let th = document.createElement('th');
+            th.className = 'row-number';
+            th.appendChild(document.createTextNode('№'));
+            thead.appendChild(th);
+        }
+
         for (let idx in response.meta) {
             let th = document.createElement('th');
             const name = document.createTextNode(response.meta[idx].name);
@@ -794,7 +831,9 @@
 
         /// To prevent hanging the browser, limit the number of cells in a table.
         /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
+        /// Also we permit rendering of more records but only if elapsed time is not large.
         const max_rows = 10000 / response.meta.length;
+        const max_render_ms = 200;
         let row_num = 0;
 
         const column_is_number = response.meta.map(elem => !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/));
@@ -810,18 +849,35 @@
             column_need_render_bars: column_need_render_bars,
         };
 
+        const start_time = performance.now();
+
         let tbody = document.createElement('tbody');
         for (let row_idx in response.data) {
             let tr = document.createElement('tr');
+            if (should_display_row_numbers) {
+                let td = document.createElement('td');
+                td.className = 'row-number';
+                td.appendChild(document.createTextNode(1 + +row_idx));
+                tr.appendChild(td);
+            }
             for (let col_idx in response.data[row_idx]) {
                 let cell = response.data[row_idx][col_idx];
                 const td = renderCell(cell, col_idx, settings);
+
+                td.onclick = () => { td.classList.add('td-selected') };
+                td.onmouseenter = () => {
+                    td.classList.add('td-hover-hysteresis');
+                    td.onmouseleave = () => {
+                        setTimeout(() => { td && td.classList.remove('td-hover-hysteresis') }, 1000);
+                    };
+                };
+
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);
 
             ++row_num;
-            if (row_num >= max_rows) {
+            if (row_num >= max_rows && performance.now() - start_time >= max_render_ms) {
                 break;
             }
         }
