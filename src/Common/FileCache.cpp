@@ -651,7 +651,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
             size_t offset;
             size_t size;
 
-            Segment(Key key_, size_t offset_, size_t size_) 
+            Segment(Key key_, size_t offset_, size_t size_)
                 : key(key_), offset(offset_), size(size_) {}
         };
 
