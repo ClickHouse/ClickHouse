@@ -103,6 +103,9 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionParseDateTime64BestEffort>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrZero>();
     factory.registerFunction<FunctionParseDateTime64BestEffortOrNull>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUS>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUSOrZero>();
+    factory.registerFunction<FunctionParseDateTime64BestEffortUSOrNull>();
 
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalNanosecond, PositiveMonotonicity>>();
     factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMicrosecond, PositiveMonotonicity>>();
