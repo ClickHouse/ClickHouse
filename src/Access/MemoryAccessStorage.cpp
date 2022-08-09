@@ -119,7 +119,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
         assert(replace_if_exists);
         removeNoLock(id_by_name, /* throw_if_not_exists = */ false);
     }
-    
+
     if (id_collision)
     {
         assert(replace_if_exists);
