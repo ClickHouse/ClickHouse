@@ -1,3 +1,4 @@
+-- Tags: no-backward-compatibility-check
 SET allow_experimental_hash_functions = 1;
 
 select number, hashid(number) from system.numbers limit 5;
