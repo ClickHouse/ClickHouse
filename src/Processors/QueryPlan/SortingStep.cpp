@@ -30,7 +30,7 @@ static ITransformingStep::Traits getTraits(size_t limit)
 
 SortingStep::SortingStep(
     const DataStream & input_stream,
-    const SortDescription & description_,
+    SortDescription description_,
     size_t max_block_size_,
     UInt64 limit_,
     SizeLimits size_limits_,
@@ -42,7 +42,7 @@ SortingStep::SortingStep(
     bool optimize_sorting_for_input_stream_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::Full)
-    , result_description(description_)
+    , result_description(std::move(description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
     , size_limits(size_limits_)
@@ -60,14 +60,14 @@ SortingStep::SortingStep(
 
 SortingStep::SortingStep(
     const DataStream & input_stream_,
-    const SortDescription & prefix_description_,
-    const SortDescription & result_description_,
+    SortDescription prefix_description_,
+    SortDescription result_description_,
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , type(Type::FinishSorting)
-    , prefix_description(prefix_description_)
-    , result_description(result_description_)
+    , prefix_description(std::move(prefix_description_))
+    , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
@@ -78,12 +78,12 @@ SortingStep::SortingStep(
 
 SortingStep::SortingStep(
     const DataStream & input_stream,
-    const SortDescription & sort_description_,
+    SortDescription sort_description_,
     size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::MergingSorted)
-    , result_description(sort_description_)
+    , result_description(std::move(sort_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
 {
@@ -267,7 +267,6 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         /// merge sorted
         if (input_sort_mode == DataStream::SortMode::Port && input_sort_desc.hasPrefix(result_description))
         {
-            type = Type::MergingSorted;
             mergingSorted(pipeline, result_description, limit);
             return;
         }

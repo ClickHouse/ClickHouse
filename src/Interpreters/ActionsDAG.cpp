@@ -1957,7 +1957,8 @@ bool ActionsDAG::isSortingPreserved(const Block & input_header, const SortDescri
                 return false;
 
             /// check if alias to sorted column is in output header
-            if (!output_header.findByName(it->second))
+            const String & column_alias = it->second;
+            if (!output_header.findByName(column_alias))
                 return false;
         }
 
