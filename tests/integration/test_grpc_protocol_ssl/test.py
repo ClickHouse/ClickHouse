@@ -4,9 +4,10 @@ import sys
 import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 
+# The test cluster is configured with certificate for that host name, see 'server-cert.pem'.
+# The client have to verify server certificate against that name. Client uses SNI
+SSL_HOST = "integration-tests.clickhouse.com"
 GRPC_PORT = 9100
-# It's important for the node to work at this IP because 'server-cert.pem' requires that (see server-ext.cnf).
-NODE_IP = "10.5.172.77"  # Never copy-paste this line
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
@@ -31,12 +32,10 @@ import clickhouse_grpc_pb2_grpc
 
 # Utilities
 
-node_ip_with_grpc_port = NODE_IP + ":" + str(GRPC_PORT)
 config_dir = os.path.join(SCRIPT_DIR, "./configs")
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    ipv4_address=NODE_IP,
     main_configs=[
         "configs/grpc_config.xml",
         "configs/server-key.pem",
@@ -46,18 +45,26 @@ node = cluster.add_instance(
 )
 
 
+def get_grpc_url(instance=node):
+    return f"{instance.ip_address}:{GRPC_PORT}"
+
+
 def create_secure_channel():
     ca_cert = open(os.path.join(config_dir, "ca-cert.pem"), "rb").read()
     client_key = open(os.path.join(config_dir, "client-key.pem"), "rb").read()
     client_cert = open(os.path.join(config_dir, "client-cert.pem"), "rb").read()
     credentials = grpc.ssl_channel_credentials(ca_cert, client_key, client_cert)
-    channel = grpc.secure_channel(node_ip_with_grpc_port, credentials)
+    channel = grpc.secure_channel(
+        get_grpc_url(),
+        credentials,
+        options=(("grpc.ssl_target_name_override", SSL_HOST),),
+    )
     grpc.channel_ready_future(channel).result(timeout=10)
     return channel
 
 
 def create_insecure_channel():
-    channel = grpc.insecure_channel(node_ip_with_grpc_port)
+    channel = grpc.insecure_channel(get_grpc_url())
     grpc.channel_ready_future(channel).result(timeout=2)
     return channel
 
@@ -67,7 +74,7 @@ def create_secure_channel_with_wrong_client_certificate():
     client_key = open(os.path.join(config_dir, "wrong-client-key.pem"), "rb").read()
     client_cert = open(os.path.join(config_dir, "wrong-client-cert.pem"), "rb").read()
     credentials = grpc.ssl_channel_credentials(ca_cert, client_key, client_cert)
-    channel = grpc.secure_channel(node_ip_with_grpc_port, credentials)
+    channel = grpc.secure_channel(get_grpc_url(), credentials)
     grpc.channel_ready_future(channel).result(timeout=2)
     return channel
 
