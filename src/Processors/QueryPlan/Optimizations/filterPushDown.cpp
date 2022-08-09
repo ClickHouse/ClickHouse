@@ -285,7 +285,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
              *
              * New filter column is the first one.
              */
-            const String & split_filter_column_name = split_filter->getIndex().front()->result_name;
+            const String & split_filter_column_name = split_filter->getOutputs().front()->result_name;
             bool can_remove_filter = source_columns.end() == std::find(source_columns.begin(), source_columns.end(), split_filter_column_name);
             const size_t updated_steps = tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
             if (updated_steps > 0)
