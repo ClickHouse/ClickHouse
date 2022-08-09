@@ -220,10 +220,10 @@ private:
     using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
 
     CachedFiles files;
-    FileCachePriorityPtr main_priority;
+    std::unique_ptr<IFileCachePriority> main_priority;
 
     FileCacheRecords stash_records;
-    FileCachePriorityPtr stash_priority;
+    std::unique_ptr<IFileCachePriority> stash_priority;
 
     size_t max_stash_element_size;
     size_t enable_cache_hits_threshold;

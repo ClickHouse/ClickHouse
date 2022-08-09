@@ -59,7 +59,7 @@ public:
 
         /// Deletes an existing cached record. And to avoid pointer suspension
         /// the iterator should automatically point to the next record.
-        virtual void remove(std::lock_guard<std::mutex> &) = 0;
+        virtual void removeAndGetNext(std::lock_guard<std::mutex> &) = 0;
 
         virtual void incrementSize(size_t, std::lock_guard<std::mutex> &) = 0;
     };

@@ -30,8 +30,8 @@ FileCache::FileCache(
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
-    , main_priority(std::make_shared<LRUFileCachePriority>())
-    , stash_priority(std::make_shared<LRUFileCachePriority>())
+    , main_priority(std::make_unique<LRUFileCachePriority>())
+    , stash_priority(std::make_unique<LRUFileCachePriority>())
     , max_stash_element_size(cache_settings_.max_elements)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , log(&Poco::Logger::get("FileCache"))
@@ -145,7 +145,7 @@ void FileCache::QueryContext::remove(const Key & key, size_t offset, size_t size
         auto record = records.find({key, offset});
         if (record != records.end())
         {
-            record->second->remove(cache_lock);
+            record->second->removeAndGetNext(cache_lock);
             records.erase({key, offset});
         }
     }
@@ -561,7 +561,7 @@ FileCache::FileSegmentCell * FileCache::addCell(
                 {
                     auto remove_priority_iter = stash_priority->getLowestPriorityWriteIterator(cache_lock);
                     stash_records.erase({remove_priority_iter->key(), remove_priority_iter->offset()});
-                    remove_priority_iter->remove(cache_lock);
+                    remove_priority_iter->removeAndGetNext(cache_lock);
                 }
                 /// For segments that do not reach the download threshold, we do not download them, but directly read them
                 result_state = FileSegment::State::SKIP_CACHE;
@@ -645,7 +645,17 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
 
         auto * cell_for_reserve = getCell(key, offset, cache_lock);
 
-        std::vector<std::tuple<Key, size_t, size_t>> ghost;
+        struct Segment
+        {
+            Key key;
+            size_t offset;
+            size_t size;
+
+            Segment(Key key_, size_t offset_, size_t size_) 
+                : key(key_), offset(offset_), size(size_) {}
+        };
+
+        std::vector<Segment> ghost;
         std::vector<FileSegmentCell *> trash;
         std::vector<FileSegmentCell *> to_evict;
 
@@ -669,9 +679,9 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
                 /// The cache corresponding to this record may be swapped out by
                 /// other queries, so it has become invalid.
                 removed_size += iter->size();
-                ghost.push_back({iter->key(), iter->offset(), iter->size()});
+                ghost.push_back(Segment(iter->key(), iter->offset(), iter->size()));
                 /// next()
-                iter->remove(cache_lock);
+                iter->removeAndGetNext(cache_lock);
             }
             else
             {
@@ -720,7 +730,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         }
 
         for (auto & entry : ghost)
-            query_context->remove(std::get<0>(entry), std::get<1>(entry), std::get<2>(entry), cache_lock);
+            query_context->remove(entry.key, entry.offset, entry.size, cache_lock);
 
         if (is_overflow())
             return false;
@@ -926,7 +936,7 @@ void FileCache::removeIfReleasable(bool remove_persistent_files)
 
     std::lock_guard cache_lock(mutex);
 
-    std::vector<FileSegmentPtr> to_remove;
+    std::vector<FileSegment *> to_remove;
     for (auto it = main_priority->getLowestPriorityReadIterator(cache_lock); it->valid(); it->next())
     {
         const auto & key = it->key();
@@ -946,7 +956,7 @@ void FileCache::removeIfReleasable(bool remove_persistent_files)
                     || remove_persistent_files
                     || allow_to_remove_persistent_segments_from_cache_by_default))
             {
-                to_remove.emplace_back(file_segment);
+                to_remove.emplace_back(file_segment.get());
             }
         }
     }
@@ -981,7 +991,7 @@ void FileCache::remove(
 
     if (cell->queue_iterator)
     {
-        cell->queue_iterator->remove(cache_lock);
+        cell->queue_iterator->removeAndGetNext(cache_lock);
     }
 
     auto & offsets = files[key];
