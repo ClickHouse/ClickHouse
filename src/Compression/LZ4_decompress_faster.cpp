@@ -478,16 +478,13 @@ template <> void inline copyOverlap<32, true>(UInt8 * op, const UInt8 *& match, 
 /// See also https://stackoverflow.com/a/30669632
 
 template <size_t copy_amount, bool use_shuffle>
-bool NO_INLINE decompressImpl(
+void NO_INLINE decompressImpl(
      const char * const source,
      char * const dest,
-     size_t source_size,
      size_t dest_size)
 {
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
-    const UInt8 * const input_end = ip + source_size;
-    UInt8 * const output_begin = op;
     UInt8 * const output_end = op + dest_size;
 
     /// Unrolling with clang is doing >10% performance degrade.
@@ -530,28 +527,19 @@ bool NO_INLINE decompressImpl(
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
-        {
-            auto * target = std::min(copy_end, output_end);
-            wildCopy<copy_amount>(op, ip, target);    /// Here we can write up to copy_amount - 1 bytes after buffer.
-
-            if (target == output_end)
-                return true;
-        }
+        wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         ip += length;
         op = copy_end;
 
-        if (unlikely(ip > input_end))
-            return false;
+        if (copy_end >= output_end)
+            return;
 
         /// Get match offset.
 
         size_t offset = LZ4_readLE16(ip);
         ip += 2;
         const UInt8 * match = op - offset;
-
-        if (unlikely(match < output_begin))
-            return false;
 
         /// Get match length.
 
@@ -593,10 +581,7 @@ bool NO_INLINE decompressImpl(
 
         copy<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
         if (length > copy_amount * 2)
-        {
-            auto * target = std::min(copy_end, output_end);
-            wildCopy<copy_amount>(op + copy_amount, match + copy_amount, target);
-        }
+            wildCopy<copy_amount>(op + copy_amount, match + copy_amount, copy_end);
 
         op = copy_end;
     }
@@ -605,7 +590,7 @@ bool NO_INLINE decompressImpl(
 }
 
 
-bool decompress(
+void decompress(
     const char * const source,
     char * const dest,
     size_t source_size,
@@ -613,7 +598,7 @@ bool decompress(
     PerformanceStatistics & statistics [[maybe_unused]])
 {
     if (source_size == 0 || dest_size == 0)
-        return true;
+        return;
 
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
@@ -629,29 +614,24 @@ bool decompress(
         /// Run the selected method and measure time.
 
         Stopwatch watch;
-        bool success = true;
         if (best_variant == 0)
-            success = decompressImpl<16, true>(source, dest, source_size, dest_size);
+            decompressImpl<16, true>(source, dest, dest_size);
         if (best_variant == 1)
-            success = decompressImpl<16, false>(source, dest, source_size, dest_size);
+            decompressImpl<16, false>(source, dest, dest_size);
         if (best_variant == 2)
-            success = decompressImpl<8, true>(source, dest, source_size, dest_size);
+            decompressImpl<8, true>(source, dest, dest_size);
         if (best_variant == 3)
-            success = decompressImpl<32, false>(source, dest, source_size, dest_size);
-        if (best_variant == 4)
-            success = decompressImpl<32, true>(source, dest, source_size, dest_size);
+            decompressImpl<32, false>(source, dest, dest_size);
 
         watch.stop();
 
         /// Update performance statistics.
 
         statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);
-
-        return success;
     }
     else
     {
-        return decompressImpl<8, false>(source, dest, source_size, dest_size);
+        decompressImpl<8, false>(source, dest, dest_size);
     }
 }
 

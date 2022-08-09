@@ -122,16 +122,16 @@ struct PerformanceStatistics
             return choose_method;
     }
 
-    PerformanceStatistics() = default;
-    explicit PerformanceStatistics(ssize_t choose_method_) : choose_method(choose_method_) {}
+    PerformanceStatistics() {}
+    PerformanceStatistics(ssize_t choose_method_) : choose_method(choose_method_) {}
 };
 
 
 /** This method dispatch to one of different implementations depending on performance statistics.
   */
-bool decompress(
-    const char * const source, /// NOLINT
-    char * const dest, /// NOLINT
+void decompress(
+    const char * const source,
+    char * const dest,
     size_t source_size,
     size_t dest_size,
     PerformanceStatistics & statistics);

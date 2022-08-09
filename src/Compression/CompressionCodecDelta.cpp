@@ -132,10 +132,6 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 bytes_size = source[0];
-
-    if (bytes_size == 0)
-        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
-
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
 
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
