@@ -39,15 +39,18 @@ struct HashMethodOneNumber
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     const char * vec;
+    ColumnPtr owned_column;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
-        vec = key_columns[0]->getRawData().data;
+        owned_column = key_columns[0]->convertToFullColumnIfConst();
+        vec = owned_column->getRawData().data;
     }
 
     explicit HashMethodOneNumber(const IColumn * column)
     {
+        owned_column = column->convertToFullColumnIfConst();
         vec = column->getRawData().data;
     }
 
