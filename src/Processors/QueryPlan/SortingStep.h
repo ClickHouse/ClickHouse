@@ -14,7 +14,7 @@ public:
     /// Full
     SortingStep(
         const DataStream & input_stream,
-        const SortDescription & description_,
+        SortDescription description_,
         size_t max_block_size_,
         UInt64 limit_,
         SizeLimits size_limits_,
@@ -28,15 +28,15 @@ public:
     /// FinishSorting
     SortingStep(
         const DataStream & input_stream_,
-        const SortDescription & prefix_description_,
-        const SortDescription & result_description_,
+        SortDescription prefix_description_,
+        SortDescription result_description_,
         size_t max_block_size_,
         UInt64 limit_);
 
     /// MergingSorted
     SortingStep(
         const DataStream & input_stream,
-        const SortDescription & sort_description_,
+        SortDescription sort_description_,
         size_t max_block_size_,
         UInt64 limit_ = 0);
 
