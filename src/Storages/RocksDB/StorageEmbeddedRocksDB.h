@@ -9,7 +9,7 @@
 
 namespace rocksdb
 {
-    class DBWithTTL;
+    class DB;
     class Statistics;
 }
 
@@ -76,7 +76,7 @@ public:
 
 private:
     const String primary_key;
-    using RocksDBPtr = std::unique_ptr<rocksdb::DBWithTTL>;
+    using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
     mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;

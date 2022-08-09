@@ -3,6 +3,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
 
@@ -381,7 +382,6 @@ void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
     rocksdb::Options base;
-    rocksdb::DBWithTTL * db;
 
     base.create_if_missing = true;
     base.compression = rocksdb::CompressionType::kZSTD;
@@ -452,15 +452,28 @@ void StorageEmbeddedRocksDB::initDB()
         }
     }
 
-    status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
-
-    if (!status.ok())
+    if (ttl > 0)
     {
-        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {}: {}",
-            rocksdb_dir, status.ToString());
+        rocksdb::DBWithTTL * db;
+        status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+        rocksdb_ptr = std::unique_ptr<rocksdb::DBWithTTL>(db);
     }
-    /// It's ok just to wrap db with unique_ptr, from rdb documentation: "when you are done with a database, just delete the database object"
-    rocksdb_ptr = std::unique_ptr<rocksdb::DBWithTTL>(db);
+    else 
+    {
+        rocksdb::DB * db;
+        status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+        rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
+    }
 }
 
 Pipe StorageEmbeddedRocksDB::read(
@@ -523,10 +536,23 @@ SinkToStoragePtr StorageEmbeddedRocksDB::write(
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
     // TODO custom RocksDBSettings, table function
-    if (!args.engine_args.empty())
+    auto engine_args = args.engine_args;
+    if (engine_args.size() > 2)
         throw Exception(
-            "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+            "Engine " + args.engine_name + " requires less than 2 parameters (" + toString(engine_args.size()) + " given)",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    Int32 ttl{0};
+    bool read_only{false};
+    if (engine_args.size() == 2)
+    {
+        ttl = checkAndGetLiteralArgument<Int32>(engine_args[1], "ttl");
+        read_only = checkAndGetLiteralArgument<bool>(engine_args[2], "read_only");
+    }
+    else if (engine_args.size() == 1)
+    {
+        ttl = checkAndGetLiteralArgument<Int32>(engine_args[1], "ttl");
+    }
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
@@ -541,7 +567,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0]);
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
