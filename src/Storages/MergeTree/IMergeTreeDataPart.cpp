@@ -499,9 +499,10 @@ void IMergeTreeDataPart::removeIfNeeded()
     if (!is_temp && state != State::DeleteOnDestroy)
         return;
 
+    std::string path;
     try
     {
-        auto path = data_part_storage->getRelativePath();
+        path = data_part_storage->getRelativePath();
 
         if (!data_part_storage->exists()) // path
             return;
@@ -537,7 +538,7 @@ void IMergeTreeDataPart::removeIfNeeded()
         /// If it's tmp_merge_<part_name> or tmp_fetch_<part_name>,
         /// then all future attempts to execute part producing operation will fail with "directory already exists".
         /// Seems like it's especially important for remote disks, because removal may fail due to network issues.
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "while removiong path: " + path);
         assert(!is_temp);
         assert(state != State::DeleteOnDestroy);
         assert(state != State::Temporary);
