@@ -45,10 +45,10 @@ public:
     /// Reloads and updates entities in this storage. This function is used to implement SYSTEM RELOAD CONFIG.
     virtual void reload() {}
 
-    /// Starts periodic reloading and update of entities in this storage.
+    /// Starts periodic reloading and updating of entities in this storage.
     virtual void startPeriodicReloading() {}
 
-    /// Stops periodic reloading and update of entities in this storage.
+    /// Stops periodic reloading and updating of entities in this storage.
     virtual void stopPeriodicReloading() {}
 
     /// Returns the identifiers of all the entities of a specified type contained in the storage.

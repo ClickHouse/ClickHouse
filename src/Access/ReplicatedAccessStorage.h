@@ -25,6 +25,7 @@ public:
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
+    void reload() override;
     void startPeriodicReloading() override { startWatchingThread(); }
     void stopPeriodicReloading() override { stopWatchingThread(); }
 
@@ -36,9 +37,10 @@ public:
 
 private:
     String zookeeper_path;
-    zkutil::GetZooKeeper get_zookeeper;
+    const zkutil::GetZooKeeper get_zookeeper;
 
-    std::atomic<bool> initialized = false;
+    zkutil::ZooKeeperPtr cached_zookeeper TSA_GUARDED_BY(cached_zookeeper_mutex);
+    std::mutex cached_zookeeper_mutex;
 
     std::atomic<bool> watching = false;
     ThreadFromGlobalPool watching_thread;
@@ -53,7 +55,9 @@ private:
     bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);
     bool updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
 
-    void initializeZookeeper();
+    void initZooKeeperIfNeeded();
+    zkutil::ZooKeeperPtr getZooKeeper();
+    zkutil::ZooKeeperPtr getZooKeeperNoLock() TSA_REQUIRES(cached_zookeeper_mutex);
     void createRootNodes(const zkutil::ZooKeeperPtr & zookeeper);
 
     void startWatchingThread();
@@ -63,10 +67,11 @@ private:
     void resetAfterError();
 
     bool refresh();
-    void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper);
+    void refreshEntities(const zkutil::ZooKeeperPtr & zookeeper, bool all);
     void refreshEntity(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
     void refreshEntityNoLock(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) TSA_REQUIRES(mutex);
 
+    AccessEntityPtr tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const;
     void setEntityNoLock(const UUID & id, const AccessEntityPtr & entity) TSA_REQUIRES(mutex);
     void removeEntityNoLock(const UUID & id) TSA_REQUIRES(mutex);
 
