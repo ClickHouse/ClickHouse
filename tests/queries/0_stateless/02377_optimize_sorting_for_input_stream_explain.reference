@@ -24,3 +24,15 @@ Sort Mode: Chunk: a ASC
 Sort Mode: None
 Sort Mode: None
 Sort Mode: Chunk: a ASC
+-- PLAN: aliases break sorting order
+Sort Mode: Stream: a ASC
+Sort Mode: Stream: a ASC
+Sort Mode: None
+Sort Mode: Stream: a ASC
+Sort Mode: Port: a ASC
+Sort Mode: Port: a ASC
+-- PLAN: aliases DONT break sorting order
+Sort Mode: Stream: x ASC, y ASC
+Sort Mode: Stream: x ASC, y ASC
+Sort Mode: Chunk: a ASC, b ASC
+Sort Mode: Chunk: a ASC, b ASC

@@ -1927,7 +1927,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     return actions;
 }
 
-bool ActionsDAG::isSortingPreserved(const Block & header, const SortDescription & sort_description) const
+bool ActionsDAG::isSortingPreserved(const Block & input_header, const SortDescription & sort_description) const
 {
     if (sort_description.empty())
         return true;
@@ -1935,12 +1935,40 @@ bool ActionsDAG::isSortingPreserved(const Block & header, const SortDescription 
     if (hasArrayJoin())
         return false;
 
-    const Block & output_header = updateHeader(header);
+    /// build reversed aliases, use it later to find out if some aliases refer to sorted columns
+    std::unordered_map<std::string_view, const String &> reversed_aliases;
+    for (const Node * node : index)
+    {
+        if (node->type == ActionType::ALIAS)
+        {
+            reversed_aliases.emplace(node->children.front()->result_name, node->result_name);
+        }
+    }
+
+    const Block & output_header = updateHeader(input_header);
     for (const auto & desc : sort_description)
     {
+        /// check if column is part of output header
+        /// if not, check if aliases in output header refers to the column
         if (!output_header.findByName(desc.column_name))
-            return false;
+        {
+            const auto it = reversed_aliases.find(desc.column_name);
+            if (it == reversed_aliases.end())
+                return false;
+
+            /// check if alias to sorted column is in output header
+            if (!output_header.findByName(it->second))
+                return false;
+        }
+
+        /// check that found colunm is not an alias
+        for (const Node * node : index)
+        {
+            if (node->type == ActionType::ALIAS && node->result_name == desc.column_name)
+                return false;
+        }
     }
+
     return true;
 }
 
