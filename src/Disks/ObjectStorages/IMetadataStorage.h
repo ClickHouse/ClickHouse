@@ -37,6 +37,9 @@ public:
 
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) = 0;
 
+    virtual bool supportsChmod() const = 0;
+    virtual void chmod(const String & path, mode_t mode) = 0;
+
     virtual void setReadOnly(const std::string & path) = 0;
 
     virtual void unlinkFile(const std::string & path) = 0;
@@ -106,6 +109,11 @@ public:
     virtual Poco::Timestamp getLastModified(const std::string & path) const = 0;
 
     virtual time_t getLastChanged(const std::string & path) const = 0;
+
+    virtual bool supportsChmod() const = 0;
+
+    virtual bool supportsStat() const = 0;
+    virtual struct stat stat(const String & path) const = 0;
 
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
