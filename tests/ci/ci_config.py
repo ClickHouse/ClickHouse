@@ -352,4 +352,6 @@ REQUIRED_CHECKS = [
     "Style Check",
     "ClickHouse build check",
     "ClickHouse special build check",
+    "Stateful tests (release)",
+    "Stateless tests (release)",
 ]
