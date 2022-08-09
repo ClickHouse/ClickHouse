@@ -7,7 +7,7 @@ import os.path
 
 
 # The test cluster is configured with certificate for that host name, see 'server-cert.pem'.
-# The client have to verify server certificate against that name. Client uses SNI
+# The client has to verify server certificate against that name. Client uses SNI
 SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
