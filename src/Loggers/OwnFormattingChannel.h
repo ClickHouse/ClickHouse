@@ -39,6 +39,12 @@ public:
             pChannel->close();
     }
 
+    void setProperty(const std::string& name, const std::string& value) override
+    {
+        if (pChannel)
+            pChannel->setProperty(name, value);
+    }
+
     void log(const Poco::Message & msg) override;
     void logExtended(const ExtendedLogMessage & msg) override;
 

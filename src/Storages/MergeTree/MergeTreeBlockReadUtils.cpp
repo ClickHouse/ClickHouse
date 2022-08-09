@@ -124,7 +124,7 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        const auto minimum_size_column_name = part->getColumnNameWithMinimumCompressedSize(storage_snapshot, with_subcolumns);
+        const auto minimum_size_column_name = part->getColumnNameWithMinimumCompressedSize(with_subcolumns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
         injected_columns.insert(columns.back());
