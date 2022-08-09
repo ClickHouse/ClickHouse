@@ -18,6 +18,14 @@ def started_cluster():
 
 
 def test_huge_column(started_cluster):
+
+    if (
+        node.is_built_with_thread_sanitizer()
+        or node.is_built_with_memory_sanitizer()
+        or node.is_built_with_address_sanitizer()
+    ):
+        pytest.skip("sanitizer build has higher memory consumption; also it is slow")
+
     # max_server_memory_usage is set to 1GB
     # Added column should be 1e6 * 2000 ~= 2GB
     # ALTER ADD COLUMN + MATRIALIZE COLUMN should not cause big memory consumption
