@@ -58,45 +58,74 @@ using SettingFieldInt64 = SettingFieldNumber<Int64>;
 using SettingFieldFloat = SettingFieldNumber<float>;
 using SettingFieldBool = SettingFieldNumber<bool>;
 
-
-/** Like SettingFieldNumber, but also supports the value of 'auto'.
-  * Note: 0 and 'auto' are not equal. By default when 'auto' is set the value is set to 0.
-  * But if you need to distinguish between 0 and 'auto', you can use the 'is_auto' flag.
-  * Serialized as string.
+/** Wraps any SettingField to support special value 'auto' that can be checked with `is_auto` flag.
+  * Note about serialization:
+  * The new versions with `SettingsWriteFormat::STRINGS_WITH_FLAGS` serialize values as a string.
+  * In legacy SettingsWriteFormat mode, functions `read/writeBinary` would serialize values as a binary, and 'is_auto' would be ignored.
+  * It's possible to upgrade settings from regular type to wrapped ones and keep compatibility with old versions,
+  * but when serializing 'auto' old version will see binary representation of the default value.
   */
-template <typename T>
-struct SettingFieldNumberWithAuto
+template <typename Base>
+struct SettingWithAuto
 {
-    using Type = T;
+    constexpr static auto keyword = "auto";
+    static bool isAuto(const Field & f) { return f.getType() == Field::Types::String && f.safeGet<const String &>() == keyword; }
+    static bool isAuto(const String & str) { return str == keyword; }
 
-    bool is_auto;
-    T value;
+    using Type = typename Base::Type;
+
+    Base base;
+    bool is_auto = false;
     bool changed = false;
 
-    explicit SettingFieldNumberWithAuto() : is_auto(true), value(0)  {}
-    explicit SettingFieldNumberWithAuto(T x) : is_auto(false), value(x)  {}
-    explicit SettingFieldNumberWithAuto(const Field & f);
+    explicit SettingWithAuto() : is_auto(true) {}
+    explicit SettingWithAuto(Type val) : is_auto(false) { base = Base(val); }
 
-    SettingFieldNumberWithAuto & operator=(T x) { is_auto = false; value = x; changed = true; return *this; }
-    SettingFieldNumberWithAuto & operator=(const Field & f);
+    explicit SettingWithAuto(const Field & f)
+        : is_auto(isAuto(f))
+    {
+        if (!is_auto)
+            base = Base(f);
+    }
 
-    operator T() const { return value; } /// NOLINT
-    explicit operator Field() const { return is_auto ? Field("auto") : Field(value); }
+    SettingWithAuto & operator=(const Field & f)
+    {
+        changed = true;
+        if (is_auto = isAuto(f); !is_auto)
+            base = f;
+        return *this;
+    }
 
-    String toString() const;
-    void parseFromString(const String & str);
+    explicit operator Field() const { return is_auto ? Field(keyword) : Field(base); }
 
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
+    String toString() const { return is_auto ? keyword : base.toString(); }
 
-    T valueOr(T default_value) const { return is_auto ? default_value : value; }
+    void parseFromString(const String & str)
+    {
+        changed = true;
+        if (is_auto = isAuto(str); !is_auto)
+            base.parseFromString(str);
+    }
+
+    void writeBinary(WriteBuffer & out) const
+    {
+        if (is_auto)
+            Base().writeBinary(out); /// serialize default value
+        else
+            base.writeBinary(out);
+    }
+
+    void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
+
+    Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
 };
 
-using SettingFieldUInt64WithAuto = SettingFieldNumberWithAuto<UInt64>;
-using SettingFieldInt64WithAuto = SettingFieldNumberWithAuto<Int64>;
+using SettingFieldUInt64WithAuto = SettingWithAuto<SettingFieldUInt64>;
+using SettingFieldInt64WithAuto = SettingWithAuto<SettingFieldInt64>;
+using SettingFieldFloatWithAuto = SettingWithAuto<SettingFieldFloat>;
 
-/* Similar to SettingFieldNumberWithAuto with small differences to behave like regular UInt64, supported to compatibility.
- * When setting to 'auto' it becames equal to  the number of processor cores without taking into account SMT.
+/* Similar to SettingFieldUInt64WithAuto with small differences to behave like regular UInt64, supported to compatibility.
+ * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
  * A value of 0 is also treated as 'auto', so 'auto' is parsed and serialized in the same way as 0.
  */
 struct SettingFieldMaxThreads
