@@ -14,6 +14,7 @@
 #include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
+#include <format>
 
 namespace DB
 {
@@ -24,13 +25,13 @@ bool TimeSpan::convertImpl(String &out,IParser::Pos &pos)
     out = res;
     return false;
 }
-
+/*
 bool DateTime::convertImpl(String &out,IParser::Pos &pos)
 {
     String res = String(pos->begin,pos->end);
     out = res;
     return false;
-}
+}*/
 
 bool Ago::convertImpl(String &out,IParser::Pos &pos)
 {
@@ -153,9 +154,19 @@ bool MakeDateTime::convertImpl(String &out,IParser::Pos &pos)
 
 bool Now::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    if (pos->type != TokenType::ClosingRoundBracket)
+    {
+        const auto offset = getConvertedArgument(fn_name, pos);
+        out = std::format("now('UTC') + {}", offset);
+    }
+    else
+        out = "now('UTC')";
+    return true;
 }
 
 bool StartOfDay::convertImpl(String &out,IParser::Pos &pos)

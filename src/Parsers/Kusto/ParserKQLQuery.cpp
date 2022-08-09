@@ -26,6 +26,14 @@ bool ParserKQLBase :: parsePrepare(Pos & pos)
     return true;
 }
 
+String ParserKQLBase :: getExprFromToken(const String & text, const uint32_t & max_depth)
+{
+    Tokens tokens(text.c_str(), text.c_str() + text.size());
+    IParser::Pos pos(tokens, max_depth);
+
+    return getExprFromToken(pos);
+}
+
 String ParserKQLBase :: getExprFromToken(Pos &pos)
 {
     String res;

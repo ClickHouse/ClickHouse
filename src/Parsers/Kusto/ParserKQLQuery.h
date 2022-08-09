@@ -9,7 +9,7 @@ class ParserKQLBase : public IParserBase
 public:
     virtual bool parsePrepare(Pos & pos);
     virtual String getExprFromToken(Pos &pos);
-
+    virtual String getExprFromToken(const String & text, const uint32_t & max_depth);
     std::vector<Pos> op_pos;
 };
 

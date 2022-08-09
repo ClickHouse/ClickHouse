@@ -8,7 +8,7 @@ namespace DB
     enum class KQLFunctionValue : uint16_t
     {   none,
         timespan,
-        datetime,
+      //  datetime,
         ago,
         datetime_add,
         datetime_part,
@@ -186,7 +186,19 @@ namespace DB
         binary_xor,
         bitset_count_ones,
 
-        bin
+        bin,
+        bin_at,
+
+        datatype_bool,
+        datatype_datetime,
+        datatype_dynamic,
+        datatype_guid,
+        datatype_int,
+        datatype_long,
+        datatype_real,
+        datatype_string,
+        datatype_timespan,
+        datatype_decimal
     };
 class KQLFunctionFactory
 {
