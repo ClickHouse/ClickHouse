@@ -49,6 +49,7 @@ void checkWriteAccess(IDisk & disk)
     try
     {
         file->write("test", 4);
+        file->finalize();
     }
     catch (...)
     {

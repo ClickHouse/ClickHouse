@@ -35,6 +35,7 @@ void checkWriteAccess(IDisk & disk)
     try
     {
         file->write(test_str, test_str_size);
+        file->finalize();
     }
     catch (...)
     {
