@@ -483,7 +483,7 @@ std::optional<IProcessor::Status> ParallelJoinTransform::processRight()
     {
         // less, equal, greater than rhs[m] respectively
         auto comp = left_col->compareAt(left_row, right_row - right_block_shift, *right_col, 0);
-        LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "comp {}, left_row {}, right_row {}", comp, left_row, right_row);
+        // LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "comp {}, left_row {}, right_row {}", comp, left_row, right_row);
         if (comp < 0)
         {
             left_filt[left_row] = 0;
@@ -530,18 +530,18 @@ std::optional<IProcessor::Status> ParallelJoinTransform::processRight()
 
             if (left_row == left_col->size() && right_row - right_block_shift == right_col->size() /*&& current_right_block == status[inp].blocks.size() - 1*/)
             {
-                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left_row == left_col->size() && right_row == right_col->size(); left_row {}, right_row {}", left_row, right_row);
+                // LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left_row == left_col->size() && right_row == right_col->size(); left_row {}, right_row {}", left_row, right_row);
                 break;
             }
             else if (left_row == left_col->size())
             {
-                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left_row == left_col->size(); left_row {}, right_row {}", left_row, right_row);
+                // LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "left_row == left_col->size(); left_row {}, right_row {}", left_row, right_row);
                 status[inp].right_rest = true;
                 break;
             }
             else if (right_row - right_block_shift == right_col->size() /* && current_right_block == status[inp].blocks.size() - 1*/)
             {
-                LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "right_row == right_col->size(); left_row {}, right_row {}", left_row, right_row);
+                // LOG_DEBUG(&Poco::Logger::get("ParallelJoinTransform"), "right_row == right_col->size(); left_row {}, right_row {}", left_row, right_row);
                 status[inp].left_rest = true;
                 break;
             }
