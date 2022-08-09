@@ -135,20 +135,21 @@ void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, co
             }
             elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr, settings);
         }
-    });
 
-    // Special format for one element tuple (1,)
-    if (1 == elems.size())
-    {
+        // Special format for one element tuple (1,)
+        if (1 == elems.size())
+        {
+            skipWhitespaceIfAny(istr);
+            // Allow both (1) and (1,)
+            checkChar(',', istr);
+        }
+
         skipWhitespaceIfAny(istr);
-        // Allow both (1) and (1,)
-        checkChar(',', istr);
-    }
-    skipWhitespaceIfAny(istr);
-    assertChar(')', istr);
+        assertChar(')', istr);
 
-    if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
+        if (whole && !istr.eof())
+            throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
+    });
 }
 
 void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -213,19 +214,18 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
                 auto & element_column = extractElementColumn(column, element_pos);
                 elems[element_pos]->deserializeTextJSON(element_column, istr, settings);
             }
-        });
 
-        skipWhitespaceIfAny(istr);
-        assertChar('}', istr);
+            skipWhitespaceIfAny(istr);
+            assertChar('}', istr);
+        });
     }
     else
     {
-        const size_t size = elems.size();
         assertChar('[', istr);
 
         addElementSafe(elems.size(), column, [&]
         {
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < elems.size(); ++i)
             {
                 skipWhitespaceIfAny(istr);
                 if (i != 0)
@@ -235,10 +235,10 @@ void SerializationTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr
                 }
                 elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr, settings);
             }
-        });
 
-        skipWhitespaceIfAny(istr);
-        assertChar(']', istr);
+            skipWhitespaceIfAny(istr);
+            assertChar(']', istr);
+        });
     }
 }
 
