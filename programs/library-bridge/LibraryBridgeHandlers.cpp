@@ -1,5 +1,5 @@
-#include "Handlers.h"
-#include "SharedLibraryHandlerFactory.h"
+#include "LibraryBridgeHandlers.h"
+#include "ExternalDictionaryLibraryHandlerFactory.h"
 
 #include <Formats/FormatFactory.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -78,8 +78,14 @@ static void writeData(Block data, OutputFormatPtr format)
     executor.execute();
 }
 
+LibraryBridgeRequestHandler::LibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , log(&Poco::Logger::get("LibraryBridgeRequestHandler"))
+    , keep_alive_timeout(keep_alive_timeout_)
+{
+}
 
-void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void LibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
@@ -104,8 +110,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
     try
     {
-        bool lib_new = (method == "libNew");
-        if (method == "libClone")
+        bool lib_new = (method == "extDict_libNew");
+        if (method == "extDict_libClone")
         {
             if (!params.has("from_dictionary_id"))
             {
@@ -115,7 +121,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             std::string from_dictionary_id = params.get("from_dictionary_id");
             bool cloned = false;
-            cloned = SharedLibraryHandlerFactory::instance().clone(from_dictionary_id, dictionary_id);
+            cloned = ExternalDictionaryLibraryHandlerFactory::instance().clone(from_dictionary_id, dictionary_id);
 
             if (cloned)
             {
@@ -123,7 +129,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
             else
             {
-                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call libNew instead", from_dictionary_id);
+                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call extDict_libNew instead", from_dictionary_id);
                 lib_new = true;
             }
         }
@@ -138,13 +144,14 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
+            std::string library_path = params.get("library_path");
+
             if (!params.has("library_settings"))
             {
                 processError(response, "No 'library_settings' in request URL");
                 return;
             }
 
-            std::string library_path = params.get("library_path");
             const auto & settings_string = params.get("library_settings");
 
             LOG_DEBUG(log, "Parsing library settings from binary string");
@@ -197,12 +204,12 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             LOG_DEBUG(log, "Dictionary sample block with null values: {}", sample_block_with_nulls.dumpStructure());
 
-            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, sample_block_with_nulls, attributes_names);
+            ExternalDictionaryLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, sample_block_with_nulls, attributes_names);
             writeStringBinary("1", out);
         }
-        else if (method == "libDelete")
+        else if (method == "extDict_libDelete")
         {
-            auto deleted = SharedLibraryHandlerFactory::instance().remove(dictionary_id);
+            bool deleted = ExternalDictionaryLibraryHandlerFactory::instance().remove(dictionary_id);
 
             /// Do not throw, a warning is ok.
             if (!deleted)
@@ -210,57 +217,57 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             writeStringBinary("1", out);
         }
-        else if (method == "isModified")
+        else if (method == "extDict_isModified")
         {
-            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
                 throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             bool res = library_handler->isModified();
             writeStringBinary(std::to_string(res), out);
         }
-        else if (method == "supportsSelectiveLoad")
+        else if (method == "extDict_supportsSelectiveLoad")
         {
-            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
                 throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             bool res = library_handler->supportsSelectiveLoad();
             writeStringBinary(std::to_string(res), out);
         }
-        else if (method == "loadAll")
+        else if (method == "extDict_loadAll")
         {
-            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
                 throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
-            LOG_DEBUG(log, "Calling loadAll() for dictionary id: {}", dictionary_id);
+            LOG_DEBUG(log, "Calling extDict_loadAll() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadAll();
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
             auto output = FormatFactory::instance().getOutputFormat(FORMAT, out, sample_block, getContext());
             writeData(std::move(input), std::move(output));
         }
-        else if (method == "loadIds")
+        else if (method == "extDict_loadIds")
         {
             LOG_DEBUG(log, "Getting diciontary ids for dictionary with id: {}", dictionary_id);
             String ids_string;
             std::vector<uint64_t> ids = parseIdsFromBinary(request.getStream());
 
-            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
                 throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
-            LOG_DEBUG(log, "Calling loadIds() for dictionary id: {}", dictionary_id);
+            LOG_DEBUG(log, "Calling extDict_loadIds() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadIds(ids);
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
             auto output = FormatFactory::instance().getOutputFormat(FORMAT, out, sample_block, getContext());
             writeData(std::move(input), std::move(output));
         }
-        else if (method == "loadKeys")
+        else if (method == "extDict_loadKeys")
         {
             if (!params.has("requested_block_sample"))
             {
@@ -289,17 +296,21 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             Block block;
             executor.pull(block);
 
-            auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
+            auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
             if (!library_handler)
                 throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Not found dictionary with id: {}", dictionary_id);
 
             const auto & sample_block = library_handler->getSampleBlock();
-            LOG_DEBUG(log, "Calling loadKeys() for dictionary id: {}", dictionary_id);
+            LOG_DEBUG(log, "Calling extDict_loadKeys() for dictionary id: {}", dictionary_id);
             auto input = library_handler->loadKeys(block.getColumns());
 
             LOG_DEBUG(log, "Started sending result data for dictionary id: {}", dictionary_id);
             auto output = FormatFactory::instance().getOutputFormat(FORMAT, out, sample_block, getContext());
             writeData(std::move(input), std::move(output));
+        }
+        else
+        {
+            LOG_WARNING(log, "Unknown library method: '{}'", method);
         }
     }
     catch (...)
@@ -329,8 +340,14 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     }
 }
 
+LibraryBridgeExistsHandler::LibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
+    : WithContext(context_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , log(&Poco::Logger::get("LibraryBridgeExistsHandler"))
+{
+}
 
-void LibraryExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void LibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -344,15 +361,12 @@ void LibraryExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         }
 
         std::string dictionary_id = params.get("dictionary_id");
-        auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
-        String res;
-        if (library_handler)
-            res = "1";
-        else
-            res = "0";
+        auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
+
+        String res = library_handler ? "1" : "0";
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
-        LOG_TRACE(log, "Senging ping response: {} (dictionary id: {})", res, dictionary_id);
+        LOG_TRACE(log, "Sending ping response: {} (dictionary id: {})", res, dictionary_id);
         response.sendBuffer(res.data(), res.size());
     }
     catch (...)

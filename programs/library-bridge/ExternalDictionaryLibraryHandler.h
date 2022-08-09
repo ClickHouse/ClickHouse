@@ -2,7 +2,7 @@
 
 #include <Common/SharedLibrary.h>
 #include <Common/logger_useful.h>
-#include "LibraryUtils.h"
+#include "ExternalDictionaryLibraryUtils.h"
 
 
 namespace DB
@@ -10,21 +10,21 @@ namespace DB
 
 /// A class that manages all operations with library dictionary.
 /// Every library dictionary source has its own object of this class, accessed by UUID.
-class SharedLibraryHandler
+class ExternalDictionaryLibraryHandler
 {
 
 public:
-    SharedLibraryHandler(
+    ExternalDictionaryLibraryHandler(
         const std::string & library_path_,
         const std::vector<std::string> & library_settings,
         const Block & sample_block_,
         const std::vector<std::string> & attributes_names_);
 
-    SharedLibraryHandler(const SharedLibraryHandler & other);
+    ExternalDictionaryLibraryHandler(const ExternalDictionaryLibraryHandler & other);
 
-    SharedLibraryHandler & operator=(const SharedLibraryHandler & other) = delete;
+    ExternalDictionaryLibraryHandler & operator=(const ExternalDictionaryLibraryHandler & other) = delete;
 
-    ~SharedLibraryHandler();
+    ~ExternalDictionaryLibraryHandler();
 
     Block loadAll();
 
@@ -39,7 +39,7 @@ public:
     const Block & getSampleBlock() { return sample_block; }
 
 private:
-    Block dataToBlock(const ClickHouseLibrary::RawClickHouseLibraryTable data);
+    Block dataToBlock(ExternalDictionaryLibraryAPI::RawClickHouseLibraryTable data);
 
     std::string library_path;
     const Block sample_block;
@@ -50,6 +50,6 @@ private:
     void * lib_data;
 };
 
-using SharedLibraryHandlerPtr = std::shared_ptr<SharedLibraryHandler>;
+using SharedLibraryHandlerPtr = std::shared_ptr<ExternalDictionaryLibraryHandler>;
 
 }

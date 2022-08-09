@@ -14,7 +14,7 @@ namespace DB
 
 class Pipe;
 
-class LibraryBridgeHelper : public IBridgeHelper
+class ExternalDictionaryLibraryBridgeHelper : public IBridgeHelper
 {
 
 public:
@@ -26,8 +26,10 @@ public:
     };
 
     static constexpr inline size_t DEFAULT_PORT = 9012;
+    static constexpr inline auto PING_HANDLER = "/extdict_ping";
+    static constexpr inline auto MAIN_HANDLER = "/extdict_request";
 
-    LibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_, const LibraryInitData & library_data_);
+    ExternalDictionaryLibraryBridgeHelper(ContextPtr context_, const Block & sample_block, const Field & dictionary_id_, const LibraryInitData & library_data_);
 
     bool initLibrary();
 
@@ -45,13 +47,13 @@ public:
 
     QueryPipeline loadKeys(const Block & requested_block);
 
-    QueryPipeline loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
-
-    bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {}) const;
-
     LibraryInitData getLibraryData() const { return library_data; }
 
 protected:
+    Poco::URI getPingURI() const override;
+
+    Poco::URI getMainURI() const override;
+
     bool bridgeHandShake() override;
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override;
@@ -74,18 +76,21 @@ protected:
 
     Poco::URI createBaseURI() const override;
 
+    QueryPipeline loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
+
+    bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {}) const;
+
     ReadWriteBufferFromHTTP::OutStreamCallback getInitLibraryCallback() const;
 
 private:
-    static constexpr inline auto LIB_NEW_METHOD = "libNew";
-    static constexpr inline auto LIB_CLONE_METHOD = "libClone";
-    static constexpr inline auto LIB_DELETE_METHOD = "libDelete";
-    static constexpr inline auto LOAD_ALL_METHOD = "loadAll";
-    static constexpr inline auto LOAD_IDS_METHOD = "loadIds";
-    static constexpr inline auto LOAD_KEYS_METHOD = "loadKeys";
-    static constexpr inline auto IS_MODIFIED_METHOD = "isModified";
-    static constexpr inline auto PING = "ping";
-    static constexpr inline auto SUPPORTS_SELECTIVE_LOAD_METHOD = "supportsSelectiveLoad";
+    static constexpr inline auto EXT_DICT_LIB_NEW_METHOD = "extDict_libNew";
+    static constexpr inline auto EXT_DICT_LIB_CLONE_METHOD = "extDict_libClone";
+    static constexpr inline auto EXT_DICT_LIB_DELETE_METHOD = "extDict_libDelete";
+    static constexpr inline auto EXT_DICT_LOAD_ALL_METHOD = "extDict_loadAll";
+    static constexpr inline auto EXT_DICT_LOAD_IDS_METHOD = "extDict_loadIds";
+    static constexpr inline auto EXT_DICT_LOAD_KEYS_METHOD = "extDict_loadKeys";
+    static constexpr inline auto EXT_DICT_IS_MODIFIED_METHOD = "extDict_isModified";
+    static constexpr inline auto EXT_DICT_SUPPORTS_SELECTIVE_LOAD_METHOD = "extDict_supportsSelectiveLoad";
 
     Poco::URI createRequestURI(const String & method) const;
 
