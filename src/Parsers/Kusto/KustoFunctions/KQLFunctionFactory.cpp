@@ -15,12 +15,12 @@
 #include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
+#include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
 
 namespace DB
 {
     std::unordered_map <String,KQLFunctionValue> KQLFunctionFactory::kql_functions =
     {
-        {"datetime", KQLFunctionValue::datetime},
         {"ago", KQLFunctionValue::ago},
         {"datetime_add", KQLFunctionValue::datetime_add},
         {"datetime_part", KQLFunctionValue::datetime_part},
@@ -202,7 +202,24 @@ namespace DB
         {"binary_shift_right", KQLFunctionValue::binary_shift_right},
         {"binary_xor", KQLFunctionValue::binary_xor},
         {"bitset_count_ones", KQLFunctionValue::bitset_count_ones},
-        {"bin", KQLFunctionValue::bin}
+
+        {"bin", KQLFunctionValue::bin},
+        {"bin_at", KQLFunctionValue::bin_at},
+
+        {"bool", KQLFunctionValue::datatype_bool},
+        {"boolean", KQLFunctionValue::datatype_bool},
+        {"datetime", KQLFunctionValue::datatype_datetime},
+        {"date", KQLFunctionValue::datatype_datetime},
+        {"dynamic", KQLFunctionValue::datatype_dynamic},
+        {"guid", KQLFunctionValue::datatype_guid},
+        {"int", KQLFunctionValue::datatype_int},
+        {"long", KQLFunctionValue::datatype_long},
+        {"real", KQLFunctionValue::datatype_real},
+        {"double", KQLFunctionValue::datatype_real},
+        {"string", KQLFunctionValue::datatype_string},
+        {"timespan", KQLFunctionValue::datatype_timespan},
+        {"time", KQLFunctionValue::datatype_timespan},
+        {"decimal", KQLFunctionValue::datatype_decimal}
     };
 
 
@@ -220,8 +237,8 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
         case KQLFunctionValue::timespan:
             return std::make_unique<TimeSpan>();
 
-        case KQLFunctionValue::datetime:
-            return std::make_unique<DateTime>();
+  //      case KQLFunctionValue::datetime:
+  //          return std::make_unique<DateTime>();
 
         case KQLFunctionValue::ago:
             return std::make_unique<Ago>();
@@ -732,6 +749,40 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
 
         case KQLFunctionValue::bin:
             return std::make_unique<Bin>();
+
+        case KQLFunctionValue::bin_at:
+            return std::make_unique<BinAt>();
+
+        case KQLFunctionValue::datatype_bool:
+            return std::make_unique<DatatypeBool>();
+
+        case KQLFunctionValue::datatype_datetime:
+            return std::make_unique<DatatypeDatetime>();
+
+        case KQLFunctionValue::datatype_dynamic:
+            return std::make_unique<DatatypeDynamic>();
+
+        case KQLFunctionValue::datatype_guid:
+            return std::make_unique<DatatypeGuid>();
+
+        case KQLFunctionValue::datatype_int:
+            return std::make_unique<DatatypeInt>();
+
+        case KQLFunctionValue::datatype_long:
+            return std::make_unique<DatatypeLong>();
+
+        case KQLFunctionValue::datatype_real:
+            return std::make_unique<DatatypeReal>();
+
+        case KQLFunctionValue::datatype_string:
+            return std::make_unique<DatatypeString>();
+
+        case KQLFunctionValue::datatype_timespan:
+            return std::make_unique<DatatypeTimespan>();
+
+        case KQLFunctionValue::datatype_decimal:
+            return std::make_unique<DatatypeDecimal>();
+
     }
 }
 

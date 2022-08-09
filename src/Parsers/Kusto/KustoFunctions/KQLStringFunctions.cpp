@@ -21,9 +21,16 @@ bool Base64EncodeToString::convertImpl(String & out,IParser::Pos & pos)
 
 bool Base64EncodeFromGuid::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    const String guid = getConvertedArgument(fn_name, pos);
+
+    out = std::format("base64Encode({})", guid);
+
+    return true;
 }
 
 bool Base64DecodeToString::convertImpl(String & out,IParser::Pos & pos)
@@ -33,16 +40,21 @@ bool Base64DecodeToString::convertImpl(String & out,IParser::Pos & pos)
 
 bool Base64DecodeToArray::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    const String str = getConvertedArgument(fn_name, pos);
+
+    out = std::format("arrayMap(x -> (reinterpretAsUInt8(x)), splitByRegexp ('',base64Decode({})))", str);
+
+    return true;
 }
 
 bool Base64DecodeToGuid::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+   return directMapping(out,pos,"base64Decode");
 }
 
 bool CountOf::convertImpl(String & out, IParser::Pos & pos)
@@ -209,9 +221,19 @@ bool ExtractJson::convertImpl(String & out,IParser::Pos & pos)
 
 bool HasAnyIndex::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    const String source = getConvertedArgument(fn_name, pos);
+
+    ++pos;
+    const String lookup = getConvertedArgument(fn_name, pos);
+    String src_array = std::format("splitByChar(' ',{})", source);
+    out = std::format("if (empty({1}), -1, indexOf(arrayMap ( x -> (x in {0}),  if (empty({1}),[''], arrayMap(x->(toString(x)),{1}))),1) - 1)",
+        src_array, lookup);
+    return true;
 }
 
 bool IndexOf::convertImpl(String & out,IParser::Pos & pos)
@@ -508,9 +530,23 @@ bool ToUpper::convertImpl(String & out,IParser::Pos & pos)
 
 bool Translate::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String from = getConvertedArgument(fn_name, pos);
+    ++pos;
+    String to = getConvertedArgument(fn_name, pos);
+    ++pos;
+    String source = getConvertedArgument(fn_name, pos);
+
+    String len_diff = std::format("length({}) - length({})", from, to);
+    String to_str = std::format("multiIf(length({1}) = 0, {0}, {2} > 0, concat({1},repeat(substr({1},length({1}),1),toUInt16({2}))),{2} < 0 , substr({1},1,length({0})),{1})",
+         from, to, len_diff);
+    out = std::format("if (length({3}) = 0,'',translate({0},{1},{2}))", source, from, to_str, to); 
+    return true;
 }
 
 bool Trim::convertImpl(String & out,IParser::Pos & pos)

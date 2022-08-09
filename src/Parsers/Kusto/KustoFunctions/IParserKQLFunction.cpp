@@ -16,6 +16,7 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 
 #include <format>
 
@@ -186,6 +187,15 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
         {
             validateEndOfFunction(arg, pos);
             arg = new_arg;
+        }
+        else
+        {
+            ParserKQLDateTypeTimespan time_span;
+            ASTPtr node;
+            Expected expected;
+
+            if (time_span.parse(pos, node, expected))
+                arg = std::to_string(time_span.toSeconds());
         }
     }
     return arg;
