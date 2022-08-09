@@ -108,7 +108,7 @@ bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
     for (int i = 0; i < std::ssize(s_private_subnets); ++i)
     {
         if (i > 0)
-            out += " or";
+            out += " or ";
 
         const auto & subnet = s_private_subnets[i];
         out += std::format(
@@ -118,7 +118,7 @@ bool Ipv4IsPrivate::convertImpl(String & out, IParser::Pos & pos)
             unique_identifier);
     }
 
-    out += ")";
+    out.push_back(')');
     return true;
 }
 
