@@ -1074,7 +1074,7 @@ SELECT parseDateTimeBestEffort('10 20:19');
 
 ## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
 
-Эта функция ведет себя как [parseDateTimeBestEffort](#parsedatetimebesteffort) для форматов даты ISO, например, `YYYY-MM-DD hh:mm:ss`, и других форматов даты, где компоненты месяца и даты могут быть однозначно выделены, например, `YYYYMMDDhhmmss`, `YYYY-MM`, `DD hh`, или `YYYY-MM-DD hh:mm:ss ±h:mm`. Если месяц и компонент даты не могут быть однозначно выделены, например, `MM/DD/YYY`, `MM-DD-YYYY` или `MM-DD-YY`, то вместо `DD/MM/YYY`, `DD-MM-YYYY` или `DD-MM-YY` предпочитается формат даты США. В качестве исключения из последнего, если месяц больше 12 и меньше или равен 31, эта функция возвращается к поведению [parseDateTimeBestEffort](#parsedatetimebesteffort), т.е. `15/08/2020` будет разобрано как `2020-08-15`.
+Эта функция ведет себя как [parseDateTimeBestEffort](#parsedatetimebesteffort) для форматов даты ISO, например, `YYYY-MM-DD hh:mm:ss`, и других форматов даты, где компоненты месяца и дня могут быть однозначно выделены, например, `YYYYMMDDhhmmss`, `YYYY-MM`, `DD hh`, или `YYYY-MM-DD hh:mm:ss ±h:mm`. Если месяц и день не могут быть однозначно выделены, например, `MM/DD/YYY`, `MM-DD-YYYY` или `MM-DD-YY`, то вместо `DD/MM/YYY`, `DD-MM-YYYY` или `DD-MM-YY` предпочитается формат даты США. Впрочем, если номер месяца был бы больше 12 и меньше или равен 31, эта функция возвращается к поведению [parseDateTimeBestEffort](#parsedatetimebesteffort), т.е. `15/08/2020` будет разобрано как `2020-08-15`.
 
 ## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
 ## parseDateTime32BestEffortOrNull {#parsedatetime32besteffortornull}
