@@ -4209,6 +4209,7 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         auto read_buffer = backup_entry->getReadBuffer();
         auto write_buffer = disk->writeFile(temp_part_dir / filename);
         copyData(*read_buffer, *write_buffer);
+        write_buffer->finalize();
         reservation->update(reservation->getSize() - backup_entry->getSize());
     }
 
