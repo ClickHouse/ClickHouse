@@ -505,13 +505,10 @@ bool NO_INLINE decompressImpl(
             {
                 s = *ip++;
                 length += s;
-            } while (unlikely(s == 255 && ip < input_end));
+            } while (unlikely(s == 255));
         };
 
         /// Get literal length.
-
-        if (unlikely(ip >= input_end))
-            return false;
 
         const unsigned token = *ip++;
         length = token >> 4;
@@ -533,18 +530,18 @@ bool NO_INLINE decompressImpl(
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
-        if (unlikely(copy_end > output_end))
-            return false;
+        {
+            auto * target = std::min(copy_end, output_end);
+            wildCopy<copy_amount>(op, ip, target);    /// Here we can write up to copy_amount - 1 bytes after buffer.
 
-        wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
-
-        if (copy_end == output_end)
-            return true;
+            if (target == output_end)
+                return true;
+        }
 
         ip += length;
         op = copy_end;
 
-        if (unlikely(ip + 1 >= input_end))
+        if (unlikely(ip > input_end))
             return false;
 
         /// Get match offset.
@@ -597,9 +594,8 @@ bool NO_INLINE decompressImpl(
         copy<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
         if (length > copy_amount * 2)
         {
-            if (unlikely(copy_end > output_end))
-                return false;
-            wildCopy<copy_amount>(op + copy_amount, match + copy_amount, copy_end);
+            auto * target = std::min(copy_end, output_end);
+            wildCopy<copy_amount>(op + copy_amount, match + copy_amount, target);
         }
 
         op = copy_end;
