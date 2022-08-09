@@ -39,19 +39,19 @@ struct HashMethodOneNumber
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     const char * vec;
-    ColumnPtr owned_column;
+    bool is_column_const;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
     {
-        owned_column = key_columns[0]->convertToFullColumnIfConst();
-        vec = owned_column->getRawData().data;
+        vec = key_columns[0]->getRawData().data;
+        is_column_const = isColumnConst(*key_columns[0]);
     }
 
     explicit HashMethodOneNumber(const IColumn * column)
     {
-        owned_column = column->convertToFullColumnIfConst();
         vec = column->getRawData().data;
+        is_column_const = isColumnConst(*column);
     }
 
     /// Creates context. Method is called once and result context is used in all threads.
@@ -69,7 +69,11 @@ struct HashMethodOneNumber
     using Base::getHash; /// (const Data & data, size_t row, Arena & pool) -> size_t
 
     /// Is used for default implementation in HashMethodBase.
-    FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
+    FieldType getKeyHolder(size_t row, Arena &) const
+    {
+        size_t pos = is_column_const ? 0 : row;
+        return unalignedLoad<FieldType>(vec + pos * sizeof(FieldType));
+    }
 
     const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
 };
