@@ -54,12 +54,10 @@ public:
 
     size_t hits() const override { return queue_iter->hits; }
 
-    void remove(std::lock_guard<std::mutex> &) override
+    void removeAndGetNext(std::lock_guard<std::mutex> &) override
     {
-        auto remove_iter = queue_iter;
-        queue_iter++;
-        file_cache->cache_size -= remove_iter->size;
-        file_cache->queue.erase(remove_iter);
+        file_cache->cache_size -= queue_iter->size;
+        queue_iter = file_cache->queue.erase(queue_iter);
     }
 
     void incrementSize(size_t size_increment, std::lock_guard<std::mutex> &) override
@@ -75,7 +73,7 @@ public:
     }
 
 private:
-    mutable LRUFileCachePriority * file_cache;
+    LRUFileCachePriority * file_cache;
     mutable LRUFileCachePriority::LRUQueueIterator queue_iter;
 };
 
