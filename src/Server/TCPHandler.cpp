@@ -1105,7 +1105,8 @@ void TCPHandler::receiveAddendum()
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
     {
         readStringBinary(quota_key, *in);
-        session->getClientInfo().quota_key = quota_key;
+        if (!is_interserver_mode)
+            session->getClientInfo().quota_key = quota_key;
     }
 }
 
