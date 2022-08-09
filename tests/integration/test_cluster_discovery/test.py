@@ -7,17 +7,24 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-shard_configs = {i: f"config/config_shard{i}.xml" for i in [1, 3]}
+shard_configs = {
+    0: "config/config.xml",
+    1: "config/config_shard1.xml",
+    2: "config/config.xml",
+    3: "config/config_shard3.xml",
+    4: "config/config.xml",
+    'observer': "config/config_observer.xml",
+}
 
-nodes = [
-    cluster.add_instance(
-        f"node{i}",
-        main_configs=[shard_configs.get(i, "config/config.xml")],
+nodes = {
+    node_id: cluster.add_instance(
+        f"node_{node_id}",
+        main_configs=[shard_config],
         stay_alive=True,
         with_zookeeper=True,
     )
-    for i in range(5)
-]
+    for node_id, shard_config in shard_configs.items()
+}
 
 
 @pytest.fixture(scope="module")
@@ -73,21 +80,26 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
         msg="Wrong shard_num count in cluster",
     )
 
-    total_shards = len(shard_configs) + 1
-    check_nodes_count([nodes[0], nodes[2]], len(nodes))
-    check_shard_num([nodes[0], nodes[2]], total_shards)
+    total_shards = 3
+    # one node is observer
+    total_nodes = len(nodes) - 1
+    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes)
+    check_shard_num([nodes[0], nodes[2], nodes['observer']], total_shards)
 
     nodes[1].stop_clickhouse(kill=True)
-    check_nodes_count([nodes[0], nodes[2]], len(nodes) - 1)
-    check_shard_num([nodes[0], nodes[2]], total_shards - 1)
+    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes - 1)
+
+    # node_1 was the only node in shard '1'
+    check_shard_num([nodes[0], nodes[2], nodes['observer']], total_shards - 1)
 
     nodes[3].stop_clickhouse()
-    check_nodes_count([nodes[0], nodes[2]], len(nodes) - 2)
+    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes - 2)
 
     nodes[1].start_clickhouse()
-    check_nodes_count([nodes[0], nodes[2]], len(nodes) - 1)
+    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes - 1)
 
     nodes[3].start_clickhouse()
-    check_nodes_count([nodes[0], nodes[2]], len(nodes))
+    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes)
 
+    # regular cluster is not affected
     check_nodes_count([nodes[1], nodes[2]], 2, cluster_name="two_shards", retries=1)

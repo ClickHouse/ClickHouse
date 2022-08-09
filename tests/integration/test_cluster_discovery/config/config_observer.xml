@@ -4,7 +4,7 @@
         <test_auto_cluster>
             <discovery>
                 <path>/clickhouse/discovery/test_auto_cluster</path>
-                <shard>3</shard>
+                <observer/>
             </discovery>
         </test_auto_cluster>
         <two_shards>
