@@ -307,19 +307,17 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
     for (const auto & [id, entity] : all_entities)
     {
         auto it = entries_by_id.find(id);
-        if (it != entries_by_id.end())
-        {
-            if (*(it->second.entity) != *entity)
-            {
-                const AccessEntityPtr & changed_entity = entity;
-                updateNoLock(id,
-                             [&changed_entity](const AccessEntityPtr &) { return changed_entity; },
-                             /* throw_if_not_exists = */ true);
-            }
-        }
-        else
+        if (it == entries_by_id.end())
         {
             insertNoLock(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
+        }
+        else if (*(it->second.entity) != *entity)
+        {
+            const AccessEntityPtr & changed_entity = entity;
+            updateNoLock(
+                id,
+                [&changed_entity](const AccessEntityPtr &) { return changed_entity; },
+                /* throw_if_not_exists = */ true);
         }
     }
 }
