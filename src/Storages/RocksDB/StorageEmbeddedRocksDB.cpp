@@ -350,7 +350,6 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         ContextPtr context_,
         const String & primary_key_)
     : IStorage(table_id_)
-    , IKeyValueEntity()
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
 {
