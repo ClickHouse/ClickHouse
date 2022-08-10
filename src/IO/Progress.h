@@ -16,19 +16,19 @@ class WriteBuffer;
 /// See Progress.
 struct ProgressValues
 {
-    UInt64 read_rows;
-    UInt64 read_bytes;
+    UInt64 read_rows = 0;
+    UInt64 read_bytes = 0;
 
-    UInt64 total_rows_to_read;
-    UInt64 total_bytes_to_read;
+    UInt64 total_rows_to_read = 0;
+    UInt64 total_bytes_to_read = 0;
 
-    UInt64 written_rows;
-    UInt64 written_bytes;
+    UInt64 written_rows = 0;
+    UInt64 written_bytes = 0;
 
-    UInt64 result_rows;
-    UInt64 result_bytes;
+    UInt64 result_rows = 0;
+    UInt64 result_bytes = 0;
 
-    UInt64 elapsed_ns;
+    UInt64 elapsed_ns = 0;
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
@@ -37,9 +37,9 @@ struct ProgressValues
 
 struct ReadProgress
 {
-    UInt64 read_rows;
-    UInt64 read_bytes;
-    UInt64 total_rows_to_read;
+    UInt64 read_rows = 0;
+    UInt64 read_bytes = 0;
+    UInt64 total_rows_to_read = 0;
 
     ReadProgress(UInt64 read_rows_, UInt64 read_bytes_, UInt64 total_rows_to_read_ = 0)
         : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
@@ -47,8 +47,8 @@ struct ReadProgress
 
 struct WriteProgress
 {
-    UInt64 written_rows;
-    UInt64 written_bytes;
+    UInt64 written_rows = 0;
+    UInt64 written_bytes = 0;
 
     WriteProgress(UInt64 written_rows_, UInt64 written_bytes_)
         : written_rows(written_rows_), written_bytes(written_bytes_) {}
@@ -56,8 +56,8 @@ struct WriteProgress
 
 struct ResultProgress
 {
-    UInt64 result_rows;
-    UInt64 result_bytes;
+    UInt64 result_rows = 0;
+    UInt64 result_bytes = 0;
 
     ResultProgress(UInt64 result_rows_, UInt64 result_bytes_)
         : result_rows(result_rows_), result_bytes(result_bytes_) {}
@@ -66,8 +66,8 @@ struct ResultProgress
 struct FileProgress
 {
     /// Here read_bytes (raw bytes) - do not equal ReadProgress::read_bytes, which are calculated according to column types.
-    UInt64 read_bytes;
-    UInt64 total_bytes_to_read;
+    UInt64 read_bytes = 0;
+    UInt64 total_bytes_to_read = 0;
 
     explicit FileProgress(UInt64 read_bytes_, UInt64 total_bytes_to_read_ = 0) : read_bytes(read_bytes_), total_bytes_to_read(total_bytes_to_read_) {}
 };
