@@ -19,7 +19,6 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <string_view>
 #include <regex>
-#include <gtest/gtest.h>
 
 namespace
 {
@@ -36,9 +35,6 @@ std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
 {
     return ostr << "ParserTestCase input: " << test_case.input_text;
 }
-
-class ParserTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<IParser>, ParserTestCase>>
-{};
 
 TEST_P(ParserTest, parseQuery)
 {
