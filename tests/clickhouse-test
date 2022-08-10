@@ -914,7 +914,7 @@ class TestCase:
         description_full += result.description
         description_full += "\n"
 
-        if result.status == TestStatus.FAIL:
+        if result.status == TestStatus.FAIL and self.testcase_args is not None:
             description_full += "Database: " + self.testcase_args.testcase_database
 
         result.description = description_full
