@@ -1022,9 +1022,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
                 if (s.rfind("processor", 0) == 0)
                 {
+                    /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
+                    /// non s390x example: processor : 0
                     if (auto colon = s.find_first_of(':'))
                     {
+#ifdef __s390x__
+                        core_id = std::stoi(s.substr(10)); /// 10: length of "processor" plus 1
+#else
                         core_id = std::stoi(s.substr(colon + 2));
+#endif
                     }
                 }
                 else if (s.rfind("cpu MHz", 0) == 0)

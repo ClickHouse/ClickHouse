@@ -19,7 +19,7 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
 
-NAME = "Docs Check (actions)"
+NAME = "Docs Check"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(need_changed_files=True)
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():

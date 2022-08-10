@@ -21,7 +21,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Push to Dockerhub (actions)"
+NAME = "Push to Dockerhub"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
 
@@ -477,7 +477,7 @@ def main():
     if not args.reports:
         return
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(

@@ -5,6 +5,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <libnuraft/nuraft.hxx>
+#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -55,9 +56,9 @@ public:
 
     ~KeeperStorageSnapshot();
 
-    static void serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out);
+    static void serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
 
-    static void deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in);
+    static void deserialize(SnapshotDeserializationResult & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context);
 
     KeeperStorage * storage;
 
@@ -99,10 +100,10 @@ public:
     KeeperSnapshotManager(
         const std::string & snapshots_path_,
         size_t snapshots_to_keep_,
+        const KeeperContextPtr & keeper_context_,
         bool compress_snapshots_zstd_ = true,
         const std::string & superdigest_ = "",
-        size_t storage_tick_time_ = 500,
-        bool digest_enabled_ = true);
+        size_t storage_tick_time_ = 500);
 
     /// Restore storage from latest available snapshot
     SnapshotDeserializationResult restoreFromLatestSnapshot();
@@ -168,7 +169,8 @@ private:
     const std::string superdigest;
     /// Storage sessions timeout check interval (also for deserializatopn)
     size_t storage_tick_time;
-    const bool digest_enabled;
+
+    KeeperContextPtr keeper_context;
 };
 
 /// Keeper create snapshots in background thread. KeeperStateMachine just create

@@ -57,17 +57,17 @@ inline std::string_view toDescription(OvercommitResult result)
     switch (result)
     {
     case OvercommitResult::NONE:
-        return "Memory overcommit isn't used. OvercommitTracker isn't set.";
+        return "Memory overcommit isn't used. OvercommitTracker isn't set";
     case OvercommitResult::DISABLED:
-        return "Memory overcommit isn't used. Waiting time or orvercommit denominator are set to zero.";
+        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero";
     case OvercommitResult::MEMORY_FREED:
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OvercommitResult::MEMORY_FREED shouldn't be asked for description");
     case OvercommitResult::SELECTED:
-        return "Query was selected to stop by OvercommitTracker.";
+        return "Query was selected to stop by OvercommitTracker";
     case OvercommitResult::TIMEOUTED:
-        return "Waiting timeout for memory to be freed is reached.";
+        return "Waiting timeout for memory to be freed is reached";
     case OvercommitResult::NOT_ENOUGH_FREED:
-        return "Memory overcommit has freed not enough memory.";
+        return "Memory overcommit has freed not enough memory";
     }
 }
 

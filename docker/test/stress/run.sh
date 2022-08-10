@@ -7,29 +7,26 @@ set -x
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
-#
-# But under thread fuzzer, TSan build is too slow and this produces some flaky
-# tests, so for now, as a temporary solution it had been disabled.
-if ! test -f package_folder/clickhouse-server*tsan*.deb; then
-    export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-    export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-    export THREAD_FUZZER_SLEEP_TIME_US=100000
 
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
+export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+export THREAD_FUZZER_SLEEP_TIME_US=100000
 
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
 
-    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
-fi
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
+
+export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
+export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
+
 
 function install_packages()
 {
@@ -221,6 +218,12 @@ clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_
                        || (echo -e 'Server failed to start (see application_errors.txt and clickhouse-server.clean.log)\tFAIL' >> /test_output/test_results.tsv \
                        && grep -a "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt)
 
+echo "Get previous release tag"
+previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previous_release_tag)
+echo $previous_release_tag
+
+stop
+
 [ -f /var/log/clickhouse-server/clickhouse-server.log ] || echo -e "Server log does not exist\tFAIL"
 [ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"
 
@@ -268,10 +271,6 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 
 echo -e "Backward compatibility check\n"
 
-echo "Get previous release tag"
-previous_release_tag=$(clickhouse-client --query="SELECT version()" | get_previous_release_tag)
-echo $previous_release_tag
-
 echo "Clone previous release repository"
 git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
@@ -281,7 +280,6 @@ mkdir previous_release_package_folder
 echo $previous_release_tag | download_release_packets && echo -e 'Download script exit code\tOK' >> /test_output/test_results.tsv \
     || echo -e 'Download script failed\tFAIL' >> /test_output/test_results.tsv
 
-stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.clean.log
 
 # Check if we cloned previous release repository successfully
@@ -362,6 +360,8 @@ else
     # FIXME Not sure if it's expected, but some tests from BC check may not be finished yet when we restarting server.
     #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
     # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
+    # NOTE  Incompatibility was introduced in https://github.com/ClickHouse/ClickHouse/pull/39263, it's expected
+    #       ("This engine is deprecated and is not supported in transactions", "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part")
     echo "Check for Error messages in server log:"
     zgrep -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
                -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -389,6 +389,8 @@ else
                -e "} <Error> TCPHandler: Code:" \
                -e "} <Error> executeQuery: Code:" \
                -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
+               -e "This engine is deprecated and is not supported in transactions" \
+               -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
@@ -454,3 +456,5 @@ for core in core.*; do
     pigz $core
     mv $core.gz /test_output/
 done
+
+dmesg -T > /test_output/dmesg.log

@@ -5,16 +5,20 @@ import subprocess
 import os
 import csv
 import sys
+import atexit
 
 from github import Github
 
-from env_helper import CACHES_PATH, TEMP_PATH, GITHUB_SERVER_URL, GITHUB_REPOSITORY
-from pr_info import FORCE_TESTS_LABEL, PRInfo, SKIP_SIMPLE_CHECK_LABEL
+from env_helper import CACHES_PATH, TEMP_PATH
+from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status, get_commit
+from commit_status_helper import (
+    post_commit_status,
+    update_mergeable_check,
+)
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
@@ -25,7 +29,7 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
-NAME = "Fast test (actions)"
+NAME = "Fast test"
 
 
 def get_fasttest_cmd(
@@ -90,7 +94,9 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
+
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -219,16 +225,4 @@ if __name__ == "__main__":
         if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
-            if SKIP_SIMPLE_CHECK_LABEL not in pr_info.labels:
-                url = (
-                    f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
-                    "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
-                )
-                commit = get_commit(gh, pr_info.sha)
-                commit.create_status(
-                    context="Simple Check",
-                    description=f"{NAME} failed",
-                    state="failed",
-                    target_url=url,
-                )
             sys.exit(1)
