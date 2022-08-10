@@ -213,27 +213,29 @@ struct ConvertImpl
                 return col_to;
             }
 
-            bool result_is_bool = isBool(result_type);
-            for (size_t i = 0; i < input_rows_count; ++i)
+            if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
             {
-                if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+                if (isBool(result_type))
                 {
-                    if (result_is_bool)
+                    for (size_t i = 0; i < input_rows_count; ++i)
                     {
                         vec_to[i] = vec_from[i] != FromFieldType(0);
-                        continue;
                     }
+                    goto done;
                 }
+            }
 
-                if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
+            if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
+            {
+                throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
+            }
+            else
+            {
+                if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
-                    throw Exception("Conversion between numeric types and UUID is not supported. Probably the passed UUID is unquoted", ErrorCodes::NOT_IMPLEMENTED);
-                }
-                else
-                {
-                    if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                     {
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             ToFieldType result;
                             bool convert_result = false;
@@ -253,7 +255,10 @@ struct ConvertImpl
                                 (*vec_null_map_to)[i] = true;
                             }
                         }
-                        else
+                    }
+                    else
+                    {
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
                                 vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
@@ -265,10 +270,13 @@ struct ConvertImpl
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                         }
                     }
-                    else
+                }
+                else
+                {
+                    /// If From Data is Nan or Inf and we convert to integer type, throw exception
+                    if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
                     {
-                        /// If From Data is Nan or Inf and we convert to integer type, throw exception
-                        if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             if (!isFinite(vec_from[i]))
                             {
@@ -276,15 +284,46 @@ struct ConvertImpl
                                 {
                                     vec_to[i] = 0;
                                     (*vec_null_map_to)[i] = true;
-                                    continue;
                                 }
                                 else
                                     throw Exception("Unexpected inf or nan to integer conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                             }
-                        }
+                            else
+                            {
+                                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                                        || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                                {
+                                    bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
 
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-                                || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                                    if (!convert_result)
+                                    {
+                                        if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                                        {
+                                            vec_to[i] = 0;
+                                            (*vec_null_map_to)[i] = true;
+                                        }
+                                        else
+                                        {
+                                            throw Exception(
+                                                "Value in column " + named_from.column->getName() + " cannot be safely converted into type "
+                                                    + result_type->getName(),
+                                                ErrorCodes::CANNOT_CONVERT_TYPE);
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                                }
+                            }
+                        }
+                        goto done;
+                    }
+
+                    if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                            || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+                    {
+                        for (size_t i = 0; i < input_rows_count; ++i)
                         {
                             bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
 
@@ -304,13 +343,37 @@ struct ConvertImpl
                                 }
                             }
                         }
+                    }
+                    else
+                    {
+                        if constexpr (std::is_same_v<FromDataType, DataTypeUInt64> && std::is_same_v<ToDataType, DataTypeFloat32>)
+                        {
+                            /// Turns out that when ClickHouse is compiled with AVX1 or AVX2 instructions, Clang's autovectorizer produces
+                            /// code for UInt64-to-Float23 conversion which is only ~50% as fast as scalar code. Interestingly, scalar code
+                            /// is equally fast than code compiled for SSE4.2, so we might as well disable vectorization. This situation
+                            /// may change with AVX512 which has a dediated instruction for that usecase (_mm512_cvtepi64_ps).
+#if defined(__x86_64__)
+#  ifdef __clang__
+#    pragma clang loop vectorize(disable) interleave(disable)
+#  endif
+#endif
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            }
+                        }
                         else
                         {
-                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            }
                         }
                     }
                 }
             }
+
+done:
 
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
@@ -1112,8 +1175,6 @@ struct ConvertThroughParsing
         "ConvertThroughParsing is only applicable for String or FixedString data types");
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
-
-    // using ToFieldType = typename ToDataType::FieldType;
 
     static bool isAllRead(ReadBuffer & in)
     {

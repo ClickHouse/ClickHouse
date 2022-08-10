@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
@@ -41,6 +42,12 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
+    bool supportsChmod() const override { return disk->supportsChmod(); }
+
+    bool supportsStat() const override { return disk->supportsStat(); }
+
+    struct stat stat(const String & path) const override { return disk->stat(path); }
+
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
@@ -65,12 +72,6 @@ private:
     const FakeMetadataStorageFromDisk & metadata_storage;
 
     std::vector<MetadataOperationPtr> operations;
-    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
-
-    void addOperation(MetadataOperationPtr && operation);
-
-    void rollback(size_t until_pos);
-
 public:
     FakeMetadataStorageFromDiskTransaction(
         const FakeMetadataStorageFromDisk & metadata_storage_, DiskPtr disk_)
@@ -82,7 +83,7 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
-    void commit() final;
+    void commit() final {}
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
@@ -93,6 +94,10 @@ public:
     void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
+
+    bool supportsChmod() const override { return disk->supportsChmod(); }
+
+    void chmod(const String & path, mode_t mode) override { disk->chmod(path, mode); }
 
     void setReadOnly(const std::string & path) override;
 

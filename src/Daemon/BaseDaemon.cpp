@@ -298,7 +298,7 @@ private:
         /// It will allow client to see failure messages directly.
         if (thread_ptr)
         {
-            query_id = thread_ptr->getQueryId().toString();
+            query_id = std::string(thread_ptr->getQueryId());
 
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
@@ -1016,6 +1016,14 @@ void BaseDaemon::setupWatchdog()
             Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
+        }
+
+        /// Cuncurrent writing logs to the same file from two threads is questionable on its own,
+        ///  but rotating them from two threads is disastrous.
+        if (auto * channel = dynamic_cast<DB::OwnSplitChannel *>(logger().getChannel()))
+        {
+            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
+            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));

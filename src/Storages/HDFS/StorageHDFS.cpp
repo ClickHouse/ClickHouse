@@ -16,6 +16,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/CompressionMethod.h>
+#include <IO/WriteSettings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -412,7 +413,13 @@ public:
         const CompressionMethod compression_method)
         : SinkToStorage(sample_block)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef(), context->getSettingsRef().hdfs_replication), compression_method, 3);
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            std::make_unique<WriteBufferFromHDFS>(
+                uri,
+                context->getGlobalContext()->getConfigRef(),
+                context->getSettingsRef().hdfs_replication,
+                context->getWriteSettings()),
+            compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
@@ -420,18 +427,37 @@ public:
 
     void consume(Chunk chunk) override
     {
+        std::lock_guard lock(cancel_mutex);
+        if (cancelled)
+            return;
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    }
+
+    void onCancel() override
+    {
+        std::lock_guard lock(cancel_mutex);
+        finalize();
+        cancelled = true;
     }
 
     void onException() override
     {
-        if (!writer)
-            return;
-        onFinish();
+        std::lock_guard lock(cancel_mutex);
+        finalize();
     }
 
     void onFinish() override
     {
+        std::lock_guard lock(cancel_mutex);
+        finalize();
+    }
+
+private:
+    void finalize()
+    {
+        if (!writer)
+            return;
+
         try
         {
             writer->finalize();
@@ -447,9 +473,10 @@ public:
         }
     }
 
-private:
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
+    std::mutex cancel_mutex;
+    bool cancelled = false;
 };
 
 class PartitionedHDFSSink : public PartitionedSink

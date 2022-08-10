@@ -34,6 +34,16 @@
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
                 <data_cache_enabled>1</data_cache_enabled>
             </s3_with_cache>
+            <s3_with_cache_and_jbod>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+                <data_cache_enabled>1</data_cache_enabled>
+                <data_cache_path>/jbod1/</data_cache_path>
+                <data_cache_max_size>1000000000</data_cache_max_size>
+            </s3_with_cache_and_jbod>
         </disks>
         <policies>
             <s3>
@@ -67,10 +77,21 @@
                     </main>
                 </volumes>
             </s3_cache>
+            <s3_with_cache_and_jbod>
+                <volumes>
+                    <main>
+                        <disk>s3_with_cache_and_jbod</disk>
+                    </main>
+                </volumes>
+            </s3_with_cache_and_jbod>
         </policies>
     </storage_configuration>
 
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
     </merge_tree>
+
+    <database_catalog_unused_dir_hide_timeout_sec>0</database_catalog_unused_dir_hide_timeout_sec>
+    <database_catalog_unused_dir_rm_timeout_sec>60</database_catalog_unused_dir_rm_timeout_sec>
+    <database_catalog_unused_dir_cleanup_period_sec>1</database_catalog_unused_dir_cleanup_period_sec>
 </clickhouse>

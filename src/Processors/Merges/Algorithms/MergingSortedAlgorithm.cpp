@@ -10,7 +10,7 @@ namespace DB
 MergingSortedAlgorithm::MergingSortedAlgorithm(
     Block header_,
     size_t num_inputs,
-    SortDescription description_,
+    const SortDescription & description_,
     size_t max_block_size,
     SortingQueueStrategy sorting_queue_strategy_,
     UInt64 limit_,
@@ -18,7 +18,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     bool use_average_block_sizes)
     : header(std::move(header_))
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
-    , description(std::move(description_))
+    , description(description_)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
     , current_inputs(num_inputs)
@@ -29,7 +29,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     sort_description_types.reserve(description.size());
 
     /// Replace column names in description to positions.
-    for (auto & column_description : description)
+    for (const auto & column_description : description)
     {
         has_collation |= column_description.collator != nullptr;
         sort_description_types.emplace_back(header.getByName(column_description.column_name).type);

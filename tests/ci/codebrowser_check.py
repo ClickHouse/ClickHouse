@@ -16,7 +16,7 @@ from commit_status_helper import post_commit_status
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
-NAME = "Woboq Build (actions)"
+NAME = "Woboq Build"
 
 
 def get_run_command(repo_path, output_path, image):
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
