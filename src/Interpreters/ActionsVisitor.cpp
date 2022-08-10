@@ -945,7 +945,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.source_columns,
             std::make_shared<ActionsDAG>(data.source_columns),
             data.prepared_sets,
-            data.subqueries_for_sets,
             data.no_subqueries,
             data.no_makeset,
             data.only_consts,

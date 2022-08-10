@@ -279,14 +279,14 @@ public:
     }
 
     ConstSetPtr tryGetPreparedSet(
-        const PreparedSets & sets,
+        const PreparedSetsPtr & sets,
         const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
         const DataTypes & data_types) const
     {
-        if (ast)
+        if (sets && ast)
         {
             if (ast->as<ASTSubquery>() || ast->as<ASTTableIdentifier>())
-                return prepared_sets->get(PreparedSetKey::forSubquery(*set));
+                return sets->get(PreparedSetKey::forSubquery(*ast));
 
             /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
             /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
@@ -303,26 +303,23 @@ public:
                 return true;
             };
 
-            for (const auto & set : prepared_sets->getByTreeHash(right_arg->getTreeHash()))
+            for (const auto & set : sets->getByTreeHash(ast->getTreeHash()))
             {
                 if (types_match(set))
                     return set;
             }
         }
-        else
+        else if (dag->column)
         {
-            if (dag->column)
-            {
-                const IColumn * col = dag->column.get();
-                if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
-                    col = &col_const->getDataColumn();
+            const IColumn * col = dag->column.get();
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
+                col = &col_const->getDataColumn();
 
-                if (const auto * col_set = typeid_cast<const ColumnSet *>(col))
-                {
-                    auto set = col_set->getData();
-                    if (set->isCreated())
-                        return set;
-                }
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(col))
+            {
+                auto set = col_set->getData();
+                if (set->isCreated())
+                    return set;
             }
         }
 
