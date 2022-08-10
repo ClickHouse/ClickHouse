@@ -63,6 +63,15 @@ struct HashMethodOneNumber
     explicit HashMethodOneNumber(const IColumn * column)
     {
         vec = column->getRawData().data;
+        if (isColumnConst(*column))
+        {
+            const_value = unalignedLoad<FieldType>(vec);
+            get_key_holder_impl = [this](size_t /*row*/) { return const_value; };
+        }
+        else
+        {
+            get_key_holder_impl = [this](size_t row) { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); };
+        }
     }
 
     /// Creates context. Method is called once and result context is used in all threads.
