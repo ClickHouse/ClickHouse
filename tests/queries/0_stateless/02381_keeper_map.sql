@@ -1,6 +1,4 @@
--- Tags: no-ordinary-database, no-fasttest
--- Tag no-ordinary-database: Sometimes cannot lock file most likely due to concurrent or adjacent tests, but we don't care how it works in Ordinary database
--- Tag no-fasttest: In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
+-- Tags: no-fasttest
 
 SET database_atomic_wait_for_drop_and_detach_synchronously = 1;
 
