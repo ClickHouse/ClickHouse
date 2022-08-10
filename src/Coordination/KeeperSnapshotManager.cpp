@@ -579,6 +579,7 @@ std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer 
     WriteBufferFromFile plain_buf(tmp_snapshot_path);
     copyData(reader, plain_buf);
     plain_buf.sync();
+    plain_buf.finalize();
 
     std::filesystem::rename(tmp_snapshot_path, new_snapshot_path);
 
@@ -707,6 +708,7 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
     compressed_writer->sync();
+    writer->finalize();
 
     std::error_code ec;
     std::filesystem::rename(tmp_snapshot_path, new_snapshot_path, ec);

@@ -512,6 +512,8 @@ void Changelog::rotate(uint64_t new_start_log_index)
 {
     /// Flush previous log
     flush();
+    if (current_writer)
+        current_writer->finalize();
 
     /// Start new one
     ChangelogFileDescription new_description;
@@ -626,6 +628,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             {
                 LOG_INFO(log, "Trying to remove log {} which is current active log for write. Possibly this node recovers from snapshot", itr->second.path);
                 need_rotate = true;
+                current_writer->finalize();
                 current_writer.reset();
             }
 

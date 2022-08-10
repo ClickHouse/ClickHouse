@@ -168,6 +168,7 @@ void RemoteCacheController::backgroundDownload(ReadBufferPtr remote_read_buffer)
     current_offset += total_bytes;
     file_status = DOWNLOADED;
     flush(true);
+    data_file_writer->finalize();
     data_file_writer.reset();
     is_enable = true;
     lock.unlock();

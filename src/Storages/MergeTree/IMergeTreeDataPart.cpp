@@ -125,23 +125,33 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
     WrittenFiles written_files;
 
-    for (size_t i = 0; i < column_names.size(); ++i)
+    try
     {
-        String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
-        auto serialization = data_types.at(i)->getDefaultSerialization();
+        for (size_t i = 0; i < column_names.size(); ++i)
+        {
+            String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
+            auto serialization = data_types.at(i)->getDefaultSerialization();
 
-        auto out = data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
-        HashingWriteBuffer out_hashing(*out);
-        serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
-        serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
-        out_hashing.finalize();
-        out_checksums.files[file_name].file_size = out_hashing.count();
-        out_checksums.files[file_name].file_hash = out_hashing.getHash();
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
+            auto out = data_part_storage_builder->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, {});
+            HashingWriteBuffer out_hashing(*out);
+            serialization->serializeBinary(hyperrectangle[i].left, out_hashing);
+            serialization->serializeBinary(hyperrectangle[i].right, out_hashing);
+            out_hashing.finalize();
+            out_checksums.files[file_name].file_size = out_hashing.count();
+            out_checksums.files[file_name].file_hash = out_hashing.getHash();
+            out->preFinalize();
+            written_files.emplace_back(std::move(out));
+        }
+
+        return written_files;
     }
+    catch (...)
+    {
+        for (auto & file : written_files)
+            file->finalize();
 
-    return written_files;
+        throw;
+    }
 }
 
 void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)

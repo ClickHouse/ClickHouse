@@ -587,6 +587,7 @@ try
     String tmp_template = fs::path(disk_path) / "";
     {
         auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
+        SCOPE_EXIT(buf->finalize());
         buf->write(data.data, data.PAGE_SIZE_IN_BYTES);
         buf->sync();
     }
