@@ -13,7 +13,7 @@ shard_configs = {
     2: "config/config.xml",
     3: "config/config_shard3.xml",
     4: "config/config.xml",
-    'observer': "config/config_observer.xml",
+    "observer": "config/config_observer.xml",
 }
 
 nodes = {
@@ -83,23 +83,23 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     total_shards = 3
     # one node is observer
     total_nodes = len(nodes) - 1
-    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes)
-    check_shard_num([nodes[0], nodes[2], nodes['observer']], total_shards)
+    check_nodes_count([nodes[0], nodes[2], nodes["observer"]], total_nodes)
+    check_shard_num([nodes[0], nodes[2], nodes["observer"]], total_shards)
 
     nodes[1].stop_clickhouse(kill=True)
-    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes - 1)
+    check_nodes_count([nodes[0], nodes[2], nodes["observer"]], total_nodes - 1)
 
     # node_1 was the only node in shard '1'
-    check_shard_num([nodes[0], nodes[2], nodes['observer']], total_shards - 1)
+    check_shard_num([nodes[0], nodes[2], nodes["observer"]], total_shards - 1)
 
     nodes[3].stop_clickhouse()
-    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes - 2)
+    check_nodes_count([nodes[0], nodes[2], nodes["observer"]], total_nodes - 2)
 
     nodes[1].start_clickhouse()
-    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes - 1)
+    check_nodes_count([nodes[0], nodes[2], nodes["observer"]], total_nodes - 1)
 
     nodes[3].start_clickhouse()
-    check_nodes_count([nodes[0], nodes[2], nodes['observer']], total_nodes)
+    check_nodes_count([nodes[0], nodes[2], nodes["observer"]], total_nodes)
 
     # regular cluster is not affected
     check_nodes_count([nodes[1], nodes[2]], 2, cluster_name="two_shards", retries=1)
