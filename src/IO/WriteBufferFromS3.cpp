@@ -204,6 +204,10 @@ void WriteBufferFromS3::writePart()
     if (schedule)
     {
         UploadPartTask * task = nullptr;
+
+        /// Notify waiting thread when task finished
+        std::shared_ptr<scope_guard> task_finish_notify = std::make_shared<scope_guard>();
+
         int part_number;
         {
             std::lock_guard lock(bg_tasks_mutex);
@@ -212,8 +216,21 @@ void WriteBufferFromS3::writePart()
             part_number = num_added_bg_tasks;
         }
 
+        *task_finish_notify = [&]()
+        {
+            std::lock_guard lock(bg_tasks_mutex);
+            task->is_finised = true;
+            ++num_finished_bg_tasks;
+
+            /// Notification under mutex is important here.
+            /// Otherwise, WriteBuffer could be destroyed in between
+            /// Releasing lock and condvar notification.
+            bg_tasks_condvar.notify_one();
+        };
+
         fillUploadRequest(task->req, part_number);
-        schedule([this, task]()
+
+        schedule([this, task, task_finish_notify]()
         {
             try
             {
@@ -223,18 +240,7 @@ void WriteBufferFromS3::writePart()
             {
                 task->exception = std::current_exception();
             }
-
-            {
-                std::lock_guard lock(bg_tasks_mutex);
-                task->is_finised = true;
-                ++num_finished_bg_tasks;
-
-                /// Notification under mutex is important here.
-                /// Othervies, WriteBuffer could be destroyed in between
-                /// Releasing lock and condvar notification.
-                bg_tasks_condvar.notify_one();
-            }
-        });
+        }
     }
     else
     {
@@ -327,9 +333,24 @@ void WriteBufferFromS3::makeSinglepartUpload()
 
     if (schedule)
     {
+        /// Notify waiting thread when put object task finished
+        std::shared_ptr<scope_guard> put_object_task_notify_finish = std::make_shared<scope_guard>();
         put_object_task = std::make_unique<PutObjectTask>();
+
+        *put_object_task_notify_finish = [&]()
+        {
+            std::lock_guard lock(bg_tasks_mutex);
+            put_object_task->is_finised = true;
+
+            /// Notification under mutex is important here.
+            /// Othervies, WriteBuffer could be destroyed in between
+            /// Releasing lock and condvar notification.
+            bg_tasks_condvar.notify_one();
+        };
+
         fillPutRequest(put_object_task->req);
-        schedule([this]()
+
+        schedule([this, put_object_task_notify_finish]()
         {
             try
             {
@@ -339,17 +360,6 @@ void WriteBufferFromS3::makeSinglepartUpload()
             {
                 put_object_task->exception = std::current_exception();
             }
-
-            {
-                std::lock_guard lock(bg_tasks_mutex);
-                put_object_task->is_finised = true;
-
-                /// Notification under mutex is important here.
-                /// Othervies, WriteBuffer could be destroyed in between
-                /// Releasing lock and condvar notification.
-                bg_tasks_condvar.notify_one();
-            }
-
         });
     }
     else
