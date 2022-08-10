@@ -30,7 +30,6 @@ void fillColumns(const K & key, const V & value, size_t key_pos, const Block & h
     for (size_t i = 0; i < header.columns(); ++i)
     {
         const auto & serialization = header.getByPosition(i).type->getDefaultSerialization();
-        LOG_INFO(&Poco::Logger::get("LOGGER"), "Reading coluimn {} of type {}", i, columns[i]->getDataType());
         serialization->deserializeBinary(*columns[i], i == key_pos ? key_buffer : value_buffer);
     }
 }
