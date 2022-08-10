@@ -26,13 +26,13 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
     {
         if (uri.getPath() == "/extdict_ping")
-            return std::make_unique<LibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
+            return std::make_unique<ExternalDictionaryLibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
     }
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
         if (uri.getPath() == "/extdict_request")
-            return std::make_unique<LibraryBridgeRequestHandler>(keep_alive_timeout, getContext());
+            return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(keep_alive_timeout, getContext());
     }
 
     return nullptr;
