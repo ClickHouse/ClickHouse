@@ -108,7 +108,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     # port is needed to check if clickhouse-server is ready for connections
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
     HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port)"
-    PORT=${HTTPS_PORT:-HTTP_PORT}
+    PORT=${HTTP_PORT:-HTTPS_PORT}
 
     # Listen only on localhost until the initialization is done
     /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
