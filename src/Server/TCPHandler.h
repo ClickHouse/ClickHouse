@@ -155,6 +155,7 @@ private:
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
+    String quota_key;
 
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
@@ -211,6 +212,7 @@ private:
 
     bool receiveProxyHeader();
     void receiveHello();
+    void receiveAddendum();
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
