@@ -726,7 +726,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
                 "This may happen if we are trying to download part from malicious replica or logical error.",
                 absolute_file_path, data_part_storage_builder->getRelativePath());
 
-        auto file_out = data_part_storage_builder->writeFile(file_name, file_size, {});
+        auto file_out = data_part_storage_builder->writeFile(file_name, std::min<UInt64>(file_size, DBMS_DEFAULT_BUFFER_SIZE), {});
         HashingWriteBuffer hashing_out(*file_out);
         copyDataWithThrottler(in, hashing_out, file_size, blocker.getCounter(), throttler);
 
