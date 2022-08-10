@@ -623,6 +623,7 @@ bool FileSegment::reserve(size_t size)
     if (!size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
 
+    if (is_async_download)
     {
         std::lock_guard cache_lock(cache->mutex);
         if (size + cache->current_background_download_memory_usage > cache->background_download_max_memory_usage)

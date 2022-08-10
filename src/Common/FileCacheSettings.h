@@ -22,7 +22,7 @@ struct FileCacheSettings
     bool allow_to_remove_persistent_segments_from_cache_by_default = true;
 
     /// In bytes.
-    size_t background_downlaod_max_memory_usage = REMOTE_FS_OBJECTS_CACHE_BACKGROUND_DOWNLOAD_MEMORY_USAGE;
+    size_t background_download_max_memory_usage = REMOTE_FS_OBJECTS_CACHE_BACKGROUND_DOWNLOAD_MEMORY_USAGE;
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };
