@@ -61,8 +61,6 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(result_rows, out);
     writeCString("\",\"result_bytes\":\"", out);
     writeText(result_bytes, out);
-    writeCString("\",\"elapsed_ns\":\"", out);
-    writeText(elapsed_ns, out);
     writeCString("\"}", out);
 }
 
