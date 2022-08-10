@@ -701,6 +701,7 @@ void ZooKeeper::receiveEvent()
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
+    UInt64 elapsed_ms = 0;
 
     if (xid == PING_XID)
     {
@@ -761,8 +762,8 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
-        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
+        elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
     }
 
     try
@@ -812,7 +813,7 @@ void ZooKeeper::receiveEvent()
         if (length != actual_length)
             throw Exception("Response length doesn't match. Expected: " + DB::toString(length) + ", actual: " + DB::toString(actual_length), Error::ZMARSHALLINGERROR);
 
-        logOperationIfNeeded(request_info.request, response);   //-V614
+        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);   //-V614
     }
     catch (...)
     {
@@ -831,7 +832,7 @@ void ZooKeeper::receiveEvent()
             if (request_info.callback)
                 request_info.callback(*response);
 
-            logOperationIfNeeded(request_info.request, response);
+            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
         }
         catch (...)
         {
@@ -919,13 +920,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
                 response->xid = request_info.request->xid;
+                UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
 
                 if (request_info.callback)
                 {
                     try
                     {
                         request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, true);
+                        logOperationIfNeeded(request_info.request, response, true, elapsed_ms);
                     }
                     catch (...)
                     {
@@ -985,7 +987,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                     try
                     {
                         info.callback(*response);
-                        logOperationIfNeeded(info.request, response, true);
+                        UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
+                        logOperationIfNeeded(info.request, response, true, elapsed_ms);
                     }
                     catch (...)
                     {
@@ -1310,7 +1313,7 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 }
 
 #ifdef ZOOKEEPER_LOG
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize)
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_ms)
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
     if (!maybe_zk_log)
@@ -1348,6 +1351,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
         elem.event_time = event_time;
         elem.address = socket_address;
         elem.session_id = session_id;
+        elem.duration_ms = elapsed_ms;
         if (request)
         {
             elem.thread_id = request->thread_id;
@@ -1357,7 +1361,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     }
 }
 #else
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeeperResponsePtr &, bool)
+void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeeperResponsePtr &, bool, UInt64)
 {}
 #endif
 

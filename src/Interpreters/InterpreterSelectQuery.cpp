@@ -162,7 +162,7 @@ FilterDAGInfoPtr generateFilterActions(
     filter_info->actions->projectInput(false);
 
     for (const auto * node : filter_info->actions->getInputs())
-        filter_info->actions->getIndex().push_back(node);
+        filter_info->actions->getOutputs().push_back(node);
 
     auto required_columns_from_filter = filter_info->actions->getRequiredColumns();
 
@@ -748,13 +748,20 @@ BlockIO InterpreterSelectQuery::execute()
 
 Block InterpreterSelectQuery::getSampleBlockImpl()
 {
+    auto & select_query = getSelectQuery();
+
     query_info.query = query_ptr;
+
+    /// NOTE: this is required for getQueryProcessingStage(), so should be initialized before ExpressionAnalysisResult.
     query_info.has_window = query_analyzer->hasWindow();
+    /// NOTE: this is required only for IStorage::read(), and to be precise MergeTreeData::read(), in case of projections.
+    query_info.has_order_by = select_query.orderBy() != nullptr;
+    query_info.need_aggregate = query_analyzer->hasAggregation();
+
     if (storage && !options.only_analyze)
     {
-        auto & query = getSelectQuery();
-        query_analyzer->makeSetsForIndex(query.where());
-        query_analyzer->makeSetsForIndex(query.prewhere());
+        query_analyzer->makeSetsForIndex(select_query.where());
+        query_analyzer->makeSetsForIndex(select_query.prewhere());
         query_info.sets = std::move(query_analyzer->getPreparedSets());
         query_info.subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
 

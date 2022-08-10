@@ -19,7 +19,7 @@ using FunctionMultiSearchAllPositionsUTF8
 
 }
 
-void registerFunctionMultiSearchAllPositionsUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(MultiSearchAllPositionsUTF8)
 {
     factory.registerFunction<FunctionMultiSearchAllPositionsUTF8>();
 }
