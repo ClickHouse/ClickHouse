@@ -748,7 +748,7 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction()))
                     {
                         const auto & index_hint_dag = index_hint->getActions();
-                        children = index_hint_dag->getIndex();
+                        children = index_hint_dag->getOutputs();
 
                         for (auto & arg : children)
                             arg = &cloneASTWithInversionPushDown(*arg, inverted_dag, to_inverted, context, need_inversion);
@@ -824,7 +824,7 @@ static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs 
         nodes = {&res->addFunction(function_builder, std::move(nodes), "")};
     }
 
-    res->getIndex().swap(nodes);
+    res->getOutputs().swap(nodes);
 
     return res;
 }
@@ -948,7 +948,7 @@ KeyCondition::KeyCondition(
         // std::cerr << "========== inverted dag: " << inverted_dag->dumpDAG() << std::endl;
 
         Block empty;
-        for (const auto * node : inverted_dag->getIndex())
+        for (const auto * node : inverted_dag->getOutputs())
             traverseAST(Tree(node), context, empty);
     }
     else
