@@ -23,7 +23,7 @@ TEST_P(ParserRegexTest, parseQuery)
     EXPECT_THAT(serializeAST(*ast->clone(), false), ::testing::MatchesRegex(expected_ast));
 }
 
-INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserRegexTest,
+INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_IP, ParserRegexTest,
     ::testing::Combine(
         ::testing::Values(std::make_shared<DB::ParserKQLQuery>()),
         ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
