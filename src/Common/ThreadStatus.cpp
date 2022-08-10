@@ -24,9 +24,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-thread_local ThreadStatus * current_thread = nullptr;
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++20-compat"
+#endif
+thread_local ThreadStatus constinit * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #if !defined(SANITIZER)
 namespace
