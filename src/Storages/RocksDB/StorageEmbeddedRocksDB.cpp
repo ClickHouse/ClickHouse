@@ -458,7 +458,7 @@ void StorageEmbeddedRocksDB::initDB()
         status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
         if (!status.ok())
         {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {}: {}",
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
                 rocksdb_dir, status.ToString());
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DBWithTTL>(db);
@@ -466,10 +466,17 @@ void StorageEmbeddedRocksDB::initDB()
     else
     {
         rocksdb::DB * db;
-        status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+        if (read_only)
+        {
+            status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
+        }
+        else
+        {
+            status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+        }
         if (!status.ok())
         {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {}: {}",
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
                 rocksdb_dir, status.ToString());
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
@@ -538,21 +545,17 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     // TODO custom RocksDBSettings, table function
     auto engine_args = args.engine_args;
     if (engine_args.size() > 2)
-        throw Exception(
-            "Engine " + args.engine_name + " requires less than 2 parameters (" + toString(engine_args.size()) + " given)",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    {
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} requires at most 2 parameters. ({} given). Correct usage: EmbeddedRocksDB([ttl, read_only])", 
+            args.engine_name, engine_args.size());
+    }
 
     Int32 ttl{0};
     bool read_only{false};
-    if (engine_args.size() == 2)
-    {
-        ttl = checkAndGetLiteralArgument<Int32>(engine_args[1], "ttl");
-        read_only = checkAndGetLiteralArgument<bool>(engine_args[2], "read_only");
-    }
-    else if (engine_args.size() == 1)
-    {
-        ttl = checkAndGetLiteralArgument<Int32>(engine_args[1], "ttl");
-    }
+    if (!engine_args.empty())
+        ttl = checkAndGetLiteralArgument<UInt64>(engine_args[0], "ttl");
+    if (engine_args.size() > 1)
+        read_only = checkAndGetLiteralArgument<bool>(engine_args[1], "read_only");
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
