@@ -8,7 +8,7 @@ concurrency:
   group: cherry-pick
 on: # yamllint disable-line rule:truthy
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
