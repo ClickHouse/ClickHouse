@@ -1,9 +1,9 @@
 ---
-sidebar_position: 51
-sidebar_label: view
+toc_priority: 51
+toc_title: view
 ---
 
-## view
+## view {#view}
 
 Turns a subquery into a table. The function implements views (see [CREATE VIEW](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-view)). The resulting table does not store data, but only stores the specified `SELECT` query. When reading from the table, ClickHouse executes the query and deletes all unnecessary columns from the result.
 

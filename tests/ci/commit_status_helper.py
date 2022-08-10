@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
 
 import time
-import os
-import csv
 from env_helper import GITHUB_REPOSITORY
 from ci_config import CI_CONFIG
 
 RETRY = 5
 
 
-def override_status(status, check_name, invert=False):
-    if CI_CONFIG["tests_config"].get(check_name, {}).get("force_tests", False):
+def override_status(status, check_name):
+    if CI_CONFIG["tests_config"][check_name].get("force_tests", False):
         return "success"
-
-    if invert:
-        if status == "success":
-            return "error"
-        return "success"
-
     return status
 
 
@@ -51,25 +43,3 @@ def post_commit_status(gh, sha, check_name, description, state, report_url):
             if i == RETRY - 1:
                 raise ex
             time.sleep(i)
-
-
-def post_commit_status_to_file(file_path, description, state, report_url):
-    if os.path.exists(file_path):
-        raise Exception(f'File "{file_path}" already exists!')
-    with open(file_path, "w", encoding="utf-8") as f:
-        out = csv.writer(f, delimiter="\t")
-        out.writerow([state, report_url, description])
-
-
-def remove_labels(gh, pr_info, labels_names):
-    repo = gh.get_repo(GITHUB_REPOSITORY)
-    pull_request = repo.get_pull(pr_info.number)
-    for label in labels_names:
-        pull_request.remove_from_labels(label)
-
-
-def post_labels(gh, pr_info, labels_names):
-    repo = gh.get_repo(GITHUB_REPOSITORY)
-    pull_request = repo.get_pull(pr_info.number)
-    for label in labels_names:
-        pull_request.add_to_labels(label)

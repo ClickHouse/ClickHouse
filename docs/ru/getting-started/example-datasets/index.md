@@ -1,6 +1,7 @@
 ---
-sidebar_label: "Тестовые массивы данных"
-sidebar_position: 14
+toc_folder_title: "Тестовые массивы данных"
+toc_priority: 14
+toc_title: "Введение"
 ---
 
 # Тестовые массивы данных {#testovye-massivy-dannykh}

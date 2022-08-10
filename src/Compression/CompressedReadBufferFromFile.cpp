@@ -117,25 +117,6 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             bytes_read += size_decompressed;
             bytes += size_decompressed;
         }
-        else if (nextimpl_working_buffer_offset > 0)
-        {
-            /// Need to skip some bytes in decompressed data (seek happened before readBig call).
-            size_compressed = new_size_compressed;
-            bytes += offset();
-
-            /// This is for clang static analyzer.
-            assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
-            memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-            working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
-            decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
-
-            /// Read partial data from first block. Won't run here at second block.
-            /// Avoid to call nextImpl and unnecessary memcpy in read when the second block fits entirely to output buffer.
-            size_t size_partial = std::min((size_decompressed - nextimpl_working_buffer_offset),(n - bytes_read));
-            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-            nextimpl_working_buffer_offset = 0;
-            bytes_read += read(to + bytes_read, size_partial);
-        }
         else
         {
             size_compressed = new_size_compressed;
@@ -143,12 +124,17 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
 
             /// This is for clang static analyzer.
             assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
+
             decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
-            ///Read partial data from last block.
-            pos = working_buffer.begin();
+            /// Manually take nextimpl_working_buffer_offset into account, because we don't use
+            /// nextImpl in this method.
+            pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+            nextimpl_working_buffer_offset = 0;
+
             bytes_read += read(to + bytes_read, n - bytes_read);
             break;
         }

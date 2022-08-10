@@ -76,7 +76,9 @@ message (STATUS "LLVM library Directory: ${LLVM_LIBRARY_DIRS}")
 message (STATUS "LLVM C++ compiler flags: ${LLVM_CXXFLAGS}")
 
 # ld: unknown option: --color-diagnostics
-set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
+if (APPLE)
+    set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
+endif ()
 
 # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
 set (CMAKE_INSTALL_RPATH "ON")

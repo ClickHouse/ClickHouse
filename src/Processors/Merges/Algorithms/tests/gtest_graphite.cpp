@@ -35,9 +35,6 @@ static ConfigProcessor::LoadedConfig loadConfiguration(const std::string & confi
 
 static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s)
 {
-    /// NOTE: This code is a trash, because it's written in C.
-    /// We let it remain, because it's just some orphan old test.
-
     char tmp_file[19];
     strcpy(tmp_file, "/tmp/rollup-XXXXXX");
     int fd = mkstemp(tmp_file);
@@ -45,8 +42,7 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
     {
         throw std::runtime_error(strerror(errno));
     }
-    try
-    {
+    try {
         if (write(fd, s.c_str(), s.size()) < s.size())
         {
             throw std::runtime_error("unable write to temp file");
@@ -60,16 +56,16 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
         if (std::rename(tmp_file, config_path.c_str()))
         {
             int err = errno;
-            (void)remove(tmp_file);
+            remove(tmp_file);
             throw std::runtime_error(strerror(err));
         }
         ConfigProcessor::LoadedConfig config = loadConfiguration(config_path);
-        (void)remove(tmp_file);
+        remove(tmp_file);
         return config;
     }
     catch (...)
     {
-        (void)remove(tmp_file);
+        remove(tmp_file);
         throw;
     }
 }
@@ -153,7 +149,7 @@ TEST(GraphiteTest, testSelectPattern)
     using namespace std::literals;
 
     std::string
-        xml(R"END(<clickhouse>
+        xml(R"END(<yandex>
 <graphite_rollup>
     <pattern>
         <regexp>\.sum$</regexp>
@@ -214,7 +210,7 @@ TEST(GraphiteTest, testSelectPattern)
         </retention>
     </default>
 </graphite_rollup>
-</clickhouse>
+</yandex>
 )END");
 
     // Retentions must be ordered by 'age' descending.
@@ -374,7 +370,7 @@ TEST(GraphiteTest, testSelectPatternTyped)
     using namespace std::literals;
 
     std::string
-        xml(R"END(<clickhouse>
+        xml(R"END(<yandex>
 <graphite_rollup>
     <pattern>
         <rule_type>plain</rule_type>
@@ -492,7 +488,7 @@ TEST(GraphiteTest, testSelectPatternTyped)
         </retention>
     </default>
 </graphite_rollup>
-</clickhouse>
+</yandex>
 )END");
 
     // Retentions must be ordered by 'age' descending.

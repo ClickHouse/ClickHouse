@@ -4,7 +4,7 @@
 #include "base/types.h"
 #include <atomic>
 #include <memory>
-#include <cstddef>
+#include <stddef.h>
 
 /** Implements global counters for various events happening in the application
   *  - for high level profiling.

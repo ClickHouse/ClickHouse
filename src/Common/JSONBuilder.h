@@ -61,7 +61,7 @@ private:
 class JSONBool : public IItem
 {
 public:
-    explicit JSONBool(bool value_) : value(value_) {}
+    explicit JSONBool(bool value_) : value(std::move(value_)) {}
     void format(const FormatSettings & settings, FormatContext & context) override;
 
 private:
@@ -74,7 +74,7 @@ public:
     void add(ItemPtr value) { values.push_back(std::move(value)); }
     void add(std::string value) { add(std::make_unique<JSONString>(std::move(value))); }
     void add(const char * value) { add(std::make_unique<JSONString>(value)); }
-    void add(bool value) { add(std::make_unique<JSONBool>(value)); }
+    void add(bool value) { add(std::make_unique<JSONBool>(std::move(value))); }
 
     template <typename T>
     requires std::is_arithmetic_v<T>
@@ -99,7 +99,7 @@ public:
     void add(std::string key, std::string value) { add(std::move(key), std::make_unique<JSONString>(std::move(value))); }
     void add(std::string key, const char * value) { add(std::move(key), std::make_unique<JSONString>(value)); }
     void add(std::string key, std::string_view value) { add(std::move(key), std::make_unique<JSONString>(value)); }
-    void add(std::string key, bool value) { add(std::move(key), std::make_unique<JSONBool>(value)); }
+    void add(std::string key, bool value) { add(std::move(key), std::make_unique<JSONBool>(std::move(value))); }
 
     template <typename T>
     requires std::is_arithmetic_v<T>

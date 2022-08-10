@@ -288,9 +288,9 @@ private:
         ColumnFixedString::Offset offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            std::string_view data = src.getDataAt(i).toView();
+            StringRef data = src.getDataAt(i);
 
-            memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
+            memcpy(&data_to[offset], data.data, std::min(n, data.size));
             offset += n;
         }
     }

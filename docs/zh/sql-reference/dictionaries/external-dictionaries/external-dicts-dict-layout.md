@@ -1,8 +1,8 @@
 ---
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-sidebar_position: 41
-sidebar_label: "\u5728\u5185\u5B58\u4E2D\u5B58\u50A8\u5B57\u5178"
+toc_priority: 41
+toc_title: "\u5728\u5185\u5B58\u4E2D\u5B58\u50A8\u5B57\u5178"
 ---
 
 # 在内存中存储字典 {#dicts-external-dicts-dict-layout}

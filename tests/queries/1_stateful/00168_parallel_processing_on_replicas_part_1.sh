@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # All replicas are localhost, disable `prefer_localhost_replica` option to test network interface
 # Currently this feature could not work with hedged requests
 # Enabling `enable_sample_offset_parallel_processing` feature could lead to intersecting marks, so some of them would be thrown away and it will lead to incorrect result of SELECT query
-SETTINGS="--max_parallel_replicas=3 --use_hedged_requests=false --allow_experimental_parallel_reading_from_replicas=true"
+SETTINGS="--max_parallel_replicas=3 --prefer_localhost_replica=false --use_hedged_requests=false --async_socket_for_remote=false  --allow_experimental_parallel_reading_from_replicas=true"
 
 # Prepare tables
 $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
@@ -68,8 +68,8 @@ do
     TESTNAME_RESULT="/tmp/result_$TESTNAME"
     NEW_TESTNAME_RESULT="/tmp/result_dist_$TESTNAME"
 
-    $CLICKHOUSE_CLIENT $SETTINGS -nm < $TESTPATH > $TESTNAME_RESULT
-    $CLICKHOUSE_CLIENT $SETTINGS -nm < $NEW_TESTNAME > $NEW_TESTNAME_RESULT
+    $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $TESTPATH > $TESTNAME_RESULT
+    $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $NEW_TESTNAME > $NEW_TESTNAME_RESULT
 
     expected=$(cat $TESTNAME_RESULT | md5sum)
     actual=$(cat $NEW_TESTNAME_RESULT | md5sum)

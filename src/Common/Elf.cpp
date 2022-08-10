@@ -1,10 +1,10 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/Elf.h>
 #include <Common/Exception.h>
 #include <base/unaligned.h>
 
-#include <cstring>
+#include <string.h>
 
 
 namespace DB
@@ -176,9 +176,9 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
 #endif // OS_SUNOS
 
 
-String Elf::getStoredBinaryHash() const
+String Elf::getBinaryHash() const
 {
-    if (auto section = findSectionByName(".clickhouse.hash"))
+    if (auto section = findSectionByName(".note.ClickHouse.hash"))
         return {section->begin(), section->end()};
     else
         return {};

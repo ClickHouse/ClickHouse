@@ -5,9 +5,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-
 #include <unordered_set>
 
 
@@ -54,7 +51,7 @@ bool injectRequiredColumnsRecursively(
                 || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName())))
         {
             /// ensure each column is added only once
-            if (!required_columns.contains(column_name))
+            if (required_columns.count(column_name) == 0)
             {
                 columns.emplace_back(column_name);
                 required_columns.emplace(column_name);
@@ -134,12 +131,12 @@ NameSet injectRequiredColumns(
 
 MergeTreeReadTask::MergeTreeReadTask(
     const MergeTreeData::DataPartPtr & data_part_, const MarkRanges & mark_ranges_, size_t part_index_in_query_,
-    const Names & ordered_names_, const NameSet & column_name_set_, const MergeTreeReadTaskColumns & task_columns_,
-    bool remove_prewhere_column_,
+    const Names & ordered_names_, const NameSet & column_name_set_, const NamesAndTypesList & columns_,
+    const NamesAndTypesList & pre_columns_, bool remove_prewhere_column_, bool should_reorder_,
     MergeTreeBlockSizePredictorPtr && size_predictor_)
     : data_part{data_part_}, mark_ranges{mark_ranges_}, part_index_in_query{part_index_in_query_},
-    ordered_names{ordered_names_}, column_name_set{column_name_set_}, task_columns{task_columns_},
-    remove_prewhere_column{remove_prewhere_column_}, size_predictor{std::move(size_predictor_)}
+    ordered_names{ordered_names_}, column_name_set{column_name_set_}, columns{columns_}, pre_columns{pre_columns_},
+    remove_prewhere_column{remove_prewhere_column_}, should_reorder{should_reorder_}, size_predictor{std::move(size_predictor_)}
 {
 }
 
@@ -170,7 +167,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         const ColumnPtr & column_data = from_update ? columns[pos]
                                                     : column_with_type_and_name.column;
 
-        if (!from_update && !names_set.contains(column_name))
+        if (!from_update && !names_set.count(column_name))
             continue;
 
         /// At least PREWHERE filter column might be const.
@@ -279,66 +276,59 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names pre_column_names;
 
     /// inject columns required for defaults evaluation
-    injectRequiredColumns(
-        storage, storage_snapshot, data_part, with_subcolumns, column_names);
-
-    MergeTreeReadTaskColumns result;
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
-    if (with_subcolumns)
-        options.withSubcolumns();
+    bool should_reorder = !injectRequiredColumns(
+        storage, storage_snapshot, data_part, with_subcolumns, column_names).empty();
 
     if (prewhere_info)
     {
-        NameSet pre_name_set;
-
-        /// Add column reading steps:
-        /// 1. Columns for row level filter
-        if (prewhere_info->row_level_filter)
+        if (prewhere_info->alias_actions)
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumnsNames();
+        else
         {
-            Names row_filter_column_names =  prewhere_info->row_level_filter->getRequiredColumnsNames();
-            result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, row_filter_column_names));
-            pre_name_set.insert(row_filter_column_names.begin(), row_filter_column_names.end());
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+
+            if (prewhere_info->row_level_filter)
+            {
+                NameSet names(pre_column_names.begin(), pre_column_names.end());
+
+                for (auto & name : prewhere_info->row_level_filter->getRequiredColumnsNames())
+                {
+                    if (names.count(name) == 0)
+                        pre_column_names.push_back(name);
+                }
+            }
         }
 
-        /// 2. Columns for prewhere
-        Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
+        if (pre_column_names.empty())
+            pre_column_names.push_back(column_names[0]);
 
         const auto injected_pre_columns = injectRequiredColumns(
-            storage, storage_snapshot, data_part, with_subcolumns, all_pre_column_names);
+            storage, storage_snapshot, data_part, with_subcolumns, pre_column_names);
 
-        for (const auto & name : all_pre_column_names)
-        {
-            if (pre_name_set.contains(name))
-                continue;
-            pre_column_names.push_back(name);
-            pre_name_set.insert(name);
-        }
+        if (!injected_pre_columns.empty())
+            should_reorder = true;
+
+        const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
 
         Names post_column_names;
         for (const auto & name : column_names)
-            if (!pre_name_set.contains(name))
+            if (!pre_name_set.count(name))
                 post_column_names.push_back(name);
 
         column_names = post_column_names;
     }
 
-    result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
+    MergeTreeReadTaskColumns result;
+    NamesAndTypesList all_columns;
 
-    /// 3. Rest of the requested columns
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
+    if (with_subcolumns)
+        options.withSubcolumns();
+
+    result.pre_columns = storage_snapshot->getColumnsByNames(options, pre_column_names);
     result.columns = storage_snapshot->getColumnsByNames(options, column_names);
+    result.should_reorder = should_reorder;
     return result;
-}
-
-
-std::string MergeTreeReadTaskColumns::dump() const
-{
-    WriteBufferFromOwnString s;
-    for (size_t i = 0; i < pre_columns.size(); ++i)
-    {
-        s << "STEP " << i << ": " << pre_columns[i].toString() << "\n";
-    }
-    s << "COLUMNS: " << columns.toString() << "\n";
-    return s.str();
 }
 
 }

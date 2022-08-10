@@ -1,5 +1,4 @@
 DROP TABLE IF EXISTS agg_over_nullable;
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE agg_over_nullable (
 	partition Date,
 	timestamp DateTime,

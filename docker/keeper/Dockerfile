@@ -20,8 +20,6 @@ ENV LANG=en_US.UTF-8 \
 COPY --from=glibc-donor /lib/linux-gnu/libc.so.6 /lib/linux-gnu/libdl.so.2 /lib/linux-gnu/libm.so.6 /lib/linux-gnu/libpthread.so.0 /lib/linux-gnu/librt.so.1 /lib/linux-gnu/libnss_dns.so.2 /lib/linux-gnu/libnss_files.so.2 /lib/linux-gnu/libresolv.so.2 /lib/linux-gnu/ld-2.31.so /lib/
 COPY --from=glibc-donor /etc/nsswitch.conf /etc/
 COPY entrypoint.sh /entrypoint.sh
-
-ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
         amd64) mkdir -p /lib64 && ln -sf /lib/ld-2.31.so /lib64/ld-linux-x86-64.so.2 ;; \
@@ -67,7 +65,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 
 
-EXPOSE 2181 10181 44444 9181
+EXPOSE 2181 10181 44444
 
 VOLUME /var/lib/clickhouse /var/log/clickhouse-keeper /etc/clickhouse-keeper
 

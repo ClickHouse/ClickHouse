@@ -89,10 +89,6 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
-    /// Query without new lines (see toOneLineQuery())
-    /// Used to print in case of fatal error
-    /// (to avoid calling extra code in the fatal error handler)
-    String one_line_query;
     UInt64 normalized_query_hash = 0;
 
     std::vector<ProfileEventsCountersAndMemory> finished_threads_counters_memory;
@@ -210,7 +206,7 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    std::string_view getQueryId() const
+    StringRef getQueryId() const
     {
         return query_id;
     }
@@ -218,11 +214,6 @@ public:
     auto getQueryContext() const
     {
         return query_context.lock();
-    }
-
-    auto getGlobalContext() const
-    {
-        return global_context.lock();
     }
 
     void disableProfiling()

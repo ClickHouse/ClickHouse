@@ -12,7 +12,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
@@ -23,15 +23,14 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
-#include <Loggers/Loggers.h>
+#include <loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
-#include <IO/IOThreadPool.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Common/ErrorHandlers.h>
+#include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -106,17 +105,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
-
-    GlobalThreadPool::initialize(
-        config().getUInt("max_thread_pool_size", 10000),
-        config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
-    );
-
-    IOThreadPool::initialize(
-        config().getUInt("max_io_thread_pool_size", 100),
-        config().getUInt("max_io_thread_pool_free_size", 0),
-        config().getUInt("io_thread_pool_queue_size", 10000));
 }
 
 
@@ -195,11 +183,6 @@ void LocalServer::tryInitPath()
 
     if (path.back() != '/')
         path += '/';
-
-    fs::create_directories(fs::path(path) / "user_defined/");
-    fs::create_directories(fs::path(path) / "data/");
-    fs::create_directories(fs::path(path) / "metadata/");
-    fs::create_directories(fs::path(path) / "metadata_dropped/");
 
     global_context->setPath(path);
 
@@ -446,14 +429,6 @@ catch (...)
     return getCurrentExceptionCode();
 }
 
-void LocalServer::updateLoggerLevel(const String & logs_level)
-{
-    if (!logging_initialized)
-        return;
-
-    config().setString("logger.level", logs_level);
-    updateLevels(config(), logger());
-}
 
 void LocalServer::processConfig()
 {
@@ -480,31 +455,30 @@ void LocalServer::processConfig()
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
                     || config().has("log-level")
-                    || config().has("send_logs_level")
                     || config().has("logger.log"));
 
-    auto level = config().getString("log-level", "trace");
+    auto file_logging = config().has("server_logs_file");
+    if (is_interactive && logging && !file_logging)
+        throw Exception("For interactive mode logging is allowed only with --server_logs_file option",
+                        ErrorCodes::BAD_ARGUMENTS);
 
-    if (config().has("server_logs_file"))
+    if (file_logging)
     {
-        auto poco_logs_level = Poco::Logger::parseLevel(level);
-        Poco::Logger::root().setLevel(poco_logs_level);
+        auto level = Poco::Logger::parseLevel(config().getString("log-level", "trace"));
+        Poco::Logger::root().setLevel(level);
         Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
-        logging_initialized = true;
     }
-    else if (logging || is_interactive)
+    else if (logging)
     {
+        // force enable logging
         config().setString("logger", "logger");
-        auto log_level_default = is_interactive && !logging ? "none" : level;
-        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
+        // sensitive data rules are not used here
         buildLoggers(config(), logger(), "clickhouse-local");
-        logging_initialized = true;
     }
     else
     {
         Poco::Logger::root().setLevel("none");
         Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-        logging_initialized = false;
     }
 
     shared_context = Context::createShared();
@@ -544,7 +518,8 @@ void LocalServer::processConfig()
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
-    /// Size of cache for marks (index of MergeTree family of tables).
+    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
+    /// Specify default value for mark_cache_size explicitly!
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
@@ -554,7 +529,8 @@ void LocalServer::processConfig()
     if (index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
 
-    /// Size of cache for index marks (index of MergeTree skip indices).
+    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
+    /// Specify default value for index_mark_cache_size explicitly!
     size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
     if (index_mark_cache_size)
         global_context->setIndexMarkCache(index_mark_cache_size);
@@ -589,6 +565,7 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
+        fs::create_directories(fs::path(path) / "user_defined/");
         LOG_DEBUG(log, "Loading user defined objects from {}", path);
         Poco::File(path + "user_defined/").createDirectories();
         UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
@@ -596,6 +573,9 @@ void LocalServer::processConfig()
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
+        fs::create_directories(fs::path(path) / "data/");
+        fs::create_directories(fs::path(path) / "metadata/");
+
         loadMetadataSystem(global_context);
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
@@ -624,7 +604,6 @@ void LocalServer::processConfig()
 
     ClientInfo & client_info = global_context->getClientInfo();
     client_info.setInitialQuery();
-    client_info.query_kind = query_kind;
 }
 
 
@@ -733,17 +712,6 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("logger.log", options["logger.log"].as<std::string>());
     if (options.count("logger.level"))
         config().setString("logger.level", options["logger.level"].as<std::string>());
-    if (options.count("send_logs_level"))
-        config().setString("send_logs_level", options["send_logs_level"].as<std::string>());
-}
-
-void LocalServer::readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> &, std::vector<Arguments> &)
-{
-    for (int arg_num = 1; arg_num < argc; ++arg_num)
-    {
-        const char * arg = argv[arg_num];
-        common_arguments.emplace_back(arg);
-    }
 }
 
 }

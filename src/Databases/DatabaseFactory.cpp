@@ -14,7 +14,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Common/logger_useful.h>
 #include <Common/Macros.h>
 
 #include "config_core.h"
@@ -62,19 +61,36 @@ namespace ErrorCodes
 
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
-    /// Creates store/xxx/ for Atomic
-    fs::create_directories(fs::path(metadata_path).parent_path());
+    bool created = false;
 
-    DatabasePtr impl = getImpl(create, metadata_path, context);
+    try
+    {
+        /// Creates store/xxx/ for Atomic
+        fs::create_directories(fs::path(metadata_path).parent_path());
 
-    if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
-        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
+        /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
+        /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
+        /// So we should remove metadata directory if database creation failed.
+        /// TODO remove this code
+        created = fs::create_directory(metadata_path);
 
-    /// Attach database metadata
-    if (impl && create.comment)
-        impl->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
+        DatabasePtr impl = getImpl(create, metadata_path, context);
 
-    return impl;
+        if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
+            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
+
+        // Attach database metadata
+        if (impl && create.comment)
+            impl->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
+
+        return impl;
+    }
+    catch (...)
+    {
+        if (created && fs::exists(metadata_path))
+            fs::remove_all(metadata_path);
+        throw;
+    }
 }
 
 template <typename ValueType>
@@ -122,14 +138,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 
     if (engine_name == "Ordinary")
-    {
-        if (!create.attach && !context->getSettingsRef().allow_deprecated_database_ordinary)
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
-                            "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
-    }
-
-    if (engine_name == "Atomic")
+    else if (engine_name == "Atomic")
         return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name, context);
@@ -324,33 +334,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
 
-            bool is_deprecated_syntax = false;
             if (engine_args.size() >= 5)
-            {
-                auto arg_value = engine_args[4]->as<ASTLiteral>()->value;
-                if (arg_value.getType() == Field::Types::Which::String)
-                {
-                    configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
-                }
-                else
-                {
-                    use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
-                    LOG_WARNING(&Poco::Logger::get("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
-                    is_deprecated_syntax = true;
-                }
-            }
-
-            if (!is_deprecated_syntax && engine_args.size() >= 6)
-                use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+                configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
         }
 
-        const auto & settings = context->getSettingsRef();
-        auto pool = std::make_shared<postgres::PoolWithFailover>(
-            configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+        if (engine_args.size() >= 6)
+            use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+
+        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
+            context->getSettingsRef().postgresql_connection_pool_size,
+            context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, configuration, pool, use_table_cache);

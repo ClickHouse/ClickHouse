@@ -32,7 +32,7 @@ MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, 
     for (const auto & type : data_types)
         serializations.emplace_back(type->getDefaultSerialization());
 
-    packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(out, *sequence_id);
+    packet_endpoint = MySQLProtocol::PacketEndpoint::create(out, *sequence_id);
 }
 
 void MySQLOutputFormat::setContext(ContextPtr context_)

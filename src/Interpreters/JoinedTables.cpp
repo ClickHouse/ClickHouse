@@ -1,7 +1,5 @@
 #include <Interpreters/JoinedTables.h>
 
-#include <Core/SettingsEnums.h>
-
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -294,7 +292,6 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         return {};
 
     auto settings = context->getSettingsRef();
-    MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
     auto table_join = std::make_shared<TableJoin>(settings, context->getTemporaryVolume());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query.join();
@@ -308,18 +305,9 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         if (storage)
         {
             if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
-            {
                 table_join->setStorageJoin(storage_join);
-            }
             else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
-            {
                 table_join->setStorageJoin(storage_dict);
-            }
-            else if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueStorage>(storage);
-                     storage_kv && join_algorithm.isSet(JoinAlgorithm::DIRECT))
-            {
-                table_join->setStorageJoin(storage_kv);
-            }
         }
     }
 

@@ -1,6 +1,7 @@
 ---
 title: Можно ли использовать ClickHouse для хранения данных вида "ключ-значение"?
-sidebar_position: 101
+toc_hidden: true
+toc_priority: 101
 ---
 
 # Можно ли использовать ClickHouse для хранения данных вида "ключ-значение"? {#can-i-use-clickhouse-as-a-key-value-storage}

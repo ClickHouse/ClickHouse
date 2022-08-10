@@ -1,8 +1,0 @@
-position: 70
-label: 'Operations'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Operations
-  slug: /en/operations

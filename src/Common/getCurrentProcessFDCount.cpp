@@ -11,7 +11,7 @@ int getCurrentProcessFDCount()
 {
     namespace fs = std::filesystem;
     int result = -1;
-#if defined(OS_LINUX)  || defined(OS_DARWIN)
+#if defined(__linux__)  || defined(__APPLE__)
     using namespace DB;
 
     Int32 pid = getpid();

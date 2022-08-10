@@ -4,8 +4,7 @@
 #include <mutex>
 #include <Core/Types.h>
 #include <Coordination/Changelog.h>
-#include <Common/logger_useful.h>
-#include <base/defines.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -53,12 +52,6 @@ public:
     /// Call fsync to the stored data
     bool flush() override;
 
-    /// Stop background cleanup thread in change
-    void shutdownChangelog();
-
-    /// Flush logstore and call shutdown of background thread in changelog
-    bool flushChangelogAndShutdown();
-
     /// Current log storage size
     uint64_t size() const;
 
@@ -71,7 +64,7 @@ public:
 private:
     mutable std::mutex changelog_lock;
     Poco::Logger * log;
-    Changelog changelog TSA_GUARDED_BY(changelog_lock);
+    Changelog changelog;
 };
 
 }

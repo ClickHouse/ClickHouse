@@ -2,12 +2,12 @@ namespace DB
 {
 class FunctionFactory;
 
-void registerFunctionKostikConsistentHash(FunctionFactory & factory);
+void registerFunctionYandexConsistentHash(FunctionFactory & factory);
 void registerFunctionJumpConsistentHash(FunctionFactory & factory);
 
 void registerFunctionsConsistentHashing(FunctionFactory & factory)
 {
-    registerFunctionKostikConsistentHash(factory);
+    registerFunctionYandexConsistentHash(factory);
     registerFunctionJumpConsistentHash(factory);
 }
 

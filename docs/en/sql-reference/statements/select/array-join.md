@@ -1,8 +1,8 @@
 ---
-sidebar_label: ARRAY JOIN
+toc_title: ARRAY JOIN
 ---
 
-# ARRAY JOIN Clause
+# ARRAY JOIN Clause {#select-array-join-clause}
 
 It is a common operation for tables that contain an array column to produce a new table that has a column with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
 
@@ -25,7 +25,7 @@ Supported types of `ARRAY JOIN` are listed below:
 -   `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
 -   `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
-## Basic ARRAY JOIN Examples
+## Basic ARRAY JOIN Examples {#basic-array-join-examples}
 
 The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let’s create a table with an [Array](../../../sql-reference/data-types/array.md) type column and insert values into it:
 
@@ -85,7 +85,7 @@ LEFT ARRAY JOIN arr;
 └─────────────┴─────┘
 ```
 
-## Using Aliases
+## Using Aliases {#using-aliases}
 
 An alias can be specified for an array in the `ARRAY JOIN` clause. In this case, an array item can be accessed by this alias, but the array itself is accessed by the original name. Example:
 
@@ -145,7 +145,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) function:
+The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -182,7 +182,7 @@ SETTINGS enable_unaligned_array_join = 1;
 └─────────┴─────────┴───┴───────────┘
 ```
 
-## ARRAY JOIN with Nested Data Structure
+## ARRAY JOIN with Nested Data Structure {#array-join-with-nested-data-structure}
 
 `ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/nested.md):
 
@@ -277,7 +277,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) function:
+Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -295,6 +295,6 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](../../../sql-reference/statements/select/where.md)/[PREWHERE](../../../sql-reference/statements/select/prewhere.md) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.

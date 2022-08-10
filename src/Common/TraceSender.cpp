@@ -47,7 +47,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
 
     if (CurrentThread::isInitialized())
     {
-        query_id = StringRef(CurrentThread::getQueryId());
+        query_id = CurrentThread::getQueryId();
         query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
         thread_id = CurrentThread::get().thread_id;
@@ -64,7 +64,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
 
     size_t stack_trace_size = stack_trace.getSize();
     size_t stack_trace_offset = stack_trace.getOffset();
-    writeIntBinary(static_cast<UInt8>(stack_trace_size - stack_trace_offset), out);
+    writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
     for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
         writePODBinary(stack_trace.getFramePointers()[i], out);
 

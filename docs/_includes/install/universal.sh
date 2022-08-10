@@ -7,31 +7,31 @@ DIR=
 
 if [ "${OS}" = "Linux" ]
 then
-    if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
+    if [ "${ARCH}" = "x86_64" ]
     then
         DIR="amd64"
-    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
+    elif [ "${ARCH}" = "aarch64" ]
     then
         DIR="aarch64"
-    elif [ "${ARCH}" = "powerpc64le" -o "${ARCH}" = "ppc64le" ]
+    elif [ "${ARCH}" = "powerpc64le" ]
     then
         DIR="powerpc64le"
     fi
 elif [ "${OS}" = "FreeBSD" ]
 then
-    if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
+    if [ "${ARCH}" = "x86_64" ]
     then
         DIR="freebsd"
-    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
+    elif [ "${ARCH}" = "aarch64" ]
     then
         DIR="freebsd-aarch64"
-    elif [ "${ARCH}" = "powerpc64le" -o "${ARCH}" = "ppc64le" ]
+    elif [ "${ARCH}" = "powerpc64le" ]
     then
         DIR="freebsd-powerpc64le"
     fi
 elif [ "${OS}" = "Darwin" ]
 then
-    if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
+    if [ "${ARCH}" = "x86_64" ]
     then
         DIR="macos"
     elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]

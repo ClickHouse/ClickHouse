@@ -114,8 +114,6 @@ bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
     {
         if (last_used_socket)
             e.addMessage(" while reading from socket ({})", last_used_socket->peerAddress().toString());
-        if (e.code() == ErrorCodes::SOCKET_TIMEOUT)
-            e.addMessage(" (receive timeout {} ms)", receive_timeout_usec / 1000);
         throw;
     }
 }

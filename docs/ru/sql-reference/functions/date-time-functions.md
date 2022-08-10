@@ -1,6 +1,6 @@
 ---
-sidebar_position: 39
-sidebar_label: "Функции для работы с датами и временем"
+toc_priority: 39
+toc_title: "Функции для работы с датами и временем"
 ---
 
 # Функции для работы с датами и временем {#funktsii-dlia-raboty-s-datami-i-vremenem}
@@ -266,9 +266,9 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp;
 └────────────────┘
 ```
 
-    :::note "Attention"
+!!! attention "Attention"
     `Date` или `DateTime` это возвращаемый тип функций `toStartOf*`, который описан ниже. Несмотря на то, что эти функции могут принимать `DateTime64` в качестве аргумента, если переданное значение типа `DateTime64` выходит за пределы нормального диапазона (с 1925 по 2283 год), то это даст неверный результат.
-    :::
+
 ## toStartOfYear {#tostartofyear}
 
 Округляет дату или дату-с-временем вниз до первого дня года.
@@ -302,9 +302,9 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 Округляет дату или дату-с-временем вниз до первого дня месяца.
 Возвращается дата.
 
-    :::note "Attention"
+!!! attention "Attention"
     Возвращаемое значение для некорректных дат зависит от реализации. ClickHouse может вернуть нулевую дату, выбросить исключение, или выполнить «естественное» перетекание дат между месяцами.
-    :::
+
 ## toMonday {#tomonday}
 
 Округляет дату или дату-с-временем вниз до ближайшего понедельника.
@@ -384,7 +384,7 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 -   Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 
 
-## toStartOfFiveMinutes {#tostartoffiveminutes}
+## toStartOfFiveMinute {#tostartoffiveminute}
 
 Округляет дату-с-временем вниз до начала пятиминутного интервала.
 
