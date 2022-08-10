@@ -42,8 +42,9 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
-    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
+    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(vectorImpl,
+    MULTITARGET_FH(
+    static void NO_INLINE), /*vectorImpl*/ MULTITARGET_FB((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
@@ -78,9 +79,9 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    MULTITARGET_FUNCTION_AVX2_SSE42(
-    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
-        ColumnFixedString::Chars & c)
+    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(vectorImpl,
+    MULTITARGET_FH(
+    static void NO_INLINE), /*vectorImpl*/ MULTITARGET_FB((const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c) /// NOLINT
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)

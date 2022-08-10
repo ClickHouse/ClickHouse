@@ -11,8 +11,8 @@ http_request_duration_seconds_count 144320
 
 # HELP http_requests_total Total number of HTTP requests
 # TYPE http_requests_total counter
-http_requests_total{code="400",method="post"} 3 1395066363000
 http_requests_total{code="200",method="post"} 1027 1395066363000
+http_requests_total{code="400",method="post"} 3 1395066363000
 
 metric_without_timestamp_and_labels 12.47
 

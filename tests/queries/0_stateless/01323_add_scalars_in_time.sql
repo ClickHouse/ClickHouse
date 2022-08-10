@@ -16,8 +16,7 @@ WITH
 SELECT arraySort(arrayIntersect(argMax(seqs, create_time), arr1)) AS common, id
 FROM tags
 WHERE id LIKE 'id%'
-GROUP BY id
-ORDER BY id;
+GROUP BY id;
 
 DROP TABLE tags;
 

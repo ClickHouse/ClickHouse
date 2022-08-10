@@ -2,7 +2,7 @@
 sidebar_position: 5
 ---
 
-# avg
+# avg {#agg_function-avg}
 
 Calculates the arithmetic mean.
 

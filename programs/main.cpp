@@ -2,7 +2,7 @@
 #include <csetjmp>
 #include <unistd.h>
 
-#ifdef OS_LINUX
+#ifdef __linux__
 #include <sys/mman.h>
 #endif
 
@@ -65,9 +65,6 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_SU
-int mainEntryClickHouseSU(int argc, char ** argv);
-#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -75,17 +72,16 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_DISKS
-int mainEntryClickHouseDisks(int argc, char ** argv);
-#endif
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
     /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
+    /// objcopy --add-section .note.ClickHouse.hash=<(./clickhouse hash-binary) clickhouse
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
+
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
 namespace
 {
@@ -143,13 +139,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
 #endif
-#if ENABLE_CLICKHOUSE_SU
-    {"su", mainEntryClickHouseSU},
-#endif
     {"hash-binary", mainEntryClickHouseHashBinary},
-#if ENABLE_CLICKHOUSE_DISKS
-    {"disks", mainEntryClickHouseDisks},
-#endif
 };
 
 int printHelp(int, char **)
@@ -199,7 +189,7 @@ auto instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
-#define ret(x) return std::make_tuple(STDERR_FILENO, x, sizeof(x) - 1)
+#define ret(x) return std::make_tuple(STDERR_FILENO, x, ARRAY_SIZE(x) - 1)
         case InstructionFail::NONE:
             ret("NONE");
         case InstructionFail::SSE3:
@@ -287,7 +277,7 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 #define writeError(data) do \
     { \
         static_assert(__builtin_constant_p(data)); \
-        if (!writeRetry(STDERR_FILENO, data, sizeof(data) - 1)) \
+        if (!writeRetry(STDERR_FILENO, data, ARRAY_SIZE(data) - 1)) \
             _Exit(1); \
     } while (false)
 
@@ -339,11 +329,10 @@ struct Checker
         checkRequiredInstructions();
     }
 } checker
-#ifndef OS_DARWIN
+#ifndef __APPLE__
     __attribute__((init_priority(101)))    /// Run before other static initializers.
 #endif
 ;
-
 
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
@@ -417,16 +406,16 @@ int main(int argc_, char ** argv_)
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
 
-    /// PHDR cache is required for query profiler to work reliably
-    /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
-    ///  will work only after additional call of this function.
-    updatePHDRCache();
-
     checkHarmfulEnvironmentVariables(argv_);
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.
     std::set_new_handler(nullptr);
+
+    /// PHDR cache is required for query profiler to work reliably
+    /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
+    ///  will work only after additional call of this function.
+    updatePHDRCache();
 
     std::vector<char *> argv(argv_, argv_ + argc_);
 

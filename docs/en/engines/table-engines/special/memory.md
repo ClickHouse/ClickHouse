@@ -3,7 +3,7 @@ sidebar_position: 110
 sidebar_label:  Memory
 ---
 
-# Memory Table Engine
+# Memory Table Engine {#memory}
 
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
 Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.

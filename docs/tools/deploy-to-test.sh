@@ -12,11 +12,12 @@
 #
 set -ex
 
-BASE_DIR=$(dirname "$(readlink -f "$0")")
+BASE_DIR=$(dirname $(readlink -f $0))
 GIT_USER=${GIT_USER:-$USER}
 
-GIT_PROD_URI=git@github.com:${GIT_USER}/clickhouse.github.io.git \
+GIT_TEST_URI=git@github.com:${GIT_USER}/clickhouse.github.io.git \
  BASE_DOMAIN=${GIT_USER}-test.clickhouse.com \
- EXTRA_BUILD_ARGS="${*}" \
+ EXTRA_BUILD_ARGS="${@}" \
  CLOUDFLARE_TOKEN="" \
- "${BASE_DIR}/release.sh"
+ HISTORY_SIZE=3 \
+ ${BASE_DIR}/release.sh

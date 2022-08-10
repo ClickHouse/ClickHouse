@@ -1,4 +1,4 @@
-# quotas
+# quotas {#system_tables-quotas}
 
 Contains information about [quotas](../../operations/system-tables/quotas.md).
 

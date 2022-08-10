@@ -197,11 +197,6 @@ public:
         ++merges_with_ttl_counter;
     }
 
-    void cancelMergeWithTTL()
-    {
-        --merges_with_ttl_counter;
-    }
-
     size_t getMergesWithTTLCount() const
     {
         return merges_with_ttl_counter;

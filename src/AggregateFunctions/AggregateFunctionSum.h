@@ -59,11 +59,11 @@ struct AggregateFunctionSumData
     }
 
     /// Vectorized version
-    MULTITARGET_FUNCTION_AVX2_SSE42(
-    MULTITARGET_FUNCTION_HEADER(
+    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(addManyImpl,
+    MULTITARGET_FH(
     template <typename Value>
     void NO_SANITIZE_UNDEFINED NO_INLINE
-    ), addManyImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, size_t start, size_t end) /// NOLINT
+    ), /*addManyImpl*/ MULTITARGET_FB((const Value * __restrict ptr, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
         size_t count = end - start;
@@ -122,11 +122,11 @@ struct AggregateFunctionSumData
         addManyImpl(ptr, start, end);
     }
 
-    MULTITARGET_FUNCTION_AVX2_SSE42(
-    MULTITARGET_FUNCTION_HEADER(
+    MULTITARGET_FUNCTION_WRAPPER_AVX2_SSE42(addManyConditionalInternalImpl,
+    MULTITARGET_FH(
     template <typename Value, bool add_if_zero>
     void NO_SANITIZE_UNDEFINED NO_INLINE
-    ), addManyConditionalInternalImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) /// NOLINT
+    ), /*addManyConditionalInternalImpl*/ MULTITARGET_FB((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
         size_t count = end - start;
@@ -445,7 +445,7 @@ public:
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         Arena *,
         ssize_t if_argument_pos) const override
@@ -465,7 +465,7 @@ public:
     void addBatchSinglePlaceNotNull(
         size_t row_begin,
         size_t row_end,
-        AggregateDataPtr __restrict place,
+        AggregateDataPtr place,
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena *,
@@ -487,33 +487,6 @@ public:
         {
             this->data(place).addManyNotNull(column.getData().data(), null_map, row_begin, row_end);
         }
-    }
-
-    void addManyDefaults(
-        AggregateDataPtr __restrict /*place*/,
-        const IColumn ** /*columns*/,
-        size_t /*length*/,
-        Arena * /*arena*/) const override
-    {
-    }
-
-    void addBatchSparse(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        const auto & offsets = column_sparse.getOffsetsData();
-
-        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
-        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
-
-        for (size_t i = from; i < to; ++i)
-            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

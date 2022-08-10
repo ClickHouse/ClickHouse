@@ -5,7 +5,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -15,48 +14,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
     extern const int WRONG_BACKUP_SETTINGS;
 }
-
-
-namespace
-{
-    struct SettingFieldOptionalUUID
-    {
-        std::optional<UUID> value;
-
-        explicit SettingFieldOptionalUUID(const std::optional<UUID> & value_) : value(value_) {}
-
-        explicit SettingFieldOptionalUUID(const Field & field)
-        {
-            if (field.getType() == Field::Types::Null)
-            {
-                value = std::nullopt;
-                return;
-            }
-
-            if (field.getType() == Field::Types::String)
-            {
-                const String & str = field.get<const String &>();
-                if (str.empty())
-                {
-                    value = std::nullopt;
-                    return;
-                }
-
-                UUID id;
-                if (tryParse(id, str))
-                {
-                    value = id;
-                    return;
-                }
-            }
-
-            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot parse uuid from {}", field);
-        }
-
-        explicit operator Field() const { return Field(value ? toString(*value) : ""); }
-    };
-}
-
 
 /// List of backup settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_BACKUP_SETTINGS(M) \
@@ -69,8 +26,7 @@ namespace
     M(UInt64, replica_num) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(String, coordination_zk_path) \
-    M(OptionalUUID, backup_uuid)
+    M(String, coordination_zk_path)
 
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 {

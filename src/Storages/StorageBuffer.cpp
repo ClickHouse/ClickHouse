@@ -9,7 +9,6 @@
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -27,8 +26,9 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -143,11 +143,11 @@ StorageBuffer::StorageBuffer(
 
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource : public ISource
+class BufferSource : public SourceWithProgress
 {
 public:
     BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageSnapshotPtr & storage_snapshot)
-        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
+        : SourceWithProgress(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
         , buffer(buffer_) {}
@@ -207,6 +207,23 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::FetchColumns;
+}
+
+
+Pipe StorageBuffer::read(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams)
+{
+    QueryPlan plan;
+    read(plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(local_context),
+        BuildQueryPipelineSettings::fromContext(local_context));
 }
 
 void StorageBuffer::read(
@@ -317,8 +334,21 @@ void StorageBuffer::read(
 
         if (query_plan.isInitialized())
         {
-            query_plan.addStorageHolder(destination);
-            query_plan.addTableLock(std::move(destination_lock));
+            StreamLocalLimits limits;
+            SizeLimits leaf_limits;
+
+            /// Add table lock for destination table.
+            auto adding_limits_and_quota = std::make_unique<SettingQuotaAndLimitsStep>(
+                    query_plan.getCurrentDataStream(),
+                    destination,
+                    std::move(destination_lock),
+                    limits,
+                    leaf_limits,
+                    nullptr,
+                    nullptr);
+
+            adding_limits_and_quota->setStepDescription("Lock destination table for Buffer");
+            query_plan.addStep(std::move(adding_limits_and_quota));
         }
     }
 
@@ -346,7 +376,6 @@ void StorageBuffer::read(
         auto interpreter = InterpreterSelectQuery(
                 query_info.query, local_context, std::move(pipe_from_buffers),
                 SelectQueryOptions(processed_stage).ignoreProjections());
-        interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(buffers_plan);
     }
     else
@@ -354,6 +383,15 @@ void StorageBuffer::read(
         if (query_info.prewhere_info)
         {
             auto actions_settings = ExpressionActionsSettings::fromContext(local_context);
+            if (query_info.prewhere_info->alias_actions)
+            {
+                pipe_from_buffers.addSimpleTransform([&](const Block & header)
+                {
+                    return std::make_shared<ExpressionTransform>(
+                        header,
+                        std::make_shared<ExpressionActions>(query_info.prewhere_info->alias_actions, actions_settings));
+                });
+            }
 
             if (query_info.prewhere_info->row_level_filter)
             {
@@ -376,9 +414,6 @@ void StorageBuffer::read(
                         query_info.prewhere_info->remove_prewhere_column);
             });
         }
-
-        for (const auto & processor : pipe_from_buffers.getProcessors())
-            processor->setStorageLimits(query_info.storage_limits);
 
         auto read_from_buffers = std::make_unique<ReadFromPreparedSource>(std::move(pipe_from_buffers));
         read_from_buffers->setStepDescription("Read from buffers of Buffer table");
@@ -465,7 +500,7 @@ static void appendBlock(const Block & from, Block & to)
 
         /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         /// So ignore any memory limits, even global (since memory tracking has drift).
-        MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+        LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
 
         try
         {
@@ -1080,8 +1115,8 @@ void registerStorageBuffer(StorageFactory & factory)
 
         size_t i = 0;
 
-        String destination_database = checkAndGetLiteralArgument<String>(engine_args[i++], "destination_database");
-        String destination_table = checkAndGetLiteralArgument<String>(engine_args[i++], "destination_table");
+        String destination_database = engine_args[i++]->as<ASTLiteral &>().value.safeGet<String>();
+        String destination_table = engine_args[i++]->as<ASTLiteral &>().value.safeGet<String>();
 
         UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
 

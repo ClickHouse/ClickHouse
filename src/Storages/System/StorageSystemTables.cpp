@@ -16,7 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
 
@@ -124,7 +124,7 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockSource : public ISource
+class TablesBlockSource : public SourceWithProgress
 {
 public:
     TablesBlockSource(
@@ -134,7 +134,7 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         ContextPtr context_)
-        : ISource(std::move(header))
+        : SourceWithProgress(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))

@@ -10,14 +10,14 @@ This is intended for continuous integration checks that run on Linux servers. If
 
 The cross-build for Mac OS X is based on the [Build instructions](../development/build.md), follow them first.
 
-## Install Clang-14
+## Install Clang-13
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
 For example the commands for Bionic are like:
 
 ``` bash
-sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-14 main" >> /etc/apt/sources.list
-sudo apt-get install clang-14
+sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-13 main" >> /etc/apt/sources.list
+sudo apt-get install clang-13
 ```
 
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
@@ -25,7 +25,6 @@ sudo apt-get install clang-14
 Let’s remember the path where we install `cctools` as ${CCTOOLS}
 
 ``` bash
-export CCTOOLS=$(cd ~/cctools && pwd)
 mkdir ${CCTOOLS}
 cd ${CCTOOLS}
 
@@ -44,8 +43,10 @@ make install
 Also, we need to download macOS X SDK into the working tree.
 
 ``` bash
-cd ClickHouse/cmake/toolchain/darwin-x86_64
-curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz' | tar xJ --strip-components=1
+cd ClickHouse
+wget 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz'
+mkdir -p build-darwin/cmake/toolchain/darwin-x86_64
+tar xJf MacOSX10.15.sdk.tar.xz -C build-darwin/cmake/toolchain/darwin-x86_64 --strip-components=1
 ```
 
 ## Build ClickHouse {#build-clickhouse}
@@ -54,7 +55,7 @@ curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX1
 cd ClickHouse
 mkdir build-darwin
 cd build-darwin
-CC=clang-14 CXX=clang++-14 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
+CC=clang-13 CXX=clang++-13 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/aarch64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/aarch64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/aarch64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/aarch64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
 ninja
 ```
 

@@ -1,4 +1,5 @@
 #include "ThreadPoolReader.h"
+#include <Common/VersionNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -7,13 +8,14 @@
 #include <Common/setThreadName.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/CurrentThread.h>
+#include <Poco/Environment.h>
 #include <base/errnoToString.h>
 #include <Poco/Event.h>
 #include <future>
 #include <unistd.h>
 #include <fcntl.h>
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 #include <sys/syscall.h>
 #include <sys/uio.h>
@@ -71,6 +73,16 @@ namespace ErrorCodes
 
 }
 
+#if defined(OS_LINUX)
+/// According to man, Linux 5.9 and 5.10 have a bug in preadv2() with the RWF_NOWAIT.
+/// https://manpages.debian.org/testing/manpages-dev/preadv2.2.en.html#BUGS
+/// We also disable it for older Linux kernels, because according to user's reports, RedHat-patched kernels might be also affected.
+static bool hasBugInPreadV2()
+{
+    VersionNumber linux_version(Poco::Environment::osVersion());
+    return linux_version < VersionNumber{5, 11, 0};
+}
+#endif
 
 ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
     : pool(pool_size, pool_size, queue_size_)
@@ -84,11 +96,15 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
     /// Check if data is already in page cache with preadv2 syscall.
 
     /// We don't want to depend on new Linux kernel.
-    static std::atomic<bool> has_pread_nowait_support{true};
+    /// But kernels 5.9 and 5.10 have a bug where preadv2() with the
+    /// RWF_NOWAIT flag may return 0 even when not at end of file.
+    /// It can't be distinguished from the real eof, so we have to
+    /// disable pread with nowait.
+    static std::atomic<bool> has_pread_nowait_support = !hasBugInPreadV2();
 
     if (has_pread_nowait_support.load(std::memory_order_relaxed))
     {

@@ -21,7 +21,6 @@
 
 #if defined(__clang__)
     #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-    #pragma clang diagnostic ignored "-Wnested-anon-types"
 #endif
 
 /// Basic idea is motivated by "iotop" tool.

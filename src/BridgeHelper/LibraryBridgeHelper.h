@@ -6,7 +6,6 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <BridgeHelper/IBridgeHelper.h>
-#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB
@@ -39,13 +38,13 @@ public:
 
     bool supportsSelectiveLoad();
 
-    QueryPipeline loadAll();
+    Pipe loadAll();
 
-    QueryPipeline loadIds(const std::vector<uint64_t> & ids);
+    Pipe loadIds(const std::vector<uint64_t> & ids);
 
-    QueryPipeline loadKeys(const Block & requested_block);
+    Pipe loadKeys(const Block & requested_block);
 
-    QueryPipeline loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
+    Pipe loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
     bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {}) const;
 

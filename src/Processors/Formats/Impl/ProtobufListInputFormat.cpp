@@ -79,7 +79,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
                 return std::make_shared<ProtobufListInputFormat>(buf, sample, std::move(params),
                     FormatSchemaInfo(settings, "Protobuf", true), settings.protobuf.input_flatten_google_wrappers);
             });
-    factory.markFormatSupportsSubsetOfColumns("ProtobufList");
+    factory.markFormatAsColumnOriented("ProtobufList");
 }
 
 void registerProtobufListSchemaReader(FormatFactory & factory)

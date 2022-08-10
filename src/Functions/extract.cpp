@@ -21,9 +21,9 @@ struct ExtractImpl
         res_data.reserve(data.size() / 5);
         res_offsets.resize(offsets.size());
 
-        const Regexps::Regexp regexp = Regexps::createRegexp<false, false, false>(pattern);
+        const auto & regexp = Regexps::get<false, false, false>(pattern);
 
-        unsigned capture = regexp.getNumberOfSubpatterns() > 0 ? 1 : 0;
+        unsigned capture = regexp->getNumberOfSubpatterns() > 0 ? 1 : 0;
         OptimizedRegularExpression::MatchVec matches;
         matches.reserve(capture + 1);
         size_t prev_offset = 0;
@@ -34,7 +34,7 @@ struct ExtractImpl
             size_t cur_offset = offsets[i];
 
             unsigned count
-                = regexp.match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
+                = regexp->match(reinterpret_cast<const char *>(&data[prev_offset]), cur_offset - prev_offset - 1, matches, capture + 1);
             if (count > capture && matches[capture].offset != std::string::npos)
             {
                 const auto & match = matches[capture];

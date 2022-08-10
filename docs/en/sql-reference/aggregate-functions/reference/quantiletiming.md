@@ -2,7 +2,7 @@
 sidebar_position: 204
 ---
 
-# quantileTiming
+# quantileTiming {#quantiletiming}
 
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 

@@ -10,7 +10,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_TRANSACTION;
-    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 BlockIO InterpreterTransactionControlQuery::execute()
@@ -56,53 +55,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
     if (txn->getState() != MergeTreeTransaction::RUNNING)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
-    TransactionsWaitCSNMode mode = query_context->getSettingsRef().wait_changes_become_visible_after_commit_mode;
-    CSN csn;
-    try
-    {
-        csn = TransactionLog::instance().commitTransaction(txn, /* throw_on_unknown_status */ mode != TransactionsWaitCSNMode::WAIT_UNKNOWN);
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION)
-        {
-            /// Detach transaction from current context if connection was lost and its status is unknown
-            /// (so it will be possible to start new one)
-            session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
-        }
-        throw;
-    }
-
-    if (csn == Tx::CommittingCSN)
-    {
-        chassert(mode == TransactionsWaitCSNMode::WAIT_UNKNOWN);
-
-        /// Try to wait for connection to be restored and its status to be loaded.
-        /// It's useful for testing. It allows to enable fault injection (after commit) without breaking tests.
-        txn->waitStateChange(Tx::CommittingCSN);
-
-        CSN csn_changed_state = txn->getCSN();
-        if (csn_changed_state == Tx::UnknownCSN)
-        {
-            /// CommittingCSN -> UnknownCSN -> RolledBackCSN
-            /// It's possible if connection was lost before commit
-            /// (maybe we should get rid of intermediate UnknownCSN in this transition)
-            txn->waitStateChange(Tx::UnknownCSN);
-            chassert(txn->getCSN() == Tx::RolledBackCSN);
-        }
-
-        if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
-            throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction {} was rolled back", txn->tid);
-        if (txn->getState() != MergeTreeTransaction::COMMITTED)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has invalid state {}", txn->tid, txn->getState());
-
-        csn = txn->getCSN();
-    }
-
-    /// Wait for committed changes to become actually visible, so the next transaction in this session will see the changes
-    if (mode != TransactionsWaitCSNMode::ASYNC)
-        TransactionLog::instance().waitForCSNLoaded(csn);
-
+    TransactionLog::instance().commitTransaction(txn);
     session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
     return {};
 }
@@ -114,8 +67,6 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr se
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     if (txn->getState() == MergeTreeTransaction::COMMITTED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction is in COMMITTED state");
-    if (txn->getState() == MergeTreeTransaction::COMMITTING)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction is in COMMITTING state");
 
     if (txn->getState() == MergeTreeTransaction::RUNNING)
         TransactionLog::instance().rollbackTransaction(txn);

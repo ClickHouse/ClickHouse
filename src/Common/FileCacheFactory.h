@@ -6,7 +6,6 @@
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <mutex>
-#include <list>
 
 namespace DB
 {
@@ -16,22 +15,20 @@ namespace DB
  */
 class FileCacheFactory final : private boost::noncopyable
 {
-public:
-    struct FileCacheData
+    struct CacheData
     {
         FileCachePtr cache;
         FileCacheSettings settings;
 
-        FileCacheData(FileCachePtr cache_, const FileCacheSettings & settings_) : cache(cache_), settings(settings_) {}
+        CacheData(FileCachePtr cache_, const FileCacheSettings & settings_) : cache(cache_), settings(settings_) {}
     };
 
-    using Caches = std::list<FileCacheData>;
-    using CacheByBasePath = std::unordered_map<std::string, Caches::iterator>;
-    using CacheByName = std::unordered_map<std::string, Caches::iterator>;
+    using CacheByBasePath = std::unordered_map<std::string, CacheData>;
 
+public:
     static FileCacheFactory & instance();
 
-    FileCachePtr getOrCreate(const std::string & cache_base_path, const FileCacheSettings & file_cache_settings, const std::string & name);
+    FileCachePtr getOrCreate(const std::string & cache_base_path, const FileCacheSettings & file_cache_settings);
 
     FileCachePtr get(const std::string & cache_base_path);
 
@@ -39,16 +36,11 @@ public:
 
     const FileCacheSettings & getSettings(const std::string & cache_base_path);
 
-    FileCacheData getByName(const std::string & name);
-
-    CacheByName getAllByName();
-
 private:
-    std::mutex mutex;
-    Caches caches;
+    CacheData * getImpl(const std::string & cache_base_path, std::lock_guard<std::mutex> &);
 
-    CacheByBasePath caches_by_path;
-    CacheByName caches_by_name;
+    std::mutex mutex;
+    CacheByBasePath caches;
 };
 
 }

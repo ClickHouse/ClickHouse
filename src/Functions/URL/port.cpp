@@ -91,16 +91,16 @@ private:
 
     static UInt16 extractPort(UInt16 default_port, const ColumnString::Chars & buf, size_t offset, size_t size)
     {
-        const char * p = reinterpret_cast<const char *>(buf.data()) + offset;
+        const char * p = reinterpret_cast<const char *>(&buf[0]) + offset;
         const char * end = p + size;
 
-        std::string_view host = getURLHost(p, size);
-        if (host.empty())
+        StringRef host = getURLHost(p, size);
+        if (!host.size)
             return default_port;
-        if (host.size() == size)
+        if (host.size == size)
             return default_port;
 
-        p = host.data() + host.size();
+        p = host.data + host.size;
         if (*p++ != ':')
             return default_port;
 
@@ -127,3 +127,4 @@ void registerFunctionPort(FunctionFactory & factory)
 }
 
 }
+

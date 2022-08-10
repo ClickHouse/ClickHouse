@@ -3,11 +3,11 @@ sidebar_position: 68
 sidebar_label: Time Window
 ---
 
-# Time Window Functions
+# Time Window Functions {#time-window-functions}
 
 Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with WindowView are listed below:
 
-## tumble
+## tumble {#time-window-functions-tumble}
 
 A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (`interval`). 
 
@@ -42,7 +42,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## hop
+## hop {#time-window-functions-hop}
 
 A hopping time window has a fixed duration (`window_interval`) and hops by a specified hop interval (`hop_interval`). If the `hop_interval` is smaller than the `window_interval`, hopping windows are overlapping. Thus, records can be assigned to multiple windows. 
 
@@ -79,7 +79,7 @@ Result:
 └───────────────────────────────────────────────────────────┘
 ```
 
-## tumbleStart
+## tumbleStart {#time-window-functions-tumblestart}
 
 Returns the inclusive lower bound of the corresponding tumbling window.
 
@@ -88,7 +88,7 @@ tumbleStart(bounds_tuple);
 tumbleStart(time_attr, interval [, timezone]);
 ```
 
-## tumbleEnd
+## tumbleEnd {#time-window-functions-tumbleend}
 
 Returns the exclusive upper bound of the corresponding tumbling window.
 
@@ -97,7 +97,7 @@ tumbleEnd(bounds_tuple);
 tumbleEnd(time_attr, interval [, timezone]);
 ```
 
-## hopStart
+## hopStart {#time-window-functions-hopstart}
 
 Returns the inclusive lower bound of the corresponding hopping window.
 
@@ -106,7 +106,7 @@ hopStart(bounds_tuple);
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
 ```
 
-## hopEnd
+## hopEnd {#time-window-functions-hopend}
 
 Returns the exclusive upper bound of the corresponding hopping window.
 

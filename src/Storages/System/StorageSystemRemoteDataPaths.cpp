@@ -1,7 +1,7 @@
 #include "StorageSystemRemoteDataPaths.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileCacheFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -51,7 +51,7 @@ Pipe StorageSystemRemoteDataPaths::read(
     {
         if (disk->isRemote())
         {
-            std::vector<IDisk::LocalPathWithObjectStoragePaths> remote_paths_by_local_path;
+            std::vector<IDisk::LocalPathWithRemotePaths> remote_paths_by_local_path;
             disk->getRemotePathsRecursive("store", remote_paths_by_local_path);
             disk->getRemotePathsRecursive("data", remote_paths_by_local_path);
 
@@ -60,19 +60,19 @@ Pipe StorageSystemRemoteDataPaths::read(
             if (!cache_base_path.empty())
                 cache = FileCacheFactory::instance().get(cache_base_path);
 
-            for (const auto & [local_path, storage_objects] : remote_paths_by_local_path)
+            for (const auto & [local_path, remote_paths] : remote_paths_by_local_path)
             {
-                for (const auto & object : storage_objects)
+                for (const auto & remote_path : remote_paths)
                 {
                     col_disk_name->insert(disk_name);
                     col_base_path->insert(disk->getPath());
                     col_cache_base_path->insert(cache_base_path);
                     col_local_path->insert(local_path);
-                    col_remote_path->insert(object.absolute_path);
+                    col_remote_path->insert(remote_path);
 
                     if (cache)
                     {
-                        auto cache_paths = cache->tryGetCachePaths(cache->hash(object.getPathKeyForCache()));
+                        auto cache_paths = cache->tryGetCachePaths(cache->hash(remote_path));
                         col_cache_paths->insert(Array(cache_paths.begin(), cache_paths.end()));
                     }
                     else

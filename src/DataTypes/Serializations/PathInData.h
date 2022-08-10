@@ -7,6 +7,9 @@
 namespace DB
 {
 
+class ReadBuffer;
+class WriteBuffer;
+
 /// Class that represents path in document, e.g. JSON.
 class PathInData
 {
@@ -53,6 +56,9 @@ public:
 
     bool isNested(size_t i) const { return parts[i].is_nested; }
     bool hasNested() const { return has_nested; }
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 
     bool operator==(const PathInData & other) const { return parts == other.parts; }
     struct Hash { size_t operator()(const PathInData & value) const; };

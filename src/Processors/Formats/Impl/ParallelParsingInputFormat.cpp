@@ -88,7 +88,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
         Chunk chunk;
-        while (!parsing_finished && (chunk = parser.getChunk()))
+        while (!parsing_finished && (chunk = parser.getChunk()) != Chunk())
         {
             /// Variable chunk is moved, but it is not really used in the next iteration.
             /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
@@ -121,7 +121,7 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 
 void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
     {
         background_exception = std::current_exception();
@@ -233,7 +233,7 @@ Chunk ParallelParsingInputFormat::generate()
         else
         {
             // Pass the unit back to the segmentator.
-            std::lock_guard lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
             unit.status = READY_TO_INSERT;
             segmentator_condvar.notify_all();
         }

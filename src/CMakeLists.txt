@@ -37,6 +37,18 @@ if (USE_DEBUG_HELPERS)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${INCLUDE_DEBUG_HELPERS}>)
 endif ()
 
+if (COMPILER_GCC)
+    # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy.
+    # It leads to slow code. This is compiler bug. It looks like this:
+    #
+    # (gdb) bt
+    #0  memcpy (destination=0x7faa6e9f1638, source=0x7faa81d9e9a8, size=16) at ../libs/libmemcpy/memcpy.h:11
+    #1  0x0000000005341c5f in _mm_storeu_si128 (__B=..., __P=<optimized out>) at /usr/lib/gcc/x86_64-linux-gnu/7/include/emmintrin.h:720
+    #2  memcpySmallAllowReadWriteOverflow15Impl (n=<optimized out>, src=<optimized out>, dst=<optimized out>) at ../src/Common/memcpySmall.h:37
+
+    add_definitions ("-fno-tree-loop-distribute-patterns")
+endif ()
+
 # ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
 # If turned ON, this option defines such macro.
 # See `src/Common/TargetSpecific.h`
@@ -87,17 +99,12 @@ add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
 add_headers_and_sources(dbms Disks/IO)
-add_headers_and_sources(dbms Disks/ObjectStorages)
 if (TARGET ch_contrib::sqlite)
     add_headers_and_sources(dbms Databases/SQLite)
 endif()
 
 if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
-endif()
-
-if (TARGET ch_contrib::nats_io)
-    add_headers_and_sources(dbms Storages/NATS)
 endif()
 
 add_headers_and_sources(dbms Storages/MeiliSearch)
@@ -118,16 +125,16 @@ endif()
 
 if (TARGET ch_contrib::aws_s3)
     add_headers_and_sources(dbms Common/S3)
-    add_headers_and_sources(dbms Disks/ObjectStorages/S3)
+    add_headers_and_sources(dbms Disks/S3)
 endif()
 
 if (TARGET ch_contrib::azure_sdk)
-    add_headers_and_sources(dbms Disks/ObjectStorages/AzureBlobStorage)
+    add_headers_and_sources(dbms Disks/AzureBlobStorage)
 endif()
 
 if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Storages/HDFS)
-    add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
+    add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
 add_headers_and_sources(dbms Storages/Cache)
@@ -375,10 +382,6 @@ if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
-if (TARGET ch_contrib::nats_io)
-    dbms_target_link_libraries(PRIVATE ch_contrib::nats_io)
-endif()
-
 if (TARGET ch_contrib::sasl2)
     dbms_target_link_libraries(PRIVATE ch_contrib::sasl2)
 endif()
@@ -401,11 +404,11 @@ dbms_target_link_libraries (
         clickhouse_parsers
         ch_contrib::lz4
         Poco::JSON
+        Poco::MongoDB
         string_utils
     PUBLIC
         boost::system
         clickhouse_common_io
-        Poco::MongoDB
 )
 
 if (TARGET ch::mysqlxx)
@@ -559,12 +562,12 @@ include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
-        file(GLOB_RECURSE "${DST_VAR}" CONFIGURE_DEPENDS RELATIVE "${BASE_DIR}" "gtest*.cpp")
+        file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
     endmacro()
 
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
-    clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
+    add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE

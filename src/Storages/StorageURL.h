@@ -93,7 +93,7 @@ protected:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
-    bool supportsSubsetOfColumns() const override;
+    bool isColumnOriented() const override;
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
@@ -152,8 +152,6 @@ public:
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
-
-    static ASTs::iterator collectHeaders(ASTs & url_function_args, URLBasedDataSourceConfiguration & configuration, ContextPtr context);
 };
 
 

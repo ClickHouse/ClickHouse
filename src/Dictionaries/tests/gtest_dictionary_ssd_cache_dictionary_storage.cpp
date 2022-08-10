@@ -1,4 +1,4 @@
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <gtest/gtest.h>
 

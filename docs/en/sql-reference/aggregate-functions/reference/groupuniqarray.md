@@ -2,7 +2,7 @@
 sidebar_position: 111
 ---
 
-# groupUniqArray
+# groupUniqArray {#groupuniqarray}
 
 Syntax: `groupUniqArray(x)` or `groupUniqArray(max_size)(x)`
 

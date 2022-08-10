@@ -23,14 +23,13 @@ Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 }
 
 JoiningTransform::JoiningTransform(
-    const Block & input_header,
-    const Block & output_header,
+    Block input_header,
     JoinPtr join_,
     size_t max_block_size_,
     bool on_totals_,
     bool default_totals_,
     FinishCounterPtr finish_counter_)
-    : IProcessor({input_header}, {output_header})
+    : IProcessor({input_header}, {transformHeader(input_header, join_)})
     , join(std::move(join_))
     , on_totals(on_totals_)
     , default_totals(default_totals_)

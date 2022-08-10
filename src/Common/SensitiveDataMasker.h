@@ -69,4 +69,4 @@ public:
     size_t rulesCount() const;
 };
 
-}
+};

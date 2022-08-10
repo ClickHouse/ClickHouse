@@ -5,22 +5,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+$CLICKHOUSE_CLIENT -q 'DROP USER IF EXISTS u02104'
 $CLICKHOUSE_CLIENT -q 'CREATE USER IF NOT EXISTS u02104 IDENTIFIED WITH no_password'
 $CLICKHOUSE_CLIENT -q 'GRANT ALL ON *.* TO u02104'
 
 function overcommited()
 {
-    while true; do
-        $CLICKHOUSE_CLIENT -u u02104 -q 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator=1,memory_usage_overcommit_max_wait_microseconds=500' 2>&1 \
-                | grep -F -q "MEMORY_LIMIT_EXCEEDED" && echo "OVERCOMMITED WITH USER LIMIT IS KILLED"
-    done
+    $CLICKHOUSE_CLIENT -u u02104 -q 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator=1,memory_usage_overcommit_max_wait_microseconds=500' 2>&1 \
+        | grep -F -q "MEMORY_LIMIT_EXCEEDED" && echo "OVERCOMMITED WITH USER LIMIT IS KILLED"
 }
 
 function expect_execution()
 {
-    while true; do
-        $CLICKHOUSE_CLIENT -u u02104 -q 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS max_memory_usage_for_user=5000000,memory_overcommit_ratio_denominator=2,memory_usage_overcommit_max_wait_microseconds=500' >/dev/null 2>/dev/null
-    done
+    $CLICKHOUSE_CLIENT -u u02104 -q 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS max_memory_usage_for_user=5000000,memory_overcommit_ratio_denominator=2,memory_usage_overcommit_max_wait_microseconds=500' >/dev/null 2>/dev/null
 }
 
 export -f overcommited
@@ -30,9 +27,9 @@ function user_test()
 {
     for _ in {1..10};
     do
-        timeout 10 bash -c overcommited &
-        timeout 10 bash -c expect_execution &
-    done;
+        clickhouse_client_loop_timeout 10 overcommited &
+        clickhouse_client_loop_timeout 10 expect_execution &
+    done
 
     wait
 }

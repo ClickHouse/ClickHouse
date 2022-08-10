@@ -111,20 +111,14 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
             owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
         owned_mark_cache = storage.getContext()->getMarkCache();
 
-        reader = task->data_part->getReader(task->task_columns.columns, metadata_snapshot, task->mark_ranges,
+        reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
             IMergeTreeReader::ValueSizeMap{}, profile_callback);
 
-        pre_reader_for_step.clear();
         if (prewhere_info)
-        {
-            for (const auto & pre_columns_per_step : task->task_columns.pre_columns)
-            {
-                pre_reader_for_step.push_back(task->data_part->getReader(pre_columns_per_step, metadata_snapshot, task->mark_ranges,
-                    owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                    IMergeTreeReader::ValueSizeMap{}, profile_callback));
-            }
-        }
+            pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                IMergeTreeReader::ValueSizeMap{}, profile_callback);
     }
     else
     {
@@ -132,20 +126,14 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
         if (part_name != last_readed_part_name)
         {
             /// retain avg_value_size_hints
-            reader = task->data_part->getReader(task->task_columns.columns, metadata_snapshot, task->mark_ranges,
+            reader = task->data_part->getReader(task->columns, metadata_snapshot, task->mark_ranges,
                 owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
                 reader->getAvgValueSizeHints(), profile_callback);
 
-            pre_reader_for_step.clear();
             if (prewhere_info)
-            {
-                for (const auto & pre_columns_per_step : task->task_columns.pre_columns)
-                {
-                    pre_reader_for_step.push_back(task->data_part->getReader(pre_columns_per_step, metadata_snapshot, task->mark_ranges,
-                        owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
-                        reader->getAvgValueSizeHints(), profile_callback));
-                }
-            }
+                pre_reader = task->data_part->getReader(task->pre_columns, metadata_snapshot, task->mark_ranges,
+                owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings,
+                reader->getAvgValueSizeHints(), profile_callback);
         }
     }
 
@@ -156,7 +144,7 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
 void MergeTreeThreadSelectProcessor::finish()
 {
     reader.reset();
-    pre_reader_for_step.clear();
+    pre_reader.reset();
 }
 
 

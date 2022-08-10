@@ -5,7 +5,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int DEADLOCK_AVOIDED;
@@ -171,7 +170,7 @@ void DiskRestartProxy::moveDirectory(const String & from_path, const String & to
     DiskDecorator::moveDirectory(from_path, to_path);
 }
 
-DirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path) const
+DiskDirectoryIteratorPtr DiskRestartProxy::iterateDirectory(const String & path)
 {
     ReadLock lock (mutex);
     return DiskDecorator::iterateDirectory(path);
@@ -207,7 +206,7 @@ void DiskRestartProxy::copyDirectoryContent(const String & from_dir, const std::
     DiskDecorator::copyDirectoryContent(from_dir, to_disk, to_dir);
 }
 
-void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file_names) const
+void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file_names)
 {
     ReadLock lock (mutex);
     DiskDecorator::listFiles(path, file_names);
@@ -276,7 +275,7 @@ void DiskRestartProxy::setLastModified(const String & path, const Poco::Timestam
     DiskDecorator::setLastModified(path, timestamp);
 }
 
-Poco::Timestamp DiskRestartProxy::getLastModified(const String & path) const
+Poco::Timestamp DiskRestartProxy::getLastModified(const String & path)
 {
     ReadLock lock (mutex);
     return DiskDecorator::getLastModified(path);
@@ -318,20 +317,19 @@ String DiskRestartProxy::getCacheBasePath() const
     return DiskDecorator::getCacheBasePath();
 }
 
-StoredObjects DiskRestartProxy::getStorageObjects(const String & path) const
+std::vector<String> DiskRestartProxy::getRemotePaths(const String & path) const
 {
     ReadLock lock (mutex);
-    return DiskDecorator::getStorageObjects(path);
+    return DiskDecorator::getRemotePaths(path);
 }
 
-void DiskRestartProxy::getRemotePathsRecursive(
-    const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
+void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
 {
     ReadLock lock (mutex);
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);
 }
 
-void DiskRestartProxy::restart(ContextPtr context)
+void DiskRestartProxy::restart()
 {
     /// Speed up processing unhealthy requests.
     DiskDecorator::shutdown();
@@ -354,7 +352,7 @@ void DiskRestartProxy::restart(ContextPtr context)
 
     LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
-    DiskDecorator::startup(context);
+    DiskDecorator::startup();
 
     LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());
 }

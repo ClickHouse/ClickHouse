@@ -1,6 +1,8 @@
 #include <Backups/BackupIO_File.h>
+#include <Common/Exception.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -39,25 +41,6 @@ bool BackupWriterFile::fileExists(const String & file_name)
     return fs::exists(path / file_name);
 }
 
-bool BackupWriterFile::fileContentsEqual(const String & file_name, const String & expected_file_contents)
-{
-    if (!fs::exists(path / file_name))
-        return false;
-
-    try
-    {
-        auto in = createReadBufferFromFileBase(path / file_name, {});
-        String actual_file_contents(expected_file_contents.size(), ' ');
-        return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
-            && (actual_file_contents == expected_file_contents) && in->eof();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
-}
-
 std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_name)
 {
     auto file_path = path / file_name;
@@ -65,12 +48,19 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
     return std::make_unique<WriteBufferFromFile>(file_path);
 }
 
-void BackupWriterFile::removeFiles(const Strings & file_names)
+void BackupWriterFile::removeFilesAfterFailure(const Strings & file_names)
 {
-    for (const auto & file_name : file_names)
-        fs::remove(path / file_name);
-    if (fs::is_directory(path) && fs::is_empty(path))
-        fs::remove(path);
+    try
+    {
+        for (const auto & file_name : file_names)
+            fs::remove(path / file_name);
+        if (fs::is_directory(path) && fs::is_empty(path))
+            fs::remove(path);
+    }
+    catch (...)
+    {
+        LOG_WARNING(&Poco::Logger::get("BackupWriterFile"), "RemoveFilesAfterFailure: {}", getCurrentExceptionMessage(false));
+    }
 }
 
 }

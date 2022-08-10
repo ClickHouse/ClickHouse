@@ -56,7 +56,7 @@ private:
             throw Exception{"The argument of function " + String{name} + " should be a constant string with the name of a setting",
                             ErrorCodes::ILLEGAL_COLUMN};
 
-        std::string_view setting_name{column->getDataAt(0).toView()};
+        std::string_view setting_name{column->getDataAt(0)};
         return getContext()->getSettingsRef().get(setting_name);
     }
 };

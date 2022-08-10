@@ -10,13 +10,13 @@
 #include "registerTableFunctions.h"
 
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
-
-#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -73,8 +73,8 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    database_path = checkAndGetLiteralArgument<String>(args[0], "database_path");
-    remote_table_name = checkAndGetLiteralArgument<String>(args[1], "table_name");
+    database_path = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    remote_table_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
     sqlite_db = openSQLiteDB(database_path, context);
 }

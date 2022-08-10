@@ -1,4 +1,4 @@
-# detached_parts
+# detached_parts {#system_tables-detached_parts}
 
 Contains information about detached parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. The `reason` column specifies why the part was detached.
 

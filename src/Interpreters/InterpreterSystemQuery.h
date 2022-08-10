@@ -53,8 +53,6 @@ private:
 
     void syncReplicatedDatabase(ASTSystemQuery & query);
 
-    void syncTransactionLog();
-
     void restoreReplica();
 
     void dropReplica(ASTSystemQuery & query);

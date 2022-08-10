@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, long, no-random-settings
+-- Tags: no-parallel, no-fasttest, long
 
 SET max_memory_usage='20G';
 SET enable_filesystem_cache_on_write_operations = 0;
@@ -23,8 +23,7 @@ AND current_database = currentDatabase()
 ORDER BY query_start_time DESC
 LIMIT 1;
 
-set remote_filesystem_read_method = 'read';
-set local_filesystem_read_method = 'pread';
+SET remote_filesystem_read_method='read';
 
 SELECT 2, * FROM test LIMIT 10 FORMAT Null;
 

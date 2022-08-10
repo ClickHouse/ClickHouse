@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -101,7 +101,7 @@ bool supportsAtomicRename()
 
 }
 
-#elif defined(OS_DARWIN)
+#elif defined(__APPLE__)
 
 // Includes
 #include <dlfcn.h>  // For dlsym

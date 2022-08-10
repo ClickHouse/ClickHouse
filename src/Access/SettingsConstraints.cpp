@@ -36,12 +36,12 @@ void SettingsConstraints::clear()
 }
 
 
-void SettingsConstraints::setMinValue(std::string_view setting_name, const Field & min_value)
+void SettingsConstraints::setMinValue(const std::string_view & setting_name, const Field & min_value)
 {
     getConstraintRef(setting_name).min_value = Settings::castValueUtil(setting_name, min_value);
 }
 
-Field SettingsConstraints::getMinValue(std::string_view setting_name) const
+Field SettingsConstraints::getMinValue(const std::string_view & setting_name) const
 {
     const auto * ptr = tryGetConstraint(setting_name);
     if (ptr)
@@ -51,12 +51,12 @@ Field SettingsConstraints::getMinValue(std::string_view setting_name) const
 }
 
 
-void SettingsConstraints::setMaxValue(std::string_view setting_name, const Field & max_value)
+void SettingsConstraints::setMaxValue(const std::string_view & setting_name, const Field & max_value)
 {
     getConstraintRef(setting_name).max_value = Settings::castValueUtil(setting_name, max_value);
 }
 
-Field SettingsConstraints::getMaxValue(std::string_view setting_name) const
+Field SettingsConstraints::getMaxValue(const std::string_view & setting_name) const
 {
     const auto * ptr = tryGetConstraint(setting_name);
     if (ptr)
@@ -66,12 +66,12 @@ Field SettingsConstraints::getMaxValue(std::string_view setting_name) const
 }
 
 
-void SettingsConstraints::setReadOnly(std::string_view setting_name, bool read_only)
+void SettingsConstraints::setReadOnly(const std::string_view & setting_name, bool read_only)
 {
     getConstraintRef(setting_name).read_only = read_only;
 }
 
-bool SettingsConstraints::isReadOnly(std::string_view setting_name) const
+bool SettingsConstraints::isReadOnly(const std::string_view & setting_name) const
 {
     const auto * ptr = tryGetConstraint(setting_name);
     if (ptr)
@@ -81,7 +81,7 @@ bool SettingsConstraints::isReadOnly(std::string_view setting_name) const
 }
 
 
-void SettingsConstraints::set(std::string_view setting_name, const Field & min_value, const Field & max_value, bool read_only)
+void SettingsConstraints::set(const std::string_view & setting_name, const Field & min_value, const Field & max_value, bool read_only)
 {
     auto & ref = getConstraintRef(setting_name);
     ref.min_value = Settings::castValueUtil(setting_name, min_value);
@@ -89,7 +89,7 @@ void SettingsConstraints::set(std::string_view setting_name, const Field & min_v
     ref.read_only = read_only;
 }
 
-void SettingsConstraints::get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const
+void SettingsConstraints::get(const std::string_view & setting_name, Field & min_value, Field & max_value, bool & read_only) const
 {
     const auto * ptr = tryGetConstraint(setting_name);
     if (ptr)
@@ -318,7 +318,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
 }
 
 
-SettingsConstraints::Constraint & SettingsConstraints::getConstraintRef(std::string_view setting_name)
+SettingsConstraints::Constraint & SettingsConstraints::getConstraintRef(const std::string_view & setting_name)
 {
     auto it = constraints.find(setting_name);
     if (it == constraints.end())
@@ -331,7 +331,7 @@ SettingsConstraints::Constraint & SettingsConstraints::getConstraintRef(std::str
     return it->second;
 }
 
-const SettingsConstraints::Constraint * SettingsConstraints::tryGetConstraint(std::string_view setting_name) const
+const SettingsConstraints::Constraint * SettingsConstraints::tryGetConstraint(const std::string_view & setting_name) const
 {
     auto it = constraints.find(setting_name);
     if (it == constraints.end())

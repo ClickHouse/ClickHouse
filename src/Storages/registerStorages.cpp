@@ -54,17 +54,12 @@ void registerStorageMySQL(StorageFactory & factory);
 
 void registerStorageMongoDB(StorageFactory & factory);
 
-
 #if USE_RDKAFKA
 void registerStorageKafka(StorageFactory & factory);
 #endif
 
 #if USE_AMQPCPP
 void registerStorageRabbitMQ(StorageFactory & factory);
-#endif
-
-#if USE_NATSIO
-void registerStorageNATS(StorageFactory & factory);
 #endif
 
 #if USE_ROCKSDB
@@ -149,10 +144,6 @@ void registerStorages()
 
     #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
-    #endif
-
-    #if USE_NATSIO
-    registerStorageNATS(factory);
     #endif
 
     #if USE_ROCKSDB

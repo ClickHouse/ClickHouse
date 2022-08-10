@@ -12,14 +12,14 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
-from pr_info import PRInfo
 from s3_helper import S3Helper
-from stopwatch import Stopwatch
+from pr_info import PRInfo
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
+from commit_status_helper import post_commit_status
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
 
 NAME = "Push to Dockerhub (actions)"
 
@@ -248,8 +248,6 @@ def build_and_push_one_image(
             "docker buildx build --builder default "
             f"--label build-url={GITHUB_RUN_URL} "
             f"{from_tag_arg}"
-            # A hack to invalidate cache, grep for it in docker/ dir
-            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
             f"--tag {image.repo}:{version_string} "
             f"{cache_from} "
             f"--cache-to type=inline,mode=max "
@@ -425,11 +423,7 @@ def main():
     elif args.image_path:
         pr_info.changed_files = set(i for i in args.image_path)
     else:
-        try:
-            pr_info.fetch_changed_files()
-        except TypeError:
-            # If the event does not contain diff, nothing will be built
-            pass
+        pr_info.fetch_changed_files()
 
     changed_images = get_changed_docker_images(pr_info, images_dict)
     if changed_images:

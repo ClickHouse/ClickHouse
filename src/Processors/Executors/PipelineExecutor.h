@@ -16,9 +16,6 @@ class QueryStatus;
 class ExecutingGraph;
 using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 
-class ReadProgressCallback;
-using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
-
 /// Executes query pipeline.
 class PipelineExecutor
 {
@@ -51,10 +48,6 @@ public:
     /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
     [[nodiscard]] bool checkTimeLimitSoft();
 
-    /// Set callback for read progress.
-    /// It would be called every time when processor reports read progress.
-    void setReadProgressCallback(ReadProgressCallbackPtr callback);
-
 private:
     ExecutingGraphPtr graph;
 
@@ -65,8 +58,6 @@ private:
     bool is_execution_initialized = false;
     /// system.processors_profile_log
     bool profile_processors = false;
-    /// system.opentelemetry_span_log
-    bool trace_processors = false;
 
     std::atomic_bool cancelled = false;
 
@@ -74,8 +65,6 @@ private:
 
     /// Now it's used to check if query was killed.
     QueryStatus * const process_list_element = nullptr;
-
-    ReadProgressCallbackPtr read_progress_callback;
 
     using Queue = std::queue<ExecutingGraph::Node *>;
 

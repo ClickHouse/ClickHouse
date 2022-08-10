@@ -1,11 +1,10 @@
 #include "FileSegment.h"
 #include <base/getThreadId.h>
+#include <Common/FileCache.h>
 #include <Common/hex.h>
-#include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <filesystem>
-
 
 namespace CurrentMetrics
 {
@@ -26,8 +25,7 @@ FileSegment::FileSegment(
         size_t size_,
         const Key & key_,
         IFileCache * cache_,
-        State download_state_,
-        bool is_persistent_)
+        State download_state_)
     : segment_range(offset_, offset_ + size_ - 1)
     , download_state(download_state_)
     , file_key(key_)
@@ -37,7 +35,6 @@ FileSegment::FileSegment(
 #else
     , log(&Poco::Logger::get("FileSegment"))
 #endif
-    , is_persistent(is_persistent_) /// Not really used for now, see PR 36171
 {
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.
     switch (download_state)
@@ -60,10 +57,6 @@ FileSegment::FileSegment(
         case (State::DOWNLOADING):
         {
             downloader_id = getCallerId();
-            break;
-        }
-        case (State::SKIP_CACHE):
-        {
             break;
         }
         default:
@@ -104,10 +97,10 @@ String FileSegment::getCallerId()
 {
     if (!CurrentThread::isInitialized()
         || !CurrentThread::get().getQueryContext()
-        || CurrentThread::getQueryId().empty())
+        || CurrentThread::getQueryId().size == 0)
         return "None:" + toString(getThreadId());
 
-    return std::string(CurrentThread::getQueryId()) + ":" + toString(getThreadId());
+    return CurrentThread::getQueryId().toString() + ":" + toString(getThreadId());
 }
 
 String FileSegment::getOrSetDownloader()
@@ -244,7 +237,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
                             "Cache writer was finalized (downloaded size: {}, state: {})",
                             downloaded_size, stateToString(download_state));
 
-        auto download_path = getPathInLocalCache();
+        auto download_path = cache->getPathInLocalCache(key(), offset());
         cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
     }
 
@@ -274,11 +267,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
     assert(getDownloadOffset() == offset_ + size);
 }
 
-String FileSegment::getPathInLocalCache() const
-{
-    return cache->getPathInLocalCache(key(), offset(), isPersistent());
-}
-
 void FileSegment::writeInMemory(const char * from, size_t size)
 {
     if (!size)
@@ -295,7 +283,7 @@ void FileSegment::writeInMemory(const char * from, size_t size)
     if (cache_writer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache writer already initialized");
 
-    auto download_path = getPathInLocalCache();
+    auto download_path = cache->getPathInLocalCache(key(), offset());
     cache_writer = std::make_unique<WriteBufferFromFile>(download_path, size + 1);
 
     try
@@ -537,14 +525,6 @@ void FileSegment::complete(std::lock_guard<std::mutex> & cache_lock)
 
 void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
 {
-    bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
-
-    if (is_last_holder && download_state == State::SKIP_CACHE)
-    {
-        cache->remove(key(), offset(), cache_lock, segment_lock);
-        return;
-    }
-
     if (download_state == State::SKIP_CACHE || is_detached)
         return;
 
@@ -562,7 +542,8 @@ void FileSegment::completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std
         /// Segment state can be changed from DOWNLOADING or EMPTY only if the caller is the
         /// downloader or the only owner of the segment.
 
-        bool can_update_segment_state = isDownloaderImpl(segment_lock) || is_last_holder;
+        bool can_update_segment_state = isDownloaderImpl(segment_lock)
+            || cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
 
         if (can_update_segment_state)
             download_state = State::PARTIALLY_DOWNLOADED;
@@ -685,7 +666,7 @@ void FileSegment::assertCorrectnessImpl(std::lock_guard<std::mutex> & /* segment
 {
     assert(downloader_id.empty() == (download_state != FileSegment::State::DOWNLOADING));
     assert(!downloader_id.empty() == (download_state == FileSegment::State::DOWNLOADING));
-    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(getPathInLocalCache()) > 0);
+    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->getPathInLocalCache(key(), offset())) > 0);
 }
 
 void FileSegment::throwIfDetached() const
@@ -737,7 +718,6 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment, std
     snapshot->ref_count = file_segment.use_count();
     snapshot->downloaded_size = file_segment->getDownloadedSize();
     snapshot->download_state = file_segment->state();
-    snapshot->is_persistent = file_segment->isPersistent();
 
     return snapshot;
 }

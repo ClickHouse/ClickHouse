@@ -47,7 +47,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Int
 
     if (CurrentThread::isInitialized())
     {
-        query_id = StringRef(CurrentThread::getQueryId());
+        query_id = CurrentThread::getQueryId();
         query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
 
         thread_id = CurrentThread::get().thread_id;

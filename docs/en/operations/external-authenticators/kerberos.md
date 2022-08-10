@@ -1,4 +1,4 @@
-# Kerberos
+# Kerberos {#external-authenticators-kerberos}
 
 Existing and properly configured ClickHouse users can be authenticated via Kerberos authentication protocol.
 
@@ -99,7 +99,7 @@ Example (goes into `users.xml`):
 Note that Kerberos authentication cannot be used alongside with any other authentication mechanism. The presence of any other sections like `password` alongside `kerberos` will force ClickHouse to shutdown.
 :::
 
-:::info Reminder
+:::info Reminder    
 Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in the main `config.xml` file as described previously.
 :::
 

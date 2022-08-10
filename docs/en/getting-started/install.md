@@ -6,7 +6,7 @@ description: ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, 
 slug: /en/getting-started/install
 ---
 
-# Installation
+# Installation {#installation}
 
 ## System Requirements {#system-requirements}
 
@@ -70,7 +70,7 @@ You can also download and install packages manually from [here](https://packages
 -   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
-:::info
+:::info    
 If you need to install specific version of ClickHouse you have to install all packages with the same version:
 `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
 :::
@@ -204,21 +204,22 @@ sudo ./clickhouse install
 
 ### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
 
-For non-Linux operating systems and for AArch64 CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
+For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay). 
+
 
 -   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse)
      ```bash
      curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse
      ```
--   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse)
+-   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse) 
     ```bash
     curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
--   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse)
+-   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse) 
     ```bash
     curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse
     ```
--   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse)
+-   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) 
     ```bash
     curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
@@ -251,7 +252,7 @@ To start the server as a daemon, run:
 $ sudo clickhouse start
 ```
 
-There are also other ways to run ClickHouse:
+There are also another ways to run ClickHouse:
 
 ``` bash
 $ sudo service clickhouse-server start

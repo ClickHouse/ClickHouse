@@ -96,16 +96,13 @@ def test_create_replicated_table(started_cluster):
         "Explicit zookeeper_path and replica_name are specified"
         in main_node.query_and_get_error(
             "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
-            "ENGINE=ReplicatedMergeTree('/test/tmp', 'r') ORDER BY k PARTITION BY toYYYYMM(d);"
+            "ENGINE=ReplicatedMergeTree('/test/tmp', 'r', d, k, 8192);"
         )
     )
 
-    assert (
-        "This syntax for *MergeTree engine is deprecated"
-        in main_node.query_and_get_error(
-            "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
-            "ENGINE=ReplicatedMergeTree('/test/tmp/{shard}', '{replica}', d, k, 8192);"
-        )
+    assert "Old syntax is not allowed" in main_node.query_and_get_error(
+        "CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
+        "ENGINE=ReplicatedMergeTree('/test/tmp/{shard}', '{replica}', d, k, 8192);"
     )
 
     main_node.query(
@@ -396,7 +393,7 @@ def test_alters_from_different_replicas(started_cluster):
     main_node.query(
         "CREATE TABLE testdb.concurrent_test "
         "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
-        "ENGINE = MergeTree PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID);"
+        "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192);"
     )
 
     main_node.query(
@@ -446,7 +443,7 @@ def test_alters_from_different_replicas(started_cluster):
         "    `Added0` UInt32,\\n    `Added1` UInt32,\\n    `Added2` UInt32,\\n    `AddedNested1.A` Array(UInt32),\\n"
         "    `AddedNested1.B` Array(UInt64),\\n    `AddedNested1.C` Array(String),\\n    `AddedNested2.A` Array(UInt32),\\n"
         "    `AddedNested2.B` Array(UInt64)\\n)\\n"
-        "ENGINE = MergeTree\\nPARTITION BY toYYYYMM(StartDate)\\nORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)\\nSETTINGS index_granularity = 8192"
+        "ENGINE = MergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192)"
     )
 
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)

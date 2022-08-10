@@ -175,8 +175,7 @@
     :--logger.log (str logs-dir "/clickhouse-keeper.log")
     :--logger.errorlog (str logs-dir "/clickhouse-keeper.err.log")
     :--keeper_server.snapshot_storage_path coordination-snapshots-dir
-    :--keeper_server.log_storage_path coordination-logs-dir
-    :--path coordination-data-dir)
+    :--keeper_server.log_storage_path coordination-logs-dir)
    (wait-clickhouse-alive! node test)))
 
 (defn md5 [^String s]

@@ -25,7 +25,7 @@ CassandraSource::CassandraSource(
     const String & query_str,
     const Block & sample_block,
     size_t max_block_size_)
-    : ISource(sample_block)
+    : SourceWithProgress(sample_block)
     , session(session_)
     , statement(query_str.c_str(), /*parameters count*/ 0)
     , max_block_size(max_block_size_)

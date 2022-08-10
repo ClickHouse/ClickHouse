@@ -13,9 +13,9 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths:
-      - 'docker/docs/**'
       - 'docs/**'
       - 'website/**'
+      - 'docker/docs/**'
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]

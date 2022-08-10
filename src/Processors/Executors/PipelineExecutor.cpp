@@ -6,10 +6,10 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Common/scope_guard_safe.h>
 
 #ifndef NDEBUG
@@ -29,10 +29,8 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
     : process_list_element(elem)
 {
     if (process_list_element)
-    {
         profile_processors = process_list_element->getContext()->getSettingsRef().log_processors_profiles;
-        trace_processors = process_list_element->getContext()->getSettingsRef().opentelemetry_trace_processors;
-    }
+
     try
     {
         graph = std::make_unique<ExecutingGraph>(processors, profile_processors);
@@ -157,11 +155,6 @@ bool PipelineExecutor::checkTimeLimit()
     return continuing;
 }
 
-void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
-{
-    read_progress_callback = std::move(callback);
-}
-
 void PipelineExecutor::finalizeExecution()
 {
     checkTimeLimit();
@@ -270,12 +263,14 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     Queue queue;
     graph->initializeExecution(queue);
 
-    tasks.init(num_threads, profile_processors, trace_processors, read_progress_callback.get());
+    tasks.init(num_threads, profile_processors);
     tasks.fill(queue);
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
+    OpenTelemetrySpanHolder span("PipelineExecutor::executeImpl()");
+
     initializeExecution(num_threads);
 
     using ThreadsData = std::vector<ThreadFromGlobalPool>;

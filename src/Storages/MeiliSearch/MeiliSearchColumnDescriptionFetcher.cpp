@@ -84,4 +84,4 @@ ColumnsDescription MeiliSearchColumnDescriptionFetcher::fetchColumnsDescription(
     return ColumnsDescription(list);
 }
 
-}
+};

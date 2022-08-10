@@ -68,17 +68,17 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 {
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadAll()
+Pipe ExecutablePoolDictionarySource::loadAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadAll method");
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadUpdatedAll()
+Pipe ExecutablePoolDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource does not support loadUpdatedAll method");
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
+Pipe ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -86,7 +86,7 @@ QueryPipeline ExecutablePoolDictionarySource::loadIds(const std::vector<UInt64> 
     return getStreamForBlock(block);
 }
 
-QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -94,7 +94,7 @@ QueryPipeline ExecutablePoolDictionarySource::loadKeys(const Columns & key_colum
     return getStreamForBlock(block);
 }
 
-QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
+Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
     String command = configuration.command;
     const auto & coordinator_configuration = coordinator->getConfiguration();
@@ -147,7 +147,7 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
 
-    return QueryPipeline(std::move(pipe));
+    return pipe;
 }
 
 bool ExecutablePoolDictionarySource::isModified() const

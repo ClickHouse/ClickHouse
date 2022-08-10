@@ -23,7 +23,7 @@ struct StorageID;
 namespace ClusterProxy
 {
 
-class SelectStreamFactory;
+class IStreamFactory;
 
 /// Update settings for Distributed query.
 ///
@@ -46,18 +46,7 @@ void executeQuery(
     QueryProcessingStage::Enum processed_stage,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
-    SelectStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
-    const ExpressionActionsPtr & sharding_key_expr,
-    const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster);
-
-
-void executeQueryWithParallelReplicas(
-    QueryPlan & query_plan,
-    const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
-    SelectStreamFactory & stream_factory,
+    IStreamFactory & stream_factory, Poco::Logger * log,
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,

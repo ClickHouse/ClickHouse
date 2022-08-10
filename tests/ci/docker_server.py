@@ -5,7 +5,6 @@ import argparse
 import json
 import logging
 import subprocess
-import sys
 import time
 from os import path as p, makedirs
 from typing import List, Tuple
@@ -216,11 +215,7 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
 
 
 def buildx_args(bucket_prefix: str, arch: str) -> List[str]:
-    args = [
-        f"--platform=linux/{arch}",
-        f"--label=build-url={GITHUB_RUN_URL}",
-        f"--label=com.clickhouse.build.githash={git.sha}",
-    ]
+    args = [f"--platform=linux/{arch}", f"--label=build-url={GITHUB_RUN_URL}"]
     if bucket_prefix:
         url = p.join(bucket_prefix, BUCKETS[arch])  # to prevent a double //
         args.append(f"--build-arg=REPOSITORY='{url}'")
@@ -307,7 +302,7 @@ def main():
     pr_info = None
     if CI:
         pr_info = PRInfo()
-        release_or_pr, _ = get_release_or_pr(pr_info, args.version)
+        release_or_pr = get_release_or_pr(pr_info, {"package_type": ""}, args.version)
         args.bucket_prefix = (
             f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/"
             f"{release_or_pr}/{pr_info.sha}"
@@ -365,8 +360,6 @@ def main():
     )
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-    if status != "success":
-        sys.exit(1)
 
 
 if __name__ == "__main__":

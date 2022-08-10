@@ -2,7 +2,7 @@
 sidebar_label: UNION
 ---
 
-# UNION Clause
+# UNION Clause {#union-clause}
 
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
 
