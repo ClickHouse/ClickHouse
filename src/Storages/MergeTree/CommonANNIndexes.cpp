@@ -229,7 +229,9 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
         query_information = std::move(order_by_info);
     }
 
-    query_information->limit = limit;
+    if (query_information)
+        query_information->limit = limit;
+
     return query_information.has_value();
 }
 
