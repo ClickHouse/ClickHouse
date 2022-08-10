@@ -696,6 +696,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             Int64 peak = total_memory_tracker.getPeak();
             Int64 rss = data.resident;
 
+            new_values["MemoryTrackingPeak"] = peak;
+
 #if USE_JEMALLOC
             /// This is a memory which is kept by allocator.
             /// Remove it from RSS to decrease memory drift.
@@ -710,7 +712,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
             if (difference >= 1048576 || difference <= -1048576)
             {
                 LOG_TRACE(log,
-                    "MemoryTracking: allocated {}, peak {}, RSS {}, difference: {}",
+                    "MemoryTracking: allocated {}, peak {}, RSS (adjusted) {}, difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
                     ReadableSize(rss),
