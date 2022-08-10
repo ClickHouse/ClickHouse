@@ -255,20 +255,7 @@ HTML_BASE_BUILD_TEMPLATE = """
 <html>
 <head>
   <style>
-@font-face {{
-    font-family:'Yandex Sans Display Web';
-    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
-    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
-            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
-            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
-            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
-            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
-    font-weight:400;
-    font-style:normal;
-    font-stretch:normal
-}}
-
-body {{ font-family: "Yandex Sans Display Web", Arial, sans-serif; background: #EEE; }}
+body {{ font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif; background: #EEE; }}
 h1 {{ margin-left: 10px; }}
 th, td {{ border: 0; padding: 5px 10px 5px 10px; text-align: left; vertical-align: top; line-height: 1.5; background-color: #FFF;
 border: 0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
