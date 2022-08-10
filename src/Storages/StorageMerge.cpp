@@ -1,10 +1,9 @@
 #include <QueryPipeline/narrowPipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
@@ -23,16 +22,17 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include "Processors/QueryPlan/BuildQueryPipelineSettings.h"
+#include "Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h"
+#include <Databases/IDatabase.h>
+#include <base/range.h>
+#include <algorithm>
+#include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Databases/IDatabase.h>
-#include <base/range.h>
-#include <algorithm>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -848,7 +848,7 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
             throw Exception("REGEXP in Merge ENGINE takes only one argument", ErrorCodes::BAD_ARGUMENTS);
 
         auto * literal = func->arguments->children[0]->as<ASTLiteral>();
-        if (!literal || literal->value.getType() != Field::Types::Which::String || literal->value.safeGet<String>().empty())
+        if (!literal || literal->value.safeGet<String>().empty())
             throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
 
         return {true, func->arguments->children[0]};
@@ -879,10 +879,10 @@ void registerStorageMerge(StorageFactory & factory)
         if (!is_regexp)
             engine_args[0] = database_ast;
 
-        String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+        String source_database_name_or_regexp = database_ast->as<ASTLiteral &>().value.safeGet<String>();
 
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-        String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
+        String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return std::make_shared<StorageMerge>(
             args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());

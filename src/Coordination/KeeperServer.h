@@ -8,7 +8,6 @@
 #include <libnuraft/raft_params.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Coordination/Keeper4LWInfo.h>
 
 namespace DB
 {
@@ -95,8 +94,6 @@ public:
     bool isObserver() const;
 
     bool isLeaderAlive() const;
-
-    Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
     /// @return follower count if node is not leader return 0
     uint64_t getFollowerCount() const;

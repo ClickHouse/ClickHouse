@@ -34,7 +34,6 @@ RUN apt-get update -y \
             unixodbc \
             wget \
             zstd \
-            file \
     && apt-get clean
 
 

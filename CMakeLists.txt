@@ -74,13 +74,18 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
 option(USE_STATIC_LIBRARIES "Disable to use shared libraries" ON)
-# DEVELOPER ONLY.
-# Faster linking if turned on.
-option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files" OFF)
-option(CLICKHOUSE_SPLIT_BINARY "Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled" OFF)
 
-if (USE_STATIC_LIBRARIES AND (SPLIT_SHARED_LIBRARIES OR CLICKHOUSE_SPLIT_BINARY))
-    message(FATAL_ERROR "SPLIT_SHARED_LIBRARIES=1 or CLICKHOUSE_SPLIT_BINARY=1 must not be used together with USE_STATIC_LIBRARIES=1")
+if (NOT USE_STATIC_LIBRARIES)
+    # DEVELOPER ONLY.
+    # Faster linking if turned on.
+    option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files")
+
+    option(CLICKHOUSE_SPLIT_BINARY
+        "Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled")
+endif ()
+
+if (USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
+    message(FATAL_ERROR "Defining SPLIT_SHARED_LIBRARIES=1 without USE_STATIC_LIBRARIES=0 has no effect.")
 endif()
 
 if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
@@ -218,25 +223,11 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
-if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
-    OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
-    OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
-    set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT ON)
-else()
-    set (OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT OFF)
-endif()
-# Provides faster linking and lower binary size.
-# Tradeoff is the inability to debug some source files with e.g. gdb
-# (empty stack frames and no local variables)."
-option(OMIT_HEAVY_DEBUG_SYMBOLS
-    "Do not generate debugger info for heavy modules (ClickHouse functions and dictionaries, some contrib)"
-    ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
-
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     set(USE_DEBUG_HELPERS ON)
 endif()
-option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 
+option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 if (NOT BUILD_STANDALONE_KEEPER)
     option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
@@ -261,10 +252,10 @@ else ()
 endif ()
 
 # Optionally split binaries and debug symbols.
-option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
-if (SPLIT_DEBUG_SYMBOLS)
+option(INSTALL_STRIPPED_BINARIES "Split binaries and debug symbols" OFF)
+if (INSTALL_STRIPPED_BINARIES)
     message(STATUS "Will split binaries and debug symbols")
-    set(SPLITTED_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
+    set(STRIPPED_BINARIES_OUTPUT "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
@@ -329,22 +320,6 @@ endif ()
 if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 endif ()
-
-if (ARCH_AMD64)
-    # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
-    # which makes benchmark results more stable.
-    set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
-    if (COMPILER_GCC)
-        # gcc is in assembler, need to add "-Wa," prefix
-        set(BRANCHES_WITHIN_32B_BOUNDARIES "-Wa,${BRANCHES_WITHIN_32B_BOUNDARIES}")
-    endif()
-
-    include(CheckCXXCompilerFlag)
-    check_cxx_compiler_flag("${BRANCHES_WITHIN_32B_BOUNDARIES}" HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
-    if (HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
-    endif()
-endif()
 
 if (COMPILER_GCC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
@@ -518,14 +493,14 @@ if (NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
 endif ()
 
-macro (clickhouse_add_executable target)
+macro (add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
     if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
+        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
-        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
     get_target_property (type ${target} TYPE)

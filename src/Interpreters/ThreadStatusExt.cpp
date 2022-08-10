@@ -16,7 +16,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/setThreadName.h>
-#include <Common/noexcept_scope.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
@@ -343,7 +343,7 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {

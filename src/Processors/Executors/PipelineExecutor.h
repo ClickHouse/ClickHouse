@@ -65,8 +65,6 @@ private:
     bool is_execution_initialized = false;
     /// system.processors_profile_log
     bool profile_processors = false;
-    /// system.opentelemetry_span_log
-    bool trace_processors = false;
 
     std::atomic_bool cancelled = false;
 

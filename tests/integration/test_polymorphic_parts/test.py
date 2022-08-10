@@ -66,8 +66,7 @@ def create_tables_old_format(name, nodes, shard):
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{shard}/{name}', '{repl}', date, id, 64)
             """.format(
                 name=name, shard=shard, repl=i
-            ),
-            settings={"allow_deprecated_syntax_for_merge_tree": 1},
+            )
         )
 
 
@@ -496,7 +495,7 @@ def test_polymorphic_parts_diff_versions_2(start_cluster_diff_versions):
     with pytest.raises(Exception):
         node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=3)
 
-    node_old.restart_with_latest_version(fix_metadata=True)
+    node_old.restart_with_latest_version()
 
     node_old.query("SYSTEM SYNC REPLICA polymorphic_table_2", timeout=20)
 
@@ -721,8 +720,7 @@ def test_in_memory_alters(start_cluster):
 
 def test_polymorphic_parts_index(start_cluster):
     node1.query(
-        "CREATE DATABASE test_index ENGINE=Ordinary",
-        settings={"allow_deprecated_database_ordinary": 1},
+        "CREATE DATABASE test_index ENGINE=Ordinary"
     )  # Different paths with Atomic
     node1.query(
         """

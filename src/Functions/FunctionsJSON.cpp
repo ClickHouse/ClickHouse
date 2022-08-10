@@ -251,7 +251,7 @@ private:
                 }
                 case MoveType::Key:
                 {
-                    key = (*arguments[j + 1].column).getDataAt(row).toView();
+                    key = std::string_view{(*arguments[j + 1].column).getDataAt(row)};
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -304,7 +304,7 @@ private:
 
     /// Performs moves of types MoveType::Key and MoveType::ConstKey.
     template <typename JSONParser>
-    static bool moveToElementByKey(typename JSONParser::Element & element, std::string_view key)
+    static bool moveToElementByKey(typename JSONParser::Element & element, const std::string_view & key)
     {
         if (!element.isObject())
             return false;
@@ -447,16 +447,10 @@ public:
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
-        bool has_nothing_argument = false;
-        for (const auto & arg : arguments)
-            has_nothing_argument |= isNothing(arg.type);
-
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
         DataTypePtr return_type;
-        if (has_nothing_argument)
-            return_type = std::make_shared<DataTypeNothing>();
-        else if (null_presence.has_null_constant)
+        if (null_presence.has_null_constant)
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
         else if (null_presence.has_nullable)
             return_type = makeNullable(json_return_type);
@@ -504,7 +498,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element &, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view &)
     {
         ColumnVector<UInt8> & col_vec = assert_cast<ColumnVector<UInt8> &>(dest);
         col_vec.insertValue(1);
@@ -532,7 +526,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName &) { return 0; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element &, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view &)
     {
         /// This function is called only if JSON is valid.
         /// If JSON isn't valid then `FunctionJSON::Executor::run()` adds default value (=zero) to `dest` without calling this function.
@@ -556,7 +550,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         size_t size;
         if (element.isArray())
@@ -586,7 +580,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element &, std::string_view last_key)
+    static bool insertResultToColumn(IColumn & dest, const Element &, const std::string_view & last_key)
     {
         if (last_key.empty())
             return false;
@@ -620,7 +614,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         UInt8 type;
         if (element.isInt64())
@@ -662,7 +656,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         NumberType value;
 
@@ -737,7 +731,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         if (!element.isBool())
             return false;
@@ -764,7 +758,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         if (element.isNull())
             return false;
@@ -1164,7 +1158,7 @@ public:
         extract_tree = JSONExtractTree<JSONParser>::build(function_name, result_type);
     }
 
-    bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         return extract_tree->insertResultToColumn(dest, element);
     }
@@ -1207,7 +1201,7 @@ public:
         extract_tree = JSONExtractTree<JSONParser>::build(function_name, value_type);
     }
 
-    bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         if (!element.isObject())
             return false;
@@ -1251,7 +1245,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
@@ -1355,7 +1349,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         if (!element.isArray())
             return false;
@@ -1387,7 +1381,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         if (!element.isObject())
             return false;
@@ -1423,7 +1417,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view)
+    bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
         if (!element.isObject())
             return false;

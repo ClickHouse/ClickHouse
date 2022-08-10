@@ -1068,16 +1068,13 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
+    ParserKeyword view("VIEW");
     ParserSelectWithUnionQuery select;
 
     ASTPtr identifier;
     ASTPtr query;
 
-    bool if_permitted = false;
-
-    if (ParserKeyword{"VIEWIFPERMITTED"}.ignore(pos, expected))
-        if_permitted = true;
-    else if (!ParserKeyword{"VIEW"}.ignore(pos, expected))
+    if (!view.ignore(pos, expected))
         return false;
 
     if (pos->type != TokenType::OpeningRoundBracket)
@@ -1097,30 +1094,15 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
     }
 
-    ASTPtr else_ast;
-    if (if_permitted)
-    {
-        if (!ParserKeyword{"ELSE"}.ignore(pos, expected))
-            return false;
-
-        if (!ParserWithOptionalAlias{std::make_unique<ParserFunction>(true, true), true}.parse(pos, else_ast, expected))
-            return false;
-    }
-
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
-
     ++pos;
-
-    auto expr_list = std::make_shared<ASTExpressionList>();
-    expr_list->children.push_back(query);
-    if (if_permitted)
-        expr_list->children.push_back(else_ast);
-
     auto function_node = std::make_shared<ASTFunction>();
     tryGetIdentifierNameInto(identifier, function_node->name);
-    function_node->name = if_permitted ? "viewIfPermitted" : "view";
-    function_node->arguments = expr_list;
+    auto expr_list_with_single_query = std::make_shared<ASTExpressionList>();
+    expr_list_with_single_query->children.push_back(query);
+    function_node->name = "view";
+    function_node->arguments = expr_list_with_single_query;
     function_node->children.push_back(function_node->arguments);
     node = function_node;
     return true;
@@ -1989,7 +1971,6 @@ const char * ParserAlias::restricted_keywords[] =
     "WITH",
     "INTERSECT",
     "EXCEPT",
-    "ELSE",
     nullptr
 };
 

@@ -210,7 +210,7 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    std::string_view getQueryId() const
+    StringRef getQueryId() const
     {
         return query_id;
     }

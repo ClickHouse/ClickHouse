@@ -9,14 +9,16 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSource.h>
+#include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -803,8 +805,8 @@ void registerStorageFileLog(StorageFactory & factory)
         auto path_ast = evaluateConstantExpressionAsLiteral(engine_args[0], args.getContext());
         auto format_ast = evaluateConstantExpressionAsLiteral(engine_args[1], args.getContext());
 
-        auto path = checkAndGetLiteralArgument<String>(path_ast, "path");
-        auto format = checkAndGetLiteralArgument<String>(format_ast, "format");
+        auto path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
+        auto format = format_ast->as<ASTLiteral &>().value.safeGet<String>();
 
         return std::make_shared<StorageFileLog>(
             args.table_id,

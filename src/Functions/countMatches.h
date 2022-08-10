@@ -79,7 +79,7 @@ public:
                 current_src_offset = src_offsets[i];
                 Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
 
-                std::string_view str(pos, end - pos);
+                StringRef str(pos, end - pos);
                 vec_res[i] = countMatches(str, re, matches);
             }
 
@@ -87,7 +87,7 @@ public:
         }
         else if (const ColumnConst * col_const_str = checkAndGetColumnConstStringOrFixedString(column_haystack))
         {
-            std::string_view str = col_const_str->getDataColumn().getDataAt(0).toView();
+            StringRef str = col_const_str->getDataColumn().getDataAt(0);
             uint64_t matches_count = countMatches(str, re, matches);
             return result_type->createColumnConst(input_rows_count, matches_count);
         }
@@ -95,13 +95,13 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Error in FunctionCountMatches::getReturnTypeImpl()");
     }
 
-    static uint64_t countMatches(std::string_view src, const Regexps::Regexp & re, OptimizedRegularExpression::MatchVec & matches)
+    static uint64_t countMatches(StringRef src, const Regexps::Regexp & re, OptimizedRegularExpression::MatchVec & matches)
     {
         /// Only one match is required, no need to copy more.
         static const unsigned matches_limit = 1;
 
-        Pos pos = reinterpret_cast<Pos>(src.data());
-        Pos end = reinterpret_cast<Pos>(src.data() + src.size());
+        Pos pos = reinterpret_cast<Pos>(src.data);
+        Pos end = reinterpret_cast<Pos>(src.data + src.size);
 
         uint64_t match_count = 0;
         while (true)

@@ -215,13 +215,6 @@ IProcessor::Status FillingTransform::prepare()
 
         if (first || filling_row < next_row)
         {
-            /// Output if has data.
-            if (has_output)
-            {
-                output.pushData(std::move(output_data));
-                has_output = false;
-            }
-
             generate_suffix = true;
             return Status::Ready;
         }

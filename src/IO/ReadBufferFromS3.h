@@ -11,7 +11,7 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
-#include <IO/ReadBufferFromFileBase.h>
+#include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileName.h>
 
 #include <aws/s3/model/GetObjectResult.h>
@@ -26,7 +26,7 @@ namespace DB
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
-class ReadBufferFromS3 : public ReadBufferFromFileBase
+class ReadBufferFromS3 : public SeekableReadBuffer, public WithFileName, public WithFileSize
 {
 private:
     std::shared_ptr<const Aws::S3::S3Client> client_ptr;
@@ -65,7 +65,7 @@ public:
 
     off_t getPosition() override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> getFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
 
@@ -85,6 +85,8 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
+
+    std::optional<size_t> file_size;
 };
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
@@ -118,7 +120,7 @@ public:
 
     off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
-    size_t getFileSize() override;
+    std::optional<size_t> getFileSize() override;
 
     String getFileName() const override { return bucket + "/" + key; }
 

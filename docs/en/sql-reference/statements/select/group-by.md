@@ -48,9 +48,9 @@ You can see that `GROUP BY` for `y = NULL` summed up `x`, as if `NULL` is this v
 
 If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
 
-## ROLLUP Modifier
+## WITH ROLLUP Modifier
 
-`ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
+`WITH ROLLUP` modifier is used to calculate subtotals for the key expressions, based on their order in the `GROUP BY` list. The subtotals rows are added after the result table.
 
 The subtotals are calculated in the reverse order: at first subtotals are calculated for the last key expression in the list, then for the previous one, and so on up to the first key expression.
 
@@ -78,7 +78,7 @@ Consider the table t:
 Query:
 
 ```sql
-SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 ```
 As `GROUP BY` section has three key expressions, the result contains four tables with subtotals "rolled up" from right to left:
 
@@ -109,14 +109,10 @@ As `GROUP BY` section has three key expressions, the result contains four tables
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
 ```
-The same query also can be written using `WITH` keyword.
-```sql
-SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
-```
 
-## CUBE Modifier
+## WITH CUBE Modifier
 
-`CUBE` modifier is used to calculate subtotals for every combination of the key expressions in the `GROUP BY` list. The subtotals rows are added after the result table.
+`WITH CUBE` modifier is used to calculate subtotals for every combination of the key expressions in the `GROUP BY` list. The subtotals rows are added after the result table.
 
 In the subtotals rows the values of all "grouped" key expressions are set to `0` or empty line.
 
@@ -142,7 +138,7 @@ Consider the table t:
 Query:
 
 ```sql
-SELECT year, month, day, count(*) FROM t GROUP BY CUBE(year, month, day);
+SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 ```
 
 As `GROUP BY` section has three key expressions, the result contains eight tables with subtotals for all key expression combinations:
@@ -199,10 +195,6 @@ Columns, excluded from `GROUP BY`, are filled with zeros.
 ┌─year─┬─month─┬─day─┬─count()─┐
 │    0 │     0 │   0 │       6 │
 └──────┴───────┴─────┴─────────┘
-```
-The same query also can be written using `WITH` keyword.
-```sql
-SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 ```
 
 
@@ -268,39 +260,6 @@ GROUP BY domain
 
 For every different key value encountered, `GROUP BY` calculates a set of aggregate function values.
 
-## GROUPING SETS modifier
-
-This is the most general modifier.
-This modifier allows to manually specify several aggregation key sets (grouping sets).
-Aggregation is performed separately for each grouping set, after that all results are combined.
-If a column is not presented in a grouping set, it's filled with a default value.
-
-In other words, modifiers described above can be represented via `GROUPING SETS`.
-Despite the fact that queries with `ROLLUP`, `CUBE` and `GROUPING SETS` modifiers are syntactically equal, they may have different performance.
-When `GROUPING SETS` try to execute everything in parallel, `ROLLUP` and `CUBE` are executing the final merging of the aggregates in a single thread.
-
-In the situation when source columns contain default values, it might be hard to distinguish if a row is a part of the aggregation which uses those columns as keys or not.
-To solve this problem `GROUPING` function must be used.
-
-**Example**
-
-The following two queries are equivalent.
-
-```sql
--- Query 1
-SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
-
--- Query 2
-SELECT year, month, day, count(*) FROM t GROUP BY
-GROUPING SETS
-(
-    (year, month, day),
-    (year, month),
-    (year),
-    ()
-);
-```
-
 ## Implementation Details
 
 Aggregation is one of the most important features of a column-oriented DBMS, and thus it’s implementation is one of the most heavily optimized parts of ClickHouse. By default, aggregation is done in memory using a hash-table. It has 40+ specializations that are chosen automatically depending on “grouping key” data types.
@@ -312,11 +271,11 @@ The aggregation can be performed more effectively, if a table is sorted by some 
 ### GROUP BY in External Memory
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
-The [max_bytes_before_external_group_by](../../../operations/settings/query-complexity.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
+The [max_bytes_before_external_group_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
 
 When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high. This is necessary because there are two stages to aggregation: reading the data and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn’t dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
-For example, if [max_memory_usage](../../../operations/settings/query-complexity.md#settings_max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
+For example, if [max_memory_usage](../../../operations/settings/settings.md#settings_max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
 
 With distributed query processing, external aggregation is performed on remote servers. In order for the requester server to use only a small amount of RAM, set `distributed_aggregation_memory_efficient` to 1.
 

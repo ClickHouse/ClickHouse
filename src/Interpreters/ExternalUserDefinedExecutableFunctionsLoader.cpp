@@ -148,9 +148,6 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     String command_value = config.getString(key_in_config + ".command");
     std::vector<UserDefinedExecutableFunctionParameter> parameters = extractParametersFromCommand(command_value);
 
-    if (!execute_direct && !parameters.empty())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Parameters are not supported if executable user defined function is not direct");
-
     std::vector<String> command_arguments;
 
     if (execute_direct)

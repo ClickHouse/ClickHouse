@@ -9,7 +9,6 @@
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -465,7 +464,7 @@ static void appendBlock(const Block & from, Block & to)
 
         /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         /// So ignore any memory limits, even global (since memory tracking has drift).
-        MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+        LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
 
         try
         {
@@ -1080,8 +1079,8 @@ void registerStorageBuffer(StorageFactory & factory)
 
         size_t i = 0;
 
-        String destination_database = checkAndGetLiteralArgument<String>(engine_args[i++], "destination_database");
-        String destination_table = checkAndGetLiteralArgument<String>(engine_args[i++], "destination_table");
+        String destination_database = engine_args[i++]->as<ASTLiteral &>().value.safeGet<String>();
+        String destination_table = engine_args[i++]->as<ASTLiteral &>().value.safeGet<String>();
 
         UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
 

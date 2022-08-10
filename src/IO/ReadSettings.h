@@ -4,7 +4,6 @@
 #include <string>
 #include <Core/Defines.h>
 #include <Common/FileCache_fwd.h>
-#include <Common/Throttler_fwd.h>
 
 namespace DB
 {
@@ -89,9 +88,6 @@ struct ReadSettings
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
     FileCachePtr remote_fs_cache;
-
-    /// Bandwidth throttler to use during reading
-    ThrottlerPtr remote_throttler;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;

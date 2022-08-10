@@ -31,13 +31,13 @@ public:
         ROLLED_BACK,
     };
 
-    CSN getSnapshot() const { return snapshot.load(std::memory_order_relaxed); }
+    CSN getSnapshot() const { return snapshot; }
     void setSnapshot(CSN new_snapshot);
     State getState() const;
 
     const TransactionID tid;
 
-    MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, UUID host_id, std::list<CSN>::iterator snapshot_it_);
+    MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, UUID host_id);
 
     void addNewPart(const StoragePtr & storage, const DataPartPtr & new_part);
     void removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context);
@@ -71,15 +71,16 @@ private:
     Stopwatch elapsed;
 
     /// Usually it's equal to tid.start_csn, but can be changed by SET SNAPSHOT query (for introspection purposes and time-traveling)
-    std::atomic<CSN> snapshot;
-    const std::list<CSN>::iterator snapshot_in_use_it;
+    CSN snapshot;
+    std::list<CSN>::iterator snapshot_in_use_it;
 
     /// Lists of changes made by transaction
-    std::unordered_set<StoragePtr> storages TSA_GUARDED_BY(mutex);
-    DataPartsVector creating_parts TSA_GUARDED_BY(mutex);
-    DataPartsVector removing_parts TSA_GUARDED_BY(mutex);
+    std::unordered_set<StoragePtr> storages;
+    std::vector<TableLockHolder> table_read_locks_for_ordinary_db;
+    DataPartsVector creating_parts;
+    DataPartsVector removing_parts;
     using RunningMutationsList = std::vector<std::pair<StoragePtr, String>>;
-    RunningMutationsList mutations TSA_GUARDED_BY(mutex);
+    RunningMutationsList mutations;
 
     std::atomic<CSN> csn;
 };

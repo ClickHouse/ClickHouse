@@ -32,7 +32,6 @@ INSERT INTO select_final SELECT toDate('2000-01-01'), number, '' FROM numbers(50
 OPTIMIZE TABLE select_final FINAL;
 
 SET remote_filesystem_read_method = 'read';
-SET local_filesystem_read_method = 'pread';
 
 SELECT max(x) FROM select_final FINAL;
 

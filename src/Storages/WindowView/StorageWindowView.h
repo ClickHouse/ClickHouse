@@ -120,7 +120,7 @@ public:
 
     void checkTableCanBeDropped() const override;
 
-    void dropInnerTableIfAny(bool sync, ContextPtr context) override;
+    void dropInnerTableIfAny(bool no_delay, ContextPtr context) override;
 
     void drop() override;
 
@@ -170,7 +170,7 @@ public:
 
     ASTPtr getSourceTableSelectQuery();
 
-    Block getInputHeader() const;
+    const Block & getInputHeader() const;
 
     const Block & getOutputHeader() const;
 
@@ -193,6 +193,7 @@ private:
     std::atomic<bool> modifying_query{false};
     bool has_inner_table{true};
     bool has_inner_target_table{false};
+    mutable Block input_header;
     mutable Block output_header;
     UInt64 fire_signal_timeout_s;
     UInt64 clean_interval_usec;

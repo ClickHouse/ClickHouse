@@ -561,7 +561,7 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
 " 2> >(tee -a analyze/errors.log 1>&2)
 
 # Fetch historical query variability thresholds from the CI database
-if [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
+if [ -v CHPC_DATABASE_URL ]
 then
     set +x # Don't show password in the log
     client=(clickhouse-client
@@ -569,11 +569,12 @@ then
         # so I have to extract host and port with clickhouse-local. I tried to use
         # Poco URI parser to support this in the client, but it's broken and can't
         # parse host:port.
-        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
         --secure
-        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
         --config "right/config/client_config.xml"
+        --database perftest
         --date_time_input_format=best_effort)
 
 
@@ -1195,23 +1196,25 @@ unset IFS
 function upload_results
 {
     # Prepare info for the CI checks table.
-    rm -f ci-checks.tsv
-
+    rm ci-checks.tsv
     clickhouse-local --query "
-create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
+create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes,
+    'changed_fail int, changed_show int, unstable_fail int, unstable_show int,
+        left float, right float, diff float, stat_threshold float,
+        test text, query_index int, query_display_name text');
 
 create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     as select
-        $PR_TO_TEST :: UInt32 AS pull_request_number,
-        '$SHA_TO_TEST' :: LowCardinality(String) AS commit_sha,
-        '${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME:-Performance}' :: LowCardinality(String) AS check_name,
-        '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' :: LowCardinality(String) AS check_status,
+        $PR_TO_TEST pull_request_number,
+        '$SHA_TO_TEST' commit_sha,
+        'Performance' check_name,
+        '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' check_status,
         -- TODO toDateTime() can't parse output of 'date', so no time for now.
-        (($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000) :: UInt64 AS check_duration_ms,
+        ($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000 check_duration_ms,
         fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
-        test_name :: LowCardinality(String) AS test_name ,
-        test_status :: LowCardinality(String) AS test_status,
-        test_duration_ms :: UInt64 AS test_duration_ms,
+        test_name,
+        test_status,
+        test_duration_ms,
         report_url,
         $PR_TO_TEST = 0
             ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
@@ -1226,22 +1229,22 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         select '' test_name,
             '$(sed -n 's/.*<!--message: \(.*\)-->/\1/p' report.html)' test_status,
             0 test_duration_ms,
-            'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#fail1' report_url
+            'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
         union all
             select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.'
+                'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
                     || test || '.' || toString(query_index) report_url
             from queries where changed_fail != 0 and diff > 0
         union all
             select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.'
+                'https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
                     || test || '.' || toString(query_index) report_url
             from queries where unstable_fail != 0
     )
 ;
     "
 
-    if ! [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
+    if ! [ -v CHPC_DATABASE_URL ]
     then
         echo Database for test results is not specified, will not upload them.
         return 0
@@ -1253,37 +1256,13 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         # so I have to extract host and port with clickhouse-local. I tried to use
         # Poco URI parser to support this in the client, but it's broken and can't
         # parse host:port.
-        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
         --secure
-        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
         --config "right/config/client_config.xml"
+        --database perftest
         --date_time_input_format=best_effort)
-
-    # CREATE TABLE IF NOT EXISTS query_metrics_v2 (
-    #     `event_date` Date,
-    #     `event_time` DateTime,
-    #     `pr_number` UInt32,
-    #     `old_sha` String,
-    #     `new_sha` String,
-    #     `test` LowCardinality(String),
-    #     `query_index` UInt32,
-    #     `query_display_name` String,
-    #     `metric` LowCardinality(String),
-    #     `old_value` Float64,
-    #     `new_value` Float64,
-    #     `diff` Float64,
-    #     `stat_threshold` Float64
-    # ) ENGINE = ReplicatedMergeTree
-    # ORDER BY event_date
-
-    # CREATE TABLE IF NOT EXISTS run_attributes_v1 (
-    #     `old_sha` String,
-    #     `new_sha` String,
-    #     `metric` LowCardinality(String),
-    #     `metric_value` String
-    # ) ENGINE = ReplicatedMergeTree
-    # ORDER BY (old_sha, new_sha)
 
     "${client[@]}" --query "
             insert into query_metrics_v2
@@ -1296,7 +1275,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
                 test,
                 query_index,
                 query_display_name,
-                metric_name as metric,
+                metric_name,
                 old_value,
                 new_value,
                 diff,
@@ -1304,7 +1283,9 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             from input('metric_name text, old_value float, new_value float, diff float,
                     ratio_display_text text, stat_threshold float,
                     test text, query_index int, query_display_name text')
+            settings date_time_input_format='best_effort'
             format TSV
+            settings date_time_input_format='best_effort'
 " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
 
     # Upload some run attributes. I use this weird form because it is the same

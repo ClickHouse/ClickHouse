@@ -93,8 +93,7 @@ def create_table(
     node.query(
         "CREATE DATABASE IF NOT EXISTS s3 ENGINE = {engine}".format(
             engine="Atomic" if db_atomic else "Ordinary"
-        ),
-        settings={"allow_deprecated_database_ordinary": 1},
+        )
     )
 
     create_table_statement = """

@@ -92,7 +92,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->data_part_storage);
+    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->volume);
 
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
@@ -170,12 +170,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
-    auto builder = mutate_task->getBuilder();
 
-    if (!builder)
-        builder = new_part->data_part_storage->getBuilder();
-
-    storage.renameTempPartAndReplace(new_part, *transaction_ptr, builder);
+    storage.renameTempPartAndReplace(new_part, NO_TRANSACTION_RAW, nullptr, transaction_ptr.get());
 
     try
     {

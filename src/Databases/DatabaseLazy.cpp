@@ -77,10 +77,10 @@ void DatabaseLazy::createTable(
 void DatabaseLazy::dropTable(
     ContextPtr local_context,
     const String & table_name,
-    bool sync)
+    bool no_delay)
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
-    DatabaseOnDisk::dropTable(local_context, table_name, sync);
+    DatabaseOnDisk::dropTable(local_context, table_name, no_delay);
 }
 
 void DatabaseLazy::renameTable(
@@ -158,7 +158,6 @@ DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const Filt
 
 bool DatabaseLazy::empty() const
 {
-    std::lock_guard lock(mutex);
     return tables_cache.empty();
 }
 

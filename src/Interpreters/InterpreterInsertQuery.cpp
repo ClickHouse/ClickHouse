@@ -162,7 +162,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 static bool hasAggregateFunctions(const IAST * ast)
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast))
-        if (AggregateUtils::isAggregateFunction(*func))
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
             return true;
 
     for (const auto & child : ast->children)

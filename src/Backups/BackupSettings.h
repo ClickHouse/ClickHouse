@@ -53,10 +53,6 @@ struct BackupSettings
     /// Path in Zookeeper used to coordinate a distributed backup created by BACKUP ON CLUSTER.
     String coordination_zk_path;
 
-    /// Internal, should not be specified by user.
-    /// UUID of the backup. If it's not set it will be generated randomly.
-    std::optional<UUID> backup_uuid;
-
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
 

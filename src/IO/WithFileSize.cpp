@@ -7,23 +7,18 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_FILE_SIZE;
-}
-
 template <typename T>
-static size_t getFileSize(T & in)
+static std::optional<size_t> getFileSize(T & in)
 {
     if (auto * with_file_size = dynamic_cast<WithFileSize *>(&in))
     {
         return with_file_size->getFileSize();
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size");
+    return std::nullopt;
 }
 
-size_t getFileSizeFromReadBuffer(ReadBuffer & in)
+std::optional<size_t> getFileSizeFromReadBuffer(ReadBuffer & in)
 {
     if (auto * delegate = dynamic_cast<ReadBufferFromFileDecorator *>(&in))
     {

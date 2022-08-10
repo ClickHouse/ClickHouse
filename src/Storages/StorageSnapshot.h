@@ -22,8 +22,8 @@ struct StorageSnapshot
         virtual ~Data() = default;
     };
 
-    using DataPtr = std::unique_ptr<Data>;
-    DataPtr data;
+    using DataPtr = std::unique_ptr<const Data>;
+    const DataPtr data;
 
     /// Projection that is used in query.
     mutable const ProjectionDescription * projection = nullptr;
@@ -87,6 +87,6 @@ private:
     std::unordered_map<String, DataTypePtr> virtual_columns;
 };
 
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+using StorageSnapshotPtr = std::shared_ptr<const StorageSnapshot>;
 
 }

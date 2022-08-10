@@ -8,6 +8,6 @@ target_link_libraries(clickhouse_functions_jsonpath PRIVATE dbms)
 target_link_libraries(clickhouse_functions_jsonpath PRIVATE clickhouse_parsers)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_jsonpath)
 
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
+if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
     target_compile_options(clickhouse_functions_jsonpath PRIVATE "-g0")
 endif()

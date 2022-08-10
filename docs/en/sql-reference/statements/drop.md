@@ -105,7 +105,7 @@ System functions can not be dropped.
 **Syntax**
 
 ``` sql
-DROP FUNCTION [IF EXISTS] function_name [on CLUSTER cluster]
+DROP FUNCTION [IF EXISTS] function_name
 ```
 
 **Example**

@@ -329,13 +329,8 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             /// Add distinct transform
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
-            auto distinct_step = std::make_unique<DistinctStep>(
-                query_plan.getCurrentDataStream(),
-                limits,
-                0,
-                result_header.getNames(),
-                false,
-                settings.optimize_distinct_in_order);
+            auto distinct_step
+                = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
 
             query_plan.addStep(std::move(distinct_step));
         }

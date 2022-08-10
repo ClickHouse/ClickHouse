@@ -1,10 +1,5 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/PartitionedSink.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -25,26 +20,30 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/ISource.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
-
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/PartitionedSink.h>
 
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+
 #include <re2/re2.h>
 #include <filesystem>
+#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Processors/ISource.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace fs = std::filesystem;
@@ -209,8 +208,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
         in.setProgressCallback(context);
     }
 
-    auto zstd_window_log_max = context->getSettingsRef().zstd_window_log_max;
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
 }
 
 }
@@ -1104,7 +1102,7 @@ void registerStorageFile(StorageFactory & factory)
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
-            storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");
+            storage_args.format_name = engine_args_ast[0]->as<ASTLiteral &>().value.safeGet<String>();
 
             // Use format settings from global server context + settings from
             // the SETTINGS clause of the create query. Settings from current
@@ -1172,7 +1170,7 @@ void registerStorageFile(StorageFactory & factory)
             if (engine_args_ast.size() == 3)
             {
                 engine_args_ast[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[2], factory_args.getLocalContext());
-                storage_args.compression_method = checkAndGetLiteralArgument<String>(engine_args_ast[2], "compression_method");
+                storage_args.compression_method = engine_args_ast[2]->as<ASTLiteral &>().value.safeGet<String>();
             }
             else
                 storage_args.compression_method = "auto";

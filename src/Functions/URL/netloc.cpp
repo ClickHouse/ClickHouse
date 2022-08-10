@@ -12,7 +12,7 @@ struct ExtractNetloc
     /// We use the same as domain function
     static size_t getReserveLengthForElement() { return 15; }
 
-    static std::string_view getNetworkLocation(const char * data, size_t size)
+    static inline StringRef getNetworkLocation(const char * data, size_t size)
     {
         Pos pos = data;
         Pos end = data + size;
@@ -51,7 +51,7 @@ struct ExtractNetloc
                         case ';':
                         case '=':
                         case '&':
-                            return std::string_view();
+                            return StringRef{};
                         default:
                             goto exloop;
                     }
@@ -76,18 +76,18 @@ struct ExtractNetloc
             {
                 case '/':
                     if (has_identification)
-                        return std::string_view(start_of_host, pos - start_of_host);
+                        return StringRef(start_of_host, pos - start_of_host);
                     else
                         slash_pos = pos;
                     break;
                 case '?':
                     if (has_identification)
-                        return std::string_view(start_of_host, pos - start_of_host);
+                        return StringRef(start_of_host, pos - start_of_host);
                     else
                         question_mark_pos = pos;
                     break;
                 case '#':
-                    return std::string_view(start_of_host, pos - start_of_host);
+                    return StringRef(start_of_host, pos - start_of_host);
                 case '@': /// foo:bar@example.ru
                     has_identification = true;
                     break;
@@ -108,23 +108,23 @@ struct ExtractNetloc
                 case '=':
                 case '&':
                     return pos > start_of_host
-                        ? std::string_view(start_of_host, std::min(std::min(pos - 1, question_mark_pos), slash_pos) - start_of_host)
-                        : std::string_view();
+                        ? StringRef(start_of_host, std::min(std::min(pos - 1, question_mark_pos), slash_pos) - start_of_host)
+                        : StringRef{};
             }
         }
 
         if (has_identification)
-            return std::string_view(start_of_host, pos - start_of_host);
+            return StringRef(start_of_host, pos - start_of_host);
         else
-            return std::string_view(start_of_host, std::min(std::min(pos, question_mark_pos), slash_pos) - start_of_host);
+            return StringRef(start_of_host, std::min(std::min(pos, question_mark_pos), slash_pos) - start_of_host);
     }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
     {
-        std::string_view host = getNetworkLocation(data, size);
+        StringRef host = getNetworkLocation(data, size);
 
-        res_data = host.data();
-        res_size = host.size();
+        res_data = host.data;
+        res_size = host.size;
     }
 };
 

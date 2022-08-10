@@ -52,6 +52,29 @@ public:
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
+    /// Set buffer to given piece of memory but with certain bytes ignored from beginning.
+    ///
+    /// internal_buffer: |__________________|
+    /// working_buffer:  |xxxxx|____________|
+    ///                  ^     ^
+    ///               bytes_to_ignore
+    ///
+    /// It's used for lazy seek. We also have another lazy seek mechanism that uses
+    /// `nextimpl_working_buffer_offset` to set offset in `next` method. It's important that we
+    /// don't do double lazy seek, which means `nextimpl_working_buffer_offset` should be zero. It's
+    /// useful to keep internal_buffer points to the real span of the underlying memory, because its
+    /// size might be used to allocate other buffers. It's also important to have pos starts at
+    /// working_buffer.begin(), because some buffers assume this condition to be true and uses
+    /// offset() to check read bytes.
+    void setWithBytesToIgnore(Position ptr, size_t size, size_t bytes_to_ignore)
+    {
+        assert(bytes_to_ignore < size);
+        assert(nextimpl_working_buffer_offset == 0);
+        internal_buffer = Buffer(ptr, ptr + size);
+        working_buffer = Buffer(ptr + bytes_to_ignore, ptr + size);
+        pos = ptr + bytes_to_ignore;
+    }
+
     /** read next data and fill a buffer with it; set position to the beginning;
       * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong
       */

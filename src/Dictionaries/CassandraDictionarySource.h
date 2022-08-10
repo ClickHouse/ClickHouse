@@ -82,10 +82,9 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
 
-    CassClusterPtr cluster;
-
     std::mutex connect_mutex;
-    CassSessionWeak maybe_session TSA_GUARDED_BY(connect_mutex);
+    CassClusterPtr cluster;
+    CassSessionWeak maybe_session;
 };
 }
 

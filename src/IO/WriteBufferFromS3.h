@@ -16,7 +16,6 @@
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteSettings.h>
 #include <Storages/StorageS3Settings.h>
 
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
@@ -56,7 +55,6 @@ public:
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ScheduleFunc schedule_ = {},
-        const WriteSettings & write_settings_ = {},
         FileCachePtr cache_ = nullptr);
 
     ~WriteBufferFromS3() override;
@@ -120,8 +118,6 @@ private:
     std::condition_variable bg_tasks_condvar;
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
-
-    WriteSettings write_settings;
 
     FileCachePtr cache;
     size_t current_download_offset = 0;

@@ -15,31 +15,28 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
 {
     current_key_value.resize(description.group_by_keys.size());
 
-    const auto & keys = description.group_by_keys;
+    ColumnNumbers keys;
+    for (const auto & key : description.group_by_keys)
+        keys.push_back(header.getPositionByName(key));
 
     key_columns.resize(description.group_by_keys.size());
     AggregateDescriptions aggregates = description.aggregate_descriptions;
 
+    for (auto & descr : aggregates)
+        if (descr.arguments.empty())
+            for (const auto & name : descr.argument_names)
+                descr.arguments.push_back(header.getPositionByName(name));
+
     columns_for_aggregator.resize(description.aggregate_descriptions.size());
     const Settings & settings = storage_.getContext()->getSettingsRef();
 
-    Aggregator::Params params(
-        keys,
-        aggregates,
-        false,
-        settings.max_rows_to_group_by,
-        settings.group_by_overflow_mode,
-        0,
-        0,
-        settings.max_bytes_before_external_group_by,
-        settings.empty_result_for_aggregation_by_empty_set,
-        storage_.getContext()->getTemporaryVolume(),
-        settings.max_threads,
-        settings.min_free_disk_space_for_temporary_data,
-        settings.compile_aggregate_expressions,
-        settings.min_count_to_compile_aggregate_expression);
+    Aggregator::Params params(header, keys, aggregates,
+        false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
+        settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
+        storage_.getContext()->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data,
+        settings.compile_aggregate_expressions, settings.min_count_to_compile_aggregate_expression);
 
-    aggregator = std::make_unique<Aggregator>(header, params);
+    aggregator = std::make_unique<Aggregator>(params);
 
     if (isMaxTTLExpired())
         new_ttl_info.ttl_finished = true;

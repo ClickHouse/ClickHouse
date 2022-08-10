@@ -46,17 +46,17 @@ using ACLs = std::vector<ACL>;
 
 struct Stat
 {
-    int64_t czxid{0};
-    int64_t mzxid{0};
-    int64_t ctime{0};
-    int64_t mtime{0};
-    int32_t version{0};
-    int32_t cversion{0};
-    int32_t aversion{0};
-    int64_t ephemeralOwner{0}; /// NOLINT
-    int32_t dataLength{0}; /// NOLINT
-    int32_t numChildren{0}; /// NOLINT
-    int64_t pzxid{0};
+    int64_t czxid;
+    int64_t mzxid;
+    int64_t ctime;
+    int64_t mtime;
+    int32_t version;
+    int32_t cversion;
+    int32_t aversion;
+    int64_t ephemeralOwner; /// NOLINT
+    int32_t dataLength; /// NOLINT
+    int32_t numChildren; /// NOLINT
+    int64_t pzxid;
 };
 
 enum class Error : int32_t
@@ -281,13 +281,6 @@ struct SetResponse : virtual Response
     size_t bytesSize() const override { return sizeof(stat); }
 };
 
-enum class ListRequestType : uint8_t
-{
-    ALL,
-    PERSISTENT_ONLY,
-    EPHEMERAL_ONLY
-};
-
 struct ListRequest : virtual Request
 {
     String path;
@@ -325,23 +318,6 @@ struct CheckRequest : virtual Request
 
 struct CheckResponse : virtual Response
 {
-};
-
-struct SyncRequest : virtual Request
-{
-    String path;
-
-    void addRootPath(const String & root_path) override;
-    String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size(); }
-};
-
-struct SyncResponse : virtual Response
-{
-    String path;
-
-    size_t bytesSize() const override { return path.size(); }
 };
 
 struct MultiRequest : virtual Request
@@ -388,7 +364,6 @@ using GetCallback = std::function<void(const GetResponse &)>;
 using SetCallback = std::function<void(const SetResponse &)>;
 using ListCallback = std::function<void(const ListResponse &)>;
 using CheckCallback = std::function<void(const CheckResponse &)>;
-using SyncCallback = std::function<void(const SyncResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 
 
@@ -499,7 +474,6 @@ public:
 
     virtual void list(
         const String & path,
-        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) = 0;
 
@@ -507,10 +481,6 @@ public:
         const String & path,
         int32_t version,
         CheckCallback callback) = 0;
-
-    virtual void sync(
-        const String & path,
-        SyncCallback callback) = 0;
 
     virtual void multi(
         const Requests & requests,

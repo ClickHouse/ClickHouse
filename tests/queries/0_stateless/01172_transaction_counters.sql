@@ -1,6 +1,5 @@
--- Tags: no-s3-storage, no-tsan, no-ordinary-database
+-- Tags: no-s3-storage
 -- FIXME this test fails with S3 due to a bug in DiskCacheWrapper
--- FIXME It became flaky after upgrading to llvm-14 due to obscure freezes in tsan
 drop table if exists txn_counters;
 
 create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n;

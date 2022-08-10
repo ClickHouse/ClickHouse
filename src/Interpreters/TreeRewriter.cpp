@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <memory>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
@@ -27,9 +26,7 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
-#include <Interpreters/RewriteOrderByVisitor.hpp>
 
-#include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -518,7 +515,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
                 ++new_elements_size;
             }
             /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
-            if (func && AggregateUtils::isAggregateFunction(*func) && !select_query->groupBy())
+            if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
             {
                 new_elements[result_index] = elem;
                 ++new_elements_size;
@@ -637,8 +634,9 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
     }
     else
     {
-        if (table_join.strictness == ASTTableJoin::Strictness::Any && table_join.kind == ASTTableJoin::Kind::Full)
-            throw Exception("ANY FULL JOINs are not implemented", ErrorCodes::NOT_IMPLEMENTED);
+        if (table_join.strictness == ASTTableJoin::Strictness::Any)
+            if (table_join.kind == ASTTableJoin::Kind::Full)
+                throw Exception("ANY FULL JOINs are not implemented.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     out_table_join = table_join;
@@ -845,43 +843,17 @@ std::vector<const ASTFunction *> getWindowFunctions(ASTPtr & query, const ASTSel
 class MarkTupleLiteralsAsLegacyData
 {
 public:
-    struct Data
-    {
-    };
+    using TypeToVisit = ASTLiteral;
 
-    static void visitLiteral(ASTLiteral & literal, ASTPtr &)
+    static void visit(ASTLiteral & literal, ASTPtr &)
     {
         if (literal.value.getType() == Field::Types::Tuple)
             literal.use_legacy_column_name_of_tuple = true;
     }
-    static void visitFunction(ASTFunction & func, ASTPtr &ast)
-    {
-        if (func.name == "tuple" && func.arguments && !func.arguments->children.empty())
-        {
-            // re-write tuple() function as literal
-            if (auto literal = func.toLiteral())
-            {
-                ast = literal;
-                visitLiteral(*typeid_cast<ASTLiteral *>(ast.get()), ast);
-            }
-        }
-    }
-
-    static void visit(ASTPtr & ast, Data &)
-    {
-        if (auto * identifier = typeid_cast<ASTFunction *>(ast.get()))
-            visitFunction(*identifier, ast);
-        if (auto * identifier = typeid_cast<ASTLiteral *>(ast.get()))
-            visitLiteral(*identifier, ast);
-    }
-
-    static bool needChildVisit(const ASTPtr & /*parent*/, const ASTPtr & /*child*/)
-    {
-        return true;
-    }
 };
 
-using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyData, true>;
+using MarkTupleLiteralsAsLegacyMatcher = OneTypeMatcher<MarkTupleLiteralsAsLegacyData>;
+using MarkTupleLiteralsAsLegacyVisitor = InDepthNodeVisitor<MarkTupleLiteralsAsLegacyMatcher, true>;
 
 void markTupleLiteralsAsLegacy(ASTPtr & query)
 {
@@ -1284,7 +1256,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
-    result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
     result.collectUsedColumns(query, true);
     result.required_source_columns_before_expanding_alias_columns = result.required_source_columns.getNames();
 
@@ -1308,7 +1279,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         {
             result.aggregates = getAggregates(query, *select_query);
             result.window_function_asts = getWindowFunctions(query, *select_query);
-            result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
             result.collectUsedColumns(query, true);
         }
     }
@@ -1327,10 +1297,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             !select_query->groupBy() && !select_query->having() &&
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
             (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
-
-    // remove outer braces in order by
-    RewriteOrderByVisitor::Data data;
-    RewriteOrderByVisitor(data).visit(query);
 
     return std::make_shared<const TreeRewriterResult>(result);
 }

@@ -3076,4 +3076,3 @@ aes256gcmsiv_kdf:
 .cfi_endproc	
 .size	aes256gcmsiv_kdf, .-aes256gcmsiv_kdf
 #endif
-.section	.note.GNU-stack,"",@progbits

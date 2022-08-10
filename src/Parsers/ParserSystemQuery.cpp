@@ -360,7 +360,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
-            parseQueryWithOnCluster(res, pos, expected);
             break;
         }
 

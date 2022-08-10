@@ -643,7 +643,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
-  BuilderBinClangTidy:
+  BuilderBinTidy:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
     steps:
@@ -1011,7 +1011,7 @@ jobs:
       - BuilderBinFreeBSD
       # - BuilderBinGCC
       - BuilderBinPPC64
-      - BuilderBinClangTidy
+      - BuilderBinTidy
       - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
     steps:
@@ -2902,7 +2902,7 @@ jobs:
 #############################################################################################
 #################################### PERFORMANCE TESTS ######################################
 #############################################################################################
-  PerformanceComparisonX86-0:
+  PerformanceComparison0:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -2940,7 +2940,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparisonX86-1:
+  PerformanceComparison1:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -2978,7 +2978,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparisonX86-2:
+  PerformanceComparison2:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3016,7 +3016,7 @@ jobs:
           # shellcheck disable=SC2046
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
-  PerformanceComparisonX86-3:
+  PerformanceComparison3:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -3096,10 +3096,10 @@ jobs:
       - IntegrationTestsTsan1
       - IntegrationTestsTsan2
       - IntegrationTestsTsan3
-      - PerformanceComparisonX86-0
-      - PerformanceComparisonX86-1
-      - PerformanceComparisonX86-2
-      - PerformanceComparisonX86-3
+      - PerformanceComparison0
+      - PerformanceComparison1
+      - PerformanceComparison2
+      - PerformanceComparison3
       - CompatibilityCheck
       - ASTFuzzerTestDebug
       - ASTFuzzerTestAsan

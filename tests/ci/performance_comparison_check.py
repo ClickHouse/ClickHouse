@@ -16,7 +16,7 @@ from commit_status_helper import get_commit, post_commit_status
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
 from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from rerun_helper import RerunHelper
 from s3_helper import S3Helper
@@ -126,26 +126,12 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    check_name_prefix = (
-        check_name_with_group.lower()
-        .replace(" ", "_")
-        .replace("(", "_")
-        .replace(")", "_")
-        .replace(",", "_")
-    )
-
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
     # with RamDrive(ramdrive_path, ramdrive_size):
     result_path = ramdrive_path
     if not os.path.exists(result_path):
         os.makedirs(result_path)
-
-    docker_env += (
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL"
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER"
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD"
-    )
 
     run_command = get_run_command(
         result_path,
@@ -157,25 +143,8 @@ if __name__ == "__main__":
         docker_image,
     )
     logging.info("Going to run command %s", run_command)
-
-    popen_env = os.environ.copy()
-
-    database_url = get_parameter_from_ssm("clickhouse-test-stat-url")
-    database_username = get_parameter_from_ssm("clickhouse-test-stat-login")
-    database_password = get_parameter_from_ssm("clickhouse-test-stat-password")
-
-    popen_env.update(
-        {
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL": f"{database_url}:9440",
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER": database_username,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD": database_password,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
-        }
-    )
-
     run_log_path = os.path.join(temp_path, "runlog.log")
-    with TeePopen(run_command, run_log_path, env=popen_env) as process:
+    with TeePopen(run_command, run_log_path) as process:
         retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
@@ -196,6 +165,13 @@ if __name__ == "__main__":
         "runlog.log": run_log_path,
     }
 
+    check_name_prefix = (
+        check_name_with_group.lower()
+        .replace(" ", "_")
+        .replace("(", "_")
+        .replace(")", "_")
+        .replace(",", "_")
+    )
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_prefix}/"
     s3_helper = S3Helper("https://s3.amazonaws.com")
     uploaded = {}  # type: Dict[str, str]

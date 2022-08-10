@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <Core/Defines.h>
 #include <base/types.h>
 
 
@@ -37,7 +36,7 @@ struct FormatSettings
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
-    String column_names_for_schema_inference;
+    String column_names_for_schema_inference = "";
 
     enum class DateTimeInputFormat
     {
@@ -275,15 +274,6 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump;
-
-    struct
-    {
-        UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
-        String table_name = "table";
-        bool include_column_names = true;
-        bool use_replace = false;
-        bool quote_names = true;
-    } sql_insert;
 };
 
 }
