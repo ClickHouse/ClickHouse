@@ -30,6 +30,24 @@ def test_valid_options(start_cluster):
     DROP TABLE test;
     """
     )
+    node.query(
+        """
+    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(-1) PRIMARY KEY(key);
+    DROP TABLE test;
+    """
+    )
+    node.query(
+        """
+    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(-1, true) PRIMARY KEY(key);
+    DROP TABLE test;
+    """
+    )
+    node.query(
+        """
+    CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB(10, true) PRIMARY KEY(key);
+    DROP TABLE test;
+    """
+    )
 
 
 def test_invalid_options(start_cluster):
