@@ -360,8 +360,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
-            if (ParserKeyword{"PERSISTENT"}.ignore(pos, expected))
-                res->drop_persistent_files = true;
             parseQueryWithOnCluster(res, pos, expected);
             break;
         }

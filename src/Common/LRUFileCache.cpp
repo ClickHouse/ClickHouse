@@ -27,7 +27,6 @@ LRUFileCache::LRUFileCache(const String & cache_base_path_, const FileCacheSetti
     , max_stash_element_size(cache_settings_.max_elements)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , log(&Poco::Logger::get("LRUFileCache"))
-    , allow_to_remove_persistent_segments_from_cache_by_default(cache_settings_.allow_to_remove_persistent_segments_from_cache_by_default)
 {
 }
 
@@ -517,6 +516,13 @@ bool LRUFileCache::tryReserve(const Key & key, size_t offset, size_t size, std::
                 if (cell->releasable())
                 {
                     auto & file_segment = cell->file_segment;
+
+                    if (file_segment->isPersistent() && allow_persistent_files)
+                    {
+                        LOG_DEBUG(log, "File segment will not be removed, because it is persistent: {}", file_segment->getInfoForLog());
+                        continue;
+                    }
+
                     std::lock_guard segment_lock(file_segment->mutex);
 
                     switch (file_segment->download_state)
@@ -626,6 +632,12 @@ bool LRUFileCache::tryReserveForMainList(
         if (cell->releasable())
         {
             auto & file_segment = cell->file_segment;
+
+            if (file_segment->isPersistent() && allow_persistent_files)
+            {
+                LOG_DEBUG(log, "File segment will not be removed, because it is persistent: {}", file_segment->getInfoForLog());
+                continue;
+            }
 
             std::lock_guard segment_lock(file_segment->mutex);
 
@@ -748,7 +760,7 @@ void LRUFileCache::removeIfExists(const Key & key)
     }
 }
 
-void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
+void LRUFileCache::removeIfReleasable()
 {
     /// Try remove all cached files by cache_base_path.
     /// Only releasable file segments are evicted.
@@ -770,10 +782,8 @@ void LRUFileCache::removeIfReleasable(bool remove_persistent_files)
         if (cell->releasable())
         {
             auto file_segment = cell->file_segment;
-            if (file_segment
-                && (!file_segment->isPersistent()
-                    || remove_persistent_files
-                    || allow_to_remove_persistent_segments_from_cache_by_default))
+
+            if (file_segment)
             {
                 std::lock_guard segment_lock(file_segment->mutex);
                 file_segment->detach(cache_lock, segment_lock);
@@ -861,6 +871,12 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
         {
             key = Key(unhexUInt<UInt128>(key_it->path().filename().string().data()));
 
+            if (!key_it->is_directory())
+            {
+                LOG_WARNING(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
+                continue;
+            }
+
             fs::directory_iterator offset_it{key_it->path()};
             for (; offset_it != fs::directory_iterator(); ++offset_it)
             {
@@ -879,7 +895,7 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
 
                 if (!parsed)
                 {
-                    LOG_WARNING(log, "Unexpected file: ", offset_it->path().string());
+                    LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
                     continue; /// Or just remove? Some unexpected file.
                 }
 
@@ -898,9 +914,11 @@ void LRUFileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_l
                 }
                 else
                 {
-                    LOG_WARNING(log,
-                                "Cache capacity changed (max size: {}, available: {}), cached file `{}` does not fit in cache anymore (size: {})",
-                                max_size, getAvailableCacheSizeUnlocked(cache_lock), key_it->path().string(), size);
+                    LOG_WARNING(
+                        log,
+                        "Cache capacity changed (max size: {}, available: {}), cached file `{}` does not fit in cache anymore (size: {})",
+                        max_size, getAvailableCacheSizeUnlocked(cache_lock), key_it->path().string(), size);
+
                     fs::remove(offset_it->path());
                 }
             }

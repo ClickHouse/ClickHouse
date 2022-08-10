@@ -49,7 +49,7 @@ void registerDiskCache(DiskFactory & factory)
         auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings, name);
         auto disk_object_storage = disk->createDiskObjectStorage();
 
-        disk_object_storage->wrapWithCache(cache, name);
+        disk_object_storage->wrapWithCache(cache, file_cache_settings, name);
 
         LOG_INFO(
             &Poco::Logger::get("DiskCache"),

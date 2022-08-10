@@ -2,6 +2,7 @@
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/IFileCache.h>
+#include <Common/FileCacheSettings.h>
 
 namespace Poco
 {
@@ -14,7 +15,7 @@ namespace DB
 class CachedObjectStorage final : public IObjectStorage
 {
 public:
-    CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const String & cache_config_name_);
+    CachedObjectStorage(ObjectStoragePtr object_storage_, FileCachePtr cache_, const FileCacheSettings & cache_settings_, const String & cache_config_name_);
 
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
@@ -101,6 +102,10 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & path) const override;
+
+    WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const override;
+
 private:
     IFileCache::Key getCacheKey(const std::string & path) const;
 
@@ -110,6 +115,7 @@ private:
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;
+    FileCacheSettings cache_settings;
     std::string cache_config_name;
     Poco::Logger * log;
 };

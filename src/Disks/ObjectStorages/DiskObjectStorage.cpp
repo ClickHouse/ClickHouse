@@ -474,9 +474,9 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         threadpool_size);
 }
 
-void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const String & layer_name)
+void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
 {
-    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, layer_name);
+    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
 }
 
 NameSet DiskObjectStorage::getCacheLayersNames() const
@@ -492,14 +492,6 @@ NameSet DiskObjectStorage::getCacheLayersNames() const
     return cache_layers;
 }
 
-template <typename T>
-static T updateSettingsForReadWrite(const String & path, const T & settings)
-{
-    T new_settings{settings};
-    new_settings.is_file_cache_persistent = isFileWithPersistentCache(path);
-    return new_settings;
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
@@ -508,7 +500,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 {
     return object_storage->readObjects(
         metadata_storage->getStorageObjects(path),
-        updateSettingsForReadWrite(path, settings),
+        object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
         read_hint,
         file_size);
 }
@@ -526,7 +518,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
         path,
         buf_size,
         mode,
-        updateSettingsForReadWrite(path, settings));
+        object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
 
     return result;
 }

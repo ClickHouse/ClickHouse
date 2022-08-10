@@ -171,6 +171,10 @@ public:
 
     virtual bool supportParallelWrite() const { return false; }
 
+    virtual ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & /* path */) const { return settings; }
+
+    virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
+
 protected:
     /// Should be called from implementation of applyNewSettings()
     void applyRemoteThrottlingSettings(ContextPtr context);
