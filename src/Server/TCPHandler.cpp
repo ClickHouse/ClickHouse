@@ -134,6 +134,8 @@ void TCPHandler::runImpl()
     {
         receiveHello();
         sendHello();
+        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
+            receiveAddendum();
 
         if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
         {
@@ -190,7 +192,10 @@ void TCPHandler::runImpl()
 
         /// If we need to shut down, or client disconnects.
         if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
+        {
+            LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
             break;
+        }
 
         Stopwatch watch;
         state.reset();
@@ -406,6 +411,8 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
 
+            LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
+
             /// If there is UNEXPECTED_PACKET_FROM_CLIENT emulate network_error
             /// to break the loop, but do not throw to send the exception to
             /// the client.
@@ -435,7 +442,7 @@ void TCPHandler::runImpl()
 // Server should die on std logic errors in debug, like with assert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
 // tests.
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
         catch (const std::logic_error & e)
         {
             state.io.onException();
@@ -554,14 +561,14 @@ bool TCPHandler::readDataNext()
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
     /// Poll interval should not be greater than receive_timeout
-    constexpr UInt64 min_timeout_ms = 5000; // 5 ms
-    UInt64 timeout_ms = std::max(min_timeout_ms, std::min(poll_interval * 1000000, static_cast<UInt64>(receive_timeout.totalMicroseconds())));
+    constexpr UInt64 min_timeout_us = 5000; // 5 ms
+    UInt64 timeout_us = std::max(min_timeout_us, std::min(poll_interval * 1000000, static_cast<UInt64>(receive_timeout.totalMicroseconds())));
     bool read_ok = false;
 
     /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
     while (true)
     {
-        if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
+        if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_us))
         {
             /// If client disconnected.
             if (in->eof())
@@ -1034,6 +1041,7 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     client_info.connection_client_version_patch = client_version_patch;
     client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
 
+    client_info.quota_key = quota_key;
     client_info.interface = interface;
 
     return res;
@@ -1090,6 +1098,16 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     session->authenticate(user, password, socket().peerAddress());
+}
+
+void TCPHandler::receiveAddendum()
+{
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+    {
+        readStringBinary(quota_key, *in);
+        if (!is_interserver_mode)
+            session->getClientInfo().quota_key = quota_key;
+    }
 }
 
 
