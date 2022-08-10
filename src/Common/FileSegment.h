@@ -205,7 +205,6 @@ private:
 
     void setDownloadedUnlocked(std::lock_guard<std::mutex> & segment_lock);
     void setDownloadFailedUnlocked(std::lock_guard<std::mutex> & segment_lock);
-    void setDownloaderUnlocked(bool is_internal, const DownloaderId & new_downloader_id, std::lock_guard<std::mutex> & /* segment_lock */);
     void setInternalDownloaderUnlocked(const DownloaderId & new_downloader_id, std::lock_guard<std::mutex> & /* download_lock */);
 
     bool lastFileSegmentHolder() const;
@@ -233,7 +232,8 @@ private:
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
     void completeWithoutState(std::lock_guard<std::mutex> & cache_lock);
-    void completeImpl(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+
     void completePartAndResetDownloaderImpl(bool is_internal);
 
     void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
