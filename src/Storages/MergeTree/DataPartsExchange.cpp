@@ -582,6 +582,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
                 tryLogCurrentException(log);
             }
 
+            temporary_directory_lock = {};
+
             /// Try again but without zero-copy
             return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
