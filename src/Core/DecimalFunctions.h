@@ -292,11 +292,7 @@ inline auto binaryOpResult(const DecimalType<T> & tx, const DecimalType<U> & ty)
     if constexpr (is_multiply)
         scale = tx.getScale() + ty.getScale();
     else if constexpr (is_division)
-    {
         scale = tx.getScale();
-        if (scale * 2 > max_precision<T>)
-            throw Exception("Overflow during decimal division", ErrorCodes::DECIMAL_OVERFLOW);
-    }
     else
         scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
 

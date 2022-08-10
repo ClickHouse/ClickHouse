@@ -39,6 +39,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -1179,6 +1180,17 @@ public:
                 {
                     if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                     {
+                        if constexpr (is_division)
+                        {
+                            if (context->getSettingsRef().decimal_check_overflow)
+                            {
+                                /// relay on "knowledge" of current decimal division implementation to avoid overflow upfront based on operand's scale
+                                /// for more detains see issue #30341
+                                /// TODO: comment with more detailed explanation
+                                if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
+                                    throw Exception("Overflow during decimal division", ErrorCodes::DECIMAL_OVERFLOW);
+                            }
+                        }
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
                         type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                     }
