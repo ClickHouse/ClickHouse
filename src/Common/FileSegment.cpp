@@ -408,6 +408,11 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
                 }
 
                 synchronousWrite(buffer.data(), buffer.size(), buffer.offset, true);
+
+                {
+                    std::lock_guard cache_lock(cache->mutex);
+                    cache->background_download_max_memory_usage += buffer.size();
+                }
             }
         }
         catch (...)
@@ -421,7 +426,10 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
             background_downloader_id.clear();
 
             if (!state.exception)
+            {
                 state.exception = std::current_exception();
+                state.buffers = {}; /// Clear all hold memory.
+            }
         }
 
         /// Notify that some part was written.
@@ -625,6 +633,14 @@ bool FileSegment::reserve(size_t size)
 {
     if (!size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Zero space reservation is not allowed");
+
+    {
+        std::lock_guard cache_lock(cache->mutex);
+        if (size + cache->current_background_download_memory_usage > cache->background_download_max_memory_usage)
+            return false;
+
+        cache->background_download_max_memory_usage += size;
+    }
 
     {
         std::lock_guard segment_lock(mutex);

@@ -110,12 +110,14 @@ protected:
     size_t max_size;
     size_t max_element_size;
     size_t max_file_segment_size;
+    size_t background_download_max_memory_usage;
 
     bool is_initialized = false;
 
     mutable std::mutex mutex;
 
     std::optional<ThreadPool> async_write_threadpool;
+    size_t current_background_download_memory_usage = 0;
 
     virtual bool tryReserve(
         const Key & key, size_t offset, size_t size,
