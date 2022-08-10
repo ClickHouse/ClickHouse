@@ -2864,6 +2864,13 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
 
+    assert([&]()
+           {
+               String dir_name = fs::path(part->data_part_storage->getRelativePath()).filename();
+               bool may_be_cleaned_up = dir_name.starts_with("tmp_") || dir_name.starts_with("tmp-fetch_");
+               return !may_be_cleaned_up || temporary_parts.contains(dir_name);
+           }());
+
     part->renameTo(part->name, true, builder);
 
     data_parts_indexes.insert(part);
