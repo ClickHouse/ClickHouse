@@ -102,8 +102,14 @@ public:
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
-
-extern thread_local ThreadStatus * current_thread;
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++20-compat"
+#endif
+extern thread_local constinit ThreadStatus * current_thread;
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
