@@ -6,8 +6,8 @@
 #include <Common/Arena.h>
 #include <Common/LRUCache.h>
 #include <Common/assert_cast.h>
-#include "Columns/IColumn.h"
-#include "Core/Field.h"
+#include <Columns/IColumn.h>
+#include <Core/Field.h>
 #include <base/unaligned.h>
 
 #include <Columns/ColumnString.h>
@@ -110,7 +110,7 @@ struct HashMethodString
         chars = column_string.getChars().data();
 
         if (column_is_const)
-            get_key_holder_impl = [this](size_t /*row*/) { return StringRef(chars, offsets[0] - 1); }; 
+            get_key_holder_impl = [this](size_t /*row*/) { return StringRef(chars, offsets[0] - 1); };
         else
             get_key_holder_impl = [this](size_t row) { return StringRef(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1); };
     }
