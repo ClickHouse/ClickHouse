@@ -200,8 +200,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         if (!filesystem_cache_path.empty())
             settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_path;
-        if (drop_persistent_files)
-            settings.ostr << (settings.hilite ? hilite_none : "") << " PERSISTENT";
     }
 }
 

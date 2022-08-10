@@ -40,7 +40,7 @@ public:
 
     void removeIfExists(const Key & key) override;
 
-    void removeIfReleasable(bool remove_persistent_files) override;
+    void removeIfReleasable() override;
 
     std::vector<String> tryGetCachePaths(const Key & key) override;
 
@@ -83,7 +83,6 @@ private:
     size_t enable_cache_hits_threshold;
 
     Poco::Logger * log;
-    bool allow_to_remove_persistent_segments_from_cache_by_default;
 
     FileSegments getImpl(
         const Key & key, const FileSegment::Range & range,

@@ -30,9 +30,8 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
     cache_on_write_operations = config.getUInt64(config_prefix + ".cache_on_write_operations", false);
     enable_filesystem_query_cache_limit = config.getUInt64(config_prefix + ".enable_filesystem_query_cache_limit", false);
     enable_cache_hits_threshold = config.getUInt64(config_prefix + ".enable_cache_hits_threshold", REMOTE_FS_OBJECTS_CACHE_ENABLE_HITS_THRESHOLD);
-    /// TODO: used?
+
     do_not_evict_index_and_mark_files = config.getUInt64(config_prefix + ".do_not_evict_index_and_mark_files", true);
-    allow_to_remove_persistent_segments_from_cache_by_default = config.getUInt64(config_prefix + ".allow_to_remove_persistent_segments_from_cache_by_default", true);
 }
 
 }

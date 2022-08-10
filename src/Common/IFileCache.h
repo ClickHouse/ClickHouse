@@ -50,7 +50,7 @@ public:
 
     virtual void removeIfExists(const Key & key) = 0;
 
-    virtual void removeIfReleasable(bool remove_persistent_files) = 0;
+    virtual void removeIfReleasable() = 0;
 
     static bool isReadOnly();
 
@@ -105,6 +105,8 @@ protected:
     size_t max_size;
     size_t max_element_size;
     size_t max_file_segment_size;
+
+    bool allow_persistent_files;
 
     bool is_initialized = false;
 

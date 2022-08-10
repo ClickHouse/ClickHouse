@@ -25,6 +25,7 @@ IFileCache::IFileCache(
     , max_size(cache_settings_.max_size)
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
+    , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
 {
 }

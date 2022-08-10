@@ -23,9 +23,11 @@ namespace ErrorCodes
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
     FileCachePtr cache_,
+    const FileCacheSettings & cache_settings_,
     const std::string & cache_config_name_)
     : object_storage(object_storage_)
     , cache(cache_)
+    , cache_settings(cache_settings_)
     , cache_config_name(cache_config_name_)
     , log(&Poco::Logger::get(getName()))
 {
@@ -199,6 +201,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
     if (path_key_for_cache.empty())
         return;
 
+    /// Add try catch?
     cache->removeIfExists(getCacheKey(path_key_for_cache));
 }
 
@@ -228,6 +231,20 @@ void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeCacheIfExists(object.getPathKeyForCache());
 
     object_storage->removeObjectsIfExist(objects);
+}
+
+ReadSettings CachedObjectStorage::getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & path) const
+{
+    ReadSettings new_settings{settings};
+    new_settings.is_file_cache_persistent = isFileWithPersistentCache(path) && cache_settings.do_not_evict_index_and_mark_files;
+    return new_settings;
+}
+
+WriteSettings CachedObjectStorage::getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const
+{
+    WriteSettings new_settings{settings};
+    new_settings.is_file_cache_persistent = isFileWithPersistentCache(path) && cache_settings.do_not_evict_index_and_mark_files;
+    return new_settings;
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
