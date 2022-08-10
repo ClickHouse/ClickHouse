@@ -183,6 +183,13 @@
                     </main>
                 </volumes>
             </s3_cache_multi>
+            <s3_cache_small>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_small</disk>
+                    </main>
+                </volumes>
+            </s3_cache_small>
             <local_cache>
                 <volumes>
                     <main>
