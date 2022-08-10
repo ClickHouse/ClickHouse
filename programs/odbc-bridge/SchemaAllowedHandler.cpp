@@ -4,6 +4,7 @@
 
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -13,8 +14,6 @@
 #include "ODBCPooledConnectionFactory.h"
 #include <sql.h>
 #include <sqlext.h>
-
-#include <charconv>
 
 
 namespace DB
@@ -43,28 +42,27 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
         LOG_WARNING(log, fmt::runtime(message));
     };
 
+    size_t version;
+
     if (!params.has("version"))
-    {
-        process_error("No 'version' in request URL");
-        return;
-    }
+        version = 0; /// assumed version for too old servers which do not send a version
     else
     {
         String version_str = params.get("version");
-        size_t version;
-        auto [_, ec] = std::from_chars(version_str.data(), version_str.data() + version_str.size(), version);
-        if (ec != std::errc())
+        if (!tryParse(version, version_str))
         {
             process_error("Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
             return;
         }
-        if (version != XDBC_BRIDGE_PROTOCOL_VERSION)
-        {
-            // backwards compatibility is for now deemed unnecessary, just let the user upgrade the server and bridge to the same version
-            process_error("Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
-            return;
-        }
     }
+
+    if (version != XDBC_BRIDGE_PROTOCOL_VERSION)
+    {
+        /// backwards compatibility is considered unnecessary for now, just let the user know that the server and the bridge must be upgraded together
+        process_error("Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+        return;
+    }
+
 
     if (!params.has("connection_string"))
     {

@@ -19,7 +19,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <IO/ReadBufferFromString.h>
-#include <charconv>
 
 
 namespace DB
@@ -92,27 +91,25 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
 
+    size_t version;
+
     if (!params.has("version"))
-    {
-        processError(response, "No 'version' in request URL");
-        return;
-    }
+        version = 0; /// assumed version for too old servers which do not send a version
     else
     {
         String version_str = params.get("version");
-        size_t version;
-        auto [_, ec] = std::from_chars(version_str.data(), version_str.data() + version_str.size(), version);
-        if (ec != std::errc())
+        if (!tryParse(version, version_str))
         {
             processError(response, "Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
             return;
         }
-        if (version != LIBRARY_BRIDGE_PROTOCOL_VERSION)
-        {
-            // backwards compatibility is for now deemed unnecessary, just let the user upgrade the server and bridge to the same version
-            processError(response, "Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
-            return;
-        }
+    }
+
+    if (version != LIBRARY_BRIDGE_PROTOCOL_VERSION)
+    {
+        /// backwards compatibility is considered unnecessary for now, just let the user know that the server and the bridge must be upgraded together
+        processError(response, "Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+        return;
     }
 
     if (!params.has("method"))
