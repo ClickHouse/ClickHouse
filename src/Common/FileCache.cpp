@@ -63,7 +63,7 @@ static bool isQueryInitialized()
 {
     return CurrentThread::isInitialized()
         && CurrentThread::get().getQueryContext()
-        && CurrentThread::getQueryId().size() != 0;
+        && !CurrentThread::getQueryId().empty();
 }
 
 bool FileCache::isReadOnly()
