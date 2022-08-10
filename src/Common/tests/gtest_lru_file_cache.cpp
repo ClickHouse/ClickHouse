@@ -47,7 +47,7 @@ std::vector<DB::FileSegmentPtr> fromHolder(const DB::FileSegmentsHolder & holder
     return std::vector<DB::FileSegmentPtr>(holder.file_segments.begin(), holder.file_segments.end());
 }
 
-String getFileSegmentPath(const String & base_path, const DB::IFileCache::Key & key, size_t offset)
+String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
 {
     auto key_str = key.toString();
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
