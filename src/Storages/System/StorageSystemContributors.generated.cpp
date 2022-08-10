@@ -544,6 +544,7 @@ const char * auto_contributors[] {
     "Nikita Mikhalev",
     "Nikita Mikhaylov",
     "Nikita Orlov",
+    "Nikita Taranov",
     "Nikita Tikhomirov",
     "Nikita Vasilev",
     "NikitaEvs",
