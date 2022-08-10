@@ -166,8 +166,7 @@ def test_reload_zookeeper(started_cluster):
     assert node2.query(
         "SELECT name FROM system.users WHERE name IN ['u1', 'u2'] ORDER BY name"
     ) == TSV(["u1", "u2"])
-    expected_error = "Cannot resolve any of provided ZooKeeper hosts"
-    assert expected_error in node1.query_and_get_error("CREATE USER u3")
+    assert "ZooKeeper" in node1.query_and_get_error("CREATE USER u3")
 
     ## start zoo2, zoo3, users will be readonly too, because it only connect to zoo1
     cluster.start_zookeeper_nodes(["zoo2", "zoo3"])
@@ -175,8 +174,7 @@ def test_reload_zookeeper(started_cluster):
     assert node2.query(
         "SELECT name FROM system.users WHERE name IN ['u1', 'u2'] ORDER BY name"
     ) == TSV(["u1", "u2"])
-    expected_error = "Cannot resolve any of provided ZooKeeper hosts"
-    assert expected_error in node1.query_and_get_error("CREATE USER u3")
+    assert "ZooKeeper" in node1.query_and_get_error("CREATE USER u3")
 
     ## set config to zoo2, server will be normal
     replace_zookeeper_config(
