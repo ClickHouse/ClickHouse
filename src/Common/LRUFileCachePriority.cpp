@@ -45,7 +45,7 @@ void LRUFileCachePriority::removeAll(std::lock_guard<std::mutex> &)
 
 IFileCachePriority::ReadIterator LRUFileCachePriority::getLowestPriorityReadIterator(std::lock_guard<std::mutex> &)
 {
-    return std::make_shared<const LRUFileCacheIterator>(this, queue.begin());
+    return std::make_unique<const LRUFileCacheIterator>(this, queue.begin());
 }
 
 IFileCachePriority::WriteIterator LRUFileCachePriority::getLowestPriorityWriteIterator(std::lock_guard<std::mutex> &)

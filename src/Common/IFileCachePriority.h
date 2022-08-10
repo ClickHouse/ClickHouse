@@ -18,7 +18,7 @@ class IFileCachePriority
 public:
     class IIterator;
     using Key = FileCacheKey;
-    using ReadIterator = std::shared_ptr<const IIterator>;
+    using ReadIterator = std::unique_ptr<const IIterator>;
     using WriteIterator = std::shared_ptr<IIterator>;
 
     struct FileCacheRecord
