@@ -162,7 +162,7 @@ FilterDAGInfoPtr generateFilterActions(
     filter_info->actions->projectInput(false);
 
     for (const auto * node : filter_info->actions->getInputs())
-        filter_info->actions->getIndex().push_back(node);
+        filter_info->actions->getOutputs().push_back(node);
 
     auto required_columns_from_filter = filter_info->actions->getRequiredColumns();
 
