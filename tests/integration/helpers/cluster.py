@@ -30,6 +30,7 @@ try:
     import pymongo
     import pymysql
     import nats
+    import ssl
     import meilisearch
     from confluent_kafka.avro.cached_schema_registry_client import (
         CachedSchemaRegistryClient,
@@ -215,9 +216,27 @@ def check_rabbitmq_is_available(rabbitmq_id):
     return p.returncode == 0
 
 
-async def check_nats_is_available(nats_ip):
-    nc = await nats.connect("{}:4444".format(nats_ip), user="click", password="house")
-    return nc.is_connected
+async def check_nats_is_available(nats_port, ssl_ctx=None):
+    nc = await nats_connect_ssl(
+        nats_port, user="click", password="house", ssl_ctx=ssl_ctx
+    )
+    available = nc.is_connected
+    await nc.close()
+    return available
+
+
+async def nats_connect_ssl(nats_port, user, password, ssl_ctx=None):
+    if not ssl_ctx:
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+    nc = await nats.connect(
+        "tls://localhost:{}".format(nats_port),
+        user=user,
+        password=password,
+        tls=ssl_ctx,
+    )
+    return nc
 
 
 def enable_consistent_hash_plugin(rabbitmq_id):
@@ -333,6 +352,7 @@ class ClickHouseCluster:
         self.env_variables = {}
         self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
+        self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get(
@@ -461,9 +481,11 @@ class ClickHouseCluster:
         self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
 
         self.nats_host = "nats1"
-        self.nats_ip = None
         self.nats_port = 4444
         self.nats_docker_id = None
+        self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
+        self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
+        self.nats_ssl_context = None
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -1082,6 +1104,7 @@ class ClickHouseCluster:
         env_variables["NATS_HOST"] = self.nats_host
         env_variables["NATS_INTERNAL_PORT"] = "4444"
         env_variables["NATS_EXTERNAL_PORT"] = str(self.nats_port)
+        env_variables["NATS_CERT_DIR"] = self.nats_cert_dir
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
@@ -2003,10 +2026,12 @@ class ClickHouseCluster:
             raise Exception("Cannot wait RabbitMQ container")
         return False
 
-    def wait_nats_is_available(self, nats_ip, max_retries=5):
+    def wait_nats_is_available(self, max_retries=5):
         retries = 0
         while True:
-            if asyncio.run(check_nats_is_available(nats_ip)):
+            if asyncio.run(
+                check_nats_is_available(self.nats_port, ssl_ctx=self.nats_ssl_context)
+            ):
                 break
             else:
                 retries += 1
@@ -2462,11 +2487,24 @@ class ClickHouseCluster:
 
             if self.with_nats and self.base_nats_cmd:
                 logging.debug("Setup NATS")
+                os.makedirs(self.nats_cert_dir)
+                env = os.environ.copy()
+                env["NATS_CERT_DIR"] = self.nats_cert_dir
+                run_and_check(
+                    p.join(self.base_dir, "nats_certs.sh"),
+                    env=env,
+                    detach=False,
+                    nothrow=False,
+                )
+
+                self.nats_ssl_context = ssl.create_default_context()
+                self.nats_ssl_context.load_verify_locations(
+                    p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
+                )
                 subprocess_check_call(self.base_nats_cmd + common_opts)
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
-                self.nats_ip = self.get_instance_ip("nats1")
-                self.wait_nats_is_available(self.nats_ip)
+                self.wait_nats_is_available()
 
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug("Setup HDFS")

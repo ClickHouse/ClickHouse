@@ -460,3 +460,5 @@ for core in core.*; do
     pigz $core
     mv $core.gz /test_output/
 done
+
+dmesg -T > /test_output/dmesg.log
