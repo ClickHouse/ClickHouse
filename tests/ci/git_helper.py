@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 import argparse
+import logging
 import os.path as p
 import re
 import subprocess
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 # ^ and $ match subline in `multiple\nlines`
 # \A and \Z match only start and end of the whole string
@@ -52,9 +55,41 @@ class Runner:
     def run(self, cmd: str, cwd: Optional[str] = None) -> str:
         if cwd is None:
             cwd = self.cwd
+        logger.debug("Running command: %s", cmd)
         return subprocess.check_output(
             cmd, shell=True, cwd=cwd, encoding="utf-8"
         ).strip()
+
+    @property
+    def cwd(self) -> str:
+        return self._cwd
+
+    @cwd.setter
+    def cwd(self, value: str):
+        # Set _cwd only once, then set it to readonly
+        if self._cwd != CWD:
+            return
+        self._cwd = value
+
+    def __call__(self, *args, **kwargs):
+        return self.run(*args, **kwargs)
+
+
+git_runner = Runner()
+# Set cwd to abs path of git root
+git_runner.cwd = p.relpath(
+    p.join(git_runner.cwd, git_runner.run("git rev-parse --show-cdup"))
+)
+
+
+def is_shallow() -> bool:
+    return git_runner.run("git rev-parse --is-shallow-repository") == "true"
+
+
+def get_tags() -> List[str]:
+    if is_shallow():
+        raise RuntimeError("attempt to run on a shallow repository")
+    return git_runner.run("git tag").split()
 
 
 class Git:
@@ -77,8 +112,8 @@ class Git:
 
     def update(self):
         """Is used to refresh all attributes after updates, e.g. checkout or commit"""
-        self.branch = self.run("git branch --show-current")
         self.sha = self.run("git rev-parse HEAD")
+        self.branch = self.run("git branch --show-current") or self.sha
         self.sha_short = self.sha[:11]
         # The following command shows the most recent tag in a graph
         # Format should match TAG_REGEXP
