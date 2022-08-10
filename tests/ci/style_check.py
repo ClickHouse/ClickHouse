@@ -15,7 +15,7 @@ from clickhouse_helper import (
 )
 from commit_status_helper import post_commit_status, update_mergeable_check
 from docker_pull_helper import get_image_with_version
-from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
+from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, S3_URL
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from git_helper import git_runner
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     docker_image = get_image_with_version(temp_path, "clickhouse/style-test")
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper(S3_URL)
 
     cmd = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
