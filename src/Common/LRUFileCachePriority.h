@@ -5,19 +5,23 @@
 namespace DB
 {
 
-class LRUFileCache : public IFileCachePriority
+/// Based on the LRU algorithm implementation, the data with the lowest priority is stored at
+/// the head of the queue, and the data with the highest priority is stored at the tail.
+class LRUFileCachePriority : public IFileCachePriority
 {
 public:
     using LRUQueue = std::list<FileCacheRecord>;
     using LRUQueueIterator = typename LRUQueue::iterator;
-    class WriteableIterator;
 
-    class ReadableIterator : public IIterator
+    class LRUFileCacheIterator : public IIterator
     {
     public:
-        ReadableIterator(LRUFileCache * file_cache_, LRUQueueIterator queue_iter_) : file_cache(file_cache_), queue_iter(queue_iter_) { }
+        LRUFileCacheIterator(LRUFileCachePriority * file_cache_, LRUQueueIterator queue_iter_)
+            : file_cache(file_cache_), queue_iter(queue_iter_)
+        {
+        }
 
-        void next() override { queue_iter++; }
+        void next() const override { queue_iter++; }
 
         bool valid() const override { return (file_cache->queue.size() && (queue_iter != file_cache->queue.end())); }
 
@@ -29,17 +33,9 @@ public:
 
         size_t hits() const override { return queue_iter->hits; }
 
-        Iterator getSnapshot() override { return std::make_shared<WriteableIterator>(file_cache, queue_iter); }
+        WriteIterator getWriteIterator() const override { return std::make_shared<LRUFileCacheIterator>(file_cache, queue_iter); }
 
-    protected:
-        LRUFileCache * file_cache;
-        LRUQueueIterator queue_iter;
-    };
-
-    class WriteableIterator : public ReadableIterator
-    {
-    public:
-        WriteableIterator(LRUFileCache * file_cache_, LRUQueueIterator queue_iter_) : ReadableIterator(file_cache_, queue_iter_) { }
+        void seekToLowestPriority() const override { queue_iter = file_cache->queue.begin(); }
 
         void remove(std::lock_guard<std::mutex> &) override
         {
@@ -58,16 +54,20 @@ public:
             queue_iter->hits++;
             file_cache->queue.splice(file_cache->queue.end(), file_cache->queue, queue_iter);
         }
+
+    private:
+        mutable LRUFileCachePriority * file_cache;
+        mutable LRUQueueIterator queue_iter;
     };
 
 public:
-    LRUFileCache() = default;
+    LRUFileCachePriority() = default;
 
-    Iterator add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> &) override
+    WriteIterator add(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> &) override
     {
         auto iter = queue.insert(queue.end(), FileCacheRecord(key, offset, size));
         cache_size += size;
-        return std::make_shared<WriteableIterator>(this, iter);
+        return std::make_shared<LRUFileCacheIterator>(this, iter);
     }
 
     bool contains(const Key & key, size_t offset, std::lock_guard<std::mutex> &) override
@@ -86,7 +86,10 @@ public:
         cache_size = 0;
     }
 
-    Iterator getNewIterator(std::lock_guard<std::mutex> &) override { return std::make_shared<ReadableIterator>(this, queue.begin()); }
+    ReadIterator getNewIterator(std::lock_guard<std::mutex> &) override
+    {
+        return std::make_shared<const LRUFileCacheIterator>(this, queue.begin());
+    }
 
     size_t getElementsNum(std::lock_guard<std::mutex> &) const override { return queue.size(); }
 
