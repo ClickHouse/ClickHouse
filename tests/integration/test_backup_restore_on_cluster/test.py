@@ -439,56 +439,73 @@ def test_async_backups_to_same_destination(interface, on_cluster):
         "ORDER BY x"
     )
 
+    nodes = [node1, node2]
     node1.query("INSERT INTO tbl VALUES (1)")
 
     backup_name = new_backup_name()
-
-    ids = []
-    nodes = [node1, node2]
     on_cluster_part = "ON CLUSTER 'cluster'" if on_cluster else ""
+
+    # Multiple backups to the same destination.
+    ids = []
     for node in nodes:
         if interface == "http":
-            res = node.http_query(
+            res, err = node.http_query_and_get_answer_with_error(
                 f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} ASYNC"
             )
         else:
-            res = node.query(
+            res, err = node.query_and_get_answer_with_error(
                 f"BACKUP TABLE tbl {on_cluster_part} TO {backup_name} ASYNC"
             )
-        ids.append(res.split("\t")[0])
 
-    [id1, id2] = ids
+        # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+        # If it fails immediately we won't even get its ID.
+        if not err:
+            ids.append(res.split("\t")[0])
 
-    for i in range(len(nodes)):
+    ids_for_query = "[" + ", ".join(f"'{id}'" for id in ids) + "]"
+
+    for node in nodes:
         assert_eq_with_retry(
-            nodes[i],
-            f"SELECT status FROM system.backups WHERE id='{ids[i]}' AND status == 'CREATING_BACKUP'",
+            node,
+            f"SELECT status FROM system.backups WHERE id IN {ids_for_query} AND status == 'CREATING_BACKUP'",
             "",
         )
 
-    num_completed_backups = sum(
+    num_created_backups = sum(
         [
             int(
-                nodes[i]
-                .query(
-                    f"SELECT count() FROM system.backups WHERE id='{ids[i]}' AND status == 'BACKUP_CREATED'"
-                )
-                .strip()
+                node.query(
+                    f"SELECT count() FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
+                ).strip()
             )
-            for i in range(len(nodes))
+            for node in nodes
         ]
     )
 
-    if num_completed_backups != 1:
-        for i in range(len(nodes)):
+    num_failed_backups = sum(
+        [
+            int(
+                node.query(
+                    f"SELECT count() FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
+                ).strip()
+            )
+            for node in nodes
+        ]
+    )
+
+    # Only one backup should succeed.
+    if (num_created_backups != 1) or (num_failed_backups != len(ids) - 1):
+        for node in nodes:
             print(
-                nodes[i].query(
-                    f"SELECT status, error FROM system.backups WHERE id='{ids[i]}'"
+                node.query(
+                    f"SELECT status, error FROM system.backups WHERE id IN {ids_for_query}"
                 )
             )
 
-    assert num_completed_backups == 1
+    assert num_created_backups == 1
+    assert num_failed_backups == len(ids) - 1
 
+    # Check that the succeeded backup is all right.
     node1.query("DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
     node1.query(f"RESTORE TABLE tbl FROM {backup_name}")
     assert node1.query("SELECT * FROM tbl") == "1\n"
