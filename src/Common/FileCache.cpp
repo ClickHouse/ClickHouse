@@ -936,7 +936,7 @@ void FileCache::removeIfReleasable(bool remove_persistent_files)
 
     std::lock_guard cache_lock(mutex);
 
-    std::vector<FileSegment *> to_remove;
+    std::vector<FileSegmentPtr> to_remove;
     for (auto it = main_priority->getLowestPriorityReadIterator(cache_lock); it->valid(); it->next())
     {
         const auto & key = it->key();
@@ -956,7 +956,7 @@ void FileCache::removeIfReleasable(bool remove_persistent_files)
                     || remove_persistent_files
                     || allow_to_remove_persistent_segments_from_cache_by_default))
             {
-                to_remove.emplace_back(file_segment.get());
+                to_remove.emplace_back(file_segment);
             }
         }
     }
