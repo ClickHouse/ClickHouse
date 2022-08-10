@@ -19,134 +19,136 @@
 namespace DB
 {
 
-bool TimeSpan::convertImpl(String &out,IParser::Pos &pos)
+bool TimeSpan::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 /*
-bool DateTime::convertImpl(String &out,IParser::Pos &pos)
+bool DateTime::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }*/
 
-bool Ago::convertImpl(String &out,IParser::Pos &pos)
+bool Ago::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool DatetimeAdd::convertImpl(String &out,IParser::Pos &pos)
+bool DatetimeAdd::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 };
 
-bool DatetimePart::convertImpl(String &out,IParser::Pos &pos)
+bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool DatetimeDiff::convertImpl(String &out,IParser::Pos &pos)
+bool DatetimeDiff::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool DayOfMonth::convertImpl(String &out,IParser::Pos &pos)
+bool DayOfMonth::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "toDayOfMonth");
 }
 
-bool DayOfWeek::convertImpl(String &out,IParser::Pos &pos)
+bool DayOfWeek::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
     ++pos;
     
-    out = std::format("toDayOfWeek() + %7");
+    const String datetime_str = getConvertedArgument(fn_name, pos);
+    
+    out = std::format("toDayOfWeek({})%7",datetime_str);
     return true;
 }
 
-bool DayOfYear::convertImpl(String &out,IParser::Pos &pos)
+bool DayOfYear::convertImpl(String & out, IParser::Pos & pos)
 {
     return directMapping(out, pos, "toDayOfYear");
 }
 
-bool EndOfDay::convertImpl(String &out,IParser::Pos &pos)
+bool EndOfDay::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool EndOfWeek::convertImpl(String &out,IParser::Pos &pos)
+bool EndOfWeek::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool EndOfYear::convertImpl(String &out,IParser::Pos &pos)
+bool EndOfYear::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool FormatDateTime::convertImpl(String &out,IParser::Pos &pos)
+bool FormatDateTime::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool FormatTimeSpan::convertImpl(String &out,IParser::Pos &pos)
+bool FormatTimeSpan::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool GetMonth::convertImpl(String &out,IParser::Pos &pos)
+bool GetMonth::convertImpl(String & out, IParser::Pos & pos)
 {
   return directMapping(out, pos, "toMonth");
 }
 
-bool GetYear::convertImpl(String &out,IParser::Pos &pos)
+bool GetYear::convertImpl(String & out, IParser::Pos & pos)
 {
    return directMapping(out, pos, "toYear");
 }
 
-bool HoursOfDay::convertImpl(String &out,IParser::Pos &pos)
+bool HoursOfDay::convertImpl(String & out, IParser::Pos & pos)
 {
      return directMapping(out, pos, "toHour");
 }
 
-bool MakeTimeSpan::convertImpl(String &out,IParser::Pos &pos)
+bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool MakeDateTime::convertImpl(String &out,IParser::Pos &pos)
+bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool Now::convertImpl(String &out,IParser::Pos &pos)
+bool Now::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -163,7 +165,7 @@ bool Now::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool StartOfDay::convertImpl(String &out,IParser::Pos &pos)
+bool StartOfDay::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
 
@@ -184,7 +186,7 @@ bool StartOfDay::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool StartOfMonth::convertImpl(String &out,IParser::Pos &pos)
+bool StartOfMonth::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -204,7 +206,7 @@ bool StartOfMonth::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool StartOfWeek::convertImpl(String &out,IParser::Pos &pos)
+bool StartOfWeek::convertImpl(String & out, IParser::Pos & pos)
 {
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
@@ -224,9 +226,9 @@ bool StartOfWeek::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool StartOfYear::convertImpl(String &out,IParser::Pos &pos)
+bool StartOfYear::convertImpl(String & out, IParser::Pos & pos)
 {
-       const String fn_name = getKQLFunctionName(pos);
+    const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
@@ -243,30 +245,30 @@ bool StartOfYear::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool UnixTimeMicrosecondsToDateTime::convertImpl(String &out,IParser::Pos &pos)
+bool UnixTimeMicrosecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool UnixTimeMillisecondsToDateTime::convertImpl(String &out,IParser::Pos &pos)
+bool UnixTimeMillisecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool UnixTimeNanosecondsToDateTime::convertImpl(String &out,IParser::Pos &pos)
+bool UnixTimeNanosecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
+    String res = String(pos->begin, pos->end);
     out = res;
     return false;
 }
 
-bool UnixTimeSecondsToDateTime::convertImpl(String &out,IParser::Pos &pos)
+bool UnixTimeSecondsToDateTime::convertImpl(String & out, IParser::Pos & pos)
 {
-       const String fn_name = getKQLFunctionName(pos);
+    const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
 
@@ -276,9 +278,8 @@ bool UnixTimeSecondsToDateTime::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool WeekOfYear::convertImpl(String &out,IParser::Pos &pos)
+bool WeekOfYear::convertImpl(String & out, IParser::Pos & pos)
 {
-
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
@@ -288,7 +289,7 @@ bool WeekOfYear::convertImpl(String &out,IParser::Pos &pos)
     return true;
 }
 
-bool MonthOfYear::convertImpl(String &out,IParser::Pos &pos)
+bool MonthOfYear::convertImpl(String & out, IParser::Pos & pos)
 {
 
     return directMapping(out, pos, "toMonth");

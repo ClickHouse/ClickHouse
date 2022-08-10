@@ -1,4 +1,64 @@
 # August XX, 2022
+- **DateTimeFunctions**
+- [startofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofyearfunction)
+   `print startofyear(datetime(2017-01-01 10:10:17), -1)` 
+   `print startofyear(datetime(2017-01-01 10:10:17), 0)`
+   `print startofyear(datetime(2017-01-01 10:10:17), 1)`
+- [weekofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/weekofyearfunction)
+   `print week_of_year(datetime(2020-12-31))`	
+   `print week_of_year(datetime(2020-06-15))`
+   `print week_of_year(datetime(1970-01-01))`
+   `print  week_of_year(datetime(2000-01-01))`
+
+- [startofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofweekfunction)
+   `print startofweek(datetime(2017-01-01 10:10:17), -1)` 
+   `print startofweek(datetime(2017-01-01 10:10:17), 0)`
+   `print startofweek(datetime(2017-01-01 10:10:17), 1)` 
+
+- [startofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofmonthfunction)
+   `print startofmonth(datetime(2017-01-01 10:10:17), -1)` 
+   `print startofmonth(datetime(2017-01-01 10:10:17), 0)` 
+   `print startofmonth(datetime(2017-01-01 10:10:17), 1)` 
+
+- [startofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofdayfunction)
+   `print startofday(datetime(2017-01-01 10:10:17), -1)` 
+   `print startofday(datetime(2017-01-01 10:10:17), 0)` 
+   `print startofday(datetime(2017-01-01 10:10:17), 1)` 
+
+- [monthofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/monthofyearfunction)
+   `print monthofyear(datetime("2015-12-14"))`
+
+- [hourofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/hourofdayfunction)
+   `print hourofday(datetime(2015-12-14 18:54:00))`
+
+- [getyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/getyearfunction)
+   `print getyear(datetime(2015-10-12))`
+
+- [getmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/getmonthfunction)
+   `print getmonth(datetime(2015-10-12))`
+
+- [dayofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofyearfunction)
+   `print dayofyear(datetime(2015-12-14))`
+
+- [dayofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofmonthfunction)
+   `print (datetime(2015-12-14))`
+
+- [unixtime_seconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-seconds-todatetimefunction)
+   `print unixtime_seconds_todatetime(1546300800)`
+
+- [dayofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofweekfunction)
+   `print dayofweek(datetime(2015-12-20))`
+
+- [now](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/nowfunction)
+   `print now()`
+   `print now(2d)`
+   `print now(-2h)`
+   `print now(5 microseconds)`
+   `print now(5 seconds)`
+   `print now(6minutes)`
+   `print now(-2d) `
+   `print now(time(1d))`
+
 ## KQL implemented features
 The config setting to allow modify dialect setting.
    - Set dialect setting in  server configuration XML at user level(` users.xml `). This sets the ` dialect ` at server startup and CH will do query parsing for all users with ` default ` profile acording to dialect value.
