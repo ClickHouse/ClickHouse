@@ -23,6 +23,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include "Core/SortDescription.h"
+#include <QueryPipeline/narrowPipe.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -195,6 +196,12 @@ void QueryPipelineBuilder::resize(size_t num_streams, bool force, bool strict)
     pipe.resize(num_streams, force, strict);
 }
 
+void QueryPipelineBuilder::narrow(size_t size)
+{
+    checkInitializedAndNotCompleted();
+    narrowPipe(pipe, size);
+}
+
 void QueryPipelineBuilder::addTotalsHavingTransform(ProcessorPtr transform)
 {
     checkInitializedAndNotCompleted();
@@ -323,7 +330,6 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::mergePipelines(
     left->pipe.processors.emplace_back(transform);
 
     left->pipe.processors.insert(left->pipe.processors.end(), right->pipe.processors.begin(), right->pipe.processors.end());
-    // left->pipe.holder = std::move(right->pipe.holder);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
     return left;

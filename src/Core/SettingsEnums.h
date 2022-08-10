@@ -1,12 +1,14 @@
 #pragma once
 
 #include <Core/SettingsFields.h>
+#include <Core/Joins.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
+
 enum class LoadBalancing
 {
     /// among replicas with a minimum number of errors selected randomly
@@ -26,26 +28,7 @@ enum class LoadBalancing
 
 DECLARE_SETTING_ENUM(LoadBalancing)
 
-
-enum class JoinStrictness
-{
-    Unspecified = 0, /// Query JOIN without strictness will throw Exception.
-    ALL, /// Query JOIN without strictness -> ALL JOIN ...
-    ANY, /// Query JOIN without strictness -> ANY JOIN ...
-};
-
 DECLARE_SETTING_ENUM(JoinStrictness)
-
-enum class JoinAlgorithm
-{
-    AUTO = 0,
-    HASH,
-    PARTIAL_MERGE,
-    PREFER_PARTIAL_MERGE,
-    PARALLEL_HASH,
-    DIRECT,
-    FULL_SORTING_MERGE,
-};
 
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 
@@ -199,4 +182,5 @@ DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparin
 DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
+
 }

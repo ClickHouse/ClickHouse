@@ -506,9 +506,19 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     if (replicas.empty())
         return;
 
+    /// Current replica must always be present in the list as the first element because we use local mutation status
+    /// to check for mutation errors. So if it is not there, just add it.
+    const Strings * all_required_replicas = &replicas;
+    Strings extended_list_of_replicas;
+    if (replicas.front() != replica_name)
+    {
+        extended_list_of_replicas.push_back(replica_name);
+        extended_list_of_replicas.insert(extended_list_of_replicas.end(), replicas.begin(), replicas.end());
+        all_required_replicas = &extended_list_of_replicas;
+    }
 
     std::set<String> inactive_replicas;
-    for (const String & replica : replicas)
+    for (const String & replica : *all_required_replicas)
     {
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
         zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
@@ -1584,8 +1594,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;    /// NOTE Deletion from `virtual_parts` is not done, but it is only necessary for merge.
     }
 
-    // bool do_fetch = false;
-
     switch (entry.type)
     {
         case LogEntry::ATTACH_PART:
@@ -1593,7 +1601,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             [[fallthrough]];
         case LogEntry::GET_PART:
             return executeFetch(entry);
-            // do_fetch = true;
         case LogEntry::MERGE_PARTS:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Merge has to be executed by another function");
         case LogEntry::MUTATE_PART:
@@ -1609,8 +1616,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
     }
-
-    // return true;
 }
 
 
@@ -1837,8 +1842,8 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     LOG_TRACE(log, "Executing DROP_RANGE {}", entry.new_part_name);
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
-    part_check_thread.cancelRemovedPartsCheck(drop_range_info);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
+    part_check_thread.cancelRemovedPartsCheck(drop_range_info);
 
     /// Delete the parts contained in the range to be deleted.
     /// It's important that no old parts remain (after the merge), because otherwise,
@@ -1906,8 +1911,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     if (replace)
     {
         getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
-        part_check_thread.cancelRemovedPartsCheck(drop_range);
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
+        part_check_thread.cancelRemovedPartsCheck(drop_range);
     }
     else
     {
@@ -5979,7 +5984,7 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
         {
             if (*it == replica_name)
             {
-                std::iter_swap(it, replicas.rbegin());
+                std::iter_swap(it, replicas.begin());
                 break;
             }
         }
@@ -6018,6 +6023,11 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
         getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, block_number);
     }
     return CancellationCode::CancelSent;
+}
+
+bool StorageReplicatedMergeTree::hasLightweightDeletedMask() const
+{
+    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
@@ -7867,7 +7877,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     if (settings->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns);
+    new_data_part->setColumns(columns, {});
     new_data_part->rows_count = block.rows();
 
     {
@@ -7953,11 +7963,30 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
         while (true)
         {
+            /// We should be careful when creating an empty part, because we are not sure that this part is still needed.
+            /// For example, it's possible that part (or partition) was dropped (or replaced) concurrently.
+            /// We can enqueue part for check from DataPartExchange or SelectProcessor
+            /// and it's hard to synchronize it with ReplicatedMergeTreeQueue and PartCheckThread...
+            /// But at least we can ignore parts that are definitely not needed according to virtual parts and drop ranges.
+            auto pred = queue.getMergePredicate(zookeeper);
+            String covering_virtual = pred.getCoveringVirtualPart(lost_part_name);
+            if (covering_virtual.empty())
+            {
+                LOG_WARNING(log, "Will not create empty part instead of lost {}, because there's no covering part in replication queue", lost_part_name);
+                return false;
+            }
+            if (pred.hasDropRange(MergeTreePartInfo::fromPartName(covering_virtual, format_version)))
+            {
+                LOG_WARNING(log, "Will not create empty part instead of lost {}, because it's covered by DROP_RANGE", lost_part_name);
+                return false;
+            }
 
             Coordination::Requests ops;
             Coordination::Stat replicas_stat;
             auto replicas_path = fs::path(zookeeper_path) / "replicas";
             Strings replicas = zookeeper->getChildren(replicas_path, &replicas_stat);
+
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/log", pred.getVersion()));
 
             /// In rare cases new replica can appear during check
             ops.emplace_back(zkutil::makeCheckRequest(replicas_path, replicas_stat.version));
@@ -7988,7 +8017,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             }
             else if (code == Coordination::Error::ZBADVERSION)
             {
-                LOG_INFO(log, "Looks like new replica appearead while creating new empty part, will retry");
+                LOG_INFO(log, "Looks like log was updated or new replica appeared while creating new empty part, will retry");
             }
             else
             {
