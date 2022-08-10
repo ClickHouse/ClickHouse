@@ -1140,13 +1140,25 @@ FORMAT PrettyCompactMonoBlock;
 └────────────────────────────┴────────────────────────────────┘
 ```
 
-## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
+## parseDateTime64BestEffortUS {#parsedatetime64besteffortus}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности.
+
+## parseDateTime64BestEffortOrNull {#parsedatetime64besteffortornull}
 
 Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL`, если формат даты не может быть обработан.
 
 ## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
 
-Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
+
+## parseDateTime64BestEffortUSOrNull {#parsedatetime64besteffortusornull}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности и возвращает `NULL`, если формат даты не может быть обработан.
+
+## parseDateTime64BestEffortUSOrZero {#parsedatetime64besteffortusorzero}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности и возвращает нулевую дату и время, если формат даты не может быть обработан.
 
 ## toLowCardinality {#tolowcardinality}
 
