@@ -23,7 +23,7 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool attach,
         std::string_view primary_key_,
-        std::string_view keeper_path_,
+        std::string_view root_path_,
         const std::string & hosts,
         bool create_missing_root_path,
         size_t keys_limit,
@@ -65,13 +65,15 @@ public:
     UInt64 keysLimit() const;
 
 private:
-    std::string keeper_path;
+    std::string root_path;
     std::string primary_key;
     std::string metadata_path;
     std::string lock_path;
     UInt64 keys_limit{0};
 
     mutable zkutil::ZooKeeperPtr zookeeper_client;
+
+    Poco::Logger * log;
 };
 
 }
