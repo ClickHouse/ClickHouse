@@ -82,10 +82,11 @@ std::string_view getBaseName(const std::string_view path)
 
 struct ZooKeeperLock
 {
-    explicit ZooKeeperLock(std::string lock_path_, zkutil::ZooKeeperPtr client_)
+    explicit ZooKeeperLock(std::string lock_path_, zkutil::ZooKeeperPtr client_, bool defer_lock = false)
         : lock_path(std::move(lock_path_)), client(std::move(client_))
     {
-        lock();
+        if (!defer_lock)
+            lock();
     }
 
     ~ZooKeeperLock()
@@ -120,7 +121,7 @@ struct ZooKeeperLock
     void unlock()
     {
         assert(locked);
-        client->remove(sequence_path);
+        client->tryRemove(sequence_path);
     }
 
 private:
@@ -307,11 +308,13 @@ StorageKeeperMap::StorageKeeperMap(
     ContextPtr context,
     const StorageID & table_id,
     const StorageInMemoryMetadata & metadata,
+    bool attach,
     std::string_view primary_key_,
     std::string_view keeper_path_,
     const std::string & hosts,
     bool create_missing_root_path,
-    size_t keys_limit_)
+    size_t keys_limit_,
+    bool remove_existing_data)
     : IKeyValueStorage(table_id), keeper_path(keeper_path_), primary_key(primary_key_), zookeeper_client(getZooKeeperClient(hosts, context))
 {
     setInMemoryMetadata(metadata);
@@ -322,6 +325,12 @@ StorageKeeperMap::StorageKeeperMap(
         throw Exception("keeper_path should start with '/'", ErrorCodes::BAD_ARGUMENTS);
 
     auto client = getClient();
+
+    if (attach)
+    {
+        // validate all metadata nodes are present
+        return;
+    }
 
     if (keeper_path != "/" && !client->exists(keeper_path))
     {
@@ -350,40 +359,32 @@ StorageKeeperMap::StorageKeeperMap(
         }
     }
 
+    Coordination::Stat stats;
+    auto exists = client->exists(keeper_path, &stats);
+    if (!exists)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path '{}' should exist, but was deleted from another source", keeper_path);
+
+    if (stats.numChildren != 0)
+    {
+        if (!remove_existing_data)
+            throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot create StorageKeeperMap using '{}' as path because it contains children nodes", keeper_path);
+
+        LOG_INFO(&Poco::Logger::get("StorageKeepermap"), "Removing children for {} because remove_existing_data was set to true.", keeper_path);
+        client->removeChildrenRecursive(keeper_path);
+    }
+
     // create metadata nodes
     std::filesystem::path root_path{keeper_path};
 
     auto metadata_path_fs = root_path / "__ch_metadata";
     metadata_path = metadata_path_fs;
-    client->createIfNotExists(metadata_path, "");
+    client->create(metadata_path, "", zkutil::CreateMode::Persistent);
 
     lock_path = metadata_path_fs / "lock";
-    client->createIfNotExists(lock_path, "");
+    client->create(lock_path, "", zkutil::CreateMode::Persistent);
 
     auto keys_limit_path = metadata_path_fs / "keys_limit";
-    auto status = client->tryCreate(keys_limit_path, toString(keys_limit_), zkutil::CreateMode::Persistent);
-    if (status == Coordination::Error::ZNODEEXISTS)
-    {
-        auto data = client->get(keys_limit_path, nullptr, nullptr);
-        UInt64 stored_keys_limit = parse<UInt64>(data);
-        if (stored_keys_limit != keys_limit_)
-        {
-            keys_limit = stored_keys_limit;
-            LOG_WARNING(
-                &Poco::Logger::get("StorageKeeperMap"),
-                "Keys limit is already set for {} to {}. Going to use already set value",
-                keeper_path,
-                stored_keys_limit);
-        }
-    }
-    else if (status == Coordination::Error::ZOK)
-    {
-        keys_limit = keys_limit_;
-    }
-    else
-    {
-        throw zkutil::KeeperException(status, keys_limit_path);
-    }
+    client->create(keys_limit_path, toString(keys_limit_), zkutil::CreateMode::Persistent);
 }
 
 
@@ -443,6 +444,20 @@ Pipe StorageKeeperMap::read(
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot);
+}
+
+void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &)
+{
+    auto client = getClient();
+
+    ZooKeeperLock keeper_lock(lockPath(), client);
+    client->tryRemoveChildrenRecursive(keeper_path, /*probably_flat*/ true, getBaseName(metadata_path));
+}
+
+void StorageKeeperMap::drop()
+{
+    auto client = getClient();
+    client->tryRemoveChildrenRecursive(keeper_path, /*probably_flat*/ false);
 }
 
 zkutil::ZooKeeperPtr & StorageKeeperMap::getClient() const
@@ -563,11 +578,12 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (engine_args.empty() || engine_args.size() > 4)
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Storage KeeperMap requires 1-4 arguments:\n"
+            "Storage KeeperMap requires 1-5 arguments:\n"
             "keeper_path: path in the Keeper where the values will be stored (required)\n"
-            "keys_limit: number of keys allowed, set to 0 for no limit (default: 0)\n"
             "hosts: comma separated Keeper hosts, set to '{0}' to use the same Keeper as ClickHouse (default: '{0}')\n"
-            "create_missing_root_path: true if the root path should be created if it's missing (default: 1)",
+            "keys_limit: number of keys allowed, set to 0 for no limit (default: 0)\n"
+            "create_missing_root_path: 1 if the root path should be created if it's missing, otherwise throw exception (default: 1)\n",
+            "remove_existing_data: true if children inside 'keeper_path' should be deleted, otherwise throw exception (default: 0)",
             default_host);
 
     auto keeper_path = checkAndGetLiteralArgument<std::string>(engine_args[0], "keeper_path");
@@ -584,6 +600,10 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (engine_args.size() > 3)
         create_missing_root_path = checkAndGetLiteralArgument<UInt64>(engine_args[3], "create_missing_root_path");
 
+    bool remove_existing_data = false;
+    if (engine_args.size() > 4)
+        create_missing_root_path = checkAndGetLiteralArgument<UInt64>(engine_args[4], "create_missing_root_path");
+
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
@@ -597,7 +617,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception("StorageKeeperMap requires one column in primary key", ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_shared<StorageKeeperMap>(
-        args.getContext(), args.table_id, metadata, primary_key_names[0], keeper_path, hosts, create_missing_root_path, keys_limit);
+        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], keeper_path, hosts, create_missing_root_path, keys_limit, remove_existing_data);
 }
 }
 

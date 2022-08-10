@@ -17,16 +17,17 @@ namespace DB
 class StorageKeeperMap final : public IKeyValueStorage
 {
 public:
-    // TODO(antonio2368): add setting to control creating if keeper_path doesn't exist
     StorageKeeperMap(
         ContextPtr context,
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata,
+        bool attach,
         std::string_view primary_key_,
         std::string_view keeper_path_,
         const std::string & hosts,
         bool create_missing_root_path,
-        size_t keys_limit);
+        size_t keys_limit,
+        bool remove_existing_data);
 
     Pipe read(
         const Names & column_names,
@@ -38,6 +39,9 @@ public:
         unsigned num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+
+    void truncate(const ASTPtr &, const StorageMetadataPtr & , ContextPtr, TableExclusiveLockHolder &) override;
+    void drop() override;
 
     std::string getName() const override { return "KeeperMap"; }
     Names getPrimaryKey() const override { return {primary_key}; }

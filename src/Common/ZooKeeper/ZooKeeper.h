@@ -238,7 +238,7 @@ public:
     /// If probably_flat is true, this method will optimistically try to remove children non-recursive
     /// and will fall back to recursive removal if it gets ZNOTEMPTY for some child.
     /// Returns true if no kind of fallback happened.
-    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, const String & keep_child_node = {});
+    bool tryRemoveChildrenRecursive(const std::string & path, bool probably_flat = false, std::string_view keep_child_node = {});
 
     /// Remove all children nodes (non recursive).
     void removeChildren(const std::string & path);
