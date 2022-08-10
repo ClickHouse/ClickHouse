@@ -41,6 +41,8 @@ jobs:
         git diff HEAD
     - name: Create Pull Request
       uses: peter-evans/create-pull-request@v3
+      env:
+        GITHUB_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
       with:
         author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
         committer: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
