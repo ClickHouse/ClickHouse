@@ -84,6 +84,26 @@ The config setting to allow modify dialect setting.
       pass dialect setting with '--'. For example : 
       ` clickhouse-client --dialect='kusto_auto' -q "KQL query" `
 
+## Binary functions
+- [binary_and](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-andfunction)
+   `print binary_and(15, 3) == 3`
+   `print binary_and(1, 2) == 0`
+- [binary_not](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-notfunction)
+   `print binary_not(1) == -2`
+- [binary_or](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-orfunction)
+   `print binary_or(3, 8) == 11`
+   `print binary_or(1, 2) == 3`
+- [binary_shift_left](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-shift-leftfunction)
+   `print binary_shift_left(1, 1) == 2`
+   `print binary_shift_left(1, 64) == 1`
+- [binary_shift_right](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-shift-rightfunction)
+   `print binary_shift_right(1, 1) == 0`
+   `print binary_shift_right(1, 64) == 1`
+- [binary_xor](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-xorfunction)
+   `print binary_xor(1, 3) == 2`
+- [bitset_count_ones](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/bitset-count-onesfunction)
+   `print bitset_count_ones(42) == 3`
+
 ## IP functions
 - [format_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-function)
    `print format_ipv4('192.168.1.255', 24) == '192.168.1.0'`
