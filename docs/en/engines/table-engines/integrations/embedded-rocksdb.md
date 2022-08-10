@@ -20,7 +20,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine parameters:
 
-- `ttl` - time to live. TTL is accepted in seconds. Not specifying/passing or non-positive TTL behaves like TTL = infinity.
+- `ttl` - time to live for values. TTL is accepted in seconds. If TTL is 0, regular RocksDB instance is used (without TTL).
 - `read_only` - when `read_only` is set to `true`, read-only mode is used. For storage with TTL, compaction will not be triggered (neither manual nor automatic), so no expired entries are removed.
 - `primary_key_name` – any column name in the column list.
 - `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
