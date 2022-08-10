@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, race
+# Tags: long, race, no-ordinary-database
 
 # Regression test for INSERT into table with MV attached,
 # to avoid possible errors if some table will disappears,

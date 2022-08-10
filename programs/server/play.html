@@ -78,6 +78,7 @@
             /* For iPad */
             margin: 0;
             border-radius: 0;
+            tab-size: 4;
         }
 
         html, body
@@ -609,11 +610,13 @@
         }
     }
 
+    let query_area = document.getElementById('query');
+
     window.onpopstate = function(event) {
         if (!event.state) {
             return;
         }
-        document.getElementById('query').value = event.state.query;
+        query_area.value = event.state.query;
         if (!event.state.response) {
             clear();
             return;
@@ -622,13 +625,13 @@
     };
 
     if (window.location.hash) {
-        document.getElementById('query').value = window.atob(window.location.hash.substr(1));
+        query_area.value = window.atob(window.location.hash.substr(1));
     }
 
     function post()
     {
         ++request_num;
-        let query = document.getElementById('query').value;
+        let query = query_area.value;
         postImpl(request_num, query);
     }
 
@@ -644,6 +647,32 @@
             post();
         }
     }
+
+    /// Pressing Tab in textarea will increase indentation.
+    /// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
+
+    let user_prefers_tab_navigation = false;
+
+    [...document.querySelectorAll('input')].map(elem => {
+        elem.onkeydown = (e) => {
+            if (e.key == 'Tab') { user_prefers_tab_navigation = true; }
+        };
+    });
+
+    query_area.onkeydown = (e) => {
+        if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
+            let elem = e.target;
+            let selection_start = elem.selectionStart;
+            let selection_end = elem.selectionEnd;
+
+            elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
+            elem.selectionStart = selection_start + 4;
+            elem.selectionEnd = selection_start + 4;
+
+            e.preventDefault();
+            return false;
+        }
+    };
 
     function clearElement(id)
     {
@@ -701,7 +730,7 @@
         stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
-        if (response.data.length > 3 && document.getElementById('query').value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
+        if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
             renderGraph(response);
         } else {
             renderTable(response);
