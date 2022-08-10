@@ -4,5 +4,7 @@
         <zookeeper_session_expiration_check_period>10</zookeeper_session_expiration_check_period>
         <!-- Default is 86400 (1 day), but we have protection from removal of tmp dirs that are currently in use -->
         <temporary_directories_lifetime>1</temporary_directories_lifetime>
+        <!-- Default is 60 seconds, but let's make tests more aggressive -->
+        <merge_tree_clear_old_temporary_directories_interval_seconds>10</merge_tree_clear_old_temporary_directories_interval_seconds>
     </merge_tree>
 </clickhouse>
