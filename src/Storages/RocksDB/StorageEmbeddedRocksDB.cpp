@@ -463,7 +463,7 @@ void StorageEmbeddedRocksDB::initDB()
         }
         rocksdb_ptr = std::unique_ptr<rocksdb::DBWithTTL>(db);
     }
-    else 
+    else
     {
         rocksdb::DB * db;
         status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
