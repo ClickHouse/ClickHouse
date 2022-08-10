@@ -34,6 +34,7 @@ th {{ cursor: pointer; }}
 <a href="{commit_url}">Commit</a>
 {additional_urls}
 <a href="{task_url}">Task (github actions)</a>
+<a href="{job_url}">Job (github actions)</a>
 </p>
 {test_part}
 </body>
@@ -150,6 +151,7 @@ def create_test_html_report(
     test_result,
     raw_log_url,
     task_url,
+    job_url,
     branch_url,
     branch_name,
     commit_url,
@@ -236,12 +238,17 @@ def create_test_html_report(
         [_get_html_url(url) for url in sorted(additional_urls, key=_get_html_url_name)]
     )
 
+    raw_log_name = os.path.basename(raw_log_url)
+    if raw_log_name.endswith("?check_suite_focus=true"):
+        raw_log_name = "Job (github actions)"
+
     result = HTML_BASE_TEST_TEMPLATE.format(
         title=_format_header(header, branch_name),
         header=_format_header(header, branch_name, branch_url),
-        raw_log_name=os.path.basename(raw_log_url),
+        raw_log_name=raw_log_name,
         raw_log_url=raw_log_url,
         task_url=task_url,
+        job_url=job_url,
         test_part=test_part,
         branch_name=branch_name,
         commit_url=commit_url,
