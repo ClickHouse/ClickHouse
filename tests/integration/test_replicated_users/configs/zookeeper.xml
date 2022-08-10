@@ -1,4 +1,3 @@
-
 <clickhouse>
     <zookeeper>
         <node index="1">
@@ -16,4 +15,3 @@
         <session_timeout_ms>20000</session_timeout_ms>
     </zookeeper>
 </clickhouse>
-    
