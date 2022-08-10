@@ -49,10 +49,17 @@ The supported formats are:
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔      |
 | [TSKV](#tskv)                                                                             | ✔    | ✔      |
 | [Pretty](#pretty)                                                                         | ✗    | ✔      |
-| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
 | [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔      |
+| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗    | ✔      |
+| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗    | ✔      |
+| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
+| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗    | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
+| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗    | ✔      |
 | [PrettySpace](#prettyspace)                                                               | ✗    | ✔      |
+| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗    | ✔      |
+| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗    | ✔      |
+| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗    | ✔      |
 | [Prometheus](#prometheus)                                                                 | ✗    | ✔      |
 | [Protobuf](#protobuf)                                                                     | ✔    | ✔      |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔      |
@@ -1198,18 +1205,9 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## PrettyCompact {#prettycompact}
-
-Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
-This format is used by default in the command-line client in interactive mode.
-
-## PrettyCompactMonoBlock {#prettycompactmonoblock}
-
-Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
-
 ## PrettyNoEscapes {#prettynoescapes}
 
-Differs from Pretty in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+Differs from [Pretty](#pretty) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
 
 Example:
 
@@ -1219,19 +1217,49 @@ $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events F
 
 You can use the HTTP interface for displaying in the browser.
 
-### PrettyCompactNoEscapes {#prettycompactnoescapes}
+## PrettyMonoBlock {#prettymonoblock}
 
-The same as the previous setting.
+Differs from [Pretty](#pretty) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
-### PrettySpaceNoEscapes {#prettyspacenoescapes}
+## PrettyNoEscapesMonoBlock {#prettynoescapesmonoblock}
 
-The same as the previous setting.
+Differs from [PrettyNoEscapes](#prettynoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+
+## PrettyCompact {#prettycompact}
+
+Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
+This format is used by default in the command-line client in interactive mode.
+
+## PrettyCompactNoEscapes {#prettynoescapes}
+
+Differs from [PrettyCompact](#prettycompact) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+
+## PrettyCompactMonoBlock {#prettycompactmonoblock}
+
+Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## PrettyCompactNoEscapesMonoBlock {#prettycompactnoescapesmonoblock}
+
+Differs from [PrettyCompactNoEscapes](#prettycompactnoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
 ## PrettySpace {#prettyspace}
 
 Differs from [PrettyCompact](#prettycompact) in that whitespace (space characters) is used instead of the grid.
 
-### Pretty formats settings {#pretty-formats-settings}
+## PrettySpaceNoEscapes {#prettyspacenoescapes}
+
+Differs from [PrettySpace](#prettyspace) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+
+## PrettySpaceMonoBlock {#prettyspacemonoblock}
+
+Differs from [PrettySpace](#prettyspace) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## PrettySpaceNoEscapesMonoBlock {#prettyspacenoescapesmonoblock}
+
+Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## Pretty formats settings {#pretty-formats-settings}
 
 - [output_format_pretty_max_rows](../operations/settings/settings.md#output_format_pretty_max_rows) - rows limit for Pretty formats. Default value - `10000`.
 - [output_format_pretty_max_column_pad_width](../operations/settings/settings.md#output_format_pretty_max_column_pad_width) - maximum width to pad all values in a column in Pretty formats. Default value - `250`.
