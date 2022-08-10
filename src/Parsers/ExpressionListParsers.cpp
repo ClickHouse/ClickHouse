@@ -1165,12 +1165,17 @@ public:
   *  - Manages operands and operators for the future elements (arguments)
   *  - Combines operands and operator into one element
   *  - Parsers separators and endings
-  *  - Combines resulting arguments into a function
+  *  - Combines resulting elements into a function
   */
 
 class Layer
 {
 public:
+    Layer(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = true) :
+        allow_alias(allow_alias_), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
+    {
+    }
+
     virtual ~Layer() = default;
 
     bool popOperator(Operator & op)
@@ -1207,24 +1212,21 @@ public:
 
     void pushResult(ASTPtr op)
     {
-        result.push_back(std::move(op));
+        elements.push_back(std::move(op));
     }
 
     virtual bool getResult(ASTPtr & op)
     {
-        if (result.size() == 1)
+        if (elements.size() == 1)
         {
-            op = std::move(result[0]);
+            op = std::move(elements[0]);
             return true;
         }
 
         return false;
     }
 
-    virtual bool parse(IParser::Pos & /*pos*/, Expected & /*expected*/, Action & /*action*/)
-    {
-        return true;
-    }
+    virtual bool parse(IParser::Pos & /*pos*/, Expected & /*expected*/, Action & /*action*/) = 0;
 
     bool isFinished() const
     {
@@ -1266,14 +1268,14 @@ public:
         return true;
     }
 
-    /// Merge operators and operands into a single element (column), then push it to 'result' vector.
+    /// Merge operators and operands into a single element (column), then push it to 'elements' vector.
     ///  Operators are previously sorted in ascending order of priority
     ///  (operator with priority 1 has higher priority than operator with priority 2),
     ///  so we can just merge them with operands starting from the end.
     ///
     /// If we fail here it means that the query was incorrect and we should return an error.
     ///
-    bool mergeElement(bool push_to_result = true)
+    bool mergeElement(bool push_to_elements = true)
     {
         Operator cur_op;
         while (popOperator(cur_op))
@@ -1329,7 +1331,7 @@ public:
 
         bool res = empty();
 
-        if (push_to_result)
+        if (push_to_elements)
             pushResult(node);
         else
             pushOperand(node);
@@ -1351,16 +1353,16 @@ public:
             return false;
 
         /// 1. If there is already tuple do nothing
-        if (tryGetFunctionName(result.back()) == "tuple")
+        if (tryGetFunctionName(elements.back()) == "tuple")
         {
-            pushOperand(result.back());
-            result.pop_back();
+            pushOperand(elements.back());
+            elements.pop_back();
         }
-        /// 2. Put all result in a single tuple
+        /// 2. Put all elements in a single tuple
         else
         {
-            auto function = makeASTFunction("tuple", result);
-            result.clear();
+            auto function = makeASTFunction("tuple", elements);
+            elements.clear();
             pushOperand(function);
         }
         return true;
@@ -1383,40 +1385,60 @@ public:
         return true;
     }
 
-    void addBetween()
-    {
-        ++open_between;
-    }
+public:
+    /// 'AND' in operator '... BETWEEN ... AND ...'  mirrors logical operator 'AND'.
+    ///  In order to distinguish them we keep a counter of BETWEENs without matching ANDs.
+    int between_counter = 0;
 
-    void subBetween()
-    {
-        --open_between;
-    }
-
-    bool hasBetween() const
-    {
-        return open_between > 0;
-    }
+    bool allow_alias = true;
+    bool allow_alias_without_as_keyword = true;
 
 protected:
     std::vector<Operator> operators;
     ASTs operands;
-    ASTs result;
+    ASTs elements;
     bool finished = false;
     int state = 0;
+};
 
-    /// 'AND' in operator '... BETWEEN ... AND ...'  mirrors logical operator 'AND'.
-    ///  In order to distinguish them we keep a counter of BETWEENs without matching ANDs.
-    int open_between = 0;
 
-    // bool allow_alias = true;
-    // bool allow_alias_without_as_keyword = true;
+class SingleElementLayer : public Layer
+{
+public:
+
+    SingleElementLayer() : Layer(false, false)
+    {
+    }
+
+    bool getResult(ASTPtr & op) override
+    {
+        /// We can exit the main cycle outside the parse() function,
+        ///  so we need to merge the element here
+        if (!mergeElement())
+            return false;
+
+        if (elements.size() == 1)
+        {
+            op = std::move(elements[0]);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool parse(IParser::Pos & pos, Expected & /*expected*/, Action & /*action*/) override
+    {
+        if (pos->type == TokenType::Comma)
+            finished = true;
+
+        return true;
+    }
 };
 
 
 /// Basic layer for a function with certain separator and end tokens:
 ///  1. If we parse a separator we should merge current operands and operators
-///     into one element and push in to 'result' vector.
+///     into one element and push in to 'elements' vector.
 ///  2. If we parse an ending token, we should merge everything as in (1) and
 ///     also set 'finished' flag.
 template <TokenType separator, TokenType end>
@@ -1435,7 +1457,7 @@ public:
         {
             action = Action::OPERATOR;
 
-            if (!empty() || !result.empty())
+            if (!empty() || !elements.empty())
                 if (!mergeElement())
                     return false;
 
@@ -1512,7 +1534,7 @@ public:
             {
                 action = Action::OPERATOR;
 
-                if (!empty() || !result.empty())
+                if (!empty() || !elements.empty())
                     if (!mergeElement())
                         return false;
 
@@ -1521,7 +1543,7 @@ public:
                 /** Check for a common error case - often due to the complexity of quoting command-line arguments,
                  *  an expression of the form toDate(2014-01-01) appears in the query instead of toDate('2014-01-01').
                  * If you do not report that the first option is an error, then the argument will be interpreted as 2014 - 01 - 01 - some number,
-                 *  and the query silently returns an unexpected result.
+                 *  and the query silently returns an unexpected elements.
                  */
                 if (function_name == "toDate"
                     && contents_end - contents_begin == strlen("2014-01-01")
@@ -1544,7 +1566,7 @@ public:
                 if (ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
                     parameters = std::make_shared<ASTExpressionList>();
-                    std::swap(parameters->children, result);
+                    std::swap(parameters->children, elements);
                     action = Action::OPERAND;
 
                     /// Parametric aggregate functions cannot have DISTINCT in parameters list.
@@ -1592,7 +1614,7 @@ public:
             if (has_distinct)
                 function_name += "Distinct";
 
-            auto function_node = makeASTFunction(function_name, std::move(result));
+            auto function_node = makeASTFunction(function_name, std::move(elements));
 
             if (parameters)
             {
@@ -1629,7 +1651,7 @@ public:
                     return false;
             }
 
-            result = {function_node};
+            elements = {function_node};
             finished = true;
         }
 
@@ -1654,10 +1676,10 @@ public:
     bool getResult(ASTPtr & op) override
     {
         // Round brackets can mean priority operator as well as function tuple()
-        if (!is_tuple && result.size() == 1)
-            op = std::move(result[0]);
+        if (!is_tuple && elements.size() == 1)
+            op = std::move(elements[0]);
         else
-            op = makeASTFunction("tuple", std::move(result));
+            op = makeASTFunction("tuple", std::move(elements));
 
         return true;
     }
@@ -1681,8 +1703,8 @@ public:
                     return false;
 
             // Special case for (('a', 'b')) -> tuple(('a', 'b'))
-            if (!is_tuple && result.size() == 1)
-                if (auto * literal = result[0]->as<ASTLiteral>())
+            if (!is_tuple && elements.size() == 1)
+                if (auto * literal = elements[0]->as<ASTLiteral>())
                     if (literal->value.getType() == Field::Types::Tuple)
                         is_tuple = true;
 
@@ -1701,7 +1723,7 @@ class ArrayLayer : public BaseLayer<TokenType::Comma, TokenType::ClosingSquareBr
 public:
     bool getResult(ASTPtr & op) override
     {
-        op = makeASTFunction("array", std::move(result));
+        op = makeASTFunction("array", std::move(elements));
         return true;
     }
 
@@ -1756,7 +1778,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    result = {createFunctionCast(result[0], type_node)};
+                    elements = {createFunctionCast(elements[0], type_node)};
                     finished = true;
                     return true;
                 }
@@ -1785,7 +1807,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    result = {createFunctionCast(result[0], type_node)};
+                    elements = {createFunctionCast(elements[0], type_node)};
                     finished = true;
                     return true;
                 }
@@ -1811,7 +1833,7 @@ public:
                 if (!mergeElement())
                     return false;
 
-                result = {makeASTFunction("CAST", result[0], result[1])};
+                elements = {makeASTFunction("CAST", elements[0], elements[1])};
                 finished = true;
                 return true;
             }
@@ -1828,14 +1850,14 @@ public:
     {
         if (state == 2)
         {
-            if (result.empty())
+            if (elements.empty())
                 return false;
 
-            op = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), result[0]);
+            op = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), elements[0]);
         }
         else
         {
-            op = makeASTFunction("extract", std::move(result));
+            op = makeASTFunction("extract", std::move(elements));
         }
 
         return true;
@@ -1895,7 +1917,7 @@ class SubstringLayer : public Layer
 public:
     bool getResult(ASTPtr & op) override
     {
-        op = makeASTFunction("substring", std::move(result));
+        op = makeASTFunction("substring", std::move(elements));
         return true;
     }
 
@@ -1956,9 +1978,9 @@ public:
     bool getResult(ASTPtr & op) override
     {
         if (state == 2)
-            std::swap(result[1], result[0]);
+            std::swap(elements[1], elements[0]);
 
-        op = makeASTFunction("position", std::move(result));
+        op = makeASTFunction("position", std::move(elements));
         return true;
     }
 
@@ -2035,7 +2057,7 @@ public:
 
         auto subquery = std::make_shared<ASTSubquery>();
         subquery->children.push_back(node);
-        result = {makeASTFunction("exists", subquery)};
+        elements = {makeASTFunction("exists", subquery)};
 
         finished = true;
 
@@ -2052,7 +2074,7 @@ public:
 
     bool getResult(ASTPtr & op) override
     {
-        op = makeASTFunction(function_name, std::move(result));
+        op = makeASTFunction(function_name, std::move(elements));
         return true;
     }
 
@@ -2112,8 +2134,8 @@ public:
                 if (!mergeElement())
                     return false;
 
-                to_remove = makeASTFunction("regexpQuoteMeta", result[0]);
-                result.clear();
+                to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
+                elements.clear();
                 state = 2;
             }
         }
@@ -2187,8 +2209,8 @@ public:
 
                 if (char_override)
                 {
-                    result.push_back(pattern_node);
-                    result.push_back(std::make_shared<ASTLiteral>(""));
+                    elements.push_back(pattern_node);
+                    elements.push_back(std::make_shared<ASTLiteral>(""));
                 }
 
                 finished = true;
@@ -2218,11 +2240,11 @@ public:
     {
         if (parsed_interval_kind)
         {
-            result[0] = makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), result[0]);
-            op = makeASTFunction(function_name, result[1], result[0]);
+            elements[0] = makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), elements[0]);
+            op = makeASTFunction(function_name, elements[1], elements[0]);
         }
         else
-            op = makeASTFunction(function_name, std::move(result));
+            op = makeASTFunction(function_name, std::move(elements));
 
         return true;
     }
@@ -2271,16 +2293,16 @@ public:
     {
         if (parsed_interval_kind)
         {
-            if (result.size() == 2)
-                op = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), result[0], result[1]);
-            else if (result.size() == 3)
-                op = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), result[0], result[1], result[2]);
+            if (elements.size() == 2)
+                op = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
+            else if (elements.size() == 3)
+                op = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
             else
                 return false;
         }
         else
         {
-            op = makeASTFunction("dateDiff", std::move(result));
+            op = makeASTFunction("dateDiff", std::move(elements));
         }
         return true;
     }
@@ -2364,7 +2386,7 @@ public:
                             if (!parseIntervalKind(token_pos, token_expected, interval_kind))
                                 return false;
 
-                            result = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr)};
+                            elements = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr)};
                             finished = true;
                             return true;
                         }
@@ -2382,7 +2404,7 @@ public:
                 if (!mergeElement())
                     return false;
 
-                result = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), result)};
+                elements = {makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), elements)};
                 finished = true;
             }
         }
@@ -2420,7 +2442,7 @@ public:
         {
             if (ParserKeyword("WHEN").ignore(pos, expected))
             {
-                if ((has_case_expr || !result.empty()) && !mergeElement())
+                if ((has_case_expr || !elements.empty()) && !mergeElement())
                     return false;
 
                 action = Action::OPERAND;
@@ -2441,12 +2463,12 @@ public:
 
                 Field field_with_null;
                 ASTLiteral null_literal(field_with_null);
-                result.push_back(std::make_shared<ASTLiteral>(null_literal));
+                elements.push_back(std::make_shared<ASTLiteral>(null_literal));
 
                 if (has_case_expr)
-                    result = {makeASTFunction("caseWithExpression", result)};
+                    elements = {makeASTFunction("caseWithExpression", elements)};
                 else
-                    result = {makeASTFunction("multiIf", result)};
+                    elements = {makeASTFunction("multiIf", elements)};
                 finished = true;
             }
         }
@@ -2471,9 +2493,9 @@ public:
                     return false;
 
                 if (has_case_expr)
-                    result = {makeASTFunction("caseWithExpression", result)};
+                    elements = {makeASTFunction("caseWithExpression", elements)};
                 else
-                    result = {makeASTFunction("multiIf", result)};
+                    elements = {makeASTFunction("multiIf", elements)};
 
                 finished = true;
             }
@@ -2612,7 +2634,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Action next = Action::OPERAND;
 
     std::vector<std::unique_ptr<Layer>> layers;
-    layers.push_back(std::make_unique<Layer>());
+    layers.push_back(std::make_unique<SingleElementLayer>());
 
     while (pos.isValid())
     {
@@ -2628,6 +2650,13 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             layers.pop_back();
+
+            if (layers.empty())
+            {
+                node = res;
+                return true;
+            }
+
             layers.back()->pushOperand(res);
             continue;
         }
@@ -2705,6 +2734,10 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 auto stub_cur_op = op_table.begin();
                 for (; stub_cur_op != op_table.end(); ++stub_cur_op)
                 {
+                    /// Minus can be unary
+                    /// TODO: check cases 'select case - number from table' and 'select case -x when 10 then 5 else 0 end'
+                    if (stub_cur_op->second.function_name == "minus")
+                        continue;
                     if (parseOperator(pos, stub_cur_op->first, stub))
                         break;
                 }
@@ -2864,9 +2897,9 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
 
                 // 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
-                if (op.function_name == "and" && layers.back()->hasBetween())
+                if (op.function_name == "and" && layers.back()->between_counter)
                 {
-                    layers.back()->subBetween();
+                    layers.back()->between_counter--;
                     op = finish_between_operator;
                 }
 
@@ -2921,7 +2954,7 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     next = Action::OPERATOR;
 
                 if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
-                    layers.back()->addBetween();
+                    layers.back()->between_counter++;
 
                 if (op.type == OperatorType::Cast)
                 {
@@ -2934,15 +2967,11 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     layers.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
                 }
             }
-            else if (layers.size() > 1 && ParserAlias(true).parse(pos, tmp, expected))
+            else if (layers.back()->allow_alias &&
+                     ParserAlias(layers.back()->allow_alias_without_as_keyword).parse(pos, tmp, expected))
             {
                 if (!layers.back()->insertAlias(tmp))
                     return false;
-            }
-            else if (pos->type == TokenType::Comma)
-            {
-                if (layers.size() == 1)
-                    break;
             }
             else
             {
@@ -2953,9 +2982,6 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     // When we exit the loop we should be on the 1st level
     if (layers.size() > 1)
-        return false;
-
-    if (!layers.back()->mergeElement())
         return false;
 
     if (!layers.back()->getResult(node))
