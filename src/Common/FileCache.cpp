@@ -1064,7 +1064,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
 
                 if (!parsed)
                 {
-                    LOG_WARNING(log, "Unexpected file: ", offset_it->path().string());
+                    LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
                     continue; /// Or just remove? Some unexpected file.
                 }
 
