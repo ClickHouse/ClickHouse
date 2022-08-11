@@ -135,34 +135,7 @@ public:
       * Subclass can override this method if keys for getColumn, hasKeys functions
       * are different from DictionaryStructure keys. Or to prevent implicit conversion of key columns.
       */
-    virtual void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const
-    {
-        const auto & dictionary_structure = getStructure();
-        auto key_attributes_types = dictionary_structure.getKeyTypes();
-        size_t key_attributes_types_size = key_attributes_types.size();
-        size_t key_types_size = key_types.size();
-
-        if (key_types_size != key_attributes_types_size)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Dictionary {} key lookup structure does not match, expected {}",
-                getFullName(),
-                dictionary_structure.getKeyDescription());
-
-        for (size_t key_attribute_type_index = 0; key_attribute_type_index < key_attributes_types_size; ++key_attribute_type_index)
-        {
-            const auto & key_attribute_type = key_attributes_types[key_attribute_type_index];
-            auto & key_type = key_types[key_attribute_type_index];
-
-            if (key_attribute_type->equals(*key_type))
-                continue;
-
-            auto & key_column_to_cast = key_columns[key_attribute_type_index];
-            ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-            auto casted_column = castColumnAccurate(column_to_cast, key_attribute_type);
-            key_column_to_cast = std::move(casted_column);
-            key_type = key_attribute_type;
-        }
-    }
+    virtual void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const;
 
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
@@ -188,24 +161,7 @@ public:
         const DataTypes & result_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const Columns & default_values_columns) const
-    {
-        size_t attribute_names_size = attribute_names.size();
-
-        Columns result;
-        result.reserve(attribute_names_size);
-
-        for (size_t i = 0; i < attribute_names_size; ++i)
-        {
-            const auto & attribute_name = attribute_names[i];
-            const auto & result_type = result_types[i];
-            const auto & default_values_column = default_values_columns[i];
-
-            result.emplace_back(getColumn(attribute_name, result_type, key_columns, key_types, default_values_column));
-        }
-
-        return result;
-    }
+        const Columns & default_values_columns) const;
 
     /** Subclass must validate key columns and key types and return ColumnUInt8 that
       * is bitmask representation of is key in dictionary or not.
@@ -293,106 +249,9 @@ public:
         return dictionary_comment;
     }
 
-    /// IKeyValueEntity implementation
-    Names getPrimaryKey() const  override { return getStructure().getKeysNames(); }
+    Names getPrimaryKey() const override;
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & out_null_map, const Names & result_names) const override
-    {
-        if (keys.empty())
-            return Chunk(getSampleBlock(result_names).cloneEmpty().getColumns(), 0);
-
-        const auto & dictionary_structure = getStructure();
-
-        /// Split column keys and types into separate vectors, to use in `IDictionary::getColumns`
-        Columns key_columns;
-        DataTypes key_types;
-        for (const auto & key : keys)
-        {
-            key_columns.emplace_back(key.column);
-            key_types.emplace_back(key.type);
-        }
-
-        /// Fill null map
-        {
-            out_null_map.clear();
-
-            auto mask = hasKeys(key_columns, key_types);
-            const auto & mask_data = mask->getData();
-
-            out_null_map.resize(mask_data.size(), 0);
-            std::copy(mask_data.begin(), mask_data.end(), out_null_map.begin());
-        }
-
-        Names attribute_names;
-        DataTypes result_types;
-        if (!result_names.empty())
-        {
-            for (const auto & attr_name : result_names)
-            {
-                if (!dictionary_structure.hasAttribute(attr_name))
-                    continue; /// skip keys
-                const auto & attr = dictionary_structure.getAttribute(attr_name);
-                attribute_names.emplace_back(attr.name);
-                result_types.emplace_back(attr.type);
-            }
-        }
-        else
-        {
-            /// If result_names is empty, then use all attributes from dictionary_structure
-            for (const auto & attr : dictionary_structure.attributes)
-            {
-                attribute_names.emplace_back(attr.name);
-                result_types.emplace_back(attr.type);
-            }
-        }
-
-        Columns default_cols(result_types.size());
-        for (size_t i = 0; i < result_types.size(); ++i)
-            /// Dictinonary may have non-standart default values specified
-            default_cols[i] = result_types[i]->createColumnConstWithDefaultValue(out_null_map.size());
-
-        Columns result_columns = getColumns(attribute_names, result_types, key_columns, key_types, default_cols);
-
-        /// Result block should consist of key columns and then attributes
-        for (const auto & key_col : key_columns)
-        {
-            /// Insert default values for keys that were not found
-            ColumnPtr filtered_key_col = JoinCommon::filterWithBlanks(key_col, out_null_map);
-            result_columns.insert(result_columns.begin(), filtered_key_col);
-        }
-
-        size_t num_rows = result_columns[0]->size();
-        return Chunk(std::move(result_columns), num_rows);
-    }
-
-    Block getSampleBlock(const Names & result_names) const override
-    {
-        const auto & dictionary_structure = getStructure();
-        const auto & key_types = dictionary_structure.getKeyTypes();
-        const auto & key_names = dictionary_structure.getKeysNames();
-
-        Block sample_block;
-
-        for (size_t i = 0; i < key_types.size(); ++i)
-            sample_block.insert(ColumnWithTypeAndName(nullptr, key_types.at(i), key_names.at(i)));
-
-        if (result_names.empty())
-        {
-            for (const auto & attr : dictionary_structure.attributes)
-                sample_block.insert(ColumnWithTypeAndName(nullptr, attr.type, attr.name));
-        }
-        else
-        {
-            for (const auto & attr_name : result_names)
-            {
-                if (!dictionary_structure.hasAttribute(attr_name))
-                    continue; /// skip keys
-                const auto & attr = dictionary_structure.getAttribute(attr_name);
-                sample_block.insert(ColumnWithTypeAndName(nullptr, attr.type, attr_name));
-            }
-        }
-        return sample_block;
-    }
+    Block getColumns(const Names & attribute_names, const ColumnsWithTypeAndName & key_columns, PaddedPODArray<UInt8> & found_keys_map) const override;
 
 private:
     mutable std::mutex mutex;

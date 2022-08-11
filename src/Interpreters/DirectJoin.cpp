@@ -117,11 +117,8 @@ void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
     const Names & attribute_names = original_right_block.getNames();
 
     NullMap null_map;
-    Chunk joined_chunk = storage->getByKeys({key_col}, null_map, attribute_names);
-
-    /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
-    Block sample_storage_block = storage->getSampleBlock(attribute_names);
-    MutableColumns result_columns = convertBlockStructure(sample_storage_block, original_right_block, joined_chunk.mutateColumns(), null_map);
+    Block joined_block = storage->getColumns(attribute_names, {key_col}, null_map);
+    MutableColumns result_columns = convertBlockStructure(joined_block, original_right_block, joined_block.mutateColumns(), null_map);
 
     for (size_t i = 0; i < result_columns.size(); ++i)
     {

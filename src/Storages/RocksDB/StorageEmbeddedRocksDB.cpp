@@ -302,7 +302,8 @@ public:
 
         const auto & key_column_type = sample_block.getByName(storage.getPrimaryKey().at(0)).type;
         auto raw_keys = serializeKeysToRawString(it, end, key_column_type, max_block_size);
-        return storage.getBySerializedKeys(raw_keys, nullptr);
+        auto result_block = storage.getColumnsUsingSerializedKeys(raw_keys, nullptr);
+        return Chunk(result_block.mutateColumns(), result_block.rows());
     }
 
     Chunk generateFullScan()
@@ -555,34 +556,29 @@ std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<
     std::shared_lock<std::shared_mutex> lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
+
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
 }
 
-Chunk StorageEmbeddedRocksDB::getByKeys(
-    const ColumnsWithTypeAndName & keys,
-    PaddedPODArray<UInt8> & null_map,
-    const Names &) const
+Block StorageEmbeddedRocksDB::getColumns(
+    const Names &,
+    const ColumnsWithTypeAndName & key_columns,
+    PaddedPODArray<UInt8> & found_keys_map) const
 {
-    if (keys.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageEmbeddedRocksDB supports only one key, got: {}", keys.size());
+    if (key_columns.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageEmbeddedRocksDB supports only one key, got: {}", key_columns.size());
 
-    auto raw_keys = serializeKeysToRawString(keys[0]);
+    auto raw_keys = serializeKeysToRawString(key_columns[0]);
 
-    if (raw_keys.size() != keys[0].column->size())
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
+    if (raw_keys.size() != key_columns[0].column->size())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), key_columns[0].column->size());
 
-    return getBySerializedKeys(raw_keys, &null_map);
+    return getColumnsUsingSerializedKeys(raw_keys, &found_keys_map);
 }
 
-Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
-{
-    auto metadata = getInMemoryMetadataPtr();
-    return metadata ? metadata->getSampleBlock() : Block();
-}
-
-Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
+Block StorageEmbeddedRocksDB::getColumnsUsingSerializedKeys(
     const std::vector<std::string> & keys,
-    PaddedPODArray<UInt8> * null_map) const
+    PaddedPODArray<UInt8> * found_keys_map) const
 {
     std::vector<String> values;
     Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
@@ -597,13 +593,17 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
     for (const auto & key : keys)
         slices_keys.emplace_back(key);
 
-
     auto statuses = multiGet(slices_keys, values);
-    if (null_map)
-    {
-        null_map->clear();
-        null_map->resize_fill(statuses.size(), 1);
-    }
+    if (found_keys_map)
+        found_keys_map->resize_fill(statuses.size(), 1);
+
+    size_t sample_block_columns = sample_block.columns();
+
+    std::vector<Field> default_values;
+    default_values.reserve(sample_block.columns());
+
+    for (auto & column : sample_block)
+        default_values.push_back(column.type->getDefault());
 
     for (size_t i = 0; i < statuses.size(); ++i)
     {
@@ -613,14 +613,11 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
         }
         else if (statuses[i].IsNotFound())
         {
-            if (null_map)
-            {
-                (*null_map)[i] = 0;
-                for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
-                {
-                    columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
-                }
-            }
+            if (found_keys_map)
+                (*found_keys_map)[i] = 0;
+
+            for (size_t column_index = 0; column_index < sample_block_columns; ++column_index)
+                columns[column_index]->insert(default_values[column_index]);
         }
         else
         {
@@ -628,8 +625,7 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
         }
     }
 
-    size_t num_rows = columns.at(0)->size();
-    return Chunk(std::move(columns), num_rows);
+    return sample_block.cloneWithColumns(std::move(columns));
 }
 
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
