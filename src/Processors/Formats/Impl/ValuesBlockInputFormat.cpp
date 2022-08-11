@@ -139,6 +139,29 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
     ++total_rows;
 }
 
+bool ValuesBlockInputFormat::tryReadDefaultValue(IColumn & column, size_t column_idx)
+{
+    try
+    {
+        if (!checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
+            return false;
+
+        skipWhitespaceIfAny(*buf);
+        assertDelimiterAfterValue(column_idx);
+    }
+    catch (const Exception & e)
+    {
+        if (!isParseError(e.code()))
+            throw;
+
+        buf->rollbackToCheckpoint();
+        return false;
+    }
+
+    column.insertDefault();
+    return true;
+}
+
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
@@ -174,21 +197,18 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     bool rollback_on_exception = false;
     try
     {
+        /// In case of default return false to mark row as missing
+        /// and fill it with proper default expression later.
+        if (tryReadDefaultValue(column, column_idx))
+            return false;
+
         bool read = true;
-        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
-        {
-            column.insertDefault();
-            read = false;
-        }
+        const auto & type = types[column_idx];
+        const auto & serialization = serializations[column_idx];
+        if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+            read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
         else
-        {
-            const auto & type = types[column_idx];
-            const auto & serialization = serializations[column_idx];
-            if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
-                read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
-            else
-                serialization->deserializeTextQuoted(column, *buf, format_settings);
-        }
+            serialization->deserializeTextQuoted(column, *buf, format_settings);
 
         rollback_on_exception = true;
 
@@ -339,6 +359,11 @@ static bool skipToNextRow(PeekableReadBuffer * buf, size_t min_chunk_bytes, int 
 
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
+    /// In case of default return false to mark row as missing
+    /// and fill it with proper default expression later.
+    if (tryReadDefaultValue(column, column_idx))
+        return false;
+
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
     auto settings = context->getSettingsRef();
