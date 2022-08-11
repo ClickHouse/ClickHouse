@@ -448,7 +448,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     if (create.columns_list)
         create.columns_list->updateTreeHash(sip_hash);
     if (create.storage)
-        create.columns_list->updateTreeHash(sip_hash);
+        create.storage->updateTreeHash(sip_hash);
 
     IAST::Hash hash;
     sip_hash.get128(hash);
@@ -558,7 +558,7 @@ DataTypePtr QueryFuzzer::getRandomType()
 
 #define DISPATCH(DECIMAL) \
     if (type_id == TypeIndex::DECIMAL) \
-        return std::make_shared<DataTypeDecimal<DECIMAL>>( \
+        return std::make_shared<DataTypeDecimal<DECIMAL>>( \ // NOLINT
             DataTypeDecimal<DECIMAL>::maxPrecision(), DataTypeDecimal<DECIMAL>::maxPrecision()); // NOLINT
 
     DISPATCH(Decimal32)
