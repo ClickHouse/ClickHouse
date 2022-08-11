@@ -391,7 +391,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         ApplyWithSubqueryVisitor().visit(query_ptr);
     }
 
-    query_info.original_query = query_ptr->clone();
+    query_info.original_query = query_ptr_;
 
     if (settings.count_distinct_optimization)
     {

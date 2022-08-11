@@ -5507,10 +5507,12 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         return std::nullopt;
 
     auto query_options = SelectQueryOptions(
-        QueryProcessingStage::WithMergeableState,
-        /* depth */ 1,
-        /* is_subquery_= */ true
-    ).ignoreProjections().ignoreAlias();
+                             QueryProcessingStage::WithMergeableState,
+                             /* depth */ 1,
+                             /* is_subquery_= */ true)
+                             .ignoreProjections()
+                             .ignoreAlias()
+                             .noModify();
     InterpreterSelectQuery select(
         query_ptr,
         query_context,
