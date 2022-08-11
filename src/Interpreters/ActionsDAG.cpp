@@ -1952,7 +1952,7 @@ bool ActionsDAG::isSortingPreserved(const Block & input_header, const SortDescri
 
     /// build reversed aliases, use it later to find out if some aliases refer to sorted columns
     std::unordered_map<std::string_view, const String &> reversed_aliases;
-    for (const Node * node : index)
+    for (const Node * node : outputs)
     {
         if (node->type == ActionType::ALIAS)
         {
@@ -1978,7 +1978,7 @@ bool ActionsDAG::isSortingPreserved(const Block & input_header, const SortDescri
         }
 
         /// check that found colunm is not an alias
-        for (const Node * node : index)
+        for (const Node * node : outputs)
         {
             if (node->type == ActionType::ALIAS && node->result_name == desc.column_name)
                 return false;
