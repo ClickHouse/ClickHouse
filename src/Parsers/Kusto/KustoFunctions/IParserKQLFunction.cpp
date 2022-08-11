@@ -102,7 +102,6 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
-        String token = String(pos->begin, pos->end);
         String new_token;
         if (!KQLOperators().convert(tokens, pos))
         {
@@ -115,7 +114,15 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                 break;
             }
             else
+            {
+                String token;
+                if (pos->type == TokenType::QuotedIdentifier)
+                    token = "'" + String(pos->begin + 1,pos->end - 1) + "'";
+                else
+                    token = String(pos->begin, pos->end);
+
                 tokens.push_back(token);
+            }
         }
         ++pos;
         if (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket)

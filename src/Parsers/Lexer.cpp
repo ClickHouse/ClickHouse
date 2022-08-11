@@ -213,7 +213,7 @@ Token Lexer::nextTokenImpl()
 
                 for (const char * iterator = token_begin; iterator < pos; ++iterator)
                 {
-                    if (!isWordCharASCII(*iterator) && *iterator != '$')
+                    if (!isWordCharASCII(*iterator) && *iterator != '$' && *iterator != '.')
                         return Token(TokenType::ErrorWrongNumber, token_begin, pos);
                 }
 

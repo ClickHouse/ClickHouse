@@ -5,28 +5,21 @@
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-/*
-#include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
-*/
 #include <Parsers/Kusto/KustoFunctions/KQLDataTypeFunctions.h>
+#include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <format>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 bool DatatypeBool::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "toBool");
 }
 
 bool DatatypeDatetime::convertImpl(String &out,IParser::Pos &pos)
@@ -59,9 +52,24 @@ bool DatatypeDatetime::convertImpl(String &out,IParser::Pos &pos)
 
 bool DatatypeDynamic::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String res = String(pos->begin, pos->end);
+    String array;
+    ++pos; //go pass "dynamic" string
+    while (pos->type != TokenType::ClosingRoundBracket)
+    {
+        if (pos->type != TokenType::OpeningSquareBracket && pos->type != TokenType::ClosingSquareBracket)
+        {
+            array += String(pos->begin, pos->end);
+        }
+        ++pos;
+    }
+    if (pos->type == TokenType::ClosingRoundBracket)
+        array += String(pos->begin, pos->end);
+    else
+        return false;
+
+    out = "array" + array;
+    return true;
 }
 
 bool DatatypeGuid::convertImpl(String &out,IParser::Pos &pos)
@@ -72,10 +80,8 @@ bool DatatypeGuid::convertImpl(String &out,IParser::Pos &pos)
     String guid_str;
 
     ++pos;
-    if (pos->type == TokenType::QuotedIdentifier)
-        guid_str = std::format("'{}'", String(pos->begin+1, pos->end -1));
-    else if (pos->type == TokenType::StringLiteral)
-        guid_str = String(pos->begin, pos->end);
+    if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
+        guid_str = String(pos->begin+1, pos->end -1);
     else 
     {   auto start = pos;
         while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
@@ -85,32 +91,26 @@ bool DatatypeGuid::convertImpl(String &out,IParser::Pos &pos)
                 break;
         }
         --pos;
-        guid_str = std::format("'{}'",String(start->begin,pos->end));
+        guid_str = String(start->begin,pos->end);
     }
-    out = guid_str;
+    out = std::format("toUUID('{}')", guid_str);
     ++pos;
     return true;
 }
 
 bool DatatypeInt::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "toInt32");
 }
 
 bool DatatypeLong::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "toInt64");
 }
 
 bool DatatypeReal::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "toFloat64");
 }
 
 bool DatatypeString::convertImpl(String &out,IParser::Pos &pos)
@@ -122,12 +122,22 @@ bool DatatypeString::convertImpl(String &out,IParser::Pos &pos)
 
 bool DatatypeTimespan::convertImpl(String &out,IParser::Pos &pos)
 {
+    ParserKQLDateTypeTimespan time_span;
+    ASTPtr node;
+    Expected expected;
+
     const String fn_name = getKQLFunctionName(pos);
     if (fn_name.empty())
         return false;
     ++pos;
 
-    out = getConvertedArgument(fn_name, pos);
+    if (time_span.parse(pos, node, expected))
+    {
+        out = std::to_string(time_span.toSeconds());
+        ++pos;
+    }
+    else
+        throw Exception("Not a correct timespan expression: " + fn_name, ErrorCodes::BAD_ARGUMENTS);
     return true;
 }
 

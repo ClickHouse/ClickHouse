@@ -1,66 +1,171 @@
-# August XX, 2022
-- **DateTimeFunctions**
-- [startofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofyearfunction)
-   `print startofyear(datetime(2017-01-01 10:10:17), -1)` 
-   `print startofyear(datetime(2017-01-01 10:10:17), 0)`
-   `print startofyear(datetime(2017-01-01 10:10:17), 1)`
-- [weekofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/weekofyearfunction)
-   `print week_of_year(datetime(2020-12-31))`	
-   `print week_of_year(datetime(2020-06-15))`
-   `print week_of_year(datetime(1970-01-01))`
-   `print  week_of_year(datetime(2000-01-01))`
-
-- [startofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofweekfunction)
-   `print startofweek(datetime(2017-01-01 10:10:17), -1)` 
-   `print startofweek(datetime(2017-01-01 10:10:17), 0)`
-   `print startofweek(datetime(2017-01-01 10:10:17), 1)` 
-
-- [startofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofmonthfunction)
-   `print startofmonth(datetime(2017-01-01 10:10:17), -1)` 
-   `print startofmonth(datetime(2017-01-01 10:10:17), 0)` 
-   `print startofmonth(datetime(2017-01-01 10:10:17), 1)` 
-
-- [startofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofdayfunction)
-   `print startofday(datetime(2017-01-01 10:10:17), -1)` 
-   `print startofday(datetime(2017-01-01 10:10:17), 0)` 
-   `print startofday(datetime(2017-01-01 10:10:17), 1)` 
-
-- [monthofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/monthofyearfunction)
-   `print monthofyear(datetime("2015-12-14"))`
-
-- [hourofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/hourofdayfunction)
-   `print hourofday(datetime(2015-12-14 18:54:00))`
-
-- [getyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/getyearfunction)
-   `print getyear(datetime(2015-10-12))`
-
-- [getmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/getmonthfunction)
-   `print getmonth(datetime(2015-10-12))`
-
-- [dayofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofyearfunction)
-   `print dayofyear(datetime(2015-12-14))`
-
-- [dayofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofmonthfunction)
-   `print (datetime(2015-12-14))`
-
-- [unixtime_seconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-seconds-todatetimefunction)
-   `print unixtime_seconds_todatetime(1546300800)`
-
-- [dayofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofweekfunction)
-   `print dayofweek(datetime(2015-12-20))`
-
-- [now](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/nowfunction)
-   `print now()`
-   `print now(2d)`
-   `print now(-2h)`
-   `print now(5 microseconds)`
-   `print now(5 seconds)`
-   `print now(6minutes)`
-   `print now(-2d) `
-   `print now(time(1d))`
-
 ## KQL implemented features
-The config setting to allow modify dialect setting.
+
+# August 15, 2022
+
+## DateTpye
+- [bool,boolean](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/bool)  
+   `print bool(1)`  
+   `print boolean(0)`  
+
+- [datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/datetime)  
+   `print datetime(2015-12-31 23:59:59.9)`  
+   `print datetime('2015-12-31 23:59:59.9')`  
+   `print datetime("2015-12-31:)`  
+
+- [guid](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/guid)  
+   `print guid(74be27de-1e4e-49d9-b579-fe0b331d3642)`  
+   `print guid('74be27de-1e4e-49d9-b579-fe0b331d3642')`  
+   `print guid('74be27de1e4e49d9b579fe0b331d3642')`  
+
+- [int](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/int)  
+   `print int(1)`  
+
+- [long](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/long)  
+   `print long(16)`  
+
+- [real](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/real)  
+   `print real(1)`  
+
+- [timespan ,time](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/timespan)  
+   **Note** the timespan is used for calculating datatime, so the output is in seconds. e.g. time(1h) = 3600
+   `print 1d`  
+   `print 30m`  
+   `print time('0.12:34:56.7')`  
+   `print time(2h)`  
+   `print timespan(2h)`  
+
+
+## StringFunctions
+ 
+- [base64_encode_fromguid](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/base64-encode-fromguid-function)  
+`print Quine = base64_encode_fromguid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb')`  
+- [base64_decode_toarray](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/base64_decode_toarrayfunction)  
+`print base64_decode_toarray('S3VzdG8=')`  
+- [base64_decode_toguid](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/base64-decode-toguid-function)  
+`print base64_decode_toguid('YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi')`  
+- [replace_regex](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/replace-regex-function)  
+`print replace_regex('Hello, World!', '.', '\\0\\0')`  
+- [has_any_index](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/has-any-index-function)  
+`print idx = has_any_index('this is an example', dynamic(['this', 'example']))`
+- [translate](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/translatefunction)  
+`print translate('krasp', 'otsku', 'spark')`  
+- [trim](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/trimfunction)  
+`print trim('--', '--https://bing.com--')`  
+- [trim_end](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/trimendfunction)  
+`print trim_end('.com', 'bing.com')`  
+- [trim_start](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/trimstartfunction)  
+`print trim_start('[^\\w]+', strcat('-  ','Te st1','// $'))`  
+
+
+
+## DateTimeFunctions
+- [startofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofyearfunction)  
+   `print startofyear(datetime(2017-01-01 10:10:17), -1)`  
+   `print startofyear(datetime(2017-01-01 10:10:17), 0)`  
+   `print startofyear(datetime(2017-01-01 10:10:17), 1)`  
+- [weekofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/weekofyearfunction)  
+   `print week_of_year(datetime(2020-12-31))`  
+   `print week_of_year(datetime(2020-06-15))`  
+   `print week_of_year(datetime(1970-01-01))`  
+   `print  week_of_year(datetime(2000-01-01))`  
+
+- [startofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofweekfunction)  
+   `print startofweek(datetime(2017-01-01 10:10:17), -1)`  
+   `print startofweek(datetime(2017-01-01 10:10:17), 0)`  
+   `print startofweek(datetime(2017-01-01 10:10:17), 1)`  
+
+- [startofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofmonthfunction)  
+   `print startofmonth(datetime(2017-01-01 10:10:17), -1)`  
+   `print startofmonth(datetime(2017-01-01 10:10:17), 0)`  
+   `print startofmonth(datetime(2017-01-01 10:10:17), 1)`  
+
+- [startofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/startofdayfunction)  
+   `print startofday(datetime(2017-01-01 10:10:17), -1)`  
+   `print startofday(datetime(2017-01-01 10:10:17), 0)`  
+   `print startofday(datetime(2017-01-01 10:10:17), 1)`  
+
+- [monthofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/monthofyearfunction)  
+   `print monthofyear(datetime("2015-12-14"))`  
+
+- [hourofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/hourofdayfunction)  
+   `print hourofday(datetime(2015-12-14 18:54:00))`  
+
+- [getyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/getyearfunction)  
+   `print getyear(datetime(2015-10-12))`  
+
+- [getmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/getmonthfunction)  
+   `print getmonth(datetime(2015-10-12))`  
+
+- [dayofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofyearfunction)  
+   `print dayofyear(datetime(2015-12-14))`  
+
+- [dayofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofmonthfunction)  
+   `print (datetime(2015-12-14))`  
+
+- [unixtime_seconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-seconds-todatetimefunction)  
+   `print unixtime_seconds_todatetime(1546300800)`  
+
+- [dayofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofweekfunction)  
+   `print dayofweek(datetime(2015-12-20))`  
+
+- [now](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/nowfunction)  
+   `print now()`  
+   `print now(2d)`  
+   `print now(-2h)`  
+   `print now(5microseconds)`  
+   `print now(5seconds)`  
+   `print now(6minutes)`  
+   `print now(-2d) `  
+   `print now(time(1d))`  
+
+
+## Binary functions
+- [binary_and](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-andfunction)  
+   `print binary_and(15, 3) == 3`  
+   `print binary_and(1, 2) == 0`  
+- [binary_not](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-notfunction)  
+   `print binary_not(1) == -2`  
+- [binary_or](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-orfunction)  
+   `print binary_or(3, 8) == 11`  
+   `print binary_or(1, 2) == 3`  
+- [binary_shift_left](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-shift-leftfunction)  
+   `print binary_shift_left(1, 1) == 2`  
+   `print binary_shift_left(1, 64) == 1`  
+- [binary_shift_right](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-shift-rightfunction)  
+   `print binary_shift_right(1, 1) == 0`
+   `print binary_shift_right(1, 64) == 1`
+- [binary_xor](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-xorfunction)  
+   `print binary_xor(1, 3) == 2`  
+- [bitset_count_ones](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/bitset-count-onesfunction)  
+   `print bitset_count_ones(42) == 3`  
+
+## IP functions
+- [format_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-function)  
+   `print format_ipv4('192.168.1.255', 24) == '192.168.1.0'`  
+   `print format_ipv4(3232236031, 24) == '192.168.1.0'`  
+- [format_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-mask-function)  
+   `print format_ipv4_mask('192.168.1.255', 24) == '192.168.1.0/24'`  
+   `print format_ipv4_mask(3232236031, 24) == '192.168.1.0/24'`  
+- [ipv4_compare](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-comparefunction)  
+   `print ipv4_compare('127.0.0.1', '127.0.0.1') == 0`  
+   `print ipv4_compare('192.168.1.1', '192.168.1.255') < 0`  
+   `print ipv4_compare('192.168.1.1/24', '192.168.1.255/24') == 0`  
+   `print ipv4_compare('192.168.1.1', '192.168.1.255', 24) == 0`  
+- [ipv4_is_match](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-matchfunction)  
+   `print ipv4_is_match('127.0.0.1', '127.0.0.1') == true`  
+   `print ipv4_is_match('192.168.1.1', '192.168.1.255') == false`  
+   `print ipv4_is_match('192.168.1.1/24', '192.168.1.255/24') == true`  
+   `print ipv4_is_match('192.168.1.1', '192.168.1.255', 24) == true`  
+- [parse_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4-maskfunction)  
+   `print parse_ipv4_mask('127.0.0.1', 24) == 2130706432`  
+   `print parse_ipv4_mask('192.1.168.2', 31) == 3221334018`  
+   `print parse_ipv4_mask('192.1.168.3', 31) == 3221334018`  
+   `print parse_ipv4_mask('127.2.3.4', 32) == 2130838276`  
+
+
+# August 1, 2022
+
+**The config setting to allow modify dialect setting**.
    - Set dialect setting in  server configuration XML at user level(` users.xml `). This sets the ` dialect ` at server startup and CH will do query parsing for all users with ` default ` profile acording to dialect value.
 
    For example:
@@ -83,51 +188,6 @@ The config setting to allow modify dialect setting.
    OR 
       pass dialect setting with '--'. For example : 
       ` clickhouse-client --dialect='kusto_auto' -q "KQL query" `
-
-## Binary functions
-- [binary_and](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-andfunction)
-   `print binary_and(15, 3) == 3`
-   `print binary_and(1, 2) == 0`
-- [binary_not](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-notfunction)
-   `print binary_not(1) == -2`
-- [binary_or](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-orfunction)
-   `print binary_or(3, 8) == 11`
-   `print binary_or(1, 2) == 3`
-- [binary_shift_left](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-shift-leftfunction)
-   `print binary_shift_left(1, 1) == 2`
-   `print binary_shift_left(1, 64) == 1`
-- [binary_shift_right](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-shift-rightfunction)
-   `print binary_shift_right(1, 1) == 0`
-   `print binary_shift_right(1, 64) == 1`
-- [binary_xor](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-xorfunction)
-   `print binary_xor(1, 3) == 2`
-- [bitset_count_ones](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/bitset-count-onesfunction)
-   `print bitset_count_ones(42) == 3`
-
-## IP functions
-- [format_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-function)
-   `print format_ipv4('192.168.1.255', 24) == '192.168.1.0'`
-   `print format_ipv4(3232236031, 24) == '192.168.1.0'`
-- [format_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-mask-function)
-   `print format_ipv4_mask('192.168.1.255', 24) == '192.168.1.0/24'`
-   `print format_ipv4_mask(3232236031, 24) == '192.168.1.0/24'`
-- [ipv4_compare](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-comparefunction)
-   `print ipv4_compare('127.0.0.1', '127.0.0.1') == 0`
-   `print ipv4_compare('192.168.1.1', '192.168.1.255') < 0`
-   `print ipv4_compare('192.168.1.1/24', '192.168.1.255/24') == 0`
-   `print ipv4_compare('192.168.1.1', '192.168.1.255', 24) == 0`
-- [ipv4_is_match](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-matchfunction)
-   `print ipv4_is_match('127.0.0.1', '127.0.0.1') == true`
-   `print ipv4_is_match('192.168.1.1', '192.168.1.255') == false`
-   `print ipv4_is_match('192.168.1.1/24', '192.168.1.255/24') == true`
-   `print ipv4_is_match('192.168.1.1', '192.168.1.255', 24) == true`
-- [parse_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4-maskfunction)
-   `print parse_ipv4_mask('127.0.0.1', 24) == 2130706432`
-   `print parse_ipv4_mask('192.1.168.2', 31) == 3221334018`
-   `print parse_ipv4_mask('192.1.168.3', 31) == 3221334018`
-   `print parse_ipv4_mask('127.2.3.4', 32) == 2130838276`
-
-# August 1, 2022
 - **strcmp** (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/strcmpfunction)  
    `print strcmp('abc','ABC')`
 
@@ -155,7 +215,6 @@ The config setting to allow modify dialect setting.
  - [make_set_if()](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/makesetif-aggfunction)  
    `Customers | summarize t = make_set_if(FirstName, Age > 10) by FirstName`
    `Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName`
-# July XX, 2022
 
 ## IP functions
 
