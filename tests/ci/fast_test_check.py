@@ -9,7 +9,7 @@ import atexit
 
 from github import Github
 
-from env_helper import CACHES_PATH, TEMP_PATH, S3_URL
+from env_helper import CACHES_PATH, TEMP_PATH
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -105,7 +105,7 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
 
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
 
     workspace = os.path.join(temp_path, "fasttest-workspace")
     if not os.path.exists(workspace):
