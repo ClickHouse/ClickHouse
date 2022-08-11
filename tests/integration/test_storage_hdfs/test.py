@@ -8,7 +8,9 @@ from pyhdfs import HdfsClient
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/macro.xml", "configs/schema_cache.xml"], with_hdfs=True
+    "node1",
+    main_configs=["configs/macro.xml", "configs/schema_cache.xml"],
+    with_hdfs=True,
 )
 
 
@@ -640,28 +642,52 @@ def get_profile_event_for_query(node, query, profile_event):
 
 
 def check_cache_misses(node1, file, amount=1):
-    assert get_profile_event_for_query(node1, f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-                                       "SchemaInferenceCacheMisses") == amount
+    assert (
+        get_profile_event_for_query(
+            node1,
+            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
+            "SchemaInferenceCacheMisses",
+        )
+        == amount
+    )
 
 
 def check_cache_hits(node1, file, amount=1):
-    assert get_profile_event_for_query(node1, f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-                                       "SchemaInferenceCacheHits") == amount
+    assert (
+        get_profile_event_for_query(
+            node1, f"desc hdfs('hdfs://hdfs1:9000/{file}')", "SchemaInferenceCacheHits"
+        )
+        == amount
+    )
 
 
 def check_cache_invalidations(node1, file, amount=1):
-    assert get_profile_event_for_query(node1, f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-                                       "SchemaInferenceCacheInvalidations") == amount
+    assert (
+        get_profile_event_for_query(
+            node1,
+            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
+            "SchemaInferenceCacheInvalidations",
+        )
+        == amount
+    )
 
 
 def check_cache_evictions(node1, file, amount=1):
-    assert get_profile_event_for_query(node1, f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-                                       "SchemaInferenceCacheEvictions") == amount
+    assert (
+        get_profile_event_for_query(
+            node1,
+            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
+            "SchemaInferenceCacheEvictions",
+        )
+        == amount
+    )
 
 
 def check_cache(node1, expected_files):
     sources = node1.query("select source from system.schema_inference_cache")
-    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(expected_files)
+    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(
+        expected_files
+    )
 
 
 def run_describe_query(node, file):

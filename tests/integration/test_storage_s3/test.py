@@ -103,7 +103,11 @@ def started_cluster():
         cluster.add_instance(
             "dummy",
             with_minio=True,
-            main_configs=["configs/defaultS3.xml", "configs/named_collections.xml", "configs/schema_cache.xml"],
+            main_configs=[
+                "configs/defaultS3.xml",
+                "configs/named_collections.xml",
+                "configs/schema_cache.xml",
+            ],
         )
         cluster.add_instance(
             "s3_max_redirects",
@@ -1495,26 +1499,40 @@ def get_profile_event_for_query(instance, query, profile_event):
 
 def check_cache_misses(instance, file, storage_name, started_cluster, bucket, amount=1):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    assert get_profile_event_for_query(instance, query,
-                                       "SchemaInferenceCacheMisses") == amount
+    assert (
+        get_profile_event_for_query(instance, query, "SchemaInferenceCacheMisses")
+        == amount
+    )
 
 
 def check_cache_hits(instance, file, storage_name, started_cluster, bucket, amount=1):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    assert get_profile_event_for_query(instance, query,
-                                       "SchemaInferenceCacheHits") == amount
+    assert (
+        get_profile_event_for_query(instance, query, "SchemaInferenceCacheHits")
+        == amount
+    )
 
 
-def check_cache_invalidations(instance, file, storage_name, started_cluster, bucket, amount=1):
+def check_cache_invalidations(
+    instance, file, storage_name, started_cluster, bucket, amount=1
+):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    assert get_profile_event_for_query(instance, query,
-                                       "SchemaInferenceCacheInvalidations") == amount
+    assert (
+        get_profile_event_for_query(
+            instance, query, "SchemaInferenceCacheInvalidations"
+        )
+        == amount
+    )
 
 
-def check_cache_evictions(instance, file, storage_name, started_cluster, bucket, amount=1):
+def check_cache_evictions(
+    instance, file, storage_name, started_cluster, bucket, amount=1
+):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    assert get_profile_event_for_query(instance, query,
-                                       "SchemaInferenceCacheEvictions") == amount
+    assert (
+        get_profile_event_for_query(instance, query, "SchemaInferenceCacheEvictions")
+        == amount
+    )
 
 
 def run_describe_query(instance, file, storage_name, started_cluster, bucket):
@@ -1524,7 +1542,9 @@ def run_describe_query(instance, file, storage_name, started_cluster, bucket):
 
 def check_cache(instance, expected_files):
     sources = instance.query("select source from system.schema_inference_cache")
-    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(expected_files)
+    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(
+        expected_files
+    )
 
 
 def test_schema_inference_cache(started_cluster):
@@ -1537,91 +1557,118 @@ def test_schema_inference_cache(started_cluster):
         )
         time.sleep(1)
 
-        run_describe_query(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
+        run_describe_query(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
         check_cache(instance, ["test_cache0.jsonl"])
-        check_cache_misses(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
+        check_cache_misses(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_hits(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                         bucket)
+        run_describe_query(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
 
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
         )
         time.sleep(1)
 
-        run_describe_query(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_invalidations(instance, "test_cache0.jsonl", storage_name,
-                                  started_cluster, bucket)
+        run_describe_query(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_invalidations(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
 
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache1.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
         )
         time.sleep(1)
 
-        run_describe_query(instance, "test_cache1.jsonl", storage_name, started_cluster,
-                           bucket)
+        run_describe_query(
+            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
+        )
         check_cache(instance, ["test_cache0.jsonl", "test_cache1.jsonl"])
-        check_cache_misses(instance, "test_cache1.jsonl", storage_name, started_cluster,
-                           bucket)
+        check_cache_misses(
+            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache1.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_hits(instance, "test_cache1.jsonl", storage_name, started_cluster,
-                         bucket)
+        run_describe_query(
+            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
+        )
 
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache2.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
         )
         time.sleep(1)
 
-        run_describe_query(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                           bucket)
+        run_describe_query(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
         check_cache(instance, ["test_cache1.jsonl", "test_cache2.jsonl"])
-        check_cache_misses(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_evictions(instance, "test_cache2.jsonl", storage_name,
-                              started_cluster, bucket)
+        check_cache_misses(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_evictions(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_hits(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                         bucket)
+        run_describe_query(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache1.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_hits(instance, "test_cache1.jsonl", storage_name, started_cluster,
-                         bucket)
+        run_describe_query(
+            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
+        run_describe_query(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
         check_cache(instance, ["test_cache0.jsonl", "test_cache1.jsonl"])
-        check_cache_misses(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_evictions(instance, "test_cache0.jsonl", storage_name,
-                              started_cluster, bucket)
+        check_cache_misses(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_evictions(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                           bucket)
+        run_describe_query(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
         check_cache(instance, ["test_cache0.jsonl", "test_cache2.jsonl"])
-        check_cache_misses(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_evictions(instance, "test_cache2.jsonl", storage_name,
-                              started_cluster, bucket)
+        check_cache_misses(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_evictions(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_hits(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                         bucket)
+        run_describe_query(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_hits(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                         bucket)
+        run_describe_query(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
 
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
@@ -1633,25 +1680,33 @@ def test_schema_inference_cache(started_cluster):
         check_cache(instance, ["test_cache2.jsonl", "test_cache3.jsonl"])
         check_cache_hits(instance, files, storage_name, started_cluster, bucket)
 
-        run_describe_query(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_hits(instance, "test_cache2.jsonl", storage_name, started_cluster,
-                         bucket)
+        run_describe_query(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache3.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_hits(instance, "test_cache3.jsonl", storage_name, started_cluster,
-                         bucket)
+        run_describe_query(
+            instance, "test_cache3.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_hits(
+            instance, "test_cache3.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_misses(instance, "test_cache0.jsonl", storage_name, started_cluster,
-                           bucket)
+        run_describe_query(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_misses(
+            instance, "test_cache0.jsonl", storage_name, started_cluster, bucket
+        )
 
-        run_describe_query(instance, "test_cache1.jsonl", storage_name, started_cluster,
-                           bucket)
-        check_cache_misses(instance, "test_cache1.jsonl", storage_name, started_cluster,
-                           bucket)
+        run_describe_query(
+            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
+        )
+        check_cache_misses(
+            instance, "test_cache1.jsonl", storage_name, started_cluster, bucket
+        )
 
         instance.query(f"system drop schema cache for {storage_name}")
         check_cache(instance, [])
