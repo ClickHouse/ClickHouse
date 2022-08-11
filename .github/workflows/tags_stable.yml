@@ -50,6 +50,7 @@ jobs:
         branch: auto/${{ env.GITHUB_TAG }}
         delete-branch: true
         title: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
+        labels: do not test
         body: |
           Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
 
