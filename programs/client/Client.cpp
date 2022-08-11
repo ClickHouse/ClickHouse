@@ -12,6 +12,7 @@
 #include <string>
 #include "Client.h"
 #include "Core/Protocol.h"
+#include "Parsers/formatAST.h"
 
 #include <base/find_symbols.h>
 
@@ -513,6 +514,66 @@ static bool queryHasWithClause(const IAST & ast)
     return false;
 }
 
+std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query)
+{
+    processParsedSingleQuery(query_to_execute, query_to_execute, parsed_query);
+
+    const auto * exception = server_exception ? server_exception.get() : client_exception.get();
+    // Sometimes you may get TOO_DEEP_RECURSION from the server,
+    // and TOO_DEEP_RECURSION should not fail the fuzzer check.
+    if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
+    {
+        have_error = false;
+        server_exception.reset();
+        client_exception.reset();
+        return true;
+    }
+
+    if (have_error)
+    {
+        fmt::print(stderr, "Error on processing query '{}': {}\n", parsed_query->formatForErrorMessage(), exception->message());
+
+        // Try to reconnect after errors, for two reasons:
+        // 1. We might not have realized that the server died, e.g. if
+        //    it sent us a <Fatal> trace and closed connection properly.
+        // 2. The connection might have gotten into a wrong state and
+        //    the next query will get false positive about
+        //    "Unknown packet from server".
+        try
+        {
+            connection->forceConnected(connection_parameters.timeouts);
+        }
+        catch (...)
+        {
+            // Just report it, we'll terminate below.
+            fmt::print(stderr,
+                "Error while reconnecting to the server: {}\n",
+                getCurrentExceptionMessage(true));
+
+            // The reconnection might fail, but we'll still be connected
+            // in the sense of `connection->isConnected() = true`,
+            // in case when the requested database doesn't exist.
+            // Disconnect manually now, so that the following code doesn't
+            // have any doubts, and the connection state is predictable.
+            connection->disconnect();
+        }
+    }
+
+    if (!connection->isConnected())
+    {
+        // Probably the server is dead because we found an assertion
+        // failure. Fail fast.
+        fmt::print(stderr, "Lost connection to the server.\n");
+
+        // Print the changed settings because they might be needed to
+        // reproduce the error.
+        printChangedSettings();
+
+        return false;
+    }
+
+    return std::nullopt;
+}
 
 /// Returns false when server is not available.
 bool Client::processWithFuzzing(const String & full_query)
@@ -557,18 +618,28 @@ bool Client::processWithFuzzing(const String & full_query)
     // - SET    -- The time to fuzz the settings has not yet come
     //             (see comments in Client/QueryFuzzer.cpp)
     size_t this_query_runs = query_fuzzer_runs;
-    if (orig_ast->as<ASTInsertQuery>() ||
-        orig_ast->as<ASTCreateQuery>() ||
-        orig_ast->as<ASTDropQuery>() ||
-        orig_ast->as<ASTSetQuery>())
+    ASTs inserts_for_fuzzed_tables;
+
+    if (orig_ast->as<ASTDropQuery>() || orig_ast->as<ASTSetQuery>())
     {
         this_query_runs = 1;
     }
+    else if (const auto * create = orig_ast->as<ASTCreateQuery>())
+    {
+        if (create->columns_list)
+            this_query_runs = create_query_fuzzer_runs;
+        else
+            this_query_runs = 1;
+    }
+    else if (const auto * insert = orig_ast->as<ASTInsertQuery>())
+    {
+        this_query_runs = 1;
+        inserts_for_fuzzed_tables = fuzzer.getInsertQueriesForFuzzedTables(full_query);
+    }
 
     String query_to_execute;
-    ASTPtr parsed_query;
-
     ASTPtr fuzz_base = orig_ast;
+
     for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
     {
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
@@ -629,9 +700,9 @@ bool Client::processWithFuzzing(const String & full_query)
                 continue;
             }
 
-            parsed_query = ast_to_process;
-            query_to_execute = parsed_query->formatForErrorMessage();
-            processParsedSingleQuery(full_query, query_to_execute, parsed_query);
+            query_to_execute = ast_to_process->formatForErrorMessage();
+            if (auto res = processFuzzingStep(query_to_execute, ast_to_process))
+                return *res;
         }
         catch (...)
         {
@@ -642,60 +713,6 @@ bool Client::processWithFuzzing(const String & full_query)
             // server exception w/o throwing (see onReceiveException()).
             client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
-        }
-
-        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-        // Sometimes you may get TOO_DEEP_RECURSION from the server,
-        // and TOO_DEEP_RECURSION should not fail the fuzzer check.
-        if (have_error && exception->code() == ErrorCodes::TOO_DEEP_RECURSION)
-        {
-            have_error = false;
-            server_exception.reset();
-            client_exception.reset();
-            return true;
-        }
-
-        if (have_error)
-        {
-            fmt::print(stderr, "Error on processing query '{}': {}\n", ast_to_process->formatForErrorMessage(), exception->message());
-
-            // Try to reconnect after errors, for two reasons:
-            // 1. We might not have realized that the server died, e.g. if
-            //    it sent us a <Fatal> trace and closed connection properly.
-            // 2. The connection might have gotten into a wrong state and
-            //    the next query will get false positive about
-            //    "Unknown packet from server".
-            try
-            {
-                connection->forceConnected(connection_parameters.timeouts);
-            }
-            catch (...)
-            {
-                // Just report it, we'll terminate below.
-                fmt::print(stderr,
-                    "Error while reconnecting to the server: {}\n",
-                    getCurrentExceptionMessage(true));
-
-                // The reconnection might fail, but we'll still be connected
-                // in the sense of `connection->isConnected() = true`,
-                // in case when the requested database doesn't exist.
-                // Disconnect manually now, so that the following code doesn't
-                // have any doubts, and the connection state is predictable.
-                connection->disconnect();
-            }
-        }
-
-        if (!connection->isConnected())
-        {
-            // Probably the server is dead because we found an assertion
-            // failure. Fail fast.
-            fmt::print(stderr, "Lost connection to the server.\n");
-
-            // Print the changed settings because they might be needed to
-            // reproduce the error.
-            printChangedSettings();
-
-            return false;
         }
 
         // Check that after the query is formatted, we can parse it back,
@@ -728,13 +745,12 @@ bool Client::processWithFuzzing(const String & full_query)
         // query, but second and third.
         // If you have to add any more workarounds to this check, just remove
         // it altogether, it's not so useful.
-        if (parsed_query && !have_error && !queryHasWithClause(*parsed_query))
+        if (ast_to_process && !have_error && !queryHasWithClause(*ast_to_process))
         {
             ASTPtr ast_2;
             try
             {
                 const auto * tmp_pos = query_to_execute.c_str();
-
                 ast_2 = parseQuery(tmp_pos, tmp_pos + query_to_execute.size(), false /* allow_multi_statements */);
             }
             catch (Exception & e)
@@ -761,7 +777,7 @@ bool Client::processWithFuzzing(const String & full_query)
                         "Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
                         text_3, text_2);
                     fmt::print(stderr, "In more detail:\n");
-                    fmt::print(stderr, "AST-1 (generated by fuzzer):\n'{}'\n", parsed_query->dumpTree());
+                    fmt::print(stderr, "AST-1 (generated by fuzzer):\n'{}'\n", ast_to_process->dumpTree());
                     fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", query_to_execute);
                     fmt::print(stderr, "AST-2 (Text-1 parsed):\n'{}'\n", ast_2->dumpTree());
                     fmt::print(stderr, "Text-2 (AST-2 formatted):\n'{}'\n", text_2);
@@ -799,6 +815,34 @@ bool Client::processWithFuzzing(const String & full_query)
         }
     }
 
+    for (const auto & insert_query : inserts_for_fuzzed_tables)
+    {
+        std::cout << std::endl;
+        WriteBufferFromOStream ast_buf(std::cout, 4096);
+        formatAST(*insert_query, ast_buf, false /*highlight*/);
+        ast_buf.next();
+        std::cout << std::endl << std::endl;
+
+        try
+        {
+            query_to_execute = insert_query->formatForErrorMessage();
+            if (auto res = processFuzzingStep(query_to_execute, insert_query))
+                return *res;
+        }
+        catch (...)
+        {
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+            have_error = true;
+        }
+
+        if (have_error)
+        {
+            server_exception.reset();
+            client_exception.reset();
+            have_error = false;
+        }
+    }
+
     return true;
 }
 
@@ -833,6 +877,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("compression", po::value<bool>(), "enable or disable compression (enabled by default for remote communication and disabled for localhost communication).")
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
+        ("create-query-fuzzer-runs", po::value<int>()->default_value(0), "")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
             "file path with queries to execute before every file from 'queries-file'; multiple files can be specified (--queries-file file1 file2...); this is needed to enable more aggressive fuzzing of newly added tests (see 'query-fuzzer-runs' option)")
 
@@ -982,6 +1027,17 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setBool("multiquery", true);
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
+        ignore_error = true;
+    }
+
+    if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
+    {
+        // Fuzzer implies multiquery.
+        config().setBool("multiquery", true);
+        // Ignore errors in parsing queries.
+        config().setBool("ignore-error", true);
+
+        global_context->setSetting("allow_suspicious_low_cardinality_types", true);
         ignore_error = true;
     }
 
