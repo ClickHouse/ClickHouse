@@ -4,8 +4,12 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", stay_alive=True,
-    main_configs=["configs/config.d/query_log.xml", "configs/config.d/schema_cache.xml"]
+    "node",
+    stay_alive=True,
+    main_configs=[
+        "configs/config.d/query_log.xml",
+        "configs/config.d/schema_cache.xml",
+    ],
 )
 
 
@@ -29,28 +33,46 @@ def get_profile_event_for_query(node, query, profile_event):
 
 
 def check_cache_misses(node, file, amount=1):
-    assert get_profile_event_for_query(node, f"desc file('{file}')",
-                                       "SchemaInferenceCacheMisses") == amount
+    assert (
+        get_profile_event_for_query(
+            node, f"desc file('{file}')", "SchemaInferenceCacheMisses"
+        )
+        == amount
+    )
 
 
 def check_cache_hits(node, file, amount=1):
-    assert get_profile_event_for_query(node, f"desc file('{file}')",
-                                       "SchemaInferenceCacheHits") == amount
+    assert (
+        get_profile_event_for_query(
+            node, f"desc file('{file}')", "SchemaInferenceCacheHits"
+        )
+        == amount
+    )
 
 
 def check_cache_invalidations(node, file, amount=1):
-    assert get_profile_event_for_query(node, f"desc file('{file}')",
-                                       "SchemaInferenceCacheInvalidations") == amount
+    assert (
+        get_profile_event_for_query(
+            node, f"desc file('{file}')", "SchemaInferenceCacheInvalidations"
+        )
+        == amount
+    )
 
 
 def check_cache_evictions(node, file, amount=1):
-    assert get_profile_event_for_query(node, f"desc file('{file}')",
-                                       "SchemaInferenceCacheEvictions") == amount
+    assert (
+        get_profile_event_for_query(
+            node, f"desc file('{file}')", "SchemaInferenceCacheEvictions"
+        )
+        == amount
+    )
 
 
 def check_cache(node, expected_files):
     sources = node.query("select source from system.schema_inference_cache")
-    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(expected_files)
+    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(
+        expected_files
+    )
 
 
 def test(start_cluster):
