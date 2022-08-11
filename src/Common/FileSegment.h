@@ -127,7 +127,7 @@ public:
 
     bool isPersistent() const { return is_persistent; }
 
-    using UniqueId = std::pair<IFileCache::Key, size_t>;
+    using UniqueId = std::pair<FileCacheKey, size_t>;
     UniqueId getUniqueId() const { return std::pair(key(), offset()); }
 
     String getPathInLocalCache() const;

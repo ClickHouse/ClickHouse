@@ -4,7 +4,7 @@
 #include <mutex>
 #include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Common/FileCacheType.h>
+#include <Common/FileCacheKey.h>
 
 namespace DB
 {
@@ -28,7 +28,7 @@ public:
         size_t size;
         size_t hits = 0;
 
-        FileCacheRecord(const Key & key_, size_t offset_, size_t size_) : key(key_), offset(offset_), size(size_) { }
+        FileCacheRecord(const Key & key_, size_t offset_, size_t size_) : key(key_), offset(offset_), size(size_) {}
     };
 
     /// It provides an iterator to traverse the cache priority. Under normal circumstances,
@@ -64,7 +64,6 @@ public:
         virtual void incrementSize(size_t, std::lock_guard<std::mutex> &) = 0;
     };
 
-public:
     virtual ~IFileCachePriority() = default;
 
     /// Add a cache record that did not exist before, and throw a
