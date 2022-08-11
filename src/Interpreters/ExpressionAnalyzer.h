@@ -7,7 +7,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
