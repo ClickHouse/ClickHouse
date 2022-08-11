@@ -7,7 +7,7 @@ import sys
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, CLOUDFLARE_TOKEN
+from env_helper import TEMP_PATH, REPO_COPY, CLOUDFLARE_TOKEN, S3_URL
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
@@ -106,7 +106,7 @@ if __name__ == "__main__":
         else:
             lines.append(("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper(S3_URL)
 
     report_url = upload_results(
         s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME

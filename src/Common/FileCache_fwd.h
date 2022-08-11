@@ -10,8 +10,8 @@ static constexpr int REMOTE_FS_OBJECTS_CACHE_DEFAULT_MAX_ELEMENTS = 1024 * 1024;
 static constexpr int REMOTE_FS_OBJECTS_CACHE_ENABLE_HITS_THRESHOLD = 0;
 static constexpr int REMOTE_FS_OBJECTS_CACHE_BACKGROUND_DOWNLOAD_MEMORY_USAGE = 1024 * 1024 * 1024;
 
-class IFileCache;
-using FileCachePtr = std::shared_ptr<IFileCache>;
+class FileCache;
+using FileCachePtr = std::shared_ptr<FileCache>;
 
 struct FileCacheSettings;
 struct CreateFileSegmentSettings;

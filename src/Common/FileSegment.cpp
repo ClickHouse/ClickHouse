@@ -5,7 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <filesystem>
-
+#include <Common/FileCache.h>
 
 namespace CurrentMetrics
 {
@@ -27,7 +27,7 @@ FileSegment::FileSegment(
         size_t offset_,
         size_t size_,
         const Key & key_,
-        IFileCache * cache_,
+        FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & settings)
     : segment_range(offset_, offset_ + size_ - 1)
@@ -1039,7 +1039,7 @@ FileSegmentsHolder::~FileSegmentsHolder()
     /// FileSegmentsHolder right after calling file_segment->complete(), so on destruction here
     /// remain only uncompleted file segments.
 
-    IFileCache * cache = nullptr;
+    FileCache * cache = nullptr;
 
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
     {

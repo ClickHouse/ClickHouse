@@ -1,7 +1,7 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-#include <Common/IFileCache.h>
+#include <Common/FileCacheKey.h>
 #include <Core/Types.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 #include <list>
 #include <queue>
+
 
 namespace Poco { class Logger; }
 
@@ -20,7 +21,7 @@ extern const Metric CacheFileSegments;
 namespace DB
 {
 
-class IFileCache;
+class FileCache;
 
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
@@ -36,12 +37,12 @@ struct CreateFileSegmentSettings
 class FileSegment : private boost::noncopyable, public std::enable_shared_from_this<FileSegment>
 {
 
-friend class LRUFileCache;
+friend class FileCache;
 friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 
 public:
-    using Key = IFileCache::Key;
+    using Key = FileCacheKey;
     using RemoteFileReaderPtr = std::shared_ptr<ReadBufferFromFileBase>;
     using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
     using Downloader = std::string;
@@ -85,7 +86,7 @@ public:
         size_t offset_,
         size_t size_,
         const Key & key_,
-        IFileCache * cache_,
+        FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
 
@@ -273,7 +274,7 @@ private:
     mutable std::mutex download_mutex;
 
     Key file_key;
-    IFileCache * cache;
+    FileCache * cache;
 
     Poco::Logger * log;
 
