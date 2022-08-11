@@ -372,9 +372,7 @@ bool ParseVersion::convertImpl(String & out,IParser::Pos & pos)
 
 bool ReplaceRegex::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "replaceRegexpAll");
 }
 
 bool Reverse::convertImpl(String & out,IParser::Pos & pos)
@@ -551,23 +549,48 @@ bool Translate::convertImpl(String & out,IParser::Pos & pos)
 
 bool Trim::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String regex = getConvertedArgument(fn_name, pos);
+    ++pos;
+    String  source = getConvertedArgument(fn_name, pos);
+    String ltrim = std::format("if ((replaceRegexpOne(concat('random_str', {0}) as srcl, concat('random_str', {1}),'') as dstl) = srcl, {0}, dstl)", source, regex);
+    out = std::format("if ((replaceRegexpOne(concat('random_str', reverse({0})) as srcr, concat('random_str', reverse({1})),'') as dstr) = srcr, {0}, reverse(dstr))", ltrim, regex);
+
+    return true;
 }
 
 bool TrimEnd::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String regex = getConvertedArgument(fn_name, pos);
+    ++pos;
+    String  source = getConvertedArgument(fn_name, pos);
+    out = std::format("if ((replaceRegexpOne(concat('random_str', reverse({0})) as src, concat('random_str', reverse({1})),'') as dst) = src, {0}, reverse(dst))", source, regex);
+
+    return true;
 }
 
 bool TrimStart::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String regex = getConvertedArgument(fn_name, pos);
+    ++pos;
+    String  source = getConvertedArgument(fn_name, pos);
+    out = std::format("if ((replaceRegexpOne(concat('random_str', {0}) as src, concat('random_str', {1}),'') as dst) = src, {0}, dst)", source, regex);
+
+    return true;
 }
 
 bool URLDecode::convertImpl(String & out,IParser::Pos & pos)

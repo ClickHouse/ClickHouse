@@ -121,6 +121,10 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserDateTimeFuncTest,
         {
             "print now()",
             "SELECT now64(9, 'UTC')"
+        },
+        {
+            "print now(1d)",
+            "SELECT now64(9, 'UTC') + 86400."
         }
 
 })));   
