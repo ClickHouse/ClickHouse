@@ -314,6 +314,8 @@ else
 
     # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
     rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
+    # Disable aggressive cleanup of tmp dirs (it worked incorrectly before 22.8)
+    rm -f /etc/clickhouse-server/users.d/merge_tree_old_dirs_cleanup.xml ||:
 
     start
 
