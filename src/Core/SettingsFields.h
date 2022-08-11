@@ -66,7 +66,7 @@ using SettingFieldBool = SettingFieldNumber<bool>;
   * but when serializing 'auto' old version will see binary representation of the default value.
   */
 template <typename Base>
-struct SettingWithAuto
+struct SettingAutoWrapper
 {
     constexpr static auto keyword = "auto";
     static bool isAuto(const Field & f) { return f.getType() == Field::Types::String && f.safeGet<const String &>() == keyword; }
@@ -78,17 +78,17 @@ struct SettingWithAuto
     bool is_auto = false;
     bool changed = false;
 
-    explicit SettingWithAuto() : is_auto(true) {}
-    explicit SettingWithAuto(Type val) : is_auto(false) { base = Base(val); }
+    explicit SettingAutoWrapper() : is_auto(true) {}
+    explicit SettingAutoWrapper(Type val) : is_auto(false) { base = Base(val); }
 
-    explicit SettingWithAuto(const Field & f)
+    explicit SettingAutoWrapper(const Field & f)
         : is_auto(isAuto(f))
     {
         if (!is_auto)
             base = Base(f);
     }
 
-    SettingWithAuto & operator=(const Field & f)
+    SettingAutoWrapper & operator=(const Field & f)
     {
         changed = true;
         if (is_auto = isAuto(f); !is_auto)
@@ -115,16 +115,22 @@ struct SettingWithAuto
             base.writeBinary(out);
     }
 
+    /* 
+     * That it is fine to reset `is_auto` here and to use default value in case `is_auto`
+     * because settings will be serialized only if changed.
+     * If they were changed they were requested to use explicit value instead of `auto`.
+     * And so interactions between client-server, and server-server (distributed queries), should be OK.
+     */
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
 };
 
-using SettingFieldUInt64WithAuto = SettingWithAuto<SettingFieldUInt64>;
-using SettingFieldInt64WithAuto = SettingWithAuto<SettingFieldInt64>;
-using SettingFieldFloatWithAuto = SettingWithAuto<SettingFieldFloat>;
+using SettingFieldUInt64Auto = SettingAutoWrapper<SettingFieldUInt64>;
+using SettingFieldInt64Auto = SettingAutoWrapper<SettingFieldInt64>;
+using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;
 
-/* Similar to SettingFieldUInt64WithAuto with small differences to behave like regular UInt64, supported to compatibility.
+/* Similar to SettingFieldUInt64Auto with small differences to behave like regular UInt64, supported to compatibility.
  * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
  * A value of 0 is also treated as 'auto', so 'auto' is parsed and serialized in the same way as 0.
  */

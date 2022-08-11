@@ -153,9 +153,9 @@ template struct SettingFieldNumber<Int64>;
 template struct SettingFieldNumber<float>;
 template struct SettingFieldNumber<bool>;
 
-template struct SettingWithAuto<SettingFieldNumber<UInt64>>;
-template struct SettingWithAuto<SettingFieldNumber<Int64>>;
-template struct SettingWithAuto<SettingFieldNumber<float>>;
+template struct SettingAutoWrapper<SettingFieldNumber<UInt64>>;
+template struct SettingAutoWrapper<SettingFieldNumber<Int64>>;
+template struct SettingAutoWrapper<SettingFieldNumber<float>>;
 
 namespace
 {
