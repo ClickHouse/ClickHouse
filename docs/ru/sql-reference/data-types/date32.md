@@ -5,7 +5,7 @@ sidebar_label: Date32
 
 # Date32 {#data_type-datetime32}
 
-Дата. Поддерживается такой же диапазон дат, как для типа [Datetime64](../../sql-reference/data-types/datetime64.md). Значение хранится в четырех байтах и соответствует числу дней с 1925-01-01 по 2283-11-11. 
+Дата. Поддерживается такой же диапазон дат, как для типа [Datetime64](../../sql-reference/data-types/datetime64.md). Значение хранится в четырех байтах и соответствует числу дней с 1900-01-01 по 2299-12-31.
 
 **Пример**
 
@@ -36,5 +36,5 @@ SELECT * FROM new;
 
 -   [toDate32](../../sql-reference/functions/type-conversion-functions.md#todate32)
 -   [toDate32OrZero](../../sql-reference/functions/type-conversion-functions.md#todate32-or-zero)
--   [toDate32OrNull](../../sql-reference/functions/type-conversion-functions.md#todate32-or-null) 
+-   [toDate32OrNull](../../sql-reference/functions/type-conversion-functions.md#todate32-or-null)
 
