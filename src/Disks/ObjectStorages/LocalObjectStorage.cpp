@@ -1,7 +1,7 @@
 #include <Disks/ObjectStorages/LocalObjectStorage.h>
 
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>

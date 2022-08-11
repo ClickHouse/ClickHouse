@@ -94,6 +94,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
+    format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
@@ -165,6 +166,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.sql_insert.table_name = settings.output_format_sql_insert_table_name;
     format_settings.sql_insert.use_replace = settings.output_format_sql_insert_use_replace;
     format_settings.sql_insert.quote_names = settings.output_format_sql_insert_quote_names;
+    format_settings.try_infer_integers = settings.input_format_try_infer_integers;
+    format_settings.try_infer_dates = settings.input_format_try_infer_dates;
+    format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
