@@ -887,21 +887,21 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         ActionDAGNodes nodes;
         if (prewhere_info)
         {
-            const auto & node = prewhere_info->prewhere_actions->findInIndex(prewhere_info->prewhere_column_name);
+            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
             nodes.nodes.push_back(&node);
         }
 
         if (added_filter)
         {
-            const auto & node = added_filter->findInIndex(added_filter_column_name);
+            const auto & node = added_filter->findInOutputs(added_filter_column_name);
             nodes.nodes.push_back(&node);
         }
 
-        key_condition.emplace(std::move(nodes), query_info.syntax_analyzer_result, query_info.sets, context, primary_key_columns, primary_key.expression);
+        key_condition.emplace(std::move(nodes), query_info.syntax_analyzer_result, query_info.prepared_sets, context, primary_key_columns, primary_key.expression);
     }
     else
     {
-        key_condition.emplace(query_info.query, query_info.syntax_analyzer_result, query_info.sets, context, primary_key_columns, primary_key.expression);
+        key_condition.emplace(query_info, context, primary_key_columns, primary_key.expression);
     }
 
     if (settings.force_primary_key && key_condition->alwaysUnknownOrTrue())

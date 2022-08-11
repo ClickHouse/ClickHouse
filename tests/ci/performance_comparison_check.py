@@ -15,7 +15,7 @@ from github import Github
 from commit_status_helper import get_commit, post_commit_status
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
-from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL
+from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL, S3_BUILDS_BUCKET, S3_URL
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from rerun_helper import RerunHelper
@@ -86,7 +86,7 @@ if __name__ == "__main__":
 
     docker_env = ""
 
-    docker_env += " -e S3_URL=https://s3.amazonaws.com/clickhouse-builds"
+    docker_env += f" -e S3_URL={S3_URL}/{S3_BUILDS_BUCKET}"
     docker_env += f" -e BUILD_NAME={required_build}"
 
     if pr_info.number == 0:
@@ -197,7 +197,7 @@ if __name__ == "__main__":
     }
 
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_prefix}/"
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper(S3_URL)
     uploaded = {}  # type: Dict[str, str]
     for name, path in paths.items():
         try:
