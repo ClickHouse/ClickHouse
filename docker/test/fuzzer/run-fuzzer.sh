@@ -85,6 +85,7 @@ function configure
     # TODO figure out which ones are needed
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml db/config.d
     cp -av --dereference "$script_dir"/query-fuzzer-tweaks-users.xml db/users.d
+    cp -av --dereference "$script_dir"/allow-nullable-key.xml db/config.d
 }
 
 function watchdog

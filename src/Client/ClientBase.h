@@ -247,6 +247,7 @@ protected:
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
+    int create_query_fuzzer_runs = 0;
 
     struct
     {

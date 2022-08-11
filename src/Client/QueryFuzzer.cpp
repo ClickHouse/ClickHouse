@@ -1,4 +1,21 @@
 #include "QueryFuzzer.h"
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/IDataType.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/IAST_fwd.h>
+#include <Parsers/ParserDataType.h>
+#include <Parsers/ParserInsertQuery.h>
 
 #include <unordered_set>
 
@@ -35,6 +52,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_DEEP_RECURSION;
+    extern const int LOGICAL_ERROR;
 }
 
 Field QueryFuzzer::getRandomField(int type)
@@ -398,6 +416,228 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
     }
 }
 
+void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
+{
+    if (create.columns_list && create.columns_list->columns)
+    {
+        for (auto & ast : create.columns_list->columns->children)
+        {
+            if (auto * column = ast->as<ASTColumnDeclaration>())
+            {
+                fuzzColumnDeclaration(*column);
+            }
+        }
+    }
+
+    if (create.storage && create.storage->engine)
+    {
+        auto & engine_name = create.storage->engine->name;
+        if (startsWith(engine_name, "Replicated"))
+            engine_name = engine_name.substr(strlen("Replicated"));
+    }
+
+    auto full_name = create.getTable();
+    auto original_name = full_name.substr(0, full_name.find("__fuzz_"));
+
+    size_t index = index_of_fuzzed_table[original_name]++;
+    auto new_name = original_name + "__fuzz_" + toString(index);
+
+    create.setTable(new_name);
+
+    SipHash sip_hash;
+    sip_hash.update(original_name);
+    if (create.columns_list)
+        create.columns_list->updateTreeHash(sip_hash);
+    if (create.storage)
+        create.columns_list->updateTreeHash(sip_hash);
+
+    IAST::Hash hash;
+    sip_hash.get128(hash);
+    if (created_tables_hashes.insert(hash).second)
+        original_table_name_to_fuzzed[original_name].push_back(new_name);
+}
+
+void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
+{
+    if (column.type)
+    {
+        auto data_type = fuzzDataType(DataTypeFactory::instance().get(column.type));
+
+        ParserDataType parser;
+        column.type = parseQuery(parser, data_type->getName(), DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    }
+}
+
+DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
+{
+    /// Do not replace Array with not Array to often.
+    const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
+    if (type_array && fuzz_rand() % 5 != 0)
+        return std::make_shared<DataTypeArray>(fuzzDataType(type_array->getNestedType()));
+
+    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
+    if (type_tuple && fuzz_rand() % 5 != 0)
+    {
+        DataTypes elements;
+        for (const auto & element : type_tuple->getElements())
+            elements.push_back(fuzzDataType(element));
+
+        return type_tuple->haveExplicitNames()
+            ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
+            : std::make_shared<DataTypeTuple>(elements);
+    }
+
+    const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
+    if (type_map && fuzz_rand() % 5 != 0)
+    {
+        auto key_type = fuzzDataType(type_map->getKeyType());
+        auto value_type = fuzzDataType(type_map->getValueType());
+        if (!DataTypeMap::checkKeyType(key_type))
+            key_type = type_map->getKeyType();
+
+        return std::make_shared<DataTypeMap>(key_type, value_type);
+    }
+
+    const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get());
+    if (type_nullable)
+    {
+        size_t tmp = fuzz_rand() % 3;
+        if (tmp == 0)
+            return type_nullable->getNestedType();
+
+        if (tmp == 1)
+        {
+            auto nested_type = fuzzDataType(type_nullable->getNestedType());
+            if (nested_type->canBeInsideNullable())
+                return std::make_shared<DataTypeNullable>(nested_type);
+        }
+    }
+
+    const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get());
+    if (type_low_cardinality)
+    {
+        size_t tmp = fuzz_rand() % 3;
+        if (tmp == 0)
+            return type_low_cardinality->getDictionaryType();
+
+        if (tmp == 1)
+        {
+            auto nested_type = fuzzDataType(type_low_cardinality->getDictionaryType());
+            if (nested_type->canBeInsideLowCardinality())
+                return std::make_shared<DataTypeLowCardinality>(nested_type);
+        }
+    }
+
+    size_t tmp = fuzz_rand() % 10;
+    if (tmp <= 1 && type->canBeInsideNullable())
+        return std::make_shared<DataTypeNullable>(type);
+
+    if (tmp <= 3 && type->canBeInsideLowCardinality())
+        return std::make_shared<DataTypeLowCardinality>(type);
+
+    if (tmp == 4)
+        return getRandomType();
+
+    return type;
+}
+
+DataTypePtr QueryFuzzer::getRandomType()
+{
+    auto type_id = static_cast<TypeIndex>(fuzz_rand() % static_cast<size_t>(TypeIndex::Tuple) + 1);
+
+    if (type_id == TypeIndex::Tuple)
+    {
+        size_t tuple_size = fuzz_rand() % 6 + 1;
+        DataTypes elements;
+        for (size_t i = 0; i < tuple_size; ++i)
+            elements.push_back(getRandomType());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (type_id == TypeIndex::Array)
+        return std::make_shared<DataTypeArray>(getRandomType());
+
+#define DISPATCH(DECIMAL) \
+    if (type_id == TypeIndex::DECIMAL) \
+        return std::make_shared<DataTypeDecimal<DECIMAL>>( \
+            DataTypeDecimal<DECIMAL>::maxPrecision(), DataTypeDecimal<DECIMAL>::maxPrecision()); // NOLINT
+
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
+    DISPATCH(Decimal256)
+#undef DISPATCH
+
+    if (type_id == TypeIndex::FixedString)
+        return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20);
+
+    if (type_id == TypeIndex::Enum8)
+        return std::make_shared<DataTypeUInt8>();
+
+    if (type_id == TypeIndex::Enum16)
+        return std::make_shared<DataTypeUInt16>();
+
+    return DataTypeFactory::instance().get(String(magic_enum::enum_name(type_id)));
+}
+
+void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
+{
+    if (!table.database_and_table_name || fuzz_rand() % 3 == 0)
+        return;
+
+    const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
+    if (!identifier)
+        return;
+
+    auto table_id = identifier->getTableId();
+    if (table_id.empty())
+        return;
+
+    auto it = original_table_name_to_fuzzed.find(table_id.getTableName());
+    if (it != original_table_name_to_fuzzed.end() && !it->second.empty())
+    {
+        const auto & new_table_name = it->second[fuzz_rand() % it->second.size()];
+        StorageID new_table_id(table_id.database_name, new_table_name);
+        table.database_and_table_name = std::make_shared<ASTTableIdentifier>(new_table_id);
+    }
+}
+
+static ASTPtr tryParseInsertQuery(const String & full_query)
+{
+    const char * pos = full_query.data();
+    const char * end = full_query.data() + full_query.size();
+
+    ParserInsertQuery parser(end, false);
+    String message;
+
+    return tryParseQuery(parser, pos, end, message, false, "", false, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+}
+
+ASTs QueryFuzzer::getInsertQueriesForFuzzedTables(const String & full_query)
+{
+    auto parsed_query = tryParseInsertQuery(full_query);
+    if (!parsed_query)
+        return {};
+
+    const auto & insert = *parsed_query->as<ASTInsertQuery>();
+    if (!insert.table)
+        return {};
+
+    auto table_name = insert.getTable();
+    auto it = original_table_name_to_fuzzed.find(table_name);
+    if (it == original_table_name_to_fuzzed.end())
+        return {};
+
+    ASTs queries;
+    for (const auto & fuzzed_name : it->second)
+    {
+        auto & query = queries.emplace_back(tryParseInsertQuery(full_query));
+        query->as<ASTInsertQuery>()->setTable(fuzzed_name);
+    }
+
+    return queries;
+}
+
 void QueryFuzzer::fuzz(ASTs & asts)
 {
     for (auto & ast : asts)
@@ -465,6 +705,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * table_expr = typeid_cast<ASTTableExpression *>(ast.get()))
     {
+        fuzzTableName(*table_expr);
         fuzz(table_expr->children);
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
@@ -530,6 +771,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             literal->value = fuzzField(literal->value);
         }
+    }
+    else if (auto * create_query = typeid_cast<ASTCreateQuery *>(ast.get()))
+    {
+        fuzzCreateQuery(*create_query);
     }
     else
     {
