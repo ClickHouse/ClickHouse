@@ -110,7 +110,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port)"
     
     if [ -n "$HTTPS_PORT" ]; then
-       URL="https://127.0.0.1:$HTTPS_PORT/ping"
+        URL="https://127.0.0.1:$HTTPS_PORT/ping"
     else
         URL="http://127.0.0.1:$HTTP_PORT/ping"
     fi
