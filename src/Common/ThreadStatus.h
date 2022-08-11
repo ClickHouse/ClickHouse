@@ -102,14 +102,16 @@ public:
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wc++20-compat"
-#endif
+/**
+ * We use **constinit** here to tell the compiler the current_thread variable is initialized.
+ * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
+ * Instead it will trust that we are doing the right thing (and we do initialize it to nullptr) and emit more optimal code.
+ * This is noticeable in functions like CurrentMemoryTracker::free and CurrentMemoryTracker::allocImpl
+ * See also:
+ * - https://en.cppreference.com/w/cpp/language/constinit
+ * - https://github.com/ClickHouse/ClickHouse/pull/40078
+ */
 extern thread_local constinit ThreadStatus * current_thread;
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
