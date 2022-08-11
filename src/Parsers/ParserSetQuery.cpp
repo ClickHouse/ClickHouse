@@ -12,11 +12,15 @@
 #include <Common/SettingsChanges.h>
 #include <Common/typeid_cast.h>
 
-using namespace DB;
-
-namespace
+namespace DB
 {
-NameToNameMap::value_type convertToQueryParameter(SettingChange change)
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+static NameToNameMap::value_type convertToQueryParameter(SettingChange change)
 {
     auto name = change.name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
     if (name.empty())
@@ -31,11 +35,7 @@ NameToNameMap::value_type convertToQueryParameter(SettingChange change)
     }
     return {name, value};
 }
-}
 
-
-namespace DB
-{
 
 class ParserLiteralOrMap : public IParserBase
 {
