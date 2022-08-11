@@ -115,7 +115,7 @@ struct SettingAutoWrapper
             base.writeBinary(out);
     }
 
-    /* 
+    /*
      * That it is fine to reset `is_auto` here and to use default value in case `is_auto`
      * because settings will be serialized only if changed.
      * If they were changed they were requested to use explicit value instead of `auto`.
