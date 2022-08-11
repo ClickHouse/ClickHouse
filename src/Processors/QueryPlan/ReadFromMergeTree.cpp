@@ -895,13 +895,13 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         ActionDAGNodes nodes;
         if (prewhere_info)
         {
-            const auto & node = prewhere_info->prewhere_actions->findInIndex(prewhere_info->prewhere_column_name);
+            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
             nodes.nodes.push_back(&node);
         }
 
         if (added_filter)
         {
-            const auto & node = added_filter->findInIndex(added_filter_column_name);
+            const auto & node = added_filter->findInOutputs(added_filter_column_name);
             nodes.nodes.push_back(&node);
         }
 
