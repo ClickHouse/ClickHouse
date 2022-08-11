@@ -556,10 +556,12 @@ DataTypePtr QueryFuzzer::getRandomType()
     if (type_id == TypeIndex::Array)
         return std::make_shared<DataTypeArray>(getRandomType());
 
+/// NOLINTNEXTLINE
 #define DISPATCH(DECIMAL) \
     if (type_id == TypeIndex::DECIMAL) \
-        return std::make_shared<DataTypeDecimal<DECIMAL>>( \ // NOLINT
-            DataTypeDecimal<DECIMAL>::maxPrecision(), DataTypeDecimal<DECIMAL>::maxPrecision()); // NOLINT
+        return std::make_shared<DataTypeDecimal<DECIMAL>>( \
+            DataTypeDecimal<DECIMAL>::maxPrecision(), \
+            fuzz_rand() % DataTypeDecimal<DECIMAL>::maxPrecision() + 1);
 
     DISPATCH(Decimal32)
     DISPATCH(Decimal64)
