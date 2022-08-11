@@ -905,11 +905,11 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             nodes.nodes.push_back(&node);
         }
 
-        key_condition.emplace(std::move(nodes), query_info.syntax_analyzer_result, query_info.sets, context, primary_key_columns, primary_key.expression);
+        key_condition.emplace(std::move(nodes), query_info.syntax_analyzer_result, query_info.prepared_sets, context, primary_key_columns, primary_key.expression);
     }
     else
     {
-        key_condition.emplace(query_info.query, query_info.syntax_analyzer_result, query_info.sets, context, primary_key_columns, primary_key.expression);
+        key_condition.emplace(query_info, context, primary_key_columns, primary_key.expression);
     }
 
     if (settings.force_primary_key && key_condition->alwaysUnknownOrTrue())

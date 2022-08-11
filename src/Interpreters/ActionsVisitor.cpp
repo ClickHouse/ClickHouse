@@ -402,8 +402,8 @@ SetPtr makeExplicitSet(
             element_type = low_cardinality_type->getDictionaryType();
 
     auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
-    if (auto it = prepared_sets.find(set_key); it != prepared_sets.end())
-        return it->second; /// Already prepared.
+    if (auto set = prepared_sets.get(set_key))
+        return set; /// Already prepared.
 
     Block block;
     const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
@@ -418,7 +418,7 @@ SetPtr makeExplicitSet(
     set->insertFromBlock(block.getColumnsWithTypeAndName());
     set->finishInsert();
 
-    prepared_sets.emplace(set_key, set);
+    prepared_sets.set(set_key, set);
     return set;
 }
 
@@ -485,8 +485,7 @@ ActionsMatcher::Data::Data(
     size_t subquery_depth_,
     std::reference_wrapper<const NamesAndTypesList> source_columns_,
     ActionsDAGPtr actions_dag,
-    PreparedSets & prepared_sets_,
-    SubqueriesForSets & subqueries_for_sets_,
+    PreparedSetsPtr prepared_sets_,
     bool no_subqueries_,
     bool no_makeset_,
     bool only_consts_,
@@ -498,7 +497,6 @@ ActionsMatcher::Data::Data(
     , subquery_depth(subquery_depth_)
     , source_columns(source_columns_)
     , prepared_sets(prepared_sets_)
-    , subqueries_for_sets(subqueries_for_sets_)
     , no_subqueries(no_subqueries_)
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
@@ -947,7 +945,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             data.source_columns,
             std::make_shared<ActionsDAG>(data.source_columns),
             data.prepared_sets,
-            data.subqueries_for_sets,
             data.no_subqueries,
             data.no_makeset,
             data.only_consts,
@@ -1309,6 +1306,9 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
 
 SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
+    if (!data.prepared_sets)
+        return nullptr;
+
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
       * The enumeration of values is parsed as a function `tuple`.
@@ -1324,8 +1324,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (no_subqueries)
             return {};
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
-        if (auto it = data.prepared_sets.find(set_key); it != data.prepared_sets.end())
-            return it->second;
+        if (SetPtr set = data.prepared_sets->get(set_key))
+            return set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1339,25 +1339,17 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
                 StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
                 if (storage_set)
                 {
-                    data.prepared_sets.emplace(set_key, storage_set->getSet());
-                    return storage_set->getSet();
+                    SetPtr set = storage_set->getSet();
+                    data.prepared_sets->set(set_key, set);
+                    return set;
                 }
             }
         }
 
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
         String set_id = right_in_operand->getColumnName();
-
-        SubqueryForSet & subquery_for_set = data.subqueries_for_sets[set_id];
-
-        /// If you already created a Set with the same subquery / table.
-        if (subquery_for_set.set)
-        {
-            data.prepared_sets.emplace(set_key, subquery_for_set.set);
-            return subquery_for_set.set;
-        }
-
-        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
+        bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
+        SubqueryForSet & subquery_for_set = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1367,24 +1359,21 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
-        if (!subquery_for_set.source && data.create_source_for_in)
+        if (data.create_source_for_in && !subquery_for_set.hasSource())
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-            subquery_for_set.source = std::make_unique<QueryPlan>();
-            interpreter->buildQueryPlan(*subquery_for_set.source);
+            subquery_for_set.createSource(*interpreter);
         }
 
-        subquery_for_set.set = set;
-        data.prepared_sets.emplace(set_key, set);
-        return set;
+        return subquery_for_set.set;
     }
     else
     {
         const auto & last_actions = data.actions_stack.getLastActions();
         const auto & index = data.actions_stack.getLastActionsIndex();
-        if (index.contains(left_in_operand->getColumnName()))
+        if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, data.prepared_sets);
+            return makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets);
         else
             return {};
     }
