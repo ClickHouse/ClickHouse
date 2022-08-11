@@ -1299,20 +1299,14 @@ try
 
     if (structure.empty())
     {
-        std::unique_ptr<ReadBuffer> read_buffer_from_fd;
-        std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
-
         ReadBufferIterator read_buffer_iterator = [&]()
         {
-            read_buffer_from_fd = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
-            auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
-            read_buf->setCheckpoint();
-            return read_buf;
+            return std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
         };
 
         auto context_const = WithContext(context).getContext();
 
-        auto schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const, peekable_read_buffer_from_fd);
+        auto schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
         auto schema_columns_info = schema_columns.getOrdinary();
 
         for (auto & info : schema_columns_info)
