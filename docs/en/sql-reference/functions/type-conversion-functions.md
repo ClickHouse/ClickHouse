@@ -1241,7 +1241,7 @@ Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that
 
 ## toLowCardinality
 
-Converts input parameter to the [LowCardianlity](../../sql-reference/data-types/lowcardinality.md) version of same data type.
+Converts input parameter to the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) version of same data type.
 
 To convert data from the `LowCardinality` data type use the [CAST](#type_conversion_function-cast) function. For example, `CAST(x as String)`.
 
