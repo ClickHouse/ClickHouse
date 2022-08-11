@@ -9,6 +9,7 @@
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/indexHint.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -388,7 +389,7 @@ SetPtr makeExplicitSet(
     const ASTPtr & right_arg = args.children.at(1);
 
     auto column_name = left_arg->getColumnName();
-    const auto & dag_node = actions.findInIndex(column_name);
+    const auto & dag_node = actions.findInOutputs(column_name);
     const DataTypePtr & left_arg_type = dag_node.result_type;
 
     DataTypes set_element_types = {left_arg_type};
@@ -506,7 +507,7 @@ ActionsMatcher::Data::Data(
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
     , build_expression_with_window_functions(build_expression_with_window_functions_)
-    , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
+    , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
 
@@ -525,9 +526,9 @@ ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_) : WithCon
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::move(actions_dag);
-    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getIndex());
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getOutputs());
 
-    for (const auto & node : level.actions_dag->getIndex())
+    for (const auto & node : level.actions_dag->getOutputs())
         if (node->type == ActionsDAG::ActionType::INPUT)
             level.inputs.emplace(node->result_name);
 }
@@ -536,7 +537,7 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::make_shared<ActionsDAG>();
-    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getIndex());
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getOutputs());
     const auto & prev = stack[stack.size() - 2];
 
     for (const auto & input_column : input_columns)
@@ -546,7 +547,7 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
         level.inputs.emplace(input_column.name);
     }
 
-    for (const auto & node : prev.actions_dag->getIndex())
+    for (const auto & node : prev.actions_dag->getOutputs())
     {
         if (!level.index->contains(node->result_name))
         {
@@ -934,8 +935,44 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     /// A special function `indexHint`. Everything that is inside it is not calculated
     if (node.name == "indexHint")
     {
+        if (data.only_consts)
+            return;
+
+        /// Here we create a separate DAG for indexHint condition.
+        /// It will be used only for index analysis.
+        Data index_hint_data(
+            data.getContext(),
+            data.set_size_limit,
+            data.subquery_depth,
+            data.source_columns,
+            std::make_shared<ActionsDAG>(data.source_columns),
+            data.prepared_sets,
+            data.subqueries_for_sets,
+            data.no_subqueries,
+            data.no_makeset,
+            data.only_consts,
+            /*create_source_for_in*/ false,
+            data.aggregation_keys_info);
+
+        NamesWithAliases args;
+
+        if (node.arguments)
+        {
+            for (const auto & arg : node.arguments->children)
+            {
+                visit(arg, index_hint_data);
+                args.push_back({arg->getColumnNameWithoutAlias(), {}});
+            }
+        }
+
+        auto dag = index_hint_data.getActions();
+        dag->project(args);
+
+        auto index_hint = std::make_shared<FunctionIndexHint>();
+        index_hint->setActions(std::move(dag));
+
         // Arguments are removed. We add function instead of constant column to avoid constant folding.
-        data.addFunction(FunctionFactory::instance().get("indexHint", data.getContext()), {}, column_name);
+        data.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(index_hint), {}, column_name);
         return;
     }
 
