@@ -109,12 +109,11 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port)"
     HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port)"
     
-    if [ -n "$HTTPS_PORT" ]; then
-       URL="https://127.0.0.1:$HTTPS_PORT/ping"
-    else
+    if [ -n "$HTTP_PORT" ]; then
         URL="http://127.0.0.1:$HTTP_PORT/ping"
+    else
+        URL="https://127.0.0.1:$HTTPS_PORT/ping"
     fi
-
 
     # Listen only on localhost until the initialization is done
     /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
@@ -123,7 +122,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
     # check if clickhouse is ready to accept connections
     # will try to send ping clickhouse via http_port (max 12 retries by default, with 1 sec timeout and 1 sec delay between retries)
     tries=${CLICKHOUSE_INIT_TIMEOUT:-12}
-    while ! wget --spider -T 1 -q "$URL" 2>/dev/null; do
+    while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
         if [ "$tries" -le "0" ]; then
             echo >&2 'ClickHouse init process failed.'
             exit 1
