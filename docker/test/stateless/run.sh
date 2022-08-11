@@ -84,13 +84,9 @@ function run_tests()
     # more idiologically correct.
     read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
 
-    # Skip these tests, because they fail when we rerun them multiple times
+    # Use random order in flaky check
     if [ "$NUM_TRIES" -gt "1" ]; then
         ADDITIONAL_OPTIONS+=('--order=random')
-        ADDITIONAL_OPTIONS+=('--skip')
-        ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
-        # Note that flaky check must be ran in parallel, but for now we run
-        # everything in parallel except DatabaseReplicated. See below.
     fi
 
     if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
@@ -128,6 +124,13 @@ function run_tests()
 }
 
 export -f run_tests
+
+if [ "$NUM_TRIES" -gt "1" ]; then
+    # We don't run tests with Ordinary database in PRs, only in master.
+    # So run new/changed tests with Ordinary at least once in flaky check.
+    timeout "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+      | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
+fi
 
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
