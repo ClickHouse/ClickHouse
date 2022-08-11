@@ -361,6 +361,8 @@
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
     M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
     M(KeeperSaveSnapshot, "Number of snapshot save")\
+    M(SampleBlockCacheHit, "Number of times a sample block for a (sub-)query was read from cache") \
+    M(SampleBlockCacheMiss, "Number of times a sample block for a (sub-)query had to be generated completely") \
 
 
 namespace ProfileEvents

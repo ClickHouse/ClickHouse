@@ -368,7 +368,7 @@ public:
     OpenTelemetryTraceContext query_trace_context;
 
 private:
-    using SampleBlockCache = std::unordered_map<std::string, Block>;
+    using SampleBlockCache = std::unordered_map<UInt64, Block>;
     mutable SampleBlockCache sample_block_cache;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication

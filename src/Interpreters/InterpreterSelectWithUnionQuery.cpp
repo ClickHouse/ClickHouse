@@ -22,6 +22,12 @@
 
 #include <algorithm>
 
+namespace ProfileEvents
+{
+extern const Event SampleBlockCacheHit;
+extern const Event SampleBlockCacheMiss;
+}
+
 namespace DB
 {
 
@@ -259,12 +265,15 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
     }
 
     auto & cache = context_->getSampleBlockCache();
-    /// Using query string because query_ptr changes for every internal SELECT
-    auto key = queryToString(query_ptr_);
+    /// Using getTreeHash since it can be reused when diving into subqueries
+    auto hash = query_ptr_->getTreeHash();
+    UInt64 key = hash.first ^ hash.second;
     if (cache.find(key) != cache.end())
     {
+        ProfileEvents::increment(ProfileEvents::SampleBlockCacheHit);
         return cache[key];
     }
+    ProfileEvents::increment(ProfileEvents::SampleBlockCacheMiss);
 
     if (is_subquery)
     {
