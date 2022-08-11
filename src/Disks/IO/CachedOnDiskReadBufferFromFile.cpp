@@ -38,7 +38,7 @@ namespace ErrorCodes
 
 CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     const String & source_file_path_,
-    const IFileCache::Key & cache_key_,
+    const FileCache::Key & cache_key_,
     FileCachePtr cache_,
     ImplementationBufferCreator implementation_buffer_creator_,
     const ReadSettings & settings_,
@@ -1208,7 +1208,7 @@ std::optional<size_t> CachedOnDiskReadBufferFromFile::getLastNonDownloadedOffset
 
 void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 {
-    if (IFileCache::isReadOnly()
+    if (FileCache::isReadOnly()
         && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed");
 }

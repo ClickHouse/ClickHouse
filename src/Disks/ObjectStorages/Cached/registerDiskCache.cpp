@@ -1,6 +1,6 @@
 #include <Common/FileCacheSettings.h>
 #include <Common/FileCacheFactory.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Disks/DiskFactory.h>

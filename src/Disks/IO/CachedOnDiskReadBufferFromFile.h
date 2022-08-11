@@ -26,7 +26,7 @@ public:
 
     CachedOnDiskReadBufferFromFile(
         const String & source_file_path_,
-        const IFileCache::Key & cache_key_,
+        const FileCache::Key & cache_key_,
         FileCachePtr cache_,
         ImplementationBufferCreator implementation_buffer_creator_,
         const ReadSettings & settings_,
@@ -91,13 +91,9 @@ private:
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
     Poco::Logger * log;
-<<<<<<< HEAD:src/Disks/IO/CachedOnDiskReadBufferFromFile.h
-    IFileCache::Key cache_key;
-    String source_file_path;
-=======
     FileCache::Key cache_key;
-    String remote_fs_object_path;
->>>>>>> upstream/master:src/Disks/IO/CachedReadBufferFromRemoteFS.h
+    String source_file_path;
+
     FileCachePtr cache;
     ReadSettings settings;
 

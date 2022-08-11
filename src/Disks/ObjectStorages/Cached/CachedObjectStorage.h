@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileCacheSettings.h>
 
 namespace Poco
@@ -107,7 +107,7 @@ public:
     WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & path) const override;
 
 private:
-    IFileCache::Key getCacheKey(const std::string & path) const;
+    FileCache::Key getCacheKey(const std::string & path) const;
 
     String getCachePath(const std::string & path) const;
 
