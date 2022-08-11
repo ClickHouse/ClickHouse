@@ -31,6 +31,7 @@ public:
 
     virtual void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 protected:
     virtual void appendColumnNameImpl(WriteBuffer & ostr) const = 0;
 };

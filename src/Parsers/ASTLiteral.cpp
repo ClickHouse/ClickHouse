@@ -15,6 +15,10 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
     const char * prefix = "Literal_";
     hash_state.update(prefix, strlen(prefix));
     applyVisitor(FieldVisitorHash(hash_state), value);
+    if (!alias.empty())
+    {
+        hash_state.update(alias.data(), alias.size());
+    }
 }
 
 ASTPtr ASTLiteral::clone() const

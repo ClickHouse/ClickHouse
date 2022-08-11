@@ -105,7 +105,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
 {
-    auto hash = subquery.getTreeHash();
+    auto hash = subquery.getContentHash();
     auto scalar_query_hash_str = toString(hash.first) + "_" + toString(hash.second);
 
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter = nullptr;

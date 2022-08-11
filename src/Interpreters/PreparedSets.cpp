@@ -1,4 +1,5 @@
 #include <Interpreters/PreparedSets.h>
+#include <Parsers/ASTSubquery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Set.h>
@@ -22,7 +23,10 @@ PreparedSetKey PreparedSetKey::forLiteral(const IAST & ast, DataTypes types_)
 PreparedSetKey PreparedSetKey::forSubquery(const IAST & ast)
 {
     PreparedSetKey key;
-    key.ast_hash = ast.getTreeHash();
+    if (const auto & subquery = ast.as<ASTSubquery>())
+        key.ast_hash = subquery->getContentHash();
+    else
+        key.ast_hash = ast.getTreeHash();
     return key;
 }
 

@@ -136,7 +136,7 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTWithAlias::updateTreeHashImpl(hash_state);
 }
 
 template <typename Container>

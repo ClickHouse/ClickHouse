@@ -246,7 +246,7 @@ void ASTTableIdentifier::resetTable(const String & database_name, const String &
 void ASTTableIdentifier::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(uuid);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTWithAlias::updateTreeHashImpl(hash_state);
 }
 
 String getIdentifierName(const IAST * ast)

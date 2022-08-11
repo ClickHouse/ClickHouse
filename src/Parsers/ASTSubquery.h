@@ -33,6 +33,7 @@ public:
     }
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
+    IAST::Hash getContentHash() const;
     String getAliasOrColumnName() const override;
     String tryGetAlias() const override;
 

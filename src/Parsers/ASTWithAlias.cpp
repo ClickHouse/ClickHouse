@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -38,6 +39,15 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
                 settings.ostr << ')';
         }
     }
+}
+
+void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state) const
+{
+    if (!alias.empty())
+    {
+        hash_state.update(alias.data(), alias.size());
+    }
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 void ASTWithAlias::appendColumnName(WriteBuffer & ostr) const

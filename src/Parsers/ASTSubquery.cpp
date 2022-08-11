@@ -57,7 +57,18 @@ void ASTSubquery::updateTreeHashImpl(SipHash & hash_state) const
 {
     if (!cte_name.empty())
         hash_state.update(cte_name);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTWithAlias::updateTreeHashImpl(hash_state);
+}
+
+IAST::Hash ASTSubquery::getContentHash() const
+{
+    SipHash hash_state;
+    hash_state.update(children.size());
+    for (const auto & child : children)
+        child->updateTreeHash(hash_state);
+    IAST::Hash res;
+    hash_state.get128(res);
+    return res;
 }
 
 String ASTSubquery::getAliasOrColumnName() const
