@@ -52,7 +52,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_DEEP_RECURSION;
-    extern const int LOGICAL_ERROR;
 }
 
 Field QueryFuzzer::getRandomField(int type)
