@@ -599,8 +599,9 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime, N
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime, Name>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime, ToDateTimeTransform64Signed<Float64, UInt32>> {};
 
-const time_t LUT_MIN_TIME = -1420070400l;       // 1925-01-01 UTC
-const time_t LUT_MAX_TIME = 9877248000l;        // 2282-12-31 UTC
+const time_t LUT_MIN_TIME = -2208988800l;           //  1900-01-01 UTC
+
+const time_t LUT_MAX_TIME = 10413791999l;           // 2299-12-31 UTC
 
 /** Conversion of numeric to DateTime64
   */
