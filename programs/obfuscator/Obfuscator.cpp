@@ -24,6 +24,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Formats/registerFormats.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -1239,7 +1240,6 @@ try
 
     if (options.count("help")
         || !options.count("seed")
-        || !options.count("structure")
         || !options.count("input-format")
         || !options.count("output-format"))
     {
@@ -1259,7 +1259,11 @@ try
 
     UInt64 seed = sipHash64(options["seed"].as<std::string>());
 
-    std::string structure = options["structure"].as<std::string>();
+    std::string structure;
+
+    if (options.count("structure"))
+        structure = options["structure"].as<std::string>();
+
     std::string input_format = options["input-format"].as<std::string>();
     std::string output_format = options["output-format"].as<std::string>();
 
@@ -1287,32 +1291,63 @@ try
     markov_model_params.determinator_sliding_window_size = options["determinator-sliding-window-size"].as<UInt64>();
 
     /// Create the header block
-    std::vector<std::string> structure_vals;
-    boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
-
-    if (structure_vals.size() % 2 != 0)
-        throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
-
-    Block header;
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-
-    for (size_t i = 0, size = structure_vals.size(); i < size; i += 2)
-    {
-        ColumnWithTypeAndName column;
-        column.name = structure_vals[i];
-        column.type = data_type_factory.get(structure_vals[i + 1]);
-        column.column = column.type->createColumn();
-        header.insert(std::move(column));
-    }
-
     SharedContextHolder shared_context = Context::createShared();
     auto context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 
+    Block header;
+
+    if (structure.empty())
+    {
+        std::unique_ptr<ReadBuffer> read_buffer_from_fd;
+        std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
+
+        ReadBufferIterator read_buffer_iterator = [&]()
+        {
+            read_buffer_from_fd = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+            auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
+            read_buf->setCheckpoint();
+            return read_buf;
+        };
+
+        auto context_const = WithContext(context).getContext();
+
+        auto schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const, peekable_read_buffer_from_fd);
+        auto schema_columns_info = schema_columns.getOrdinary();
+
+        for (auto & info : schema_columns_info)
+        {
+            ColumnWithTypeAndName column;
+            column.name = info.name;
+            column.type = info.type;
+            column.column = column.type->createColumn();
+            header.insert(std::move(column));
+        }
+    }
+    else
+    {
+        std::vector<std::string> structure_vals;
+        boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
+
+        if (structure_vals.size() % 2 != 0)
+            throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
+
+        const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
+        for (size_t i = 0, size = structure_vals.size(); i < size; i += 2)
+        {
+            ColumnWithTypeAndName column;
+            column.name = structure_vals[i];
+            column.type = data_type_factory.get(structure_vals[i + 1]);
+            column.column = column.type->createColumn();
+            header.insert(std::move(column));
+        }
+    }
+
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
 
-    if (load_from_file.empty())
+    if (load_from_file.empty() || structure.empty())
     {
         /// stdin must be seekable
         auto res = lseek(file_in.getFD(), 0, SEEK_SET);
