@@ -52,7 +52,7 @@ public:
     virtual std::unordered_map<String, uint128> check() const = 0;
 
     /// Determine whether to compress by file extension
-    bool isCompressFromFileName(const String & file_name) const;
+    static bool isCompressFromFileName(const String & file_name);
 
 protected:
     const IMergeTreeDataPart * part;
