@@ -279,56 +279,47 @@ public:
     }
 
     ConstSetPtr tryGetPreparedSet(
-        const PreparedSets & sets,
+        const PreparedSetsPtr & sets,
         const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
         const DataTypes & data_types) const
     {
-        if (ast)
+        if (sets && ast)
         {
             if (ast->as<ASTSubquery>() || ast->as<ASTTableIdentifier>())
-            {
-                auto set_it = sets.find(PreparedSetKey::forSubquery(*ast));
-                if (set_it != sets.end())
-                    return set_it->second;
-            }
-            else
-            {
-                /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-                /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-                /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-                /// that the types it was prepared with are compatible with the types of the primary key.
-                auto set_ast_hash = ast->getTreeHash();
-                auto set_it = std::find_if(
-                    sets.begin(), sets.end(),
-                    [&](const auto & candidate_entry)
-                    {
-                        if (candidate_entry.first.ast_hash != set_ast_hash)
-                            return false;
+                return sets->get(PreparedSetKey::forSubquery(*ast));
 
-                        for (size_t i = 0; i < indexes_mapping.size(); ++i)
-                            if (!candidate_entry.second->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
-                                return false;
+            /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
+            /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
+            /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
+            /// that the types it was prepared with are compatible with the types of the primary key.
+            auto types_match = [&indexes_mapping, &data_types](const SetPtr & candidate_set)
+            {
+                assert(indexes_mapping.size() == data_types.size());
 
-                        return true;
-                });
-                if (set_it != sets.end())
-                    return set_it->second;
+                for (size_t i = 0; i < indexes_mapping.size(); ++i)
+                    if (!candidate_set->areTypesEqual(indexes_mapping[i].tuple_index, data_types[i]))
+                        return false;
+
+                return true;
+            };
+
+            for (const auto & set : sets->getByTreeHash(ast->getTreeHash()))
+            {
+                if (types_match(set))
+                    return set;
             }
         }
-        else
+        else if (dag->column)
         {
-            if (dag->column)
-            {
-                const IColumn * col = dag->column.get();
-                if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
-                    col = &col_const->getDataColumn();
+            const IColumn * col = dag->column.get();
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(col))
+                col = &col_const->getDataColumn();
 
-                if (const auto * col_set = typeid_cast<const ColumnSet *>(col))
-                {
-                    auto set = col_set->getData();
-                    if (set->isCreated())
-                        return set;
-                }
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(col))
+            {
+                auto set = col_set->getData();
+                if (set->isCreated())
+                    return set;
             }
         }
 
@@ -864,7 +855,7 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 KeyCondition::KeyCondition(
     const ASTPtr & query,
     TreeRewriterResultPtr syntax_analyzer_result,
-    PreparedSets prepared_sets_,
+    PreparedSetsPtr prepared_sets_,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
@@ -872,7 +863,7 @@ KeyCondition::KeyCondition(
     bool strict_)
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , prepared_sets(std::move(prepared_sets_))
+    , prepared_sets(prepared_sets_)
     , single_point(single_point_)
     , strict(strict_)
 {
@@ -919,7 +910,7 @@ KeyCondition::KeyCondition(
 KeyCondition::KeyCondition(
     ActionDAGNodes dag_nodes,
     TreeRewriterResultPtr syntax_analyzer_result,
-    PreparedSets prepared_sets_,
+    PreparedSetsPtr prepared_sets_,
     ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
@@ -927,7 +918,7 @@ KeyCondition::KeyCondition(
     bool strict_)
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , prepared_sets(std::move(prepared_sets_))
+    , prepared_sets(prepared_sets_)
     , single_point(single_point_)
     , strict(strict_)
 {
