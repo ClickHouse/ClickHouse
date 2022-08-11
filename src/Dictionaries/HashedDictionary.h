@@ -32,7 +32,7 @@ struct HashedDictionaryStorageConfiguration
     const DictionaryLifetime lifetime;
 };
 
-template <DictionaryKeyType dictionary_key_type, bool sparse>
+template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 class HashedDictionary final : public IDictionary
 {
 public:
@@ -77,7 +77,12 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
+        return std::make_shared<HashedDictionary<dictionary_key_type, sparse, sharded>>(
+            getDictionaryID(),
+            dict_struct,
+            source_ptr->clone(),
+            configuration,
+            update_field_loaded_block);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -211,15 +216,15 @@ private:
 
     UInt64 getShard(UInt64 key) const
     {
-        if (configuration.shards > 1)
-            return key % configuration.shards;
-        return 0;
+        if constexpr (!sharded)
+            return 0;
+        return key % configuration.shards;
     }
     UInt64 getShard(StringRef key) const
     {
-        if (configuration.shards > 1)
-            return getShard(StringRefHash()(key));
-        return 0;
+        if constexpr (!sharded)
+            return 0;
+        return getShard(StringRefHash()(key));
     }
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
@@ -256,10 +261,14 @@ private:
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
-extern template class HashedDictionary<DictionaryKeyType::Simple, false>;
-extern template class HashedDictionary<DictionaryKeyType::Simple, true>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ false, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ false, /* sharded= */ true>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ true, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Simple, /* sparse= */ true, /* sharded= */ true>;
 
-extern template class HashedDictionary<DictionaryKeyType::Complex, false>;
-extern template class HashedDictionary<DictionaryKeyType::Complex, true>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ false, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ false, /* sharded= */ true>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ true, /* sharded= */ false>;
+extern template class HashedDictionary<DictionaryKeyType::Complex, /* sparse= */ true, /* sharded= */ true>;
 
 }
