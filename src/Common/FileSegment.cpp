@@ -2,8 +2,8 @@
 
 #include <base/getThreadId.h>
 #include <base/scope_guard.h>
-#include <Common/IFileCache.h>
 #include <Common/logger_useful.h>
+#include <Common/FileCache.h>
 #include <Common/hex.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -802,7 +802,7 @@ String FileSegmentsHolder::toString()
 }
 
 FileSegmentRangeWriter::FileSegmentRangeWriter(
-    IFileCache * cache_,
+    FileCache * cache_,
     const FileSegment::Key & key_,
     onCompleteFileSegmentCallback && on_complete_file_segment_func_)
     : cache(cache_)

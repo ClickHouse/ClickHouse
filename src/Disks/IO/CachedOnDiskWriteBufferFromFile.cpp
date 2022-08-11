@@ -32,7 +32,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     std::unique_ptr<WriteBuffer> impl_,
     FileCachePtr cache_,
     const String & source_path_,
-    const IFileCache::Key & key_,
+    const FileCache::Key & key_,
     bool is_persistent_cache_file_,
     const String & query_id_,
     const WriteSettings & settings_)

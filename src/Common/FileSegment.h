@@ -2,7 +2,6 @@
 
 #include <Core/Types.h>
 
-#include <Common/IFileCache.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <list>
@@ -281,7 +280,7 @@ public:
     using onCompleteFileSegmentCallback = std::function<void(const FileSegment & file_segment)>;
 
     FileSegmentRangeWriter(
-        IFileCache * cache_,
+        FileCache * cache_,
         const FileSegment::Key & key_,
         /// A callback which is called right after each file segment is completed.
         /// It is used to write into filesystem cache log.
@@ -297,7 +296,7 @@ private:
     FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);
     void completeFileSegment(FileSegment & file_segment);
 
-    IFileCache * cache;
+    FileCache * cache;
     FileSegment::Key key;
 
     FileSegmentsHolder file_segments_holder;

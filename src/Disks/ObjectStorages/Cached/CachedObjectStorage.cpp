@@ -4,7 +4,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
@@ -34,14 +34,14 @@ CachedObjectStorage::CachedObjectStorage(
     cache->initialize();
 }
 
-IFileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
+FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 {
     return cache->hash(path);
 }
 
 String CachedObjectStorage::getCachePath(const std::string & path) const
 {
-    IFileCache::Key cache_key = getCacheKey(path);
+    FileCache::Key cache_key = getCacheKey(path);
     return cache->getPathInLocalCache(cache_key);
 }
 
@@ -55,7 +55,7 @@ ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settin
     ReadSettings modified_settings{read_settings};
     modified_settings.remote_fs_cache = cache;
 
-    if (IFileCache::isReadOnly())
+    if (FileCache::isReadOnly())
         modified_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
     return IObjectStorage::patchSettings(modified_settings);
@@ -103,7 +103,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
             throw Exception(ErrorCodes::CANNOT_USE_CACHE, "Unable to read multiple objects, support not added");
 
         std::string path = objects[0].absolute_path;
-        IFileCache::Key key = getCacheKey(objects[0].getPathKeyForCache());
+        FileCache::Key key = getCacheKey(objects[0].getPathKeyForCache());
 
         return std::make_unique<CachedOnDiskReadBufferFromFile>(
             path,
@@ -143,7 +143,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
             return std::make_unique<BoundedReadBuffer>(object_storage->readObject(object, read_settings, read_hint, file_size));
         };
 
-        IFileCache::Key key = getCacheKey(object.getPathKeyForCache());
+        FileCache::Key key = getCacheKey(object.getPathKeyForCache());
         LOG_TEST(log, "Reading from file `{}` with cache key `{}`", object.absolute_path, key.toString());
         return std::make_unique<CachedOnDiskReadBufferFromFile>(
             object.absolute_path,

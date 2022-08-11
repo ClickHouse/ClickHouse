@@ -2,7 +2,7 @@
 
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteSettings.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Interpreters/FilesystemCacheLog.h>
 
 namespace Poco
@@ -22,7 +22,7 @@ public:
         std::unique_ptr<WriteBuffer> impl_,
         FileCachePtr cache_,
         const String & source_path_,
-        const IFileCache::Key & key_,
+        const FileCache::Key & key_,
         bool is_persistent_cache_file_,
         const String & query_id_,
         const WriteSettings & settings_);
@@ -39,7 +39,7 @@ private:
 
     FileCachePtr cache;
     String source_path;
-    IFileCache::Key key;
+    FileCache::Key key;
 
     bool is_persistent_cache_file;
     size_t current_download_offset = 0;
