@@ -351,7 +351,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         bool attach,
         ContextPtr context_,
         const String & primary_key_)
-    : IKeyValueStorage(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
 {
@@ -560,7 +560,8 @@ std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<
 
 Chunk StorageEmbeddedRocksDB::getByKeys(
     const ColumnsWithTypeAndName & keys,
-    PaddedPODArray<UInt8> & null_map) const
+    PaddedPODArray<UInt8> & null_map,
+    const Names &) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageEmbeddedRocksDB supports only one key, got: {}", keys.size());
@@ -571,6 +572,12 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
 
     return getBySerializedKeys(raw_keys, &null_map);
+}
+
+Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
+{
+    auto metadata = getInMemoryMetadataPtr();
+    return metadata ? metadata->getSampleBlock() : Block();
 }
 
 Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
