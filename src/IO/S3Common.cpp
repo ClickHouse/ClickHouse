@@ -43,6 +43,11 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
     {"AWSAuthV4Signer", "AWSClient (AWSAuthV4Signer)"},
 };
 
+namespace ProfileEvents
+{
+    extern const Event HeadS3Object;
+}
+
 const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
     static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
@@ -793,6 +798,7 @@ namespace S3
 
     S3::ObjectInfo getObjectInfo(std::shared_ptr<const Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, const String & version_id, bool throw_on_error)
     {
+        ProfileEvents::increment(ProfileEvents::HeadS3Object);
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
