@@ -299,7 +299,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     if (short_circuit_nodes.empty())
         return {};
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
+    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getOutputs());
 
     /// For each node we fill LazyExecutionInfo.
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
@@ -333,10 +333,10 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & index = actions_dag->getIndex();
+    const auto & outputs = actions_dag->getOutputs();
     const auto & inputs = actions_dag->getInputs();
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, index);
+    auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
     for (const auto & node : nodes)
         data.push_back({.node = &node});
@@ -426,9 +426,9 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         }
     }
 
-    result_positions.reserve(index.size());
+    result_positions.reserve(outputs.size());
 
-    for (const auto & node : index)
+    for (const auto & node : outputs)
     {
         auto pos = data[reverse_info.reverse_index[node]].position;
 
