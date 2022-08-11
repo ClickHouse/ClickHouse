@@ -74,3 +74,7 @@ $CLICKHOUSE_CLIENT -n -q "
   set param_c = '2022-08-04 18:30:53';
   set param_d = '{\'10\': [11, 12], \'13\': [14, 15]}';
   select {a: UInt32}, {b: String}, {c: DateTime}, {d: Map(String, Array(UInt8))}"
+
+# empty parameter name is not allowed
+$CLICKHOUSE_CLIENT --param_="" -q "select 1" 2>&1 | grep -c 'Code: 36'
+$CLICKHOUSE_CLIENT -q "set param_ = ''" 2>&1 | grep -c 'Code: 36'
