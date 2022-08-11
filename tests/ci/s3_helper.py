@@ -9,7 +9,7 @@ from multiprocessing.dummy import Pool
 
 import boto3  # type: ignore
 
-from env_helper import S3_TEST_REPORTS_BUCKET, S3_BUILDS_BUCKET, RUNNER_TEMP, CI
+from env_helper import S3_TEST_REPORTS_BUCKET, S3_BUILDS_BUCKET, RUNNER_TEMP, CI, S3_URL
 from compress_files import compress_file_fast
 
 
@@ -98,13 +98,8 @@ class S3Helper:
         logging.info("Upload %s to %s. Meta: %s", file_path, s3_path, metadata)
         # last two replacements are specifics of AWS urls:
         # https://jamesd3142.wordpress.com/2018/02/28/amazon-s3-and-the-plus-symbol/
-        return (
-            "https://s3.amazonaws.com/{bucket}/{path}".format(
-                bucket=bucket_name, path=s3_path
-            )
-            .replace("+", "%2B")
-            .replace(" ", "%20")
-        )
+        url = f"{S3_URL}/{bucket_name}/{s3_path}"
+        return url.replace("+", "%2B").replace(" ", "%20")
 
     def upload_test_report_to_s3(self, file_path, s3_path):
         if CI:
@@ -175,9 +170,7 @@ class S3Helper:
                     t = time.time()
             except Exception as ex:
                 logging.critical("Failed to upload file, expcetion %s", ex)
-            return "https://s3.amazonaws.com/{bucket}/{path}".format(
-                bucket=bucket_name, path=s3_path
-            )
+            return f"{S3_URL}/{bucket_name}/{s3_path}"
 
         p = Pool(256)
 

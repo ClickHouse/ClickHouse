@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileSegment.h>
 #include <Common/FileCacheFactory.h>
 #include <Interpreters/Context.h>

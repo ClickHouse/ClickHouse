@@ -914,7 +914,7 @@ class TestCase:
         description_full += result.description
         description_full += "\n"
 
-        if result.status == TestStatus.FAIL:
+        if result.status == TestStatus.FAIL and self.testcase_args:
             description_full += "Database: " + self.testcase_args.testcase_database
 
         result.description = description_full
@@ -1179,15 +1179,21 @@ class TestSuite:
         def is_shebang(line: str) -> bool:
             return line.startswith("#!")
 
+        def find_tag_line(file):
+            for line in file:
+                line = line.strip()
+                if line and not is_shebang(line):
+                    return line
+            return ''
+
         def load_tags_from_file(filepath):
+            comment_sign = get_comment_sign(filepath)
             with open(filepath, "r", encoding="utf-8") as file:
                 try:
-                    line = file.readline()
-                    if is_shebang(line):
-                        line = file.readline()
+                    line = find_tag_line(file)
                 except UnicodeDecodeError:
                     return []
-            return parse_tags_from_line(line, get_comment_sign(filepath))
+            return parse_tags_from_line(line, comment_sign)
 
         all_tags = {}
         start_time = datetime.now()

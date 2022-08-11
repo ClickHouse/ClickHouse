@@ -4,7 +4,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 
 
 namespace DB

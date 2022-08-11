@@ -10,7 +10,7 @@ import sys
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH, S3_URL
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper(S3_URL)
     report_url = upload_results(
         s3_helper,
         pr_info.number,

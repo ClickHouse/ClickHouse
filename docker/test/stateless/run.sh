@@ -60,6 +60,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
     --mysql_port 19004 --postgresql_port 19005 \
     --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
+    --prometheus.port 19988 \
     --macros.replica r2   # It doesn't work :(
 
     mkdir -p /var/run/clickhouse-server2
@@ -71,6 +72,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
     --mysql_port 29004 --postgresql_port 29005 \
     --keeper_server.tcp_port 29181 --keeper_server.server_id 3 \
+    --prometheus.port 29988 \
     --macros.shard s2   # It doesn't work :(
 
     MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)

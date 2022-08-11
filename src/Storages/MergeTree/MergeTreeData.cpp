@@ -5317,9 +5317,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             minmax_columns_types = getMinMaxColumnsTypes(partition_key);
 
             minmax_idx_condition.emplace(
-                query_info.query, query_info.syntax_analyzer_result, query_info.sets,
-                query_context,
-                minmax_columns_names,
+                query_info, query_context, minmax_columns_names,
                 getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(query_context)));
             partition_pruner.emplace(metadata_snapshot, query_info, query_context, false /* strict */);
         }
@@ -5541,13 +5539,12 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         query_ptr,
         query_context,
         query_options,
-        std::move(query_info.subquery_for_sets),
-        std::move(query_info.sets));
+        query_info.prepared_sets);
     const auto & analysis_result = select.getAnalysisResult();
 
-    query_info.sets = std::move(select.getQueryAnalyzer()->getPreparedSets());
-    query_info.subquery_for_sets = std::move(select.getQueryAnalyzer()->getSubqueriesForSets());
+    query_info.prepared_sets = select.getQueryAnalyzer()->getPreparedSets();
     query_info.prewhere_info = analysis_result.prewhere_info;
+
     const auto & before_where = analysis_result.before_where;
     const auto & where_column_name = analysis_result.where_column_name;
 
