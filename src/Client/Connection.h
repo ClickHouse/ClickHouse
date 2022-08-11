@@ -51,6 +51,7 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
+        const String & quota_key_,
         const String & cluster_,
         const String & cluster_secret_,
         const String & client_name_,
@@ -160,6 +161,7 @@ private:
     String default_database;
     String user;
     String password;
+    String quota_key;
 
     /// For inter-server authorization
     String cluster;
@@ -246,6 +248,7 @@ private:
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
+    void sendAddendum();
     void receiveHello();
 
 #if USE_SSL

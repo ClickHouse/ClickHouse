@@ -1,7 +1,7 @@
 #include <iomanip>
 #include <iostream>
 #include <gtest/gtest.h>
-#include <Common/LRUFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileSegment.h>
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
@@ -47,7 +47,7 @@ std::vector<DB::FileSegmentPtr> fromHolder(const DB::FileSegmentsHolder & holder
     return std::vector<DB::FileSegmentPtr>(holder.file_segments.begin(), holder.file_segments.end());
 }
 
-String getFileSegmentPath(const String & base_path, const DB::IFileCache::Key & key, size_t offset)
+String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
 {
     auto key_str = key.toString();
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
@@ -85,7 +85,7 @@ void complete(const DB::FileSegmentsHolder & holder)
 }
 
 
-TEST(LRUFileCache, get)
+TEST(FileCache, get)
 {
     if (fs::exists(cache_base_path))
         fs::remove_all(cache_base_path);
@@ -103,7 +103,7 @@ TEST(LRUFileCache, get)
     DB::FileCacheSettings settings;
     settings.max_size = 30;
     settings.max_elements = 5;
-    auto cache = DB::LRUFileCache(cache_base_path, settings);
+    auto cache = DB::FileCache(cache_base_path, settings);
     cache.initialize();
     auto key = cache.hash("key1");
 
@@ -479,7 +479,7 @@ TEST(LRUFileCache, get)
     {
         /// Test LRUCache::restore().
 
-        auto cache2 = DB::LRUFileCache(cache_base_path, settings);
+        auto cache2 = DB::FileCache(cache_base_path, settings);
         cache2.initialize();
 
         auto holder1 = cache2.getOrSet(key, 2, 28, false); /// Get [2, 29]
@@ -499,7 +499,7 @@ TEST(LRUFileCache, get)
 
         auto settings2 = settings;
         settings2.max_file_segment_size = 10;
-        auto cache2 = DB::LRUFileCache(caches_dir / "cache2", settings2);
+        auto cache2 = DB::FileCache(caches_dir / "cache2", settings2);
         cache2.initialize();
 
         auto holder1 = cache2.getOrSet(key, 0, 25, false); /// Get [0, 24]

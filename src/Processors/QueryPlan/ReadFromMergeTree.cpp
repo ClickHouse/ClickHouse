@@ -834,6 +834,9 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
 {
     return selectRangesToRead(
         std::move(parts),
+        prewhere_info,
+        added_filter,
+        added_filter_column_name,
         storage_snapshot->metadata,
         storage_snapshot->getMetadataForQuery(),
         query_info,
@@ -848,6 +851,9 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
 
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
+    const PrewhereInfoPtr & prewhere_info,
+    const ActionsDAGPtr & added_filter,
+    const std::string & added_filter_column_name,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -882,9 +888,31 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
-    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
+    std::optional<KeyCondition> key_condition;
 
-    if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
+    if (settings.query_plan_optimize_primary_key)
+    {
+        ActionDAGNodes nodes;
+        if (prewhere_info)
+        {
+            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+            nodes.nodes.push_back(&node);
+        }
+
+        if (added_filter)
+        {
+            const auto & node = added_filter->findInOutputs(added_filter_column_name);
+            nodes.nodes.push_back(&node);
+        }
+
+        key_condition.emplace(std::move(nodes), query_info.syntax_analyzer_result, query_info.prepared_sets, context, primary_key_columns, primary_key.expression);
+    }
+    else
+    {
+        key_condition.emplace(query_info, context, primary_key_columns, primary_key.expression);
+    }
+
+    if (settings.force_primary_key && key_condition->alwaysUnknownOrTrue())
     {
         return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{
             .result = std::make_exception_ptr(Exception(
@@ -892,7 +920,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 "Primary key ({}) is not used and setting 'force_primary_key' is set",
                 fmt::join(primary_key_columns, ", ")))});
     }
-    LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
+    LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
@@ -915,7 +943,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             select,
             metadata_snapshot->getColumns().getAllPhysical(),
             parts,
-            key_condition,
+            *key_condition,
             data,
             metadata_snapshot,
             context,
@@ -940,7 +968,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             metadata_snapshot,
             query_info,
             context,
-            key_condition,
+            *key_condition,
             reader_settings,
             log,
             num_streams,
