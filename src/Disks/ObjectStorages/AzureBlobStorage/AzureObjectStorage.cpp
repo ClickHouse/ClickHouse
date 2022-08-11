@@ -3,8 +3,8 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/getRandomASCIIString.h>
-#include <IO/ReadBufferFromAzureBlobStorage.h>
-#include <IO/WriteBufferFromAzureBlobStorage.h>
+#include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
+#include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
@@ -79,11 +79,24 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObjects( /// NOL
 {
     ReadSettings disk_read_settings = patchSettings(read_settings);
     auto settings_ptr = settings.get();
-    auto reader_impl = std::make_unique<ReadBufferFromAzureBlobStorageGather>(
-        client.get(),
+
+    auto read_buffer_creator =
+        [this, settings_ptr, disk_read_settings]
+        (const std::string & path, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<ReadBufferFromAzureBlobStorage>(
+            client.get(),
+            path,
+            disk_read_settings,
+            settings_ptr->max_single_read_retries,
+            settings_ptr->max_single_download_retries,
+            /* use_external_buffer */true,
+            read_until_position);
+    };
+
+    auto reader_impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator),
         objects,
-        settings_ptr->max_single_read_retries,
-        settings_ptr->max_single_download_retries,
         disk_read_settings);
 
     if (disk_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
