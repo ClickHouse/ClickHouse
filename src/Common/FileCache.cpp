@@ -1030,7 +1030,9 @@ void FileCache::reduceSizeToDownloaded(
     const auto & file_segment = cell->file_segment;
 
     size_t downloaded_size = file_segment->downloaded_size;
-    if (downloaded_size == file_segment->range().size())
+    size_t full_size = file_segment->range().size();
+
+    if (downloaded_size == full_size)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1040,6 +1042,10 @@ void FileCache::reduceSizeToDownloaded(
 
     cell->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
+
+    assert(file_segment->reserved_size >= downloaded_size);
+    size_t decrement = file_segment->reserved_size - downloaded_size;
+    cell->queue_iterator->incrementSize(decrement, cache_lock);
 }
 
 bool FileCache::isLastFileSegmentHolder(

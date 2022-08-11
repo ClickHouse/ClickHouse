@@ -115,9 +115,9 @@ size_t FileSegment::getDownloadOffsetUnlocked(std::lock_guard<std::mutex> & segm
     if (is_async_download)
     {
         if (isBackgroundDownloader(segment_lock))
-            return range().left + async_write_state->getDownloadOffset();
+            return range().left + async_write_state->getDownloadedSize();
         else
-            return range().left + async_write_state->getDownloadQueueEndOffset();
+            return range().left + async_write_state->getFutureDownloadedSize();
     }
 
     return getDownloadedOffsetUnlocked(segment_lock);
@@ -348,7 +348,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
         state.buffers.emplace(std::move(buffer));
         state.last_added_offset = offset;
-        state.download_queue_offset += size;
+        state.future_downloaded_size += size;
     }
 
     ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
@@ -362,7 +362,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
     auto task = std::make_shared<std::packaged_task<void()>>(
         [this,
          executor_id = getCallerId() + "_async", /// Id for background downloader
-         file_segment = shared_from_this(), /// Hold shared pointer to the file segment to mark is as used
+         holder = FileSegmentsHolder({shared_from_this()}), /// Protection
          running_group, query_context]()
     {
         ThreadStatus thread_status;
@@ -381,7 +381,10 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         /// If there was an exception on writing previous block of data, do not attempt
         /// to write later block. Once state.exception is set, each next attempt to add
         /// one more block into state.buffers will fail with that exception.
-        state.throwIfException();
+        if (state.hasException())
+            return;
+
+        const auto & file_segment = holder.file_segments.front();
 
         {
             std::lock_guard segment_lock(file_segment->mutex);
@@ -411,7 +414,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
                 {
                     std::lock_guard segment_lock(file_segment->mutex);
 
-                    state.download_offset += written_bytes;
+                    state.downloaded_size += written_bytes;
                     written_bytes = 0;
 
                     if (state.buffers.empty())
@@ -450,10 +453,15 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
             tryLogCurrentException(__PRETTY_FUNCTION__);
             state.setExceptionIfEmpty();
 
+            try
             {
                 std::lock_guard segment_lock(file_segment->mutex);
                 state.buffers = {}; /// Clear all hold memory.
                 completePartAndResetDownloaderUnlocked(true, segment_lock);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
 
@@ -725,6 +733,8 @@ void FileSegment::setDownloadedUnlocked(std::lock_guard<std::mutex> & /* segment
 
 void FileSegment::setDownloadFailedUnlocked(std::lock_guard<std::mutex> & segment_lock)
 {
+    LOG_INFO(log, "Settings download as failed: {}", getInfoForLogUnlocked(segment_lock));
+
     download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
     resetDownloaderUnlocked(true, segment_lock);
@@ -751,7 +761,7 @@ void FileSegment::completePartAndResetDownloaderUnlocked(bool is_internal, std::
 
     if (background_downloader_id.empty() || is_internal)
     {
-        if (getDownloadedOffsetUnlocked(segment_lock) == range().size())
+        if (getDownloadedSizeUnlocked(segment_lock) == range().size())
         {
             setDownloadedUnlocked(segment_lock);
         }

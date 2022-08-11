@@ -317,9 +317,9 @@ private:
 
         using Buffers = std::queue<Buffer>;
 
-        size_t getDownloadOffset() const { return download_offset; }
+        size_t getDownloadedSize() const { return downloaded_size; }
 
-        size_t getDownloadQueueEndOffset() const { return download_queue_offset; }
+        size_t getFutureDownloadedSize() const { return future_downloaded_size; }
 
         void throwIfException()
         {
@@ -335,21 +335,27 @@ private:
                 exception = std::current_exception();
         }
 
+        bool hasException() const
+        {
+            std::lock_guard lock(exception_mutex);
+            return exception != nullptr;
+        }
+
         /// A list of buffers which are waiting to be written
         /// into cache within current write state.
         /// Each buffer can be written one after another in direct order.
         std::queue<Buffer> buffers;
 
         int64_t last_added_offset = -1;
-        std::atomic<size_t> download_offset = 0;
-        std::atomic<size_t> download_queue_offset = 0;
+        std::atomic<size_t> downloaded_size = 0;
+        std::atomic<size_t> future_downloaded_size = 0;
 
     private:
         /// Contains the first exception happened when writing data
         /// from `buffers`. No further buffer can be written, if there
         /// was exception while writing previous buffer.
         std::exception_ptr exception TSA_GUARDED_BY(exception_mutex);
-        std::mutex exception_mutex;
+        mutable std::mutex exception_mutex;
 
         // std::string toString() const
         // {
