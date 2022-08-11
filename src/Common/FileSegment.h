@@ -5,6 +5,8 @@
 #include <Core/Types.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <list>
 #include <queue>
 
@@ -152,6 +154,8 @@ public:
 
     size_t getDownloadOffset() const;
 
+    size_t getDownloadedOffset() const;
+
     size_t getDownloadedSize() const;
 
     void detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
@@ -226,6 +230,7 @@ private:
     bool isDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock) const;
     String getDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock) const;
     size_t getDownloadOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    size_t getDownloadedOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
     /// complete() without any completion state is called from destructor of
     /// FileSegmentsHolder. complete() might check if the caller of the method
@@ -234,7 +239,7 @@ private:
     void completeWithoutState(std::lock_guard<std::mutex> & cache_lock);
     void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
 
-    void completePartAndResetDownloaderImpl(bool is_internal);
+    void completePartAndResetDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock);
 
     void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
 
@@ -288,8 +293,9 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 
-    struct WriteState
+    class WriteState
     {
+    public:
         struct Buffer
         {
             Buffer() = default;
@@ -308,22 +314,54 @@ private:
             size_t offset;
         };
 
+        using Buffers = std::queue<Buffer>;
+
+        size_t getDownloadOffset() const { return download_offset; }
+
+        size_t getDownloadQueueEndOffset() const { return download_queue_offset; }
+
+        void throwIfException()
+        {
+            std::lock_guard lock(exception_mutex);
+            if (exception)
+                std::rethrow_exception(exception);
+        }
+
+        void setExceptionIfEmpty()
+        {
+            std::lock_guard lock(exception_mutex);
+            if (!exception)
+                exception = std::current_exception();
+        }
+
         /// A list of buffers which are waiting to be written
         /// into cache within current write state.
         /// Each buffer can be written one after another in direct order.
         std::queue<Buffer> buffers;
 
+        int64_t last_added_offset = -1;
+        std::atomic<size_t> download_offset = 0;
+        std::atomic<size_t> download_queue_offset = 0;
+
+    private:
         /// Contains the first exception happened when writing data
         /// from `buffers`. No further buffer can be written, if there
         /// was exception while writing previous buffer.
-        std::exception_ptr exception;
+        std::exception_ptr exception TSA_GUARDED_BY(exception_mutex);
+        std::mutex exception_mutex;
 
-        int64_t last_added_offset = -1;
-
-        mutable std::mutex mutex;
+        // std::string toString() const
+        // {
+        //     WriteBufferFromOwnString wb;
+        //     wb << "buffers number: " << buffers.size() << ", ";
+        //     wb << "download offset: " << download_offset.load() << ",";
+        //     wb << "last added offset: " << last_added_offset;
+        //     return wb.str();
+        // }
     };
 
     mutable std::optional<WriteState> async_write_state;
+    bool isBackgroundDownloader(std::lock_guard<std::mutex> & segment_lock) const;
 };
 
 struct FileSegmentsHolder : private boost::noncopyable
