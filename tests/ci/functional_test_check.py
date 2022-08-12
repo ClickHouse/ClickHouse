@@ -10,7 +10,7 @@ import atexit
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH, S3_DOWNLOAD
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
@@ -88,7 +88,8 @@ def get_run_command(
 
     envs = [
         f"-e MAX_RUN_TIME={int(0.9 * kill_timeout)}",
-        f'-e S3_URL="{S3_DOWNLOAD}/clickhouse-datasets"',
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
     ]
 
     if flaky_check:
