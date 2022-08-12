@@ -34,16 +34,23 @@ bool ArrayIif::convertImpl(String &out,IParser::Pos &pos)
 
 bool ArrayIndexOf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String array = getConvertedArgument(fn_name, pos);
+    ++pos;
+    const auto needle = getConvertedArgument(fn_name, pos);
+    out = "minus(indexOf(" + array + ", " + needle + ") , 1)";
+  
+    return true;
 }
 
 bool ArrayLength::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "length");
 }
 
 bool ArrayReverse::convertImpl(String &out,IParser::Pos &pos)
@@ -111,9 +118,7 @@ bool ArraySplit::convertImpl(String &out,IParser::Pos &pos)
 
 bool ArraySum::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out, pos, "arraySum");
 }
 
 bool BagKeys::convertImpl(String &out,IParser::Pos &pos)

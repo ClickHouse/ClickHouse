@@ -595,6 +595,42 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
          {
              "Customers | summarize t = make_set_if(FirstName, Age > 10, 10) by FirstName",
              "SELECT\n    FirstName,\n    groupUniqArrayIf(10)(FirstName, Age > 10) AS t\nFROM Customers\nGROUP BY FirstName"
+         },
+         {
+             "print output = dynamic([1, 2, 3])",
+             "SELECT [1, 2, 3] AS output"
+         },
+         {
+             "print output = dynamic(['a', 'b', 'c'])",
+             "SELECT ['a', 'b', 'c'] AS output"
+         },
+         {
+             "print output = array_index_of(dynamic([1, 2, 3]), 2)",
+             "SELECT indexOf([1, 2, 3], 2) - 1 AS output"
+         },
+         {
+             "print output = array_index_of(dynamic(['a', 'b', 'c']), 'b')",
+             "SELECT indexOf(['a', 'b', 'c'], 'b') - 1 AS output"
+         },
+         {
+             "print output = array_index_of(dynamic(['John', 'Denver', 'Bob', 'Marley']), 'Marley')",
+             "SELECT indexOf(['John', 'Denver', 'Bob', 'Marley'], 'Marley') - 1 AS output"
+         },
+         {
+             "print output = array_length(dynamic([1, 2, 3]))",
+             "SELECT length([1, 2, 3]) AS output"
+         },
+         {
+             "print output = array_length(dynamic(['John', 'Denver', 'Bob', 'Marley']))",
+             "SELECT length(['John', 'Denver', 'Bob', 'Marley']) AS output"
+         },
+         {
+             "print output = array_sum(dynamic([2, 5, 3]))",
+             "SELECT arraySum([2, 5, 3]) AS output"
+         },
+         {
+             "print output = array_sum(dynamic([2.5, 5.5, 3]))",
+             "SELECT arraySum([2.5, 5.5, 3]) AS output"
          }
 })));
 
