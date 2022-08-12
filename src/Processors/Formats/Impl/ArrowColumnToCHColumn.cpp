@@ -36,8 +36,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 
-#include <Common/logger_useful.h>
-
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8, DB::UInt8) \
@@ -787,7 +785,6 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 
         try
         {
-//            LOG_DEBUG(&Poco::Logger::get("Arrow"), "Cast {} to {}", column.type, header_column.type);
             column.column = castColumn(column, header_column.type);
         }
         catch (Exception & e)
