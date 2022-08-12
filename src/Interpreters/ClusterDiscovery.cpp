@@ -132,7 +132,14 @@ ClusterDiscovery::ClusterDiscovery(
             )
         );
     }
-    clusters_to_update = std::make_shared<UpdateFlags>(config_keys.begin(), config_keys.end());
+
+    std::vector<String> clusters_info_names;
+    clusters_info_names.reserve(clusters_info.size());
+    for (const auto & e : clusters_info)
+        clusters_info_names.emplace_back(e.first);
+
+    LOG_TRACE(log, "Clusters in discovery mode: {}", fmt::join(clusters_info_names, ", "));
+    clusters_to_update = std::make_shared<UpdateFlags>(clusters_info_names.begin(), clusters_info_names.end());
 }
 
 /// List node in zookeper for cluster
@@ -299,6 +306,10 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
 {
+    /// Create root node in observer mode not to get 'No node' error
+    String node_path = getShardsListPath(info.zk_root) / current_node_name;
+    zk->createAncestors(node_path);
+
     if (info.current_node_is_observer)
     {
         LOG_DEBUG(log, "Current node {} is observer of cluster {}", current_node_name, info.name);
@@ -306,9 +317,6 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     }
 
     LOG_DEBUG(log, "Registering current node {} in cluster {}", current_node_name, info.name);
-
-    String node_path = getShardsListPath(info.zk_root) / current_node_name;
-    zk->createAncestors(node_path);
 
     zk->createOrUpdate(node_path, info.current_node.serialize(), zkutil::CreateMode::Ephemeral);
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);

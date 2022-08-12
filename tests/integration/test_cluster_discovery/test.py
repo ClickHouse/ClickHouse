@@ -8,11 +8,11 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 shard_configs = {
-    "node_0": "config/config.xml",
-    "node_1": "config/config_shard1.xml",
-    "node_2": "config/config.xml",
-    "node_3": "config/config_shard3.xml",
-    "node_4": "config/config.xml",
+    "node0": "config/config.xml",
+    "node1": "config/config_shard1.xml",
+    "node2": "config/config.xml",
+    "node3": "config/config_shard3.xml",
+    "node4": "config/config.xml",
     "node_observer": "config/config_observer.xml",
 }
 
@@ -89,38 +89,38 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     total_nodes = len(nodes) - 1
 
     check_nodes_count(
-        [nodes["node_0"], nodes["node_2"], nodes["node_observer"]], total_nodes
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_nodes
     )
     check_shard_num(
-        [nodes["node_0"], nodes["node_2"], nodes["node_observer"]], total_shards
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards
     )
 
-    nodes["node_1"].stop_clickhouse(kill=True)
+    nodes["node1"].stop_clickhouse(kill=True)
     check_nodes_count(
-        [nodes["node_0"], nodes["node_2"], nodes["node_observer"]], total_nodes - 1
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_nodes - 1
     )
 
-    # node_1 was the only node in shard '1'
+    # node1 was the only node in shard '1'
     check_shard_num(
-        [nodes["node_0"], nodes["node_2"], nodes["node_observer"]], total_shards - 1
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_shards - 1
     )
 
-    nodes["node_3"].stop_clickhouse()
+    nodes["node3"].stop_clickhouse()
     check_nodes_count(
-        [nodes["node_0"], nodes["node_2"], nodes["node_observer"]], total_nodes - 2
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_nodes - 2
     )
 
-    nodes["node_1"].start_clickhouse()
+    nodes["node1"].start_clickhouse()
     check_nodes_count(
-        [nodes["node_0"], nodes["node_2"], nodes["node_observer"]], total_nodes - 1
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_nodes - 1
     )
 
-    nodes["node_3"].start_clickhouse()
+    nodes["node3"].start_clickhouse()
     check_nodes_count(
-        [nodes["node_0"], nodes["node_2"], nodes["node_observer"]], total_nodes
+        [nodes["node0"], nodes["node2"], nodes["node_observer"]], total_nodes
     )
 
     # regular cluster is not affected
     check_nodes_count(
-        [nodes["node_1"], nodes["node_2"]], 2, cluster_name="two_shards", retries=1
+        [nodes["node1"], nodes["node2"]], 2, cluster_name="two_shards", retries=1
     )
