@@ -19,6 +19,7 @@ protected:
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };*/
 
+
 class Ago : public IParserKQLFunction
 {
 protected:
@@ -72,6 +73,13 @@ class EndOfDay : public IParserKQLFunction
 {
 protected:
     const char * getName() const override { return "endofday()"; }
+    bool convertImpl(String &out,IParser::Pos &pos) override;
+};
+
+class EndOfMonth : public IParserKQLFunction
+{
+protected:
+    const char * getName() const override { return "endofmonth()"; }
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 

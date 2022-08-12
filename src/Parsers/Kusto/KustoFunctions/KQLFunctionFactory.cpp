@@ -31,6 +31,8 @@ namespace DB
         {"endofday", KQLFunctionValue::endofday},
         {"endofweek", KQLFunctionValue::endofweek},
         {"endofyear", KQLFunctionValue::endofyear},
+        {"endofmonth", KQLFunctionValue::endofmonth},
+
         {"format_datetime", KQLFunctionValue::format_datetime},
         {"format_timespan", KQLFunctionValue::format_timespan},
         {"getmonth", KQLFunctionValue::getmonth},
@@ -272,6 +274,9 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
 
         case KQLFunctionValue::endofyear:
             return std::make_unique<EndOfYear>();
+        
+        case KQLFunctionValue::endofmonth:
+            return std::make_unique<EndOfMonth>();
         
         case KQLFunctionValue::monthofyear:
             return std::make_unique<MonthOfYear>();

@@ -162,6 +162,15 @@
 
 - [unixtime_seconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-seconds-todatetimefunction)  
    `print unixtime_seconds_todatetime(1546300800)`  
+   
+- [unixtime_microseconds_todatetime]
+   `print unixtime_microseconds_todatetime(1546300800000000)`    
+
+- [unixtime_milliseconds_todatetime]
+   `print unixtime_milliseconds_todatetime(1546300800000)`
+
+- [unixtime_nanoseconds_todatetime]
+   `print unixtime_nanoseconds_todatetime(1546300800000000000)`
 
 - [dayofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofweekfunction)  
    `print dayofweek(datetime(2015-12-20))`  
@@ -176,6 +185,38 @@
    `print now(-2d) `  
    `print now(time(1d))`  
 
+- [ago]
+   `print ago(2h)`
+
+- [endofday]
+   `print endofday(datetime(2017-01-01 10:10:17), -1)`
+   `print endofday(datetime(2017-01-01 10:10:17), 1)`
+   `print endofday(datetime(2017-01-01 10:10:17))`
+
+- [endofmonth]
+   `print endofmonth(datetime(2017-01-01 10:10:17), -1)`
+   `print endofmonth(datetime(2017-01-01 10:10:17), 1)`
+   `print endofmonth(datetime(2017-01-01 10:10:17))`
+
+- [endofweek]
+   `print endofweek(datetime(2017-01-01 10:10:17), 1)`
+   `print endofweek(datetime(2017-01-01 10:10:17), -1)`
+   `print endofweek(datetime(2017-01-01 10:10:17))` 
+
+- [endofyear]
+   `print endofyear(datetime(2017-01-01 10:10:17), -1)`
+   `print endofyear(datetime(2017-01-01 10:10:17), 1)`
+   `print endofyear(datetime(2017-01-01 10:10:17))`
+
+- [make_datetime]
+   `print make_datetime(2017,10,01)`
+   `print make_datetime(2017,10,01,12,10)`
+   `print make_datetime(2017,10,01,12,11,0.1234567)`
+
+-  [datetime_diff]
+   `print datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31))`
+   `print datetime_diff('quarter',datetime(2017-07-01),datetime(2017-03-30))`
+   `print datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59))` 
 
 ## Binary functions
 - [binary_and](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-andfunction)  
