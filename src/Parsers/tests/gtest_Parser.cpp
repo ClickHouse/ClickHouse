@@ -1,5 +1,4 @@
-#include "gtest_common.h"
-
+#include <Parsers/tests/gtest_common.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/applyTableOverride.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -602,64 +601,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
          {
              "print output = dynamic(['a', 'b', 'c'])",
              "SELECT ['a', 'b', 'c'] AS output"
-         }
-         ,
-         {
-             "print t = array_sort_asc(dynamic([null, 'd', 'a', 'c', 'c']))",
-             "SELECT arraySort([NULL, 'd', 'a', 'c', 'c']) AS t"
-         }
-         ,
-         {
-             "print t = array_sort_asc(dynamic([4, 1, 3, 2]))",
-             "SELECT arraySort([4, 1, 3, 2]) AS t"
-         },
-         {
-             "print t = array_sort_asc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))",
-             "SELECT arraySort((x, y) -> y, [20, 10, 30], ['b', 'a', 'c']) AS t"
-         },
-         {
-             "print t = array_sort_asc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))",
-             "SELECT arraySort((x, y) -> y, ['clickhouse', 'hello', 'world'], [2, 1, 3]) AS t"
-         },
-         {
-             "print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , false)",
-             "SELECT arrayConcat([NULL], arraySort(['d', 'a', 'c', 'c'])) AS t"
-         },
-         {
-             "print t = array_sort_asc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)",
-             "SELECT arrayConcat([NULL, NULL, NULL, NULL, NULL, NULL], arraySort(['d', 'a', 'c', 'c'])) AS t"
-         },
-         {
-             "print t = array_sort_asc( dynamic([null, null, null]) , false)",
-             "SELECT arrayConcat([NULL, NULL, NULL], arraySort([])) AS t"
-         },
-         {
-             "print t = array_sort_desc(dynamic([null, 'd', 'a', 'c', 'c']))",
-             "SELECT arrayReverseSort([NULL, 'd', 'a', 'c', 'c']) AS t"
-         },
-         {
-             "print t = array_sort_desc(dynamic([4, 1, 3, 2]))",
-             "SELECT arrayReverseSort([4, 1, 3, 2]) AS t"
-         },
-         {
-             "print t = array_sort_desc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))",
-             "SELECT arrayReverseSort((x, y) -> y, [20, 10, 30], ['b', 'a', 'c']) AS t"
-         },
-         {
-             "print t = array_sort_desc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))",
-             "SELECT arrayReverseSort((x, y) -> y, ['clickhouse', 'hello', 'world'], [2, 1, 3]) AS t"
-         },
-         {
-             "print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , false)",
-             "SELECT arrayConcat([NULL], arrayReverseSort(['d', 'a', 'c', 'c'])) AS t"
-         },
-         {
-             "print t = array_sort_desc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)",
-             "SELECT arrayConcat([NULL, NULL, NULL, NULL, NULL, NULL], arrayReverseSort(['d', 'a', 'c', 'c'])) AS t"
-         },
-         {
-             "print t = array_sort_desc( dynamic([null, null, null]) , false)",
-             "SELECT arrayConcat([NULL, NULL, NULL], arrayReverseSort([])) AS t"
          }
 })));
 
