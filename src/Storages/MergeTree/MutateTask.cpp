@@ -736,6 +736,8 @@ struct MutationContext
     MergeTreeTransactionPtr txn;
 
     MergeTreeData::HardlinkedFiles hardlinked_files;
+
+    scope_guard temporary_directory_lock;
 };
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
@@ -1501,7 +1503,9 @@ bool MutateTask::prepare()
         ctx->storage_from_source_part, ctx->metadata_snapshot, ctx->commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+        ctx->temporary_directory_lock = std::move(lock);
+        promise.set_value(std::move(part));
         return false;
     }
     else
@@ -1532,15 +1536,18 @@ bool MutateTask::prepare()
     /// FIXME new_data_part is not used in the case when we clone part with cloneAndLoadDataPartOnSameDisk and return false
     /// Is it possible to handle this case earlier?
 
+    String tmp_part_dir_name = "tmp_mut_" + ctx->future_part->name;
+    ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
+
     auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
         single_disk_volume,
         ctx->data->getRelativeDataPath(),
-        "tmp_mut_" + ctx->future_part->name);
+        tmp_part_dir_name);
 
     ctx->data_part_storage_builder = std::make_shared<DataPartStorageBuilderOnDisk>(
         single_disk_volume,
         ctx->data->getRelativeDataPath(),
-        "tmp_mut_" + ctx->future_part->name);
+        tmp_part_dir_name);
 
     ctx->new_data_part = ctx->data->createPart(
         ctx->future_part->name, ctx->future_part->type, ctx->future_part->part_info, data_part_storage);
@@ -1608,7 +1615,11 @@ bool MutateTask::prepare()
             && ctx->files_to_rename.empty())
         {
             LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {} (optimized)", ctx->source_part->name, ctx->future_part->part_info.mutation);
-            promise.set_value(ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false));
+            /// new_data_part is not used here, another part is created instead (see the comment above)
+            ctx->temporary_directory_lock = {};
+            auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(ctx->source_part, "tmp_mut_", ctx->future_part->part_info, ctx->metadata_snapshot, ctx->txn, &ctx->hardlinked_files, false);
+            ctx->temporary_directory_lock = std::move(lock);
+            promise.set_value(std::move(part));
             return false;
         }
 
