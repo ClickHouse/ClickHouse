@@ -1942,6 +1942,35 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     return actions;
 }
 
+static bool chainPreserveOrder(std::vector<const ActionsDAG::Node *> & chain)
+{
+    const Field field{};
+    while (!chain.empty())
+    {
+        const auto * current = chain.back();
+        chain.pop_back();
+
+        if (current->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            auto func = current->function_base;
+            if (func)
+            {
+                if (!func->hasInformationAboutMonotonicity())
+                    return false;
+
+                const auto & types = func->getArgumentTypes();
+                if (types.empty())
+                    return false;
+
+                const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
+                if (!monotonicity.is_always_monotonic)
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
 bool ActionsDAG::isSortingPreserved(const Block & input_header, const SortDescription & sort_description) const
 {
     if (sort_description.empty())
@@ -1950,38 +1979,72 @@ bool ActionsDAG::isSortingPreserved(const Block & input_header, const SortDescri
     if (hasArrayJoin())
         return false;
 
-    /// build reversed aliases, use it later to find out if some aliases refer to sorted columns
-    std::unordered_map<std::string_view, const String &> reversed_aliases;
-    for (const Node * node : outputs)
+    /// find if action node leads to sorted column and check if found action's chain to the column breaks sorting order
+    /// returns 2 bools: found - true if sorted column found, otherwise false
+    ///                  keep_order - true if found action's chain to sorted column keep sorting order, otherwise false
+    auto action_preserves_sorting = [&](const Node * start_node, const String & sorted_column) -> std::pair<bool, bool>
     {
-        if (node->type == ActionType::ALIAS)
+        std::unordered_set<const Node *> visited_nodes;
+        std::vector<const Node *> chain;
+        chain.reserve(nodes.size());
+        std::vector<const Node *> stack;
+        stack.reserve(nodes.size());
+
+        stack.push_back(start_node);
+
+        while (!stack.empty())
         {
-            reversed_aliases.emplace(node->children.front()->result_name, node->result_name);
+            const auto * node = stack.back();
+            stack.pop_back();
+            chain.push_back(node);
+
+            /// if column found
+            if (node->type == ActionType::INPUT && node->result_name == sorted_column)
+            {
+                const bool found = true;
+                return {found, chainPreserveOrder(chain)};
+            }
+
+            for (const auto * child : node->children)
+            {
+                if (!visited_nodes.contains(child))
+                {
+                    stack.push_back(child);
+                    visited_nodes.insert(child);
+                }
+            }
         }
-    }
+        return {false, false};
+    };
 
     const Block & output_header = updateHeader(input_header);
     for (const auto & desc : sort_description)
     {
-        /// check if column is part of output header
-        /// if not, check if aliases in output header refers to the column
-        if (!output_header.findByName(desc.column_name))
+        /// header contains column with the same name
+        if (output_header.findByName(desc.column_name))
         {
-            const auto it = reversed_aliases.find(desc.column_name);
-            if (it == reversed_aliases.end())
+            /// find the corresponding node in output
+            const auto * output_node = tryFindInOutputs(desc.column_name);
+            if (!output_node)
+                continue;
+
+            /// check if the node is related to the sorted column and sorting order is kept
+            const auto [found, keep_order] = action_preserves_sorting(output_node, desc.column_name);
+            if (!found) /// the column in header with the same name as the sorted column but they are not related
                 return false;
 
-            /// check if alias to sorted column is in output header
-            const String & column_alias = it->second;
-            if (!output_header.findByName(column_alias))
+            if (!keep_order)
                 return false;
         }
-
-        /// check that found colunm is not an alias
-        for (const Node * node : outputs)
+        else
         {
-            if (node->type == ActionType::ALIAS && node->result_name == desc.column_name)
-                return false;
+            /// check if any output node is related to the sorted column and sorting order is kept
+            for (const auto * output_node : outputs)
+            {
+                const auto [found, keep_order] = action_preserves_sorting(output_node, desc.column_name);
+                if (found && !keep_order)
+                    return false;
+            }
         }
     }
 
