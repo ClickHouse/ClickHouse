@@ -122,7 +122,7 @@ public:
     virtual bool isConnected() const = 0;
 
     /// Check if connection is still active with ping request.
-    virtual bool checkConnected() = 0;
+    virtual bool checkConnected(const ConnectionTimeouts & /*timeouts*/) = 0;
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state
