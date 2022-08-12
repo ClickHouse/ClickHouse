@@ -557,8 +557,8 @@ bool Trim::convertImpl(String & out,IParser::Pos & pos)
     String regex = getConvertedArgument(fn_name, pos);
     ++pos;
     String  source = getConvertedArgument(fn_name, pos);
-    String ltrim = std::format("if ((replaceRegexpOne(concat('random_str', {0}) as srcl, concat('random_str', {1}),'') as dstl) = srcl, {0}, dstl)", source, regex);
-    out = std::format("if ((replaceRegexpOne(concat('random_str', reverse({0})) as srcr, concat('random_str', reverse({1})),'') as dstr) = srcr, {0}, reverse(dstr))", ltrim, regex);
+    String ltrim = std::format("if ((replaceRegexpOne(concat('start_random_str_', {0}) as srcl, concat('start_random_str_', {1}),'') as dstl) = srcl, {0}, dstl)", source, regex);
+    out = std::format("if ((replaceRegexpOne(concat({0}, '_end_random_str') as srcr, concat({1}, '_end_random_str'),'') as dstr) = srcr, {0}, dstr)", ltrim, regex);
 
     return true;
 }
@@ -573,7 +573,7 @@ bool TrimEnd::convertImpl(String & out,IParser::Pos & pos)
     String regex = getConvertedArgument(fn_name, pos);
     ++pos;
     String  source = getConvertedArgument(fn_name, pos);
-    out = std::format("if ((replaceRegexpOne(concat('random_str', reverse({0})) as src, concat('random_str', reverse({1})),'') as dst) = src, {0}, reverse(dst))", source, regex);
+    out = std::format("if ((replaceRegexpOne(concat({0}, '_end_random_str') as src, concat({1},'_end_random_str'),'') as dst) = src, {0}, dst)", source, regex);
 
     return true;
 }
@@ -588,7 +588,7 @@ bool TrimStart::convertImpl(String & out,IParser::Pos & pos)
     String regex = getConvertedArgument(fn_name, pos);
     ++pos;
     String  source = getConvertedArgument(fn_name, pos);
-    out = std::format("if ((replaceRegexpOne(concat('random_str', {0}) as src, concat('random_str', {1}),'') as dst) = src, {0}, dst)", source, regex);
+    out = std::format("if ((replaceRegexpOne(concat('start_random_str_', {0}) as src, concat('start_random_str_', {1}),'') as dst) = src, {0}, dst)", source, regex);
 
     return true;
 }

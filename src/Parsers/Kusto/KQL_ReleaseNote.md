@@ -2,7 +2,15 @@
 ## KQL implemented features
 
 # August 15, 2022
+   **double quote support**  
+   ``print res = strcat("double ","quote")``  
 ## Aggregate functions
+ - [bin_at](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binatfunction)  
+   `print res = bin_at(6.5, 2.5, 7)`  
+   `print res = bin_at(1h, 1d, 12h)`  
+   `print res = bin_at(datetime(2017-05-15 10:20:00.0), 1d, datetime(1970-01-01 12:00:00.0))`  
+   `print res = bin_at(datetime(2017-05-17 10:20:00.0), 7d, datetime(2017-06-04 00:00:00.0))`  
+
  - [array_index_of](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayindexoffunction)  
     *Supports only basic lookup. Do not support start_index, length and occurrence*  
     `print output = array_index_of(dynamic(['John', 'Denver', 'Bob', 'Marley']), 'Marley')`  
