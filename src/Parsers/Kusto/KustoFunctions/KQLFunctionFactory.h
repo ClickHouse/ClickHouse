@@ -19,6 +19,7 @@ namespace DB
         endofday,
         endofweek,
         endofyear,
+        endofmonth,
         monthofyear,
         format_datetime,
         format_timespan,
