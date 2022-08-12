@@ -1455,7 +1455,7 @@ void IMergeTreeDataPart::remove() const
         projection_checksums.emplace_back(IDataPartStorage::ProjectionChecksums{.name = p_name, .checksums = projection_part->checksums});
     }
 
-    data_part_storage->remove(can_remove, files_not_to_remove, checksums, projection_checksums, storage.log);
+    data_part_storage->remove(can_remove, files_not_to_remove, checksums, projection_checksums, is_temp, getState(), storage.log);
 }
 
 String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached) const

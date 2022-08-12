@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <optional>
 
 namespace DB
@@ -116,6 +117,8 @@ public:
         const NameSet & names_not_to_remove,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
+        bool is_temp,
+        MergeTreeDataPartState state,
         Poco::Logger * log) const = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
