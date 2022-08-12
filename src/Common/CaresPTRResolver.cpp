@@ -50,7 +50,12 @@ namespace DB
     CaresPTRResolver::~CaresPTRResolver()
     {
         ares_destroy(channel);
-        ares_library_cleanup();
+        /*
+         * Library initialization is currently done only once in the constructor. Multiple instances of CaresPTRResolver
+         * will be used in the lifetime of ClickHouse, thus it's problematic to have de-init here.
+         * In a practical view, it makes little to no sense to de-init a DNS library since DNS requests will happen
+         * until the end of the program. Hence, ares_library_cleanup() will not be called.
+         * */
     }
 
     std::vector<std::string> CaresPTRResolver::resolve(const std::string & ip)
