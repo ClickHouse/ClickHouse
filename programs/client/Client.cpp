@@ -618,9 +618,9 @@ bool Client::processWithFuzzing(const String & full_query)
     // - SET    -- The time to fuzz the settings has not yet come
     //             (see comments in Client/QueryFuzzer.cpp)
     size_t this_query_runs = query_fuzzer_runs;
-    ASTs inserts_for_fuzzed_tables;
+    ASTs queries_for_fuzzed_tables;
 
-    if (orig_ast->as<ASTDropQuery>() || orig_ast->as<ASTSetQuery>())
+    if (orig_ast->as<ASTSetQuery>())
     {
         this_query_runs = 1;
     }
@@ -634,7 +634,12 @@ bool Client::processWithFuzzing(const String & full_query)
     else if (const auto * insert = orig_ast->as<ASTInsertQuery>())
     {
         this_query_runs = 1;
-        inserts_for_fuzzed_tables = fuzzer.getInsertQueriesForFuzzedTables(full_query);
+        queries_for_fuzzed_tables = fuzzer.getInsertQueriesForFuzzedTables(full_query);
+    }
+    else if (const auto * drop = orig_ast->as<ASTDropQuery>())
+    {
+        this_query_runs = 1;
+        queries_for_fuzzed_tables = fuzzer.getDropQueriesForFuzzedTables(*drop);
     }
 
     String query_to_execute;
@@ -815,7 +820,7 @@ bool Client::processWithFuzzing(const String & full_query)
         }
     }
 
-    for (const auto & insert_query : inserts_for_fuzzed_tables)
+    for (const auto & insert_query : queries_for_fuzzed_tables)
     {
         std::cout << std::endl;
         WriteBufferFromOStream ast_buf(std::cout, 4096);
