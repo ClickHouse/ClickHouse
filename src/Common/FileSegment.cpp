@@ -8,7 +8,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <filesystem>
-#include <Common/FileCache.h>
 
 namespace CurrentMetrics
 {
