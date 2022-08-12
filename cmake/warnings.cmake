@@ -23,6 +23,7 @@ if (COMPILER_CLANG)
     no_warning(zero-length-array)
     no_warning(c++98-compat-pedantic)
     no_warning(c++98-compat)
+    no_warning(c++20-compat) # Use constinit in C++20 without warnings
     no_warning(conversion)
     no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
     no_warning(disabled-macro-expansion)

@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 
 from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
-from env_helper import RUNNER_TEMP, S3_BUILDS_BUCKET
+from env_helper import RUNNER_TEMP, S3_BUILDS_BUCKET, S3_URL
 from git_helper import TAG_REGEXP, commit, removeprefix, removesuffix
 
 
@@ -98,7 +98,7 @@ class Packages:
 
 class S3:
     template = (
-        "https://s3.amazonaws.com/"
+        f"{S3_URL}"
         # "clickhouse-builds/"
         f"{S3_BUILDS_BUCKET}/"
         # "33333/" or "21.11/" from --release, if pull request is omitted

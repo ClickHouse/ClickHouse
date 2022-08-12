@@ -22,16 +22,16 @@ namespace JSONUtils
     /// Parse JSON from string and convert it's type to ClickHouse type. Make the result type always Nullable.
     /// JSON array with different nested types is treated as Tuple.
     /// If cannot convert (for example when field contains null), return nullptr.
-    DataTypePtr getDataTypeFromField(const String & field);
+    DataTypePtr getDataTypeFromField(const String & field, const FormatSettings & settings);
 
     /// Read row in JSONEachRow format and try to determine type for each field.
     /// Return list of names and types.
     /// If cannot determine the type of some field, return nullptr for it.
-    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings);
+    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, bool json_strings);
 
     /// Read row in JSONCompactEachRow format and try to determine type for each field.
     /// If cannot determine the type of some field, return nullptr for it.
-    DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, bool json_strings);
+    DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, const FormatSettings & settings, bool json_strings);
 
     bool nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl(ReadBuffer & buf);
 

@@ -57,11 +57,29 @@
 #include <Common/config_version.h>
 
 using namespace std::literals;
+using namespace DB;
 
 
 namespace CurrentMetrics
 {
     extern const Metric QueryThread;
+}
+
+namespace
+{
+NameToNameMap convertToQueryParameters(const Settings & passed_params)
+{
+    NameToNameMap query_parameters;
+    for (const auto & param : passed_params)
+    {
+        std::string value;
+        ReadBufferFromOwnString buf(param.getValueString());
+        readQuoted(value, buf);
+        query_parameters.emplace(param.getName(), value);
+    }
+    return query_parameters;
+}
+
 }
 
 namespace DB
@@ -134,6 +152,8 @@ void TCPHandler::runImpl()
     {
         receiveHello();
         sendHello();
+        if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
+            receiveAddendum();
 
         if (!is_interserver_mode) /// In interserver mode queries are executed without a session context.
         {
@@ -190,7 +210,10 @@ void TCPHandler::runImpl()
 
         /// If we need to shut down, or client disconnects.
         if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
+        {
+            LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
             break;
+        }
 
         Stopwatch watch;
         state.reset();
@@ -406,6 +429,8 @@ void TCPHandler::runImpl()
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
 
+            LOG_TEST(log, "Going to close connection due to exception: {}", e.message());
+
             /// If there is UNEXPECTED_PACKET_FROM_CLIENT emulate network_error
             /// to break the loop, but do not throw to send the exception to
             /// the client.
@@ -435,7 +460,7 @@ void TCPHandler::runImpl()
 // Server should die on std logic errors in debug, like with assert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
 // tests.
-#ifndef NDEBUG
+#ifdef ABORT_ON_LOGICAL_ERROR
         catch (const std::logic_error & e)
         {
             state.io.onException();
@@ -554,14 +579,14 @@ bool TCPHandler::readDataNext()
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
     /// Poll interval should not be greater than receive_timeout
-    constexpr UInt64 min_timeout_ms = 5000; // 5 ms
-    UInt64 timeout_ms = std::max(min_timeout_ms, std::min(poll_interval * 1000000, static_cast<UInt64>(receive_timeout.totalMicroseconds())));
+    constexpr UInt64 min_timeout_us = 5000; // 5 ms
+    UInt64 timeout_us = std::max(min_timeout_us, std::min(poll_interval * 1000000, static_cast<UInt64>(receive_timeout.totalMicroseconds())));
     bool read_ok = false;
 
     /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
     while (true)
     {
-        if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
+        if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_us))
         {
             /// If client disconnected.
             if (in->eof())
@@ -759,7 +784,22 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusRequest request;
     request.read(*in, client_tcp_protocol_version);
 
-    ContextPtr context_to_resolve_table_names = (session && session->sessionContext()) ? session->sessionContext() : server.context();
+    ContextPtr context_to_resolve_table_names;
+    if (is_interserver_mode)
+    {
+        /// In interserver mode session context does not exists, because authentication is done for each query.
+        /// We also cannot create query context earlier, because it cannot be created before authentication,
+        /// but query is not received yet. So we have to do this trick.
+        ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
+        if (!default_database.empty())
+            fake_interserver_context->setCurrentDatabase(default_database);
+        context_to_resolve_table_names = fake_interserver_context;
+    }
+    else
+    {
+        assert(session);
+        context_to_resolve_table_names = session->sessionContext();
+    }
 
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
@@ -1019,6 +1059,7 @@ std::unique_ptr<Session> TCPHandler::makeSession()
     client_info.connection_client_version_patch = client_version_patch;
     client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
 
+    client_info.quota_key = quota_key;
     client_info.interface = interface;
 
     return res;
@@ -1075,6 +1116,16 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     session->authenticate(user, password, socket().peerAddress());
+}
+
+void TCPHandler::receiveAddendum()
+{
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+    {
+        readStringBinary(quota_key, *in);
+        if (!is_interserver_mode)
+            session->getClientInfo().quota_key = quota_key;
+    }
 }
 
 
@@ -1301,6 +1352,10 @@ void TCPHandler::receiveQuery()
 
     readStringBinary(state.query, *in);
 
+    Settings passed_params;
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+        passed_params.read(*in, settings_format);
+
     /// TODO Unify interserver authentication (and make sure that it's secure enough)
     if (is_interserver_mode)
     {
@@ -1354,7 +1409,7 @@ void TCPHandler::receiveQuery()
     query_context = session->makeQueryContext(std::move(client_info));
 
     /// Sets the default database if it wasn't set earlier for the session context.
-    if (!default_database.empty() && !session->sessionContext())
+    if (is_interserver_mode && !default_database.empty())
         query_context->setCurrentDatabase(default_database);
 
     if (state.part_uuids_to_ignore)
@@ -1391,6 +1446,8 @@ void TCPHandler::receiveQuery()
     /// so we have to apply the changes first.
     query_context->setCurrentQueryId(state.query_id);
 
+    query_context->addQueryParameters(convertToQueryParameters(passed_params));
+
     /// For testing hedged requests
     if (unlikely(sleep_after_receiving_query.totalMilliseconds()))
     {
@@ -1426,6 +1483,9 @@ void TCPHandler::receiveUnexpectedQuery()
     last_block_in.compression = static_cast<Protocol::Compression>(skip_uint_64);
 
     readStringBinary(skip_string, *in);
+
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+        skip_settings.read(*in, settings_format);
 
     throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
