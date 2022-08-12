@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <optional>
 
 namespace DB
