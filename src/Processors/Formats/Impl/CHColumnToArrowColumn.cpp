@@ -24,6 +24,8 @@
 #include <arrow/type.h>
 #include <arrow/util/decimal.h>
 
+#include <Common/logger_useful.h>
+
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(UInt8, arrow::UInt8Builder) \
         M(Int8, arrow::Int8Builder) \
@@ -235,27 +237,30 @@ namespace DB
     }
 
     template<typename T>
-    static PaddedPODArray<Int64> extractIndexesImpl(ColumnPtr column, size_t start, size_t end)
+    static PaddedPODArray<Int64> extractIndexesImpl(ColumnPtr column, size_t start, size_t end, bool shift)
     {
         const PaddedPODArray<T> & data = assert_cast<const ColumnVector<T> *>(column.get())->getData();
         PaddedPODArray<Int64> result;
         result.reserve(end - start);
-        std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](T value) { return Int64(value); });
+        if (shift)
+            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](T value) { return Int64(value) - 1; });
+        else
+            std::transform(data.begin() + start, data.begin() + end, std::back_inserter(result), [](T value) { return Int64(value); });
         return result;
     }
 
-    static PaddedPODArray<Int64> extractIndexesImpl(ColumnPtr column, size_t start, size_t end)
+    static PaddedPODArray<Int64> extractIndexesImpl(ColumnPtr column, size_t start, size_t end, bool shift)
     {
         switch (column->getDataType())
         {
             case TypeIndex::UInt8:
-                return extractIndexesImpl<UInt8>(column, start, end);
+                return extractIndexesImpl<UInt8>(column, start, end, shift);
             case TypeIndex::UInt16:
-                return extractIndexesImpl<UInt16>(column, start, end);
+                return extractIndexesImpl<UInt16>(column, start, end, shift);
             case TypeIndex::UInt32:
-                return extractIndexesImpl<UInt32>(column, start, end);
+                return extractIndexesImpl<UInt32>(column, start, end, shift);
             case TypeIndex::UInt64:
-                return extractIndexesImpl<UInt64>(column, start, end);
+                return extractIndexesImpl<UInt64>(column, start, end, shift);
             default:
                 throw Exception(fmt::format("Indexes column must be ColumnUInt, got {}.", column->getName()),
                                 ErrorCodes::LOGICAL_ERROR);
@@ -267,7 +272,7 @@ namespace DB
         const String & column_name,
         ColumnPtr & column,
         const std::shared_ptr<const IDataType> & column_type,
-        const PaddedPODArray<UInt8> * null_bytemap,
+        const PaddedPODArray<UInt8> *,
         arrow::ArrayBuilder * array_builder,
         String format_name,
         size_t start,
@@ -278,6 +283,7 @@ namespace DB
         const auto * column_lc = assert_cast<const ColumnLowCardinality *>(column.get());
         arrow::DictionaryBuilder<ValueType> * builder = assert_cast<arrow::DictionaryBuilder<ValueType> *>(array_builder);
         auto & dict_values = dictionary_values[column_name];
+        bool is_nullable = column_type->isLowCardinalityNullable();
 
         /// Convert dictionary from LowCardinality to Arrow dictionary only once and then reuse it.
         if (!dict_values)
@@ -288,9 +294,10 @@ namespace DB
             arrow::Status status = MakeBuilder(pool, value_type, &values_builder);
             checkStatus(status, column->getName(), format_name);
 
-            auto dict_column = column_lc->getDictionary().getNestedColumn();
-            const auto & dict_type = assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
-            fillArrowArray(column_name, dict_column, dict_type, nullptr, values_builder.get(), format_name, 0, dict_column->size(), output_string_as_string, dictionary_values);
+            auto dict_column = column_lc->getDictionary().getNestedNotNullableColumn();
+            LOG_DEBUG(&Poco::Logger::get("Arrow"), "Dict size {}", dict_column->size());
+            const auto & dict_type = removeNullable(assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType());
+            fillArrowArray(column_name, dict_column, dict_type, nullptr, values_builder.get(), format_name, is_nullable ? 1 : 0, dict_column->size(), output_string_as_string, dictionary_values);
             status = values_builder->Finish(&dict_values);
             checkStatus(status, column->getName(), format_name);
         }
@@ -300,15 +307,14 @@ namespace DB
 
         /// AppendIndices in DictionaryBuilder works only with int64_t data, so we cannot use
         /// fillArrowArray here and should copy all indexes to int64_t container.
-        auto indexes = extractIndexesImpl(column_lc->getIndexesPtr(), start, end);
+        auto indexes = extractIndexesImpl(column_lc->getIndexesPtr(), start, end, is_nullable);
         const uint8_t * arrow_null_bytemap_raw_ptr = nullptr;
         PaddedPODArray<uint8_t> arrow_null_bytemap;
-        if (null_bytemap)
+        if (column_type->isLowCardinalityNullable())
         {
-            /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
             arrow_null_bytemap.reserve(end - start);
             for (size_t i = start; i < end; ++i)
-                arrow_null_bytemap.emplace_back(!(*null_bytemap)[i]);
+                arrow_null_bytemap.emplace_back(!column_lc->isNullAt(i));
 
             arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
         }
@@ -680,7 +686,7 @@ namespace DB
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
             const auto * lc_column = assert_cast<const ColumnLowCardinality *>(column.get());
-            const auto & nested_column = lc_column->getDictionaryPtr();
+            const auto & nested_column = lc_column->getDictionary().getNestedColumn();
             const auto & indexes_column = lc_column->getIndexesPtr();
             return arrow::dictionary(
                 getArrowTypeForLowCardinalityIndexes(indexes_column),
