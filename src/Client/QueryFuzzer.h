@@ -20,6 +20,7 @@ class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
+class ASTDropQuery;
 struct ASTTableExpression;
 struct ASTWindowDefinition;
 
@@ -74,6 +75,7 @@ struct QueryFuzzer
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
     ASTs getInsertQueriesForFuzzedTables(const String & full_query);
+    ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void replaceWithColumnLike(ASTPtr & ast);
     void replaceWithTableLike(ASTPtr & ast);
     void fuzzOrderByElement(ASTOrderByElement * elem);

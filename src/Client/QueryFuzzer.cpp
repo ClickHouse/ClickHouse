@@ -16,6 +16,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserInsertQuery.h>
+#include <Parsers/ASTDropQuery.h>
 
 #include <unordered_set>
 
@@ -632,8 +633,31 @@ ASTs QueryFuzzer::getInsertQueriesForFuzzedTables(const String & full_query)
     ASTs queries;
     for (const auto & fuzzed_name : it->second)
     {
+        /// Parse query from scratch for each table instead of clone,
+        /// to store proper pointers to inlined data,
+        /// which are not copies during clone.
         auto & query = queries.emplace_back(tryParseInsertQuery(full_query));
         query->as<ASTInsertQuery>()->setTable(fuzzed_name);
+    }
+
+    return queries;
+}
+
+ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)
+{
+    if (drop_query.kind != ASTDropQuery::Drop)
+        return {};
+
+    auto table_name = drop_query.getTable();
+    auto it = original_table_name_to_fuzzed.find(table_name);
+    if (it == original_table_name_to_fuzzed.end())
+        return {};
+
+    ASTs queries;
+    for (const auto & fuzzed_name : it->second)
+    {
+        auto & query = queries.emplace_back(drop_query.clone());
+        query->as<ASTDropQuery>()->setTable(fuzzed_name);
     }
 
     return queries;
