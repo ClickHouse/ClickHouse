@@ -36,3 +36,10 @@ Sort Mode: Stream: x ASC, y ASC
 Sort Mode: Stream: x ASC, y ASC
 Sort Mode: Chunk: a ASC, b ASC
 Sort Mode: Chunk: a ASC, b ASC
+-- PLAN: actions chain breaks sorting order: input(column a)->sipHash64(column a)->alias(sipHash64(column a), a)->plus(alias a, 1)
+Sort Mode: Stream: plus(a, 1) ASC
+Sort Mode: Stream: plus(a, 1) ASC
+Sort Mode: None
+Sort Mode: Stream: plus(a, 1) ASC
+Sort Mode: Chunk: a ASC
+Sort Mode: Chunk: a ASC
