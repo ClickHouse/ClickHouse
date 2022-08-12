@@ -1,9 +1,7 @@
 #include <Backups/BackupIO_Disk.h>
-#include <Common/Exception.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -19,7 +17,7 @@ bool BackupReaderDisk::fileExists(const String & file_name)
     return disk->exists(path / file_name);
 }
 
-size_t BackupReaderDisk::getFileSize(const String & file_name)
+UInt64 BackupReaderDisk::getFileSize(const String & file_name)
 {
     return disk->getFileSize(path / file_name);
 }
@@ -40,6 +38,30 @@ bool BackupWriterDisk::fileExists(const String & file_name)
     return disk->exists(path / file_name);
 }
 
+UInt64 BackupWriterDisk::getFileSize(const String & file_name)
+{
+    return disk->getFileSize(path / file_name);
+}
+
+bool BackupWriterDisk::fileContentsEqual(const String & file_name, const String & expected_file_contents)
+{
+    if (!disk->exists(path / file_name))
+        return false;
+
+    try
+    {
+        auto in = disk->readFile(path / file_name);
+        String actual_file_contents(expected_file_contents.size(), ' ');
+        return (in->read(actual_file_contents.data(), actual_file_contents.size()) == actual_file_contents.size())
+            && (actual_file_contents == expected_file_contents) && in->eof();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+}
+
 std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_name)
 {
     auto file_path = path / file_name;
@@ -47,19 +69,12 @@ std::unique_ptr<WriteBuffer> BackupWriterDisk::writeFile(const String & file_nam
     return disk->writeFile(file_path);
 }
 
-void BackupWriterDisk::removeFilesAfterFailure(const Strings & file_names)
+void BackupWriterDisk::removeFiles(const Strings & file_names)
 {
-    try
-    {
-        for (const auto & file_name : file_names)
-            disk->removeFileIfExists(path / file_name);
-        if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
-            disk->removeDirectory(path);
-    }
-    catch (...)
-    {
-        LOG_WARNING(&Poco::Logger::get("BackupWriterDisk"), "RemoveFilesAfterFailure: {}", getCurrentExceptionMessage(false));
-    }
+    for (const auto & file_name : file_names)
+        disk->removeFileIfExists(path / file_name);
+    if (disk->isDirectory(path) && disk->isDirectoryEmpty(path))
+        disk->removeDirectory(path);
 }
 
 }

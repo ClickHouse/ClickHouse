@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -73,12 +73,15 @@ private:
     SeekableReadBufferPtr getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_);
 
     size_t getTotalSizeToRead();
+
     bool completeFileSegmentAndGetNext();
 
     void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
 
+    bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
+
     Poco::Logger * log;
-    IFileCache::Key cache_key;
+    FileCache::Key cache_key;
     String remote_fs_object_path;
     FileCachePtr cache;
     ReadSettings settings;
@@ -125,7 +128,7 @@ private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
     ProfileEvents::Counters current_file_segment_counters;
 
-    IFileCache::QueryContextHolder query_context_holder;
+    FileCache::QueryContextHolder query_context_holder;
 
     bool is_persistent;
 };

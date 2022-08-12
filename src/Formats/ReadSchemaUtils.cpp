@@ -66,7 +66,7 @@ ColumnsDescription readSchemaFromFormat(
         }
         catch (const DB::Exception & e)
         {
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}", format_name, e.message());
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, e.message());
         }
     }
     else if (FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
@@ -75,16 +75,34 @@ ColumnsDescription readSchemaFromFormat(
         SchemaReaderPtr schema_reader;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
         size_t iterations = 0;
-        while ((buf = read_buffer_iterator()))
+        while (true)
         {
+            bool is_eof = false;
+            try
+            {
+                buf = read_buffer_iterator();
+                if (!buf)
+                    break;
+                is_eof = buf->eof();
+            }
+            catch (...)
+            {
+                auto exception_message = getCurrentExceptionMessage(false);
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file:\n{}\nYou can specify the structure manually",
+                    format_name,
+                    exception_message);
+            }
+
             ++iterations;
 
-            if (buf->eof())
+            if (is_eof)
             {
                 auto exception_message = fmt::format("Cannot extract table structure from {} format file, file is empty", format_name);
 
                 if (!retry)
-                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, exception_message);
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "{}. You can specify the structure manually", exception_message);
 
                 exception_messages += "\n" + exception_message;
                 continue;
@@ -118,14 +136,14 @@ ColumnsDescription readSchemaFromFormat(
                 }
 
                 if (!retry || !isRetryableSchemaInferenceError(getCurrentExceptionCode()))
-                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}", format_name, exception_message);
+                    throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, exception_message);
 
                 exception_messages += "\n" + exception_message;
             }
         }
 
         if (names_and_types.empty())
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:{}", exception_messages);
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:{}\nYou can specify the structure manually", exception_messages);
 
         /// If we have "INSERT SELECT" query then try to order
         /// columns as they are ordered in table schema for formats

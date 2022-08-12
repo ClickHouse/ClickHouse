@@ -6,13 +6,18 @@ from typing import Tuple
 
 from github import Github
 
-from commit_status_helper import get_commit, post_labels, remove_labels
+from commit_status_helper import (
+    get_commit,
+    post_labels,
+    remove_labels,
+    reset_mergeable_check,
+)
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from workflow_approve_rerun_lambda.app import TRUSTED_CONTRIBUTORS
 
-NAME = "Run Check (actions)"
+NAME = "Run Check"
 
 TRUSTED_ORG_IDS = {
     7409213,  # yandex
@@ -191,7 +196,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
     description_error, category = check_pr_description(pr_info)
@@ -222,6 +227,8 @@ if __name__ == "__main__":
 
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
+
+    reset_mergeable_check(commit, "skipped")
 
     if description_error:
         print(

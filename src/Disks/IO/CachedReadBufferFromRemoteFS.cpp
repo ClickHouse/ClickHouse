@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Common/hex.h>
 #include <Common/getRandomASCIIString.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -302,6 +303,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
 
                         assert(file_offset_of_buffer_end > file_segment->getDownloadOffset());
                         bytes_to_predownload = file_offset_of_buffer_end - file_segment->getDownloadOffset();
+                        assert(bytes_to_predownload < range.size());
                     }
 
                     download_offset = file_segment->getDownloadOffset();
@@ -509,6 +511,7 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
 
         assert(implementation_buffer->getFileOffsetOfBufferEnd() == file_segment->getDownloadOffset());
         size_t current_offset = file_segment->getDownloadOffset();
+        const auto & current_range = file_segment->range();
 
         while (true)
         {
@@ -532,7 +535,7 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                         "Failed to predownload remaining {} bytes. Current file segment: {}, current download offset: {}, expected: {}, "
                         "eof: {}",
                         bytes_to_predownload,
-                        file_segment->range().toString(),
+                        current_range.toString(),
                         file_segment->getDownloadOffset(),
                         file_offset_of_buffer_end,
                         implementation_buffer->eof());
@@ -565,28 +568,31 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
 
-            if (file_segment->reserve(current_predownload_size))
+            bool continue_predownload = file_segment->reserve(current_predownload_size);
+            if (continue_predownload)
             {
                 LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
 
                 assert(file_segment->getDownloadOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
 
-                Stopwatch watch(CLOCK_MONOTONIC);
+                bool success = writeCache(implementation_buffer->buffer().begin(), current_predownload_size, current_offset, *file_segment);
+                if (success)
+                {
+                    current_offset += current_predownload_size;
 
-                file_segment->write(implementation_buffer->buffer().begin(), current_predownload_size, current_offset);
+                    bytes_to_predownload -= current_predownload_size;
+                    implementation_buffer->position() += current_predownload_size;
+                }
+                else
+                {
+                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                    file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
-                watch.stop();
-                auto elapsed = watch.elapsedMicroseconds();
-                current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, elapsed);
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteMicroseconds, elapsed);
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, current_predownload_size);
-
-                current_offset += current_predownload_size;
-
-                bytes_to_predownload -= current_predownload_size;
-                implementation_buffer->position() += current_predownload_size;
+                    continue_predownload = false;
+                }
             }
-            else
+
+            if (!continue_predownload)
             {
                 /// We were predownloading:
                 ///                   segment{1}
@@ -609,13 +615,13 @@ void CachedReadBufferFromRemoteFS::predownload(FileSegmentPtr & file_segment)
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
                 swap(*implementation_buffer);
-                working_buffer.resize(0);
-                position() = working_buffer.end();
+                resetWorkingBuffer();
 
                 implementation_buffer = getRemoteFSReadBuffer(file_segment, read_type);
 
                 swap(*implementation_buffer);
 
+                implementation_buffer->setReadUntilPosition(current_range.right + 1); /// [..., range.right]
                 implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
 
                 LOG_TEST(
@@ -685,6 +691,34 @@ bool CachedReadBufferFromRemoteFS::updateImplementationBufferIfNeeded()
         */
         implementation_buffer = getImplementationBuffer(*current_file_segment_it);
     }
+
+    return true;
+}
+
+bool CachedReadBufferFromRemoteFS::writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment)
+{
+    Stopwatch watch(CLOCK_MONOTONIC);
+
+    try
+    {
+        file_segment.write(data, size, offset);
+    }
+    catch (ErrnoException & e)
+    {
+        int code = e.getErrno();
+        if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
+        {
+            LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
+            return false;
+        }
+        throw;
+    }
+
+    watch.stop();
+    auto elapsed = watch.elapsedMicroseconds();
+    current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, elapsed);
+    ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteMicroseconds, elapsed);
+    ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
 
     return true;
 }
@@ -838,33 +872,34 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
         {
             assert(file_offset_of_buffer_end + size - 1 <= file_segment->range().right);
 
-            if (file_segment->reserve(size))
+            bool success = file_segment->reserve(size);
+            if (success)
             {
                 assert(file_segment->getDownloadOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
 
-                Stopwatch watch(CLOCK_MONOTONIC);
-
-                file_segment->write(
-                    needed_to_predownload ? implementation_buffer->position() : implementation_buffer->buffer().begin(),
-                    size,
-                    file_offset_of_buffer_end);
-
-                watch.stop();
-                auto elapsed = watch.elapsedMicroseconds();
-                current_file_segment_counters.increment(ProfileEvents::FileSegmentCacheWriteMicroseconds, elapsed);
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteMicroseconds, elapsed);
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteBytes, size);
-
-                assert(file_segment->getDownloadOffset() <= file_segment->range().right + 1);
-                assert(
-                    std::next(current_file_segment_it) == file_segments_holder->file_segments.end()
-                    || file_segment->getDownloadOffset() == implementation_buffer->getFileOffsetOfBufferEnd());
+                success = writeCache(implementation_buffer->position(), size, file_offset_of_buffer_end, *file_segment);
+                if (success)
+                {
+                    assert(file_segment->getDownloadOffset() <= file_segment->range().right + 1);
+                    assert(
+                        std::next(current_file_segment_it) == file_segments_holder->file_segments.end()
+                        || file_segment->getDownloadOffset() == implementation_buffer->getFileOffsetOfBufferEnd());
+                }
+                else
+                {
+                    assert(file_segment->state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+                }
             }
             else
             {
-                download_current_segment = false;
-                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
                 LOG_DEBUG(log, "No space left in cache, will continue without cache download");
+                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+            }
+
+            if (!success)
+            {
+                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                download_current_segment = false;
             }
         }
 
@@ -989,7 +1024,7 @@ std::optional<size_t> CachedReadBufferFromRemoteFS::getLastNonDownloadedOffset()
 
 void CachedReadBufferFromRemoteFS::assertCorrectness() const
 {
-    if (IFileCache::isReadOnly() && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (FileCache::isReadOnly() && !settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache usage is not allowed");
 }
 
