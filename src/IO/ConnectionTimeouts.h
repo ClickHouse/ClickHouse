@@ -24,7 +24,7 @@ struct ConnectionTimeouts
     Poco::Timespan receive_data_timeout;
 
     /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus)
-    Poco::Timespan sync_request_timeout = DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC;
+    Poco::Timespan sync_request_timeout = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0);
 
     ConnectionTimeouts() = default;
 
