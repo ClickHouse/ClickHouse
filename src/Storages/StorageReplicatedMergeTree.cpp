@@ -506,9 +506,19 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     if (replicas.empty())
         return;
 
+    /// Current replica must always be present in the list as the first element because we use local mutation status
+    /// to check for mutation errors. So if it is not there, just add it.
+    const Strings * all_required_replicas = &replicas;
+    Strings extended_list_of_replicas;
+    if (replicas.front() != replica_name)
+    {
+        extended_list_of_replicas.push_back(replica_name);
+        extended_list_of_replicas.insert(extended_list_of_replicas.end(), replicas.begin(), replicas.end());
+        all_required_replicas = &extended_list_of_replicas;
+    }
 
     std::set<String> inactive_replicas;
-    for (const String & replica : replicas)
+    for (const String & replica : *all_required_replicas)
     {
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
         zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
@@ -4433,8 +4443,9 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
     // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeSink?
+    // TODO: insert_quorum = 'auto' would be supported in https://github.com/ClickHouse/ClickHouse/pull/39970, now it's same as 0.
     return std::make_shared<ReplicatedMergeTreeSink>(
-        *this, metadata_snapshot, query_settings.insert_quorum,
+        *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
@@ -5974,7 +5985,7 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
         {
             if (*it == replica_name)
             {
-                std::iter_swap(it, replicas.rbegin());
+                std::iter_swap(it, replicas.begin());
                 break;
             }
         }
@@ -7867,7 +7878,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     if (settings->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns);
+    new_data_part->setColumns(columns, {});
     new_data_part->rows_count = block.rows();
 
     {

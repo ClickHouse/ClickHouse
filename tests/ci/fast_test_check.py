@@ -5,10 +5,11 @@ import subprocess
 import os
 import csv
 import sys
+import atexit
 
 from github import Github
 
-from env_helper import CACHES_PATH, TEMP_PATH
+from env_helper import CACHES_PATH, TEMP_PATH, S3_URL
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -16,7 +17,7 @@ from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import (
     post_commit_status,
-    fail_simple_check,
+    update_mergeable_check,
 )
 from clickhouse_helper import (
     ClickHouseHelper,
@@ -93,7 +94,9 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
+
+    atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
     rerun_helper = RerunHelper(gh, pr_info, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -102,7 +105,7 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper(S3_URL)
 
     workspace = os.path.join(temp_path, "fasttest-workspace")
     if not os.path.exists(workspace):
@@ -222,5 +225,4 @@ if __name__ == "__main__":
         if FORCE_TESTS_LABEL in pr_info.labels and state != "error":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
-            fail_simple_check(gh, pr_info, f"{NAME} failed")
             sys.exit(1)
