@@ -747,7 +747,14 @@ Default value: 268435456.
 
 Disables lagging replicas for distributed queries. See [Replication](../../engines/table-engines/mergetree-family/replication.md).
 
-Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
+Sets the time in seconds. If a replica's lag is greater than or equal to the set value, this replica is not used.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Replica lags are not checked.
+
+To prevent the use of any replica with a non-zero lag, set this parameter to 1.
 
 Default value: 300.
 
