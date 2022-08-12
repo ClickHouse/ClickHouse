@@ -2965,6 +2965,11 @@ void Context::setQueryParameter(const String & name, const String & value)
         throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
 
+void Context::addQueryParameters(const NameToNameMap & parameters)
+{
+    for (const auto & [name, value] : parameters)
+        query_parameters.insert_or_assign(name, value);
+}
 
 void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
 {
