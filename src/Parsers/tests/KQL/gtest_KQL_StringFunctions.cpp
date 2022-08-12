@@ -99,15 +99,15 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserStringFuncTest,
         },
         {
             "print trim_start('[^\\w]+', strcat('-  ','Te st1','// $'))",
-            "SELECT if((replaceRegexpOne(concat('random_str', concat('-  ', 'Te st1', '// $')) AS src, concat('random_str', '[^\\\\w]+'), '') AS dst) = src, concat('-  ', 'Te st1', '// $'), dst)"
+            "SELECT if((replaceRegexpOne(concat('start_random_str_', concat('-  ', 'Te st1', '// $')) AS src, concat('start_random_str_', '[^\\\\w]+'), '') AS dst) = src, concat('-  ', 'Te st1', '// $'), dst)"
         },
         {
             "print trim_end('.com', 'bing.com')",
-            "SELECT if((replaceRegexpOne(concat('random_str', reverse('bing.com')) AS src, concat('random_str', reverse('.com')), '') AS dst) = src, 'bing.com', reverse(dst))"
+            "SELECT if((replaceRegexpOne(concat('bing.com', '_end_random_str') AS src, concat('.com', '_end_random_str'), '') AS dst) = src, 'bing.com', dst)"
         },
         {
             "print trim('--', '--https://bing.com--')",
-            "SELECT if((replaceRegexpOne(concat('random_str', reverse(if((replaceRegexpOne(concat('random_str', '--https://bing.com--') AS srcl, concat('random_str', '--'), '') AS dstl) = srcl, '--https://bing.com--', dstl))) AS srcr, concat('random_str', reverse('--')), '') AS dstr) = srcr, if(dstl = srcl, '--https://bing.com--', dstl), reverse(dstr))"
+            "SELECT if((replaceRegexpOne(concat(if((replaceRegexpOne(concat('start_random_str_', '--https://bing.com--') AS srcl, concat('start_random_str_', '--'), '') AS dstl) = srcl, '--https://bing.com--', dstl), '_end_random_str') AS srcr, concat('--', '_end_random_str'), '') AS dstr) = srcr, if(dstl = srcl, '--https://bing.com--', dstl), dstr)"
         },
         {
             "print bool(1)",
@@ -164,6 +164,18 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserStringFuncTest,
         {
             "print timespan('1.5d')",
             "SELECT 129600."
+        },
+        {
+            "print res = bin_at(6.5, 2.5, 7)",
+            "SELECT toFloat64(7) + (toInt64(((toFloat64(6.5) - toFloat64(7)) / 2.5) + -1) * 2.5) AS res"
+        },
+        {
+            "print res = bin_at(1h, 1d, 12h)",
+            "SELECT concat(toString(toInt32(((toFloat64(43200.) + (toInt64(((toFloat64(3600.) - toFloat64(43200.)) / 86400) + -1) * 86400)) AS x) / 3600)), ':', toString(toInt32((x % 3600) / 60)), ':', toString(toInt32((x % 3600) % 60))) AS res"
+        },
+        {
+            "print res = bin_at(datetime(2017-05-15 10:20:00.0), 1d, datetime(1970-01-01 12:00:00.0))",
+            "SELECT toDateTime64(toFloat64(toDateTime64('1970-01-01 12:00:00.0', 9, 'UTC')) + (toInt64(((toFloat64(toDateTime64('2017-05-15 10:20:00.0', 9, 'UTC')) - toFloat64(toDateTime64('1970-01-01 12:00:00.0', 9, 'UTC'))) / 86400) + 0) * 86400), 9, 'UTC') AS res"
         }
 
 })));   
