@@ -1,63 +1,24 @@
 
 ## KQL implemented features
 
-# August 29, 2022
-## Dynamic functions
-- [array_concat](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayconcatfunction)
-   `print array_concat(dynamic([1, 2, 3]), dynamic([4, 5]), dynamic([6, 7, 8, 9])) == dynamic([1, 2, 3, 4, 5, 6, 7, 8, 9])`
-
-- [array_iff / array_iif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayifffunction)
-   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
-   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
-   `print array_iif(dynamic([true, false, true, false]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, null])`
-   `print array_iif(dynamic([1, 0, -1, 44, 0]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, 4, null])`
-
-- [array_slice](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayslicefunction)
-   `print array_slice(dynamic([1,2,3]), 1, 2) == dynamic([2, 3])`
-   `print array_slice(dynamic([1,2,3,4,5]), 2, -1) == dynamic([3, 4, 5])`
-   `print array_slice(dynamic([1,2,3,4,5]), -3, -2) == dynamic([3, 4])`
-
-- [array_split](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysplitfunction)
-   `print array_split(dynamic([1,2,3,4,5]), 2) == dynamic([[1,2],[3,4,5]])`
-   `print array_split(dynamic([1,2,3,4,5]), dynamic([1,3])) == dynamic([[1],[2,3],[4,5]])`
-
-## DateTimeFunctions
-
-- [ago](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/agofunction)
-   `print ago(2h)`
-
-- [endofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofdayfunction)
-   `print endofday(datetime(2017-01-01 10:10:17), -1)`
-   `print endofday(datetime(2017-01-01 10:10:17), 1)`
-   `print endofday(datetime(2017-01-01 10:10:17))`
-
-- [endofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofmonthfunction)
-   `print endofmonth(datetime(2017-01-01 10:10:17), -1)`
-   `print endofmonth(datetime(2017-01-01 10:10:17), 1)`
-   `print endofmonth(datetime(2017-01-01 10:10:17))`
-
-- [endofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofweekfunction)
-   `print endofweek(datetime(2017-01-01 10:10:17), 1)`
-   `print endofweek(datetime(2017-01-01 10:10:17), -1)`
-   `print endofweek(datetime(2017-01-01 10:10:17))` 
-
-- [endofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofyearfunction)
-   `print endofyear(datetime(2017-01-01 10:10:17), -1)`
-   `print endofyear(datetime(2017-01-01 10:10:17), 1)`
-   `print endofyear(datetime(2017-01-01 10:10:17))`
-
-- [make_datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-datetimefunction)
-   `print make_datetime(2017,10,01)`
-   `print make_datetime(2017,10,01,12,10)`
-   `print make_datetime(2017,10,01,12,11,0.1234567)`
-
--  [datetime_diff](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-difffunction)
-   `print datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31))`
-   `print datetime_diff('quarter',datetime(2017-07-01),datetime(2017-03-30))`
-   `print datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59))` 
-
-- [unixtime_microseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-microseconds-todatetimefunction)
-   `print unixtime_microseconds_todatetime(1546300800000000)`    
+# August 15, 2022
+## Dynamic Array Functions
+- [array_sort_asc](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysortascfunction)  
+   `print t = array_sort_asc(dynamic([null, 'd', 'a', 'c', 'c']))`  
+   `print t = array_sort_asc(dynamic([4, 1, 3, 2]))`  
+   `print t = array_sort_asc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))`  
+   `print t = array_sort_asc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))`  
+   `print t = array_sort_asc( dynamic(['d', null, 'a', 'c', 'c']) , false)`  
+   `print t = array_sort_asc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)`  
+   `print t = array_sort_asc( dynamic([null, null, null]) , false)`  
+- [array_sort_desc](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraysortdescfunction)  
+   `print t = array_sort_desc(dynamic([null, 'd', 'a', 'c', 'c']))`  
+   `print t = array_sort_desc(dynamic([4, 1, 3, 2]))`  
+   `print t = array_sort_desc(dynamic(['b', 'a', 'c']), dynamic([20, 10, 30]))`  
+   `print t = array_sort_desc(dynamic([2, 1, 3]), dynamic(['clickhouse','hello', 'world']))`  
+   `print t = array_sort_desc( dynamic(['d', null, 'a', 'c', 'c']) , false)`  
+   `print t = array_sort_desc( dynamic([null, 'd', null, null, 'a', 'c', 'c', null, null, null]) , false)`  
+   `print t = array_sort_desc( dynamic([null, null, null]) , false)`  
 
 - [unixtime_milliseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-milliseconds-todatetimefunction)
    `print unixtime_milliseconds_todatetime(1546300800000)`
