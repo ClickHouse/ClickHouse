@@ -512,7 +512,7 @@ SELECT parseDateTimeBestEffort('10 20:19')
 
 ## toLowCardinality {#tolowcardinality}
 
-把输入值转换为[LowCardianlity](../data-types/lowcardinality.md)的相同类型的数据。
+把输入值转换为[LowCardinality](../data-types/lowcardinality.md)的相同类型的数据。
 
 如果要把`LowCardinality`类型的数据转换为其他类型，使用[CAST](#type_conversion_function-cast)函数。比如：`CAST(x as String)`。
 

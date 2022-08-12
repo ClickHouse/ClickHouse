@@ -4443,8 +4443,9 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
     // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeSink?
+    // TODO: insert_quorum = 'auto' would be supported in https://github.com/ClickHouse/ClickHouse/pull/39970, now it's same as 0.
     return std::make_shared<ReplicatedMergeTreeSink>(
-        *this, metadata_snapshot, query_settings.insert_quorum,
+        *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
