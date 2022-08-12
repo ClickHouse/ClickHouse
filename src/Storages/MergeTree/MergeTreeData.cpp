@@ -1895,7 +1895,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
 
         time_t current_time = time(nullptr);
         ssize_t threshold = current_time - getSettings()->merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds;
-        auto path = fs::path(relative_data_path) / "detached" / part_info.dir_name;
+        auto path = fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME / part_info.dir_name;
         time_t last_change_time = part_info.disk->getLastChanged(path);
         time_t last_modification_time = part_info.disk->getLastModified(path).epochTime();
         time_t last_touch_time = std::max(last_change_time, last_modification_time);
@@ -1912,7 +1912,7 @@ size_t MergeTreeData::clearOldBrokenPartsFromDetachedDirecory()
 
     for (const auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
-        removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
+        removeDetachedPart(disk, fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME / new_name / "", old_name, false);
         LOG_DEBUG(log, "Removed broken detached part {} due to a timeout for broken detached parts", old_name);
     }
 
@@ -2075,6 +2075,38 @@ void MergeTreeData::dropAllData()
         getContext()->dropCaches();
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
+
+    for (const auto & disk : getDisks())
+    {
+        if (disk->isBroken())
+            continue;
+
+        try
+        {
+            if (disk->supportZeroCopyReplication())
+            {
+                auto detached_path = fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME;
+                for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
+                {
+                    if (disk->isDirectory(detached_path / it->name()))
+                    {
+                        // Avoid removing shared remote objects when table dropped only on one replica
+                        removeDetachedPart(disk, detached_path / it->name() / "", it->name(), false);
+                    }
+                }
+            }
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                /// If the file is already deleted, log the error message and do nothing.
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+            else
+                throw;
+        }
+    }
 
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
     clearPartsFromFilesystem(all_parts);
@@ -4590,7 +4622,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
-        bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
+        bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME / new_name / "", old_name, false);
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_name, keep_shared);
         old_name.clear();
     }
