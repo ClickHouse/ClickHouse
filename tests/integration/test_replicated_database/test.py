@@ -776,7 +776,9 @@ def test_startup_without_zk(started_cluster):
     main_node.query(
         "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
     )
-    main_node.query("CREATE TABLE startup.rmt (n int) ENGINE=ReplicatedMergeTree order by n")
+    main_node.query(
+        "CREATE TABLE startup.rmt (n int) ENGINE=ReplicatedMergeTree order by n"
+    )
 
     main_node.query("INSERT INTO startup.rmt VALUES (42)")
     with PartitionManager() as pm:
