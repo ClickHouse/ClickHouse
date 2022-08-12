@@ -24,8 +24,6 @@
 #include <arrow/type.h>
 #include <arrow/util/decimal.h>
 
-#include <Common/logger_useful.h>
-
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(UInt8, arrow::UInt8Builder) \
         M(Int8, arrow::Int8Builder) \
@@ -295,7 +293,6 @@ namespace DB
             checkStatus(status, column->getName(), format_name);
 
             auto dict_column = column_lc->getDictionary().getNestedNotNullableColumn();
-            LOG_DEBUG(&Poco::Logger::get("Arrow"), "Dict size {}", dict_column->size());
             const auto & dict_type = removeNullable(assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType());
             fillArrowArray(column_name, dict_column, dict_type, nullptr, values_builder.get(), format_name, is_nullable ? 1 : 0, dict_column->size(), output_string_as_string, dictionary_values);
             status = values_builder->Finish(&dict_values);
