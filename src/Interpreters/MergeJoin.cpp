@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -468,9 +468,9 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     : table_join(table_join_)
     , size_limits(table_join->sizeLimits())
     , right_sample_block(right_sample_block_)
-    , is_any_join(table_join->strictness() == ASTTableJoin::Strictness::Any)
-    , is_all_join(table_join->strictness() == ASTTableJoin::Strictness::All)
-    , is_semi_join(table_join->strictness() == ASTTableJoin::Strictness::Semi)
+    , is_any_join(table_join->strictness() == JoinStrictness::Any)
+    , is_all_join(table_join->strictness() == JoinStrictness::All)
+    , is_semi_join(table_join->strictness() == JoinStrictness::Semi)
     , is_inner(isInner(table_join->kind()))
     , is_left(isLeft(table_join->kind()))
     , is_right(isRight(table_join->kind()))
@@ -482,10 +482,10 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 {
     switch (table_join->strictness())
     {
-        case ASTTableJoin::Strictness::All:
+        case JoinStrictness::All:
             break;
-        case ASTTableJoin::Strictness::Any:
-        case ASTTableJoin::Strictness::Semi:
+        case JoinStrictness::Any:
+        case JoinStrictness::Semi:
             if (!is_left && !is_inner)
                 throw Exception("Not supported. MergeJoin supports SEMI and ANY variants only for LEFT and INNER JOINs.",
                                 ErrorCodes::NOT_IMPLEMENTED);
@@ -1109,7 +1109,7 @@ private:
 std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(
     const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
-    if (table_join->strictness() == ASTTableJoin::Strictness::All && (is_right || is_full))
+    if (table_join->strictness() == JoinStrictness::All && (is_right || is_full))
     {
         size_t left_columns_count = left_sample_block.columns();
         assert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
@@ -1135,6 +1135,20 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
     }
 }
 
+bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
+{
+    auto kind = table_join->kind();
+    auto strictness = table_join->strictness();
+
+    bool is_any = (strictness == JoinStrictness::Any);
+    bool is_all = (strictness == JoinStrictness::All);
+    bool is_semi = (strictness == JoinStrictness::Semi);
+
+    bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
+    bool special_left = isInnerOrLeft(kind) && (is_any || is_semi);
+
+    return (all_join || special_left) && table_join->oneDisjunct();
+}
 
 MergeJoin::RightBlockInfo::RightBlockInfo(std::shared_ptr<Block> block_, size_t block_number_, size_t & skip_, RowBitmaps * bitmaps_)
     : block(block_)

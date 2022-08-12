@@ -4,13 +4,17 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Coordination/Keeper4LWInfo.h>
+#include <Coordination/KeeperDispatcher.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/FileCacheFactory.h>
-#include <Common/IFileCache.h>
+#include <Common/getCurrentProcessFDCount.h>
+#include <Common/getMaxFileDescriptorCount.h>
+#include <Common/FileCache.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
@@ -28,12 +32,6 @@
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
-
-
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
 
 
 namespace DB
@@ -387,7 +385,7 @@ uint64_t updateJemallocEpoch()
 }
 
 template <typename Value>
-static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
+static Value saveJemallocMetricImpl(AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
@@ -395,22 +393,23 @@ static void saveJemallocMetricImpl(AsynchronousMetricValues & values,
     size_t size = sizeof(value);
     mallctl(jemalloc_full_name.c_str(), &value, &size, nullptr, 0);
     values[clickhouse_full_name] = value;
+    return value;
 }
 
 template<typename Value>
-static void saveJemallocMetric(AsynchronousMetricValues & values,
+static Value saveJemallocMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
-    saveJemallocMetricImpl<Value>(values,
+    return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.{}", metric_name),
         fmt::format("jemalloc.{}", metric_name));
 }
 
 template<typename Value>
-static void saveAllArenasMetric(AsynchronousMetricValues & values,
+static Value saveAllArenasMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
-    saveJemallocMetricImpl<Value>(values,
+    return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.arenas.{}.{}", MALLCTL_ARENAS_ALL, metric_name),
         fmt::format("jemalloc.arenas.all.{}", metric_name));
 }
@@ -651,6 +650,31 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
+#if USE_JEMALLOC
+    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
+    // the following calls will return stale values. It increments and returns
+    // the current epoch number, which might be useful to log as a sanity check.
+    auto epoch = updateJemallocEpoch();
+    new_values["jemalloc.epoch"] = epoch;
+
+    // Collect the statistics themselves.
+    [[maybe_unused]] size_t je_malloc_allocated = saveJemallocMetric<size_t>(new_values, "allocated");
+    saveJemallocMetric<size_t>(new_values, "active");
+    saveJemallocMetric<size_t>(new_values, "metadata");
+    saveJemallocMetric<size_t>(new_values, "metadata_thp");
+    saveJemallocMetric<size_t>(new_values, "resident");
+    [[maybe_unused]] size_t je_malloc_mapped = saveJemallocMetric<size_t>(new_values, "mapped");
+    saveJemallocMetric<size_t>(new_values, "retained");
+    saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
+    saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
+    saveAllArenasMetric<size_t>(new_values, "pactive");
+    saveAllArenasMetric<size_t>(new_values, "pdirty");
+    saveAllArenasMetric<size_t>(new_values, "pmuzzy");
+    saveAllArenasMetric<size_t>(new_values, "dirty_purged");
+    saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
+#endif
+
     /// Process process memory usage according to OS
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
@@ -670,21 +694,34 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         {
             Int64 amount = total_memory_tracker.get();
             Int64 peak = total_memory_tracker.getPeak();
-            Int64 new_amount = data.resident;
+            Int64 rss = data.resident;
 
-            Int64 difference = new_amount - amount;
+            new_values["MemoryTrackingPeak"] = peak;
+
+#if USE_JEMALLOC
+            /// This is a memory which is kept by allocator.
+            /// Remove it from RSS to decrease memory drift.
+            rss -= je_malloc_mapped - je_malloc_allocated;
+#endif
+            /// In theory, the difference between RSS and tracked memory should be caused by
+            /// external libraries which allocation we can't track.
+            Int64 rss_drift = rss - amount;
+            Int64 difference = rss_drift - last_logged_rss_drift;
 
             /// Log only if difference is high. This is for convenience. The threshold is arbitrary.
             if (difference >= 1048576 || difference <= -1048576)
+            {
                 LOG_TRACE(log,
-                    "MemoryTracking: was {}, peak {}, will set to {} (RSS), difference: {}",
+                    "MemoryTracking: allocated {}, peak {}, RSS (adjusted) {}, difference: {}",
                     ReadableSize(amount),
                     ReadableSize(peak),
-                    ReadableSize(new_amount),
-                    ReadableSize(difference));
+                    ReadableSize(rss),
+                    ReadableSize(rss_drift));
 
-            total_memory_tracker.set(new_amount);
-            CurrentMetrics::set(CurrentMetrics::MemoryTracking, new_amount);
+                last_logged_rss_drift = rss_drift;
+            }
+
+            total_memory_tracker.setRSS(rss);
         }
     }
 #endif
@@ -985,9 +1022,15 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
                 if (s.rfind("processor", 0) == 0)
                 {
+                    /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
+                    /// non s390x example: processor : 0
                     if (auto colon = s.find_first_of(':'))
                     {
+#ifdef __s390x__
+                        core_id = std::stoi(s.substr(10)); /// 10: length of "processor" plus 1
+#else
                         core_id = std::stoi(s.substr(colon + 2));
+#endif
                     }
                 }
                 else if (s.rfind("cpu MHz", 0) == 0)
@@ -1464,30 +1507,89 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 new_values[name] = server_metric.current_threads;
         }
     }
+#if USE_NURAFT
+    {
+        auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
+        if (keeper_dispatcher)
+        {
+            size_t is_leader = 0;
+            size_t is_follower = 0;
+            size_t is_observer = 0;
+            size_t is_standalone = 0;
+            size_t znode_count = 0;
+            size_t watch_count =0;
+            size_t ephemerals_count = 0;
+            size_t approximate_data_size =0;
+            size_t key_arena_size = 0;
+            size_t latest_snapshot_size =0;
+            size_t open_file_descriptor_count =0;
+            size_t max_file_descriptor_count =0;
+            size_t followers =0;
+            size_t synced_followers = 0;
+            size_t zxid = 0;
+            size_t session_with_watches = 0;
+            size_t paths_watched = 0;
+            size_t snapshot_dir_size = 0;
+            size_t log_dir_size = 0;
 
-#if USE_JEMALLOC
-    // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
-    // the following calls will return stale values. It increments and returns
-    // the current epoch number, which might be useful to log as a sanity check.
-    auto epoch = updateJemallocEpoch();
-    new_values["jemalloc.epoch"] = epoch;
+            if (keeper_dispatcher->isServerActive())
+            {
+                auto keeper_info = keeper_dispatcher -> getKeeper4LWInfo();
+                is_standalone = static_cast<size_t>(keeper_info.is_standalone);
+                is_leader = static_cast<size_t>(keeper_info.is_leader);
+                is_observer = static_cast<size_t>(keeper_info.is_observer);
+                is_follower = static_cast<size_t>(keeper_info.is_follower);
 
-    // Collect the statistics themselves.
-    saveJemallocMetric<size_t>(new_values, "allocated");
-    saveJemallocMetric<size_t>(new_values, "active");
-    saveJemallocMetric<size_t>(new_values, "metadata");
-    saveJemallocMetric<size_t>(new_values, "metadata_thp");
-    saveJemallocMetric<size_t>(new_values, "resident");
-    saveJemallocMetric<size_t>(new_values, "mapped");
-    saveJemallocMetric<size_t>(new_values, "retained");
-    saveJemallocMetric<size_t>(new_values, "background_thread.num_threads");
-    saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
-    saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
-    saveAllArenasMetric<size_t>(new_values, "pactive");
-    saveAllArenasMetric<size_t>(new_values, "pdirty");
-    saveAllArenasMetric<size_t>(new_values, "pmuzzy");
-    saveAllArenasMetric<size_t>(new_values, "dirty_purged");
-    saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
+                zxid = keeper_info.last_zxid;
+                const auto & state_machine = keeper_dispatcher->getStateMachine();
+                znode_count = state_machine.getNodesCount();
+                watch_count = state_machine.getTotalWatchesCount();
+                ephemerals_count = state_machine.getTotalEphemeralNodesCount();
+                approximate_data_size = state_machine.getApproximateDataSize();
+                key_arena_size = state_machine.getKeyArenaSize();
+                latest_snapshot_size = state_machine.getLatestSnapshotBufSize();
+                session_with_watches = state_machine.getSessionsWithWatchesCount();
+                paths_watched = state_machine.getWatchedPathsCount();
+                snapshot_dir_size = keeper_dispatcher->getSnapDirSize();
+                log_dir_size = keeper_dispatcher->getLogDirSize();
+
+                #if defined(__linux__) || defined(__APPLE__)
+                    open_file_descriptor_count = getCurrentProcessFDCount();
+                    max_file_descriptor_count = getMaxFileDescriptorCount();
+                #endif
+
+                if (keeper_info.is_leader)
+                {
+                    followers = keeper_info.follower_count;
+                    synced_followers = keeper_info.synced_follower_count;
+                }
+            }
+
+            new_values["KeeperIsLeader"] = is_leader;
+            new_values["KeeperIsFollower"] = is_follower;
+            new_values["KeeperIsObserver"] = is_observer;
+            new_values["KeeperIsStandalone"] = is_standalone;
+
+            new_values["KeeperZnodeCount"] = znode_count;
+            new_values["KeeperWatchCount"] = watch_count;
+            new_values["KeeperEphemeralsCount"] = ephemerals_count;
+
+            new_values["KeeperApproximateDataSize"] = approximate_data_size;
+            new_values["KeeperKeyArenaSize"] = key_arena_size;
+            new_values["KeeperLatestSnapshotSize"] = latest_snapshot_size;
+
+            new_values["KeeperOpenFileDescriptorCount"] = open_file_descriptor_count;
+            new_values["KeeperMaxFileDescriptorCount"] = max_file_descriptor_count;
+
+            new_values["KeeperFollowers"] = followers;
+            new_values["KeeperSyncedFollowers"] = synced_followers;
+            new_values["KeeperZxid"] = zxid;
+            new_values["KeeperSessionWithWatches"] = session_with_watches;
+            new_values["KeeperPathsWatched"] = paths_watched;
+            new_values["KeeperSnapshotDirSize"] = snapshot_dir_size;
+            new_values["KeeperLogDirSize"] = log_dir_size;
+        }
+    }
 #endif
 
     /// Add more metrics as you wish.

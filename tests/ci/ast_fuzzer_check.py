@@ -12,6 +12,7 @@ from env_helper import (
     GITHUB_RUN_URL,
     REPORTS_PATH,
     REPO_COPY,
+    S3_URL,
     TEMP_PATH,
 )
 from s3_helper import S3Helper
@@ -58,7 +59,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
@@ -117,7 +118,7 @@ if __name__ == "__main__":
         "core.gz": os.path.join(workspace_path, "core.gz"),
     }
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper(S3_URL)
     for f in paths:
         try:
             paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + "/" + f)
