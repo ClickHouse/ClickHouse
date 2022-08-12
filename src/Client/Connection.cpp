@@ -477,6 +477,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
+    const NameToNameMap & query_parameters,
     const String & query_id_,
     UInt64 stage,
     const Settings * settings,
@@ -568,6 +569,14 @@ void Connection::sendQuery(
     writeVarUInt(static_cast<bool>(compression), *out);
 
     writeStringBinary(query, *out);
+
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    {
+        Settings params;
+        for (const auto & [name, value] : query_parameters)
+            params.set(name, value);
+        params.write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
 
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
