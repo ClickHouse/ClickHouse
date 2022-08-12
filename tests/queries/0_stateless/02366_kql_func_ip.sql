@@ -38,9 +38,53 @@ print '-- parse_ipv6(fe80::85d:e82c:9446:7994)';
 print parse_ipv6('fe80::85d:e82c:9446:7994');
 print '-- parse_ipv4(\'127.0.0.1\')';
 print parse_ipv4('127.0.0.1');
--- TODO:
--- print parse_ipv4('192.1.168.1') < parse_ipv4('192.1.168.2'); -- == true
 
+print '-- parse_ipv4(\'192.1.168.1\') < parse_ipv4(\'192.1.168.2\')';
+print parse_ipv4('192.1.168.1') < parse_ipv4('192.1.168.2');
+print '-- parse_ipv4_mask(\'127.0.0.1\', 24) == 2130706432';
+print parse_ipv4_mask('127.0.0.1', 24) == 2130706432;
+print '-- parse_ipv4_mask(\'abc\', 31)';
+print parse_ipv4_mask('abc', 31)
+print '-- parse_ipv4_mask(\'192.1.168.2\', 1000)';
+print parse_ipv4_mask('192.1.168.2', 1000);
+print '-- parse_ipv4_mask(\'192.1.168.2\', 31) == parse_ipv4_mask(\'192.1.168.3\', 31)';
+print parse_ipv4_mask('192.1.168.2', 31) == parse_ipv4_mask('192.1.168.3', 31);
+print '-- ipv4_is_match(\'127.0.0.1\', \'127.0.0.1\')';
+print ipv4_is_match('127.0.0.1', '127.0.0.1');
+print '-- ipv4_is_match(\'192.168.1.1\', \'192.168.1.255\')';
+print ipv4_is_match('192.168.1.1', '192.168.1.255');
+print '-- ipv4_is_match(\'192.168.1.1/24\', \'192.168.1.255/24\')';
+print ipv4_is_match('192.168.1.1/24', '192.168.1.255/24');
+print '-- ipv4_is_match(\'192.168.1.1\', \'192.168.1.255\', 24)';
+print ipv4_is_match('192.168.1.1', '192.168.1.255', 24);
+print '-- ipv4_is_match(\'abc\', \'def\', 24)';
+print ipv4_is_match('abc', 'dev', 24);
+print '-- ipv4_compare()';
+print ipv4_compare('127.0.0.1', '127.0.0.1');
+print ipv4_compare('192.168.1.1', '192.168.1.255');
+print ipv4_compare('192.168.1.255', '192.168.1.1');
+print ipv4_compare('192.168.1.1/24', '192.168.1.255/24');
+print ipv4_compare('192.168.1.1', '192.168.1.255', 24);
+print ipv4_compare('192.168.1.1/24', '192.168.1.255');
+print ipv4_compare('192.168.1.1', '192.168.1.255/24');
+print ipv4_compare('192.168.1.1/30', '192.168.1.255/24');
+print ipv4_compare('192.168.1.1', '192.168.1.0', 31);
+print ipv4_compare('192.168.1.1/24', '192.168.1.255', 31);
+print ipv4_compare('192.168.1.1', '192.168.1.255', 24);
+print '-- format_ipv4()';
+print format_ipv4('192.168.1.255', 24);
+print format_ipv4('192.168.1.1', 32);
+print format_ipv4('192.168.1.1/24', 32);
+print format_ipv4(3232236031, 24);
+print format_ipv4('192.168.1.1/24', -1) == '';
+print format_ipv4('abc', 24) == '';
+print '-- format_ipv4_mask()';
+print format_ipv4_mask('192.168.1.255', 24);
+print format_ipv4_mask(3232236031, 24);
+print format_ipv4_mask('192.168.1.1', 24);
+print format_ipv4_mask('192.168.1.1', 32);
+print format_ipv4_mask('192.168.1.1/24', -1) == '';
+print format_ipv4_mask('abc', 24) == '';
 
 
 

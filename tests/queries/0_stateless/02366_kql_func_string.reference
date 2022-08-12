@@ -260,3 +260,28 @@ PINEAPPLE
 2
 2
 -1
+-- base64_encode_fromguid()
+YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi
+-- base64_decode_toarray()
+[75,117,115,116,111]
+-- base64_decode_toguid()
+1
+-- parse_url()
+{"Scheme":"scheme","Host":"","Port":"0","Path":"/this/is/a/path","Username":"username","Password":"password","Query Parameters":{"k1":"v1","k2":"v2"},"Fragment":"fragment"}
+-- parse_urlquery()
+{"Query Parameters":{"k1":"v1","k2":"v2","k3":"v3"}}
+-- strcmp()
+0	1	-1	1
+-- translate()
+kusto		xxx
+-- trim()
+https://www.ibm.com
+-- trim_start()
+www.ibm.com
+Te st1// $
+-- trim_end()
+https
+-- replace_regex
+Number was: 1
+-- has_any_index()
+0	1	-1	-1
