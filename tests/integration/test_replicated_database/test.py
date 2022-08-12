@@ -776,23 +776,30 @@ def test_startup_without_zk(started_cluster):
     main_node.query(
         "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
     )
-    # main_node.query("CREATE TABLE startup.rmt (n int) ENGINE=ReplicatedMergeTree order by n")
-    main_node.query("CREATE TABLE startup.rmt (n int) ENGINE=MergeTree order by n")
+    main_node.query("CREATE TABLE startup.rmt (n int) ENGINE=ReplicatedMergeTree order by n")
+
     main_node.query("INSERT INTO startup.rmt VALUES (42)")
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
         main_node.restart_clickhouse(stop_start_wait_sec=30)
         assert main_node.query("SELECT (*,).1 FROM startup.rmt") == "42\n"
 
-    for _ in range(10):
-        try:
-            main_node.query("CREATE TABLE startup.m (n int) ENGINE=Memory")
-            break
-        except:
-            time.sleep(1)
+    def retry_query(query, retries):
+        for _ in range(retries):
+            try:
+                main_node.query(query)
+                break
+            except:
+                time.sleep(1)
+
+    # we need to wait until the table is not readonly
+    retry_query("INSERT INTO startup.rmt VALUES(42)", 10)
+
+    retry_query("CREATE TABLE startup.m (n int) ENGINE=Memory", 10)
 
     main_node.query("EXCHANGE TABLES startup.rmt AND startup.m")
     assert main_node.query("SELECT (*,).1 FROM startup.m") == "42\n"
+
     main_node.query("DROP DATABASE startup SYNC")
 
 

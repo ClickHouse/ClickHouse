@@ -29,6 +29,7 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
+#include <base/defines.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
@@ -458,8 +459,8 @@ private:
         STARTUP_DONE
     };
     mutable std::mutex initialization_mutex;
-    InitializationPhase init_phase{InitializationPhase::INITIALIZING};
-    bool startup_called{false};
+    TSA_GUARDED_BY(initialization_mutex) InitializationPhase init_phase{InitializationPhase::INITIALIZING};
+    TSA_GUARDED_BY(initialization_mutex) bool startup_called{false};
 
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;

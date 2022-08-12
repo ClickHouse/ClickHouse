@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+}
+
 ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAttachThread)")
@@ -15,12 +20,14 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
 void ReplicatedMergeTreeAttachThread::shutdown()
 {
     need_shutdown = true;
+    task->deactivate();
 }
 
 void ReplicatedMergeTreeAttachThread::run()
 {
     try
     {
+        LOG_INFO(log, "Table will be in readonly mode until initialization is finished");
         zookeeper = storage.current_zookeeper;
         if (!zookeeper)
             tryReconnect();
@@ -29,7 +36,7 @@ void ReplicatedMergeTreeAttachThread::run()
         bool metadata_exists = withRetries([&] { return zookeeper->exists(zookeeper_path + "/metadata"); });
         if (!metadata_exists)
         {
-            LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode.", zookeeper_path);
+            LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode.", zookeeper_path);
             storage.has_metadata_in_zookeeper = false;
             notifyIfFirstTry();
             return;
@@ -45,7 +52,7 @@ void ReplicatedMergeTreeAttachThread::run()
         bool replica_path_exists = withRetries([&] { return zookeeper->exists(replica_path); });
         if (!replica_path_exists)
         {
-            LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode", replica_path);
+            LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode", replica_path);
             storage.has_metadata_in_zookeeper = false;
             notifyIfFirstTry();
             return;
@@ -104,6 +111,7 @@ void ReplicatedMergeTreeAttachThread::run()
 
         notifyIfFirstTry();
 
+        LOG_INFO(log, "Table is initialized");
         using enum StorageReplicatedMergeTree::InitializationPhase;
         {
             std::lock_guard lock(storage.initialization_mutex);
@@ -122,11 +130,11 @@ void ReplicatedMergeTreeAttachThread::run()
     {
         if (e.code() == ErrorCodes::ABORTED && need_shutdown)
         {
-            LOG_WARNING(log, "Shutdown called, cancelling ATTACH");
+            LOG_WARNING(log, "Shutdown called, cancelling initialization");
             return;
         }
 
-        LOG_ERROR(log, "ATTACH failed, table will remain readonly. Error: {}", e.message());
+        LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", e.message());
         notifyIfFirstTry();
     }
 };
@@ -158,7 +166,7 @@ void ReplicatedMergeTreeAttachThread::tryReconnect()
         catch (...)
         {
             notifyIfFirstTry();
-            LOG_WARNING(log, "Will try to reconnect in 10 seconds");
+            LOG_WARNING(log, "Will try to reconnect to ZooKeeper in 10 seconds");
             std::this_thread::sleep_for(std::chrono::seconds(10));
         }
     }
