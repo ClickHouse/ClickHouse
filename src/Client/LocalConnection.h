@@ -122,7 +122,7 @@ public:
 
     bool isConnected() const override { return true; }
 
-    bool checkConnected() override { return true; }
+    bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
 
     void disconnect() override {}
 

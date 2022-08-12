@@ -1599,6 +1599,12 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
     return cleared_count;
 }
 
+scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_dir_name)
+{
+    temporary_parts.add(part_dir_name);
+    return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
+}
+
 
 MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 {
@@ -2857,6 +2863,13 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
 {
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
+
+    assert([&]()
+           {
+               String dir_name = fs::path(part->data_part_storage->getRelativePath()).filename();
+               bool may_be_cleaned_up = dir_name.starts_with("tmp_") || dir_name.starts_with("tmp-fetch_");
+               return !may_be_cleaned_up || temporary_parts.contains(dir_name);
+           }());
 
     part->renameTo(part->name, true, builder);
 
@@ -5968,7 +5981,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
@@ -5996,6 +6009,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String dst_part_name = src_part->getNewName(dst_part_info);
     assert(!tmp_part_prefix.empty());
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
+    auto temporary_directory_lock = getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
     /// Why it is needed if we only hardlink files?
     auto reservation = src_part->data_part_storage->reserve(src_part->getBytesOnDisk());
@@ -6043,7 +6057,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
-    return dst_data_part;
+    return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const

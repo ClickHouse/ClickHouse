@@ -780,12 +780,12 @@ public:
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes);
+    void setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void dropUncompressedCache() const;
 
     /// Create a cache of marks of specified size. This can be done only once.
-    void setMarkCache(size_t cache_size_in_bytes);
+    void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
 
