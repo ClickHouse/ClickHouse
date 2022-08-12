@@ -1566,7 +1566,7 @@ def collect_build_flags(args):
         args,
         "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'",
     )
-    if value == b"1":
+    if value == b"1" or args.db_engine == "Ordinary":
         result.append(BuildFlags.ORDINARY_DATABASE)
 
     value = int(
