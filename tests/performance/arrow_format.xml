@@ -1,0 +1,12 @@
+<test>
+    <create_query>CREATE TABLE test (uint32 UInt32, n_uint32 Nullable(UInt32), lc LowCardinality(String), n_lc LowCardinality(Nullable(String))) ENGINE=File(Arrow) SETTINGS output_format_arrow_low_cardinality_as_dictionary=1</create_query>
+    <fill_query>insert into test select number, number, toString(number % 10000), toString(number % 10000) from numbers(20000000)</fill_query>
+
+    <query>SELECT uint32 from test format Null</query>
+
+    <query>SELECT n_uint32 from test format Null</query>
+    <query>SELECT lc from test format Null</query>
+    <query>SELECT n_lc from test format Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test</drop_query>
+</test>

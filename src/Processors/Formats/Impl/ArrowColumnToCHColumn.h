@@ -44,6 +44,13 @@ public:
         const Block * hint_header = nullptr,
         bool ignore_case = false);
 
+    struct DictionaryInfo
+    {
+        std::shared_ptr<ColumnWithTypeAndName> values;
+        Int64 default_value_index = -1;
+    };
+
+
 private:
     const Block & header;
     const std::string format_name;
@@ -55,7 +62,7 @@ private:
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
-    std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dictionary_values;
+    std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
 };
 
 }
