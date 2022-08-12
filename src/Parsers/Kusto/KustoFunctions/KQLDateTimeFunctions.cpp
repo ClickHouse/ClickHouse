@@ -77,6 +77,7 @@ bool DatetimeDiff::convertImpl(String & out, IParser::Pos & pos)
     arguments = arguments + getConvertedArgument(fn_name, pos);
 
     out = std::format("DateDiff({}) * -1",arguments);
+
     return true;
 
 }
@@ -238,19 +239,35 @@ bool MakeDateTime::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     String arguments;
-    String argument[7] = {"0","0","0","0","0","0","0"};
-    
-    int i = 0;
+
+    int number_of_arguments=1;
+    String argument;
     while (pos->type != TokenType::ClosingRoundBracket)
     {
-        argument[i] = getConvertedArgument(fn_name, pos);
+        argument = String(pos->begin,pos->end);
+        auto dot_pos = argument.find('.');
+
+        if (dot_pos == String::npos)
+            arguments = arguments +  String(pos->begin,pos->end);
+        else
+        {
+            arguments = arguments + argument.substr(dot_pos-1, dot_pos) + "," + argument.substr(dot_pos+1,argument.length());
+            number_of_arguments++;
+        }
+            
+        ++pos;
         if(pos->type == TokenType::Comma)
-           ++pos;
-
-        i++;
+            number_of_arguments++;
     }
+    
+    while(number_of_arguments < 7)
+    {
+        arguments = arguments+ ",";
+        arguments = arguments+ "0";
+        number_of_arguments++;
+    }
+    arguments = arguments + ",7,'UTC'";
 
-    arguments = argument[0] + "," + argument[1] + "," + argument[2] + "," + argument[3] + "," + argument[4] + "," + argument[5] + "," + argument[6] + ",7,'UTC'";
 
     out = std::format("makeDateTime64({})",arguments);
     
