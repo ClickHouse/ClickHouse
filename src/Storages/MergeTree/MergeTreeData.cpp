@@ -5142,8 +5142,7 @@ static void selectBestProjection(
     const MergeTreeDataSelectExecutor & reader,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
-    const ActionsDAGPtr & added_filter,
-    const std::string & added_filter_column_name,
+    const ActionDAGNodes & added_filter_nodes,
     const Names & required_columns,
     ProjectionCandidate & candidate,
     ContextPtr query_context,
@@ -5174,8 +5173,7 @@ static void selectBestProjection(
         storage_snapshot->metadata,
         candidate.desc->metadata,
         query_info,
-        added_filter,
-        added_filter_column_name,
+        added_filter_nodes,
         query_context,
         settings.max_threads,
         max_added_blocks);
@@ -5198,8 +5196,7 @@ static void selectBestProjection(
             storage_snapshot->metadata,
             storage_snapshot->metadata,
             query_info, // TODO syntax_analysis_result set in index
-            added_filter,
-            added_filter_column_name,
+            added_filter_nodes,
             query_context,
             settings.max_threads,
             max_added_blocks);
@@ -5293,9 +5290,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             minmax_columns_types = getMinMaxColumnsTypes(partition_key);
 
             minmax_idx_condition.emplace(
-                query_info.query, query_info.syntax_analyzer_result, query_info.sets,
-                query_context,
-                minmax_columns_names,
+                query_info, query_context, minmax_columns_names,
                 getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(query_context)));
             partition_pruner.emplace(metadata_snapshot, query_info, query_context, false /* strict */);
         }
@@ -5517,15 +5512,22 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         query_ptr,
         query_context,
         query_options,
-        std::move(query_info.subquery_for_sets),
-        std::move(query_info.sets));
+        query_info.prepared_sets);
     const auto & analysis_result = select.getAnalysisResult();
 
-    query_info.sets = std::move(select.getQueryAnalyzer()->getPreparedSets());
-    query_info.subquery_for_sets = std::move(select.getQueryAnalyzer()->getSubqueriesForSets());
+    query_info.prepared_sets = select.getQueryAnalyzer()->getPreparedSets();
     query_info.prewhere_info = analysis_result.prewhere_info;
+
     const auto & before_where = analysis_result.before_where;
     const auto & where_column_name = analysis_result.where_column_name;
+
+    /// For PK analysis
+    ActionDAGNodes added_filter_nodes;
+    if (auto additional_filter_info = select.getAdditionalQueryInfo())
+        added_filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
+
+    if (before_where)
+        added_filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
 
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
@@ -5753,7 +5755,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
             metadata_snapshot,
             minmax_count_projection_candidate->required_columns,
-            analysis_result.prewhere_info || analysis_result.before_where,
+            !query_info.filter_asts.empty() || analysis_result.prewhere_info || analysis_result.before_where,
             query_info,
             parts,
             normal_parts,
@@ -5795,8 +5797,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                 metadata_snapshot,
                 metadata_snapshot,
                 query_info,
-                before_where,
-                where_column_name,
+                added_filter_nodes,
                 query_context,
                 settings.max_threads,
                 max_added_blocks);
@@ -5828,8 +5829,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             metadata_snapshot,
             metadata_snapshot,
             query_info,
-            before_where,
-            where_column_name,
+            added_filter_nodes,
             query_context,
             settings.max_threads,
             max_added_blocks);
@@ -5855,8 +5855,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                     reader,
                     storage_snapshot,
                     query_info,
-                    before_where,
-                    where_column_name,
+                    added_filter_nodes,
                     analysis_result.required_columns,
                     candidate,
                     query_context,
@@ -5877,8 +5876,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                     reader,
                     storage_snapshot,
                     query_info,
-                    before_where,
-                    where_column_name,
+                    added_filter_nodes,
                     analysis_result.required_columns,
                     candidate,
                     query_context,
