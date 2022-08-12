@@ -212,7 +212,7 @@ private:
         const CreateFileSegmentSettings & create_settings,
         std::lock_guard<std::mutex> & cache_lock);
 
-    void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock) const;
+    static void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
     bool tryReserveForMainList(
         const Key & key,

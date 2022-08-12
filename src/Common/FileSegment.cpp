@@ -1,5 +1,6 @@
 #include "FileSegment.h"
 #include <base/getThreadId.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
@@ -351,29 +352,25 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         state.future_downloaded_size += size;
     }
 
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+    ThreadGroupStatusPtr thread_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
             ? CurrentThread::get().getThreadGroup()
             : MainThreadStatus::getInstance().getThreadGroup();
-
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
 
     auto task = std::make_shared<std::packaged_task<void()>>(
         [this,
          executor_id = getCallerId() + "_async", /// Id for background downloader
-         holder = FileSegmentsHolder({shared_from_this()}), /// Protection
-         running_group, query_context]()
+         /// Protection against segfault.
+         /// It is also important to wrap in FileSegmentHolder as
+         /// need to unsure complete() is called by each user of the file segment.
+         holder = FileSegmentsHolder({shared_from_this()}),
+         thread_group]
     {
-        ThreadStatus thread_status;
-        if (running_group)
-            thread_status.attachQuery(running_group);
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
 
-        SCOPE_EXIT({
-            thread_status.detachQuery(/* if_not_detached */true);
-            assert(background_downloader_id.empty());
+        SCOPE_EXIT_SAFE({
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
         });
 
         auto & state = *async_write_state;
@@ -401,6 +398,10 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
             background_downloader_id = background_caller_id = executor_id;
             LOG_TEST(log, "Assigned background downloader: {}", executor_id);
         }
+
+        SCOPE_EXIT({
+            assert(background_downloader_id.empty());
+        });
 
         std::optional<size_t> start_offset = 0;
         size_t total_size = 0;

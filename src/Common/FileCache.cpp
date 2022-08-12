@@ -114,7 +114,7 @@ ThreadPool & FileCache::getThreadPoolForAsyncWrite()
 }
 
 void FileCache::useCell(
-    const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock) const
+    const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock)
 {
     auto file_segment = cell.file_segment;
 

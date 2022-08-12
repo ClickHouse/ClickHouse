@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentThread.h>
 #include <Common/config.h>
+#include <Common/scope_guard_safe.h>
 #include <IO/SeekableReadBuffer.h>
 
 #include <future>
@@ -40,25 +41,19 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+    ThreadGroupStatusPtr thread_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
             ? CurrentThread::get().getThreadGroup()
             : MainThreadStatus::getInstance().getThreadGroup();
 
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
-    auto task = std::make_shared<std::packaged_task<Result()>>([request, running_group, query_context]
+    auto task = std::make_shared<std::packaged_task<Result()>>([request, thread_group]
     {
-        ThreadStatus thread_status;
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
 
-        /// To be able to pass ProfileEvents.
-        if (running_group)
-            thread_status.attachQuery(running_group);
-
-        /// Save query context if any, because cache implementation needs it.
-        if (query_context)
-            thread_status.attachQueryContext(query_context);
+        SCOPE_EXIT_SAFE({
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        });
 
         setThreadName("VFSRead");
 
@@ -67,24 +62,12 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
         Stopwatch watch(CLOCK_MONOTONIC);
 
-        Result result;
-        try
-        {
-            result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
-        }
-        catch (...)
-        {
-            if (running_group)
-                CurrentThread::detachQuery();
-            throw;
-        }
+        Result result = remote_fs_fd->readInto(request.buf, request.size, request.offset, request.ignore);
 
         watch.stop();
 
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, result.offset ? result.size - result.offset : result.size);
-
-        thread_status.detachQuery(/* if_not_detached */true);
 
         return Result{ .size = result.size, .offset = result.offset };
     });
