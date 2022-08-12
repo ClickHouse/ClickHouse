@@ -413,6 +413,22 @@ def wait_mutations(node, table, seconds):
     assert mutations == "0\n"
 
 
+def wait_for_clean_old_parts(node, table, seconds):
+    time.sleep(1)
+    while seconds > 0:
+        seconds -= 1
+        parts = node.query(
+            f"SELECT count() FROM system.parts WHERE table='{table}' AND active=0"
+        )
+        if parts == "0\n":
+            return
+        time.sleep(1)
+    parts = node.query(
+        f"SELECT count() FROM system.parts WHERE table='{table}' AND active=0"
+    )
+    assert parts == "0\n"
+
+
 def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
@@ -432,6 +448,8 @@ def s3_zero_copy_unfreeze_base(cluster, unfreeze_query_template):
     )
 
     node1.query("INSERT INTO unfreeze_test VALUES (0)")
+
+    wait_for_active_parts(node2, 1, "unfreeze_test")
 
     node1.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'freeze_backup1'")
     node2.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'freeze_backup2'")
@@ -618,3 +636,123 @@ def test_s3_zero_copy_concurrent_merge(cluster):
 
     for node in (node1, node2):
         assert node.query("select sum(id) from concurrent_merge").strip() == "1600"
+
+
+def test_s3_zero_copy_keeps_data_after_mutation(cluster):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
+    node2.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
+
+    node1.query(
+            """
+        CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
+        ORDER BY id
+        PARTITION BY (id % 4)
+        SETTINGS storage_policy='s3',
+        old_parts_lifetime=1000
+        """
+        )
+
+    node2.query(
+            """
+        CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
+        ORDER BY id
+        PARTITION BY (id % 4)
+        SETTINGS storage_policy='s3',
+        old_parts_lifetime=1000
+        """
+        )
+
+    node1.query(
+            """
+        INSERT INTO zero_copy_mutation
+        SELECT * FROM generateRandom('id UInt64, value1 String, value2 String, value3 String') limit 1000000
+        """
+        )
+
+    wait_for_active_parts(node2, 4, "zero_copy_mutation")
+
+    objects1 = node1.get_table_objects("zero_copy_mutation")
+    check_objects_exisis(cluster, objects1)
+
+    node1.query(
+            """
+        ALTER TABLE zero_copy_mutation
+        ADD COLUMN valueX String MATERIALIZED value1
+        """
+    )
+
+    node1.query(
+            """
+        ALTER TABLE zero_copy_mutation
+        MATERIALIZE COLUMN valueX
+        """
+    )
+
+    wait_mutations(node1, "zero_copy_mutation", 10)
+    wait_mutations(node2, "zero_copy_mutation", 10)
+
+    # If bug present at least one node has metadata with incorrect ref_count values
+    # But it may be any node depends on mutation execution order
+    nodeX = node1
+    nodeY = node2
+
+    assert node1.count_metadata_furcation_refs('s31') == 0
+    assert node2.count_metadata_furcation_refs('s31') == 0
+
+    if node2.count_metadata_furcation_refs('s31'):
+        nodeX = node2
+        nodeY = node1
+
+    objectsY = nodeY.get_table_objects("zero_copy_mutation")
+    check_objects_exisis(cluster, objectsY)
+
+    nodeX.query(
+        """
+        ALTER TABLE zero_copy_mutation
+        DETACH PARTITION '0'
+        """
+    )
+
+    nodeX.query(
+        """
+        ALTER TABLE zero_copy_mutation
+        ATTACH PARTITION '0'
+        """
+    )
+
+    wait_mutations(node1, "zero_copy_mutation", 10)
+    wait_mutations(node2, "zero_copy_mutation", 10)
+
+    nodeX.query(
+        """
+        DROP TABLE zero_copy_mutation SYNC
+        """
+    )
+
+    # time to remove objects
+    time.sleep(10)
+
+    nodeY.query(
+        """
+        SELECT count() FROM zero_copy_mutation
+        WHERE value3 LIKE '%ab%'
+        """
+    )
+
+    check_objects_exisis(cluster, objectsY)
+
+    nodeY.query(
+        """
+        DROP TABLE zero_copy_mutation SYNC
+        """
+    )
+
+    # time to remove objects
+    time.sleep(10)
+
+    check_objects_not_exisis(cluster, objectsY)

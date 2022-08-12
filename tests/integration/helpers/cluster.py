@@ -4037,6 +4037,9 @@ class ClickHouseInstance:
     def get_backuped_s3_objects(self, disk, backup_name):
         path = f"/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store"
         self.wait_for_path_exists(path, 10)
+        return self.get_s3_objects(path)
+
+    def get_s3_objects(self, path):
         command = [
             "find",
             path,
@@ -4050,6 +4053,73 @@ class ClickHouseInstance:
             ";",
         ]
         return self.exec_in_container(command).split("\n")
+
+    def get_s3_data_objects(self, path):
+        command = [
+            "find",
+            path,
+            "-type",
+            "f",
+            "-name",
+            "*.bin",
+            "-exec",
+            "grep",
+            "-o",
+            "r[01]\\{64\\}-file-[[:lower:]]\\{32\\}",
+            "{}",
+            ";",
+        ]
+        return self.exec_in_container(command).split("\n")
+
+    def get_table_objects(self, table, database=None):
+        objects = []
+        database_query = ""
+        if database:
+            database_query = f"AND database='{database}'"
+        data_paths = self.query(
+            f"""
+            SELECT arrayJoin(data_paths)
+            FROM system.tables
+            WHERE name='{table}'
+            {database_query}
+            """
+        )
+        paths = data_paths.split("\n")
+        for path in paths:
+            if path:
+                objects = objects + self.get_s3_data_objects(path)
+        return objects
+
+    def count_metadata_furcation_refs(self, disk, path=None):
+        if not path:
+            path = f"/var/lib/clickhouse/disks/{disk}/store"
+        command = [
+            "grep",
+            "-A",
+            "1",
+            "r00000000000000000000",
+            "-R",
+            path
+        ]
+        lines = self.exec_in_container(command).split("\n")
+        prev_line = ""
+        objects = {}
+        pattern = re.compile(".*:\d+\s+(\S+)")
+        for line in lines:
+            if line.endswith('-0'):
+                res = pattern.match(prev_line)
+                if res:
+                    object = res.group(1)
+                    if object in objects:
+                        objects[object] += 1
+                    else:
+                        objects[object] = 1
+            prev_line = line
+        count = 0
+        for object in objects:
+            if objects[object] > 1:
+                count += 1
+        return count
 
 
 class ClickHouseKiller(object):
