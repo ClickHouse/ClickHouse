@@ -85,6 +85,40 @@ print format_ipv4_mask('192.168.1.1', 24);
 print format_ipv4_mask('192.168.1.1', 32);
 print format_ipv4_mask('192.168.1.1/24', -1) == '';
 print format_ipv4_mask('abc', 24) == '';
-
-
-
+print '-- parse_ipv6_mask()';
+print parse_ipv6_mask("127.0.0.1", 24) == '0000:0000:0000:0000:0000:ffff:7f00:0000';
+print parse_ipv6_mask("fe80::85d:e82c:9446:7994", 120) == 'fe80:0000:0000:0000:085d:e82c:9446:7900';
+-- print parse_ipv6_mask("192.168.255.255", 120) == '0000:0000:0000:0000:0000:ffff:c0a8:ff00';
+print parse_ipv6_mask("192.168.255.255/24", 124) == '0000:0000:0000:0000:0000:ffff:c0a8:ff00';
+print parse_ipv6_mask("255.255.255.255", 128) == '0000:0000:0000:0000:0000:ffff:ffff:ffff';
+print parse_ipv6_mask("fe80::85d:e82c:9446:7994", 128) == 'fe80:0000:0000:0000:085d:e82c:9446:7994';
+print parse_ipv6_mask("fe80::85d:e82c:9446:7994/120", 124) == 'fe80:0000:0000:0000:085d:e82c:9446:7900';
+-- print parse_ipv6_mask("::192.168.255.255", 128) == '0000:0000:0000:0000:0000:ffff:c0a8:ffff';
+-- print parse_ipv6_mask("::192.168.255.255/24", 128) == '0000:0000:0000:0000:0000:ffff:c0a8:ff00';
+print '-- ipv6_is_match()';
+print ipv6_is_match('::ffff:7f00:1', '127.0.0.1') == true;
+print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995') == false;
+print ipv6_is_match('192.168.1.1/24', '192.168.1.255/24') == true;
+print ipv6_is_match('fe80::85d:e82c:9446:7994/127', 'fe80::85d:e82c:9446:7995/127') == true;
+print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995', 127) == true;
+print ipv6_is_match('192.168.1.1',    '192.168.1.1'); --       // Equal IPs
+print ipv6_is_match('192.168.1.1/24', '192.168.1.255'); --     // 24 bit IP4-prefix is used for comparison
+print ipv6_is_match('192.168.1.1',    '192.168.1.255/24'); --  // 24 bit IP4-prefix is used for comparison
+print ipv6_is_match('192.168.1.1/30', '192.168.1.255/24'); --  // 24 bit IP4-prefix is used for comparison
+print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7994'); --         // Equal IPs
+print ipv6_is_match('fe80::85d:e82c:9446:7994/120', 'fe80::85d:e82c:9446:7998'); --     // 120 bit IP6-prefix is used for comparison
+print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7998/120'); --     // 120 bit IP6-prefix is used for comparison
+print ipv6_is_match('fe80::85d:e82c:9446:7994/120', 'fe80::85d:e82c:9446:7998/120'); -- // 120 bit IP6-prefix is used for comparison
+print ipv6_is_match('192.168.1.1',      '::ffff:c0a8:0101'); -- // Equal IPs
+print ipv6_is_match('192.168.1.1/24',   '::ffff:c0a8:01ff'); -- // 24 bit IP-prefix is used for comparison
+print ipv6_is_match('::ffff:c0a8:0101', '192.168.1.255/24'); -- // 24 bit IP-prefix is used for comparison
+print ipv6_is_match('::192.168.1.1/30', '192.168.1.255/24'); -- // 24 bit IP-prefix is used for comparison
+print ipv6_is_match('192.168.1.1',    '192.168.1.0',   31); -- // 31 bit IP4-prefix is used for comparison
+print ipv6_is_match('192.168.1.1/24', '192.168.1.255', 31); -- // 24 bit IP4-prefix is used for comparison
+print ipv6_is_match('192.168.1.1',    '192.168.1.255', 24); -- // 24 bit IP4-prefix is used for comparison
+print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995',     127); -- // 127 bit IP6-prefix is used for comparison
+print ipv6_is_match('fe80::85d:e82c:9446:7994/127', 'fe80::85d:e82c:9446:7998', 120); -- // 120 bit IP6-prefix is used for comparison
+print ipv6_is_match('fe80::85d:e82c:9446:7994/120', 'fe80::85d:e82c:9446:7998', 127); -- // 120 bit IP6-prefix is used for comparison
+print ipv6_is_match('192.168.1.1/24',   '::ffff:c0a8:01ff', 127); -- // 127 bit IP6-prefix is used for comparison
+print ipv6_is_match('::ffff:c0a8:0101', '192.168.1.255',    120); -- // 120 bit IP6-prefix is used for comparison
+print ipv6_is_match('::192.168.1.1/30', '192.168.1.255/24', 127); -- // 120 bit IP6-prefix is used for comparison
