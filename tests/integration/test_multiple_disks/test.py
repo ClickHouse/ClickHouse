@@ -548,13 +548,14 @@ def test_max_data_part_size(start_cluster, name, engine):
                 name=name, engine=engine
             )
         )
-        data = []  # 10MB in total
-        for i in range(10):
-            data.append(get_random_string(1024 * 1024))  # 1MB row
-
+        # 10MB
         node1.query_with_retry(
-            "INSERT INTO {} VALUES {}".format(
-                name, ",".join(["('" + x + "')" for x in data])
+            """
+            INSERT INTO {} SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(10)
+        """.format(
+                name
             )
         )
         used_disks = get_used_disks_for_table(node1, name)
@@ -591,28 +592,29 @@ def test_jbod_overflow(start_cluster, name, engine):
 
         node1.query(f"SYSTEM STOP MERGES {name}")
 
-        # small jbod size is 40MB, so lets insert 5MB batch 7 times
-        for i in range(7):
-            data = []  # 5MB in total
-            for i in range(5):
-                data.append(get_random_string(1024 * 1024))  # 1MB row
-            node1.query_with_retry(
-                "INSERT INTO {} VALUES {}".format(
-                    name, ",".join(["('" + x + "')" for x in data])
-                )
+        # small jbod size is 40MB, so lets insert 35MB
+        node1.query_with_retry(
+            """
+            INSERT INTO {} SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(35)
+        """.format(
+                name
             )
+        )
 
         used_disks = get_used_disks_for_table(node1, name)
         assert used_disks == tuple("jbod1" for _ in used_disks)
 
         # should go to the external disk (jbod is overflown)
-        data = []  # 10MB in total
-        for i in range(10):
-            data.append(get_random_string(1024 * 1024))  # 1MB row
-
+        # 10MB
         node1.query_with_retry(
-            "INSERT INTO {} VALUES {}".format(
-                name, ",".join(["('" + x + "')" for x in data])
+            """
+            INSERT INTO {} SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(10)
+        """.format(
+                name
             )
         )
 
@@ -669,16 +671,16 @@ def test_background_move(start_cluster, name, engine):
 
         node1.query(f"SYSTEM STOP MERGES {name}")
 
-        for i in range(5):
-            data = []  # 5MB in total
-            for i in range(5):
-                data.append(get_random_string(1024 * 1024))  # 1MB row
-            # small jbod size is 40MB, so lets insert 5MB batch 5 times
-            node1.query_with_retry(
-                "INSERT INTO {} VALUES {}".format(
-                    name, ",".join(["('" + x + "')" for x in data])
-                )
+        # 25MB
+        node1.query_with_retry(
+            """
+            INSERT INTO {} SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(25)
+        """.format(
+                name
             )
+        )
 
         used_disks = get_used_disks_for_table(node1, name)
 
@@ -781,16 +783,16 @@ def test_start_stop_moves(start_cluster, name, engine):
         node1.query("SYSTEM STOP MOVES {}".format(name))
         node1.query("SYSTEM STOP MERGES {}".format(name))
 
-        for i in range(5):
-            data = []  # 5MB in total
-            for i in range(5):
-                data.append(get_random_string(1024 * 1024))  # 1MB row
-            # jbod size is 40MB, so lets insert 5MB batch 7 times
-            node1.query_with_retry(
-                "INSERT INTO {} VALUES {}".format(
-                    name, ",".join(["('" + x + "')" for x in data])
-                )
+        # 25MB
+        node1.query_with_retry(
+            """
+            INSERT INTO {} SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(25)
+        """.format(
+                name
             )
+        )
 
         used_disks = get_used_disks_for_table(node1, name)
 
@@ -1291,12 +1293,14 @@ def test_detach_attach(start_cluster, name, engine):
             )
         )
 
-        data = []  # 5MB in total
-        for i in range(5):
-            data.append(get_random_string(1024 * 1024))  # 1MB row
+        # 5MB
         node1.query_with_retry(
-            "INSERT INTO {} VALUES {}".format(
-                name, ",".join(["('" + x + "')" for x in data])
+            """
+            INSERT INTO {} SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(5)
+        """.format(
+                name
             )
         )
 
@@ -1342,15 +1346,16 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
             )
         )
 
-        for i in range(5):
-            data = []  # 5MB in total
-            for i in range(5):
-                data.append(get_random_string(1024 * 1024))  # 1MB row
-            node1.query_with_retry(
-                "INSERT INTO {} VALUES {}".format(
-                    name, ",".join(["('" + x + "')" for x in data])
-                )
+        # 25MB
+        node1.query_with_retry(
+            """
+            INSERT INTO {} SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(25)
+        """.format(
+                name
             )
+        )
 
         node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
 
@@ -1492,13 +1497,12 @@ def test_simple_replication_and_moves(start_cluster):
         def insert(num):
             for i in range(num):
                 node = random.choice([node1, node2])
-                data = []  # 1MB in total
-                for i in range(2):
-                    data.append(get_random_string(512 * 1024))  # 500KB value
                 node.query_with_retry(
-                    "INSERT INTO replicated_table_for_moves VALUES {}".format(
-                        ",".join(["('" + x + "')" for x in data])
-                    )
+                    """
+                    INSERT INTO replicated_table_for_moves SELECT
+                        randomPrintableASCII(512 * 1024)
+                    FROM numbers(2)
+                """
                 )
 
         def optimize(num):
@@ -1522,23 +1526,23 @@ def test_simple_replication_and_moves(start_cluster):
         node1.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
         node2.query("SELECT COUNT() FROM replicated_table_for_moves") == "40\n"
 
-        data = []  # 1MB in total
-        for i in range(2):
-            data.append(get_random_string(512 * 1024))  # 500KB value
-
         time.sleep(3)  # wait until old parts will be deleted
         node1.query("SYSTEM STOP MERGES")
         node2.query("SYSTEM STOP MERGES")
 
         node1.query_with_retry(
-            "INSERT INTO replicated_table_for_moves VALUES {}".format(
-                ",".join(["('" + x + "')" for x in data])
-            )
+            """
+            INSERT INTO replicated_table_for_moves SELECT
+                randomPrintableASCII(512 * 1024)
+            FROM numbers(2)
+        """
         )
         node2.query_with_retry(
-            "INSERT INTO replicated_table_for_moves VALUES {}".format(
-                ",".join(["('" + x + "')" for x in data])
-            )
+            """
+            INSERT INTO replicated_table_for_moves SELECT
+                randomPrintableASCII(512 * 1024)
+            FROM numbers(2)
+        """
         )
 
         time.sleep(3)  # nothing was moved
@@ -1570,13 +1574,13 @@ def test_download_appropriate_disk(start_cluster):
                 )
             )
 
-        data = []
-        for i in range(50):
-            data.append(get_random_string(1024 * 1024))  # 1MB value
-        node1.query_with_retry(
-            "INSERT INTO replicated_table_for_download VALUES {}".format(
-                ",".join(["('" + x + "')" for x in data])
-            )
+        # 50MB
+        node1.query(
+            """
+            INSERT INTO replicated_table_for_download SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(50)
+        """
         )
 
         for _ in range(10):
@@ -1612,15 +1616,14 @@ def test_rename(start_cluster):
         """
         )
 
-        for _ in range(5):
-            data = []
-            for i in range(10):
-                data.append(get_random_string(1024 * 1024))  # 1MB value
-            node1.query(
-                "INSERT INTO renaming_table VALUES {}".format(
-                    ",".join(["('" + x + "')" for x in data])
-                )
-            )
+        # 50MB
+        node1.query(
+            """
+            INSERT INTO renaming_table SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(50)
+        """
+        )
 
         disks = get_used_disks_for_table(node1, "renaming_table")
         assert len(disks) > 1
@@ -1659,17 +1662,15 @@ def test_freeze(start_cluster):
         """
         )
 
-        for _ in range(5):
-            data = []
-            dates = []
-            for i in range(10):
-                data.append(get_random_string(1024 * 1024))  # 1MB value
-                dates.append("toDate('2019-03-05')")
-            node1.query(
-                "INSERT INTO freezing_table VALUES {}".format(
-                    ",".join(["(" + d + ", '" + s + "')" for d, s in zip(dates, data)])
-                )
-            )
+        # 50MB
+        node1.query(
+            """
+            INSERT INTO freezing_table SELECT
+                toDate('2019-03-05'),
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(50)
+        """
+        )
 
         disks = get_used_disks_for_table(node1, "freezing_table")
         assert len(disks) > 1
@@ -1705,13 +1706,14 @@ def test_kill_while_insert(start_cluster):
             )
         )
 
-        data = []
-        dates = []
-        for i in range(10):
-            data.append(get_random_string(1024 * 1024))  # 1MB value
+        # 10MB
         node1.query(
-            "INSERT INTO {name} VALUES {}".format(
-                ",".join(["('" + s + "')" for s in data]), name=name
+            """
+            INSERT INTO {} SELECT
+                randomPrintableASCII(1024 * 1024)
+            FROM numbers(10)
+        """.format(
+                name
             )
         )
 
