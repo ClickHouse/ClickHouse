@@ -62,14 +62,19 @@ public:
 
     /**
      * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
-     * EMPTY_STRING_REF indicating that data is not present.
+     * with size == 0 indicating that data is not present.
      */
     StringRef getDataAt(size_t n) const override
     {
+        auto nestedData = getNestedColumn().getDataAt(n);
         if (isNullAt(n))
-            return EMPTY_STRING_REF;
+        {
+            // data for NULL-items must have valid data pointer, otherwise some assumtions down the road are broken.
+            // see ColumnArray::getDataAt() for example.
+            nestedData.size = 0;
+        }
 
-        return getNestedColumn().getDataAt(n);
+        return nestedData;
     }
 
     /// Will insert null value if pos=nullptr

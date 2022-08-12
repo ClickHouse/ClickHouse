@@ -51,12 +51,16 @@ SELECT aes_decrypt_mysql('aes-128-ecb', 'text', 'key', 'IV', 1213); --{serverErr
 SELECT decrypt('aes-128-ecb', 'text', 'key', 'IV', 1213); --{serverError 43} bad AAD type
 SELECT decrypt('aes-128-gcm', 'text', 'key', 'IV', 1213); --{serverError 43} bad AAD type
 
+-- Invalid ciphertext type
+SELECT decrypt('aes-128-gcm', [1024, 65535, NULL, NULL, 9223372036854775807, 1048576, NULL], 'text', 'key', 'IV'); -- {serverError 36}
+
 -- Invalid ciphertext should cause an error or produce garbage
 SELECT ignore(decrypt('aes-128-ecb', 'hello there', '1111111111111111')); -- {serverError 454} 1
 SELECT ignore(decrypt('aes-128-cbc', 'hello there', '1111111111111111')); -- {serverError 454} 2
 SELECT ignore(decrypt('aes-128-ofb', 'hello there', '1111111111111111')); -- GIGO
 SELECT ignore(decrypt('aes-128-ctr', 'hello there', '1111111111111111')); -- GIGO
 SELECT decrypt('aes-128-ctr', '', '1111111111111111') == '';
+
 
 
 -----------------------------------------------------------------------------------------

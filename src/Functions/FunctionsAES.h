@@ -439,7 +439,7 @@ private:
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "decryption mode string"},
-                {"input", nullptr, nullptr, "ciphertext"},
+                {"input", &isStringOrFixedString<IDataType>, nullptr, "ciphertext"},
                 {"key", &isStringOrFixedString<IDataType>, nullptr, "decryption key binary string"},
             },
             optional_args

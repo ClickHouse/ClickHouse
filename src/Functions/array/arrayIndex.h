@@ -768,7 +768,7 @@ private:
 
             UInt64 index = 0;
 
-            if (elem != EMPTY_STRING_REF)
+            if (elem.size == 0 && col_arg_cloned->isNullAt(0))
             {
                 if (std::optional<UInt64> maybe_index = col_lc_dict.getOrFindValueIndex(elem); maybe_index)
                     index = *maybe_index;
