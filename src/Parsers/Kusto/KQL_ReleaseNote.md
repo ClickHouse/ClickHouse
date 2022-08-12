@@ -154,40 +154,40 @@
    `print bitset_count_ones(42) == 3`  
 
 ## IP functions
-- [format_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-function)  
+- [format_ipv4](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-function)
    `print format_ipv4('192.168.1.255', 24) == '192.168.1.0'`  
    `print format_ipv4(3232236031, 24) == '192.168.1.0'`  
-- [format_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-mask-function)  
+- [format_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/format-ipv4-mask-function)
    `print format_ipv4_mask('192.168.1.255', 24) == '192.168.1.0/24'`  
    `print format_ipv4_mask(3232236031, 24) == '192.168.1.0/24'`  
-- [ipv4_compare](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-comparefunction)  
+- [ipv4_compare](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-comparefunction)
    `print ipv4_compare('127.0.0.1', '127.0.0.1') == 0`  
    `print ipv4_compare('192.168.1.1', '192.168.1.255') < 0`  
    `print ipv4_compare('192.168.1.1/24', '192.168.1.255/24') == 0`  
    `print ipv4_compare('192.168.1.1', '192.168.1.255', 24) == 0`  
-- [ipv4_is_match](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-matchfunction)  
+- [ipv4_is_match](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv4-is-matchfunction)
    `print ipv4_is_match('127.0.0.1', '127.0.0.1') == true`  
    `print ipv4_is_match('192.168.1.1', '192.168.1.255') == false`  
    `print ipv4_is_match('192.168.1.1/24', '192.168.1.255/24') == true`  
    `print ipv4_is_match('192.168.1.1', '192.168.1.255', 24) == true`  
-- [ipv6_compare](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv6-comparefunction)  
+- [ipv6_compare](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv6-comparefunction)
    `print ipv6_compare('::ffff:7f00:1', '127.0.0.1') == 0`  
    `print ipv6_compare('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995') < 0`  
    `print ipv6_compare('192.168.1.1/24', '192.168.1.255/24') == 0`  
    `print ipv6_compare('fe80::85d:e82c:9446:7994/127', 'fe80::85d:e82c:9446:7995/127') == 0`  
    `print ipv6_compare('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995', 127) == 0`  
-- [ipv6_is_match](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv6-is-matchfunction)  
+- [ipv6_is_match](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv6-is-matchfunction)
    `print ipv6_is_match('::ffff:7f00:1', '127.0.0.1') == true`  
    `print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995') == false`  
    `print ipv6_is_match('192.168.1.1/24', '192.168.1.255/24') == true`  
    `print ipv6_is_match('fe80::85d:e82c:9446:7994/127', 'fe80::85d:e82c:9446:7995/127') == true`  
    `print ipv6_is_match('fe80::85d:e82c:9446:7994', 'fe80::85d:e82c:9446:7995', 127) == true`  
-- [parse_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4-maskfunction)  
+- [parse_ipv4_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv4-maskfunction)
    `print parse_ipv4_mask('127.0.0.1', 24) == 2130706432`  
    `print parse_ipv4_mask('192.1.168.2', 31) == 3221334018`  
    `print parse_ipv4_mask('192.1.168.3', 31) == 3221334018`  
    `print parse_ipv4_mask('127.2.3.4', 32) == 2130838276`  
-- [parse_ipv6_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/parse-ipv6-maskfunction)  
+- [parse_ipv6_mask](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/ipv6-comparefunction)
    `print parse_ipv6_mask('127.0.0.1', 24) == '0000:0000:0000:0000:0000:ffff:7f00:0000'`  
    `print parse_ipv6_mask('fe80::85d:e82c:9446:7994', 120) == 'fe80:0000:0000:0000:085d:e82c:9446:7900'`  
 

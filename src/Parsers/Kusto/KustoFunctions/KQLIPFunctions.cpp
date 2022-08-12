@@ -82,7 +82,7 @@ bool Ipv4IsMatch::convertImpl(String & out, IParser::Pos & pos)
     const auto lhs = getArgument(function_name, pos);
     const auto rhs = getArgument(function_name, pos);
     const auto mask = getOptionalArgument(function_name, pos);
-    out = std::format("{} = 0", kqlCallToExpression("ipv4_compare", {lhs, rhs, mask ? *mask : "32"}, pos.max_depth));
+    out = std::format("equals({}, 0)", kqlCallToExpression("ipv4_compare", {lhs, rhs, mask ? *mask : "32"}, pos.max_depth));
     return true;
 }
 
@@ -172,16 +172,43 @@ bool ParseIpv4Mask::convertImpl(String & out, IParser::Pos & pos)
 
 bool Ipv6Compare::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto lhs = getArgument(function_name, pos);
+    const auto rhs = getArgument(function_name, pos);
+    const auto mask = getOptionalArgument(function_name, pos);
+    const auto calculated_mask = mask ? *mask : "128";
+    out = std::format(
+        "if(length(splitByChar('/', {1}) as lhs_tokens_{0}) > 2 or length(splitByChar('/', {2}) as rhs_tokens_{0}) > 2 "
+        "or isNull(IPv6StringToNumOrNull(lhs_tokens_{0}[1]) as lhs_ipv6_{0}) or length(lhs_tokens_{0}) = 2 "
+        "and isNull((if(isIPv4String(lhs_tokens_{0}[1]), 96, 0) + toUInt8OrNull(lhs_tokens_{0}[-1])) as lhs_suffix_{0}) "
+        "or isNull(IPv6StringToNumOrNull(rhs_tokens_{0}[1]) as rhs_ipv6_{0}) or length(rhs_tokens_{0}) = 2 "
+        "and isNull((if(isIPv4String(rhs_tokens_{0}[1]), 96, 0) + toUInt8OrNull(rhs_tokens_{0}[-1])) as rhs_suffix_{0}) "
+        "or isNull(toUInt8(min2({3}, min2(ifNull(lhs_suffix_{0}, 128), ifNull(rhs_suffix_{0}, 128)))) as suffix_{0}) "
+        "or isNull(bitShiftLeft(bitShiftRight(bitNot(reinterpretAsFixedString(0::UInt128)), (128 - suffix_{0}) as zeroes_{0}), "
+        "zeroes_{0}) as mask_{0}) or isNull(bitAnd(lhs_ipv6_{0}, mask_{0}) as lhs_base_{0}) "
+        "or isNull(bitAnd(rhs_ipv6_{0}, mask_{0}) as rhs_base_{0}), null, "
+        "multiIf(lhs_base_{0} < rhs_base_{0}, -1, lhs_base_{0} > rhs_base_{0}, 1, 0))",
+        generateUniqueIdentifier(),
+        lhs,
+        rhs,
+        calculated_mask);
+    return true;
 }
 
 bool Ipv6IsMatch::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto lhs = getArgument(function_name, pos);
+    const auto rhs = getArgument(function_name, pos);
+    const auto mask = getOptionalArgument(function_name, pos);
+    out = std::format("equals({}, 0)", kqlCallToExpression("ipv6_compare", {lhs, rhs, mask ? *mask : "128"}, pos.max_depth));
+    return true;
 }
 
 bool ParseIpv6::convertImpl(String & out, IParser::Pos & pos)
@@ -192,19 +219,29 @@ bool ParseIpv6::convertImpl(String & out, IParser::Pos & pos)
 
     const auto ip_address = getArgument(function_name, pos);
     out = std::format(
-        "if(isNull(ifNull(if(isNull({1} as ipv4_{2}), null, IPv4ToIPv6(ipv4_{2})), IPv6StringToNumOrNull({0})) as ipv6_{2}), null, "
-        "arrayStringConcat(flatten(extractAllGroups(lower(hex(assumeNotNull(ipv6_{2}))), '([\\da-f]{{4}})')), ':'))",
+        "if(length(splitByChar('/', {0}) as tokens_{1}) > 2 or isNull(IPv6StringToNumOrNull(tokens_{1}[1]) as ip_{1}) "
+        "or length(tokens_{1}) = 2 and isNull(toUInt8OrNull(tokens_{1}[-1]) as mask_{1}), null, "
+        "arrayStringConcat(flatten(extractAllGroups(lower(hex(tupleElement(IPv6CIDRToRange(assumeNotNull(ip_{1}), toUInt8(ifNull(mask_{1} "
+        "+ if(isIPv4String(tokens_{1}[1]), 96, 0), 128))), 1))), '([\\da-f]{{4}})')), ':'))",
         ip_address,
-        kqlCallToExpression("parse_ipv4", {ip_address}, pos.max_depth),
         generateUniqueIdentifier());
     return true;
 }
 
 bool ParseIpv6Mask::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
+        return false;
+
+    const auto ip_address = getArgument(function_name, pos);
+    const auto mask = getArgument(function_name, pos);
+    out = std::format(
+        "if(isNull({0} as ipv4), {1}, {2})",
+        kqlCallToExpression("parse_ipv4_mask", {ip_address, mask}, pos.max_depth),
+        kqlCallToExpression("parse_ipv6", {"strcat(tostring(parse_ipv6(" + ip_address + ")), '/', tostring(" + mask + "))"}, pos.max_depth),
+        kqlCallToExpression("parse_ipv6", {"format_ipv4(ipv4)"}, pos.max_depth));
+    return true;
 }
 
 bool FormatIpv4::convertImpl(String & out, IParser::Pos & pos)
