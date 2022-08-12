@@ -1486,7 +1486,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (with_output && with_output->settings_ast)
             apply_query_settings(*with_output->settings_ast);
 
-        if (!connection->checkConnected())
+        if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
         ASTPtr input_function;
@@ -1830,7 +1830,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                     have_error = false;
 
-                    if (!connection->checkConnected())
+                    if (!connection->checkConnected(connection_parameters.timeouts))
                         connect();
                 }
 
@@ -2047,7 +2047,7 @@ void ClientBase::runInteractive()
             /// Client-side exception during query execution can result in the loss of
             /// sync in the connection protocol.
             /// So we reconnect and allow to enter the next query.
-            if (!connection->checkConnected())
+            if (!connection->checkConnected(connection_parameters.timeouts))
                 connect();
         }
     }
