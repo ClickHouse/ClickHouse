@@ -15,18 +15,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
 
-#include <pcg_random.hpp>
-
 #include <format>
-
-namespace
-{
-String generateUniqueIdentifier()
-{
-    static pcg32_unique unique_random_generator;
-    return std::to_string(unique_random_generator());
-}
-}
 
 namespace DB
 {

@@ -18,6 +18,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 
+#include <pcg_random.hpp>
+
 #include <format>
 
 namespace DB
@@ -78,6 +80,12 @@ bool IParserKQLFunction::directMapping(String & out, IParser::Pos & pos, const S
 
     pos = begin;
     return false;
+}
+
+String IParserKQLFunction::generateUniqueIdentifier()
+{
+    static pcg32_unique unique_random_generator;
+    return std::to_string(unique_random_generator());
 }
 
 String IParserKQLFunction::getArgument(const String & function_name, DB::IParser::Pos & pos)

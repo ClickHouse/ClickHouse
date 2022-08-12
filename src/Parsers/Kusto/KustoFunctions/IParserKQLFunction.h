@@ -44,6 +44,7 @@ protected:
     virtual bool convertImpl(String & out, IParser::Pos & pos) = 0;
 
     static bool directMapping(String & out, IParser::Pos & pos, const String & ch_fn);
+    static String generateUniqueIdentifier();
     static String getArgument(const String & function_name, DB::IParser::Pos & pos);
     static String getConvertedArgument(const String & fn_name, IParser::Pos & pos);
     static std::optional<String> getOptionalArgument(const String & function_name, DB::IParser::Pos & pos);

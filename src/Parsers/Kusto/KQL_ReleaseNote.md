@@ -21,6 +21,34 @@
  - [array_length](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arraylengthfunction)  
     `print output = array_length(dynamic(['John', 'Denver', 'Bob', 'Marley']))`  
     `print output = array_length(dynamic([1, 2, 3]))`
+
+## Conversion
+- [tobool / toboolean](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/toboolfunction)
+   `print tobool(true) == true`
+   `print toboolean(false) == false`
+   `print tobool(0) == false`
+   `print toboolean(19819823) == true`
+   `print tobool(-2) == true`
+   `print isnull(toboolean('a'))`
+   `print tobool('true') == true`
+   `print toboolean('false') == false`
+
+- [todouble / toreal](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/todoublefunction)
+   `print todouble(4) == 4`
+   `print toreal(4.2) == 4.2`
+   `print isnull(todouble('a'))`
+   `print toreal('-0.3') == -0.3`
+
+- [toint](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/tointfunction)
+   `print isnull(toint('a'))`  
+   `print toint(4) == 4`  
+   `print toint('4') == 4`  
+   `print isnull(toint(4.2))`  
+
+- [tostring](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/tostringfunction)
+   `print tostring(123) == '123'`  
+   `print tostring('asd') == 'asd'`  
+
 ## DateType
  - [dynamic](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/dynamic)  
     *Supports only 1D array*  

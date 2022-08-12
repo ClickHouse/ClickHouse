@@ -1,7 +1,5 @@
 #include <Parsers/tests/gtest_common.h>
 
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 
 INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_Binary, ParserTest,
