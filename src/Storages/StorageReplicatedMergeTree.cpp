@@ -158,6 +158,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
     extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int NOT_INITIALIZED;
 }
 
 namespace ActionLocks
@@ -274,6 +275,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , cleanup_thread(*this)
     , part_check_thread(*this)
     , restarting_thread(*this)
+    , attach_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
     , renaming_restrictions(renaming_restrictions_)
     , replicated_fetches_pool_size(getContext()->getSettingsRef().background_fetches_pool_size)
@@ -295,7 +297,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     mutations_finalizing_task = getContext()->getSchedulePool().createTask(
         getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
-    if (getContext()->hasZooKeeper() || getContext()->hasAuxiliaryZooKeeper(zookeeper_name))
+    bool has_zookeeper = getContext()->hasZooKeeper() || getContext()->hasAuxiliaryZooKeeper(zookeeper_name);
+    if (has_zookeeper)
     {
         /// It's possible for getZooKeeper() to timeout if  zookeeper host(s) can't
         /// be reached. In such cases Poco::Exception is thrown after a connection
@@ -324,8 +327,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         catch (...)
         {
             if (!attach)
+            {
                 dropIfEmpty();
-            throw;
+                throw;
+            }
+            else
+            {
+                current_zookeeper = nullptr;
+            }
         }
     }
 
@@ -361,121 +370,72 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         /// Do not activate the replica. It will be readonly.
         LOG_ERROR(log, "No ZooKeeper: table will be in readonly mode.");
         has_metadata_in_zookeeper = std::nullopt;
-        return;
+
+        if (!has_zookeeper)
+            return;
     }
 
-    if (attach && !current_zookeeper->exists(zookeeper_path + "/metadata"))
+    if (attach)
     {
-        LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode.", zookeeper_path);
-        has_metadata_in_zookeeper = false;
+        attach_thread.setSkipSanityChecks(skip_sanity_checks);
+        attach_thread.start();
+        attach_thread.waitFirstTry();
         return;
     }
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica
-    /// folder.
-    if (attach && !current_zookeeper->exists(replica_path))
-    {
-        LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode", replica_path);
-        has_metadata_in_zookeeper = false;
-        return;
-    }
-
     has_metadata_in_zookeeper = true;
 
-    if (!attach)
+    if (!getDataPartsForInternalUsage().empty())
+        throw Exception("Data directory for table already contains data parts"
+            " - probably it was unclean DROP table or manual intervention."
+            " You must either clear directory by hand or use ATTACH TABLE"
+            " instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
+
+    try
     {
-        if (!getDataPartsForInternalUsage().empty())
-            throw Exception("Data directory for table already contains data parts"
-                " - probably it was unclean DROP table or manual intervention."
-                " You must either clear directory by hand or use ATTACH TABLE"
-                " instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
+        bool is_first_replica = createTableIfNotExists(metadata_snapshot);
 
         try
         {
-            bool is_first_replica = createTableIfNotExists(metadata_snapshot);
+            /// NOTE If it's the first replica, these requests to ZooKeeper look redundant, we already know everything.
 
-            try
-            {
-                /// NOTE If it's the first replica, these requests to ZooKeeper look redundant, we already know everything.
+            /// We have to check granularity on other replicas. If it's fixed we
+            /// must create our new replica with fixed granularity and store this
+            /// information in /replica/metadata.
+            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper(getZooKeeper());
 
-                /// We have to check granularity on other replicas. If it's fixed we
-                /// must create our new replica with fixed granularity and store this
-                /// information in /replica/metadata.
-                other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
+            checkTableStructure(getZooKeeper(), zookeeper_path, metadata_snapshot);
 
-                checkTableStructure(zookeeper_path, metadata_snapshot);
-
-                Coordination::Stat metadata_stat;
-                current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-                metadata_version = metadata_stat.version;
-            }
-            catch (Coordination::Exception & e)
-            {
-                if (!is_first_replica && e.code == Coordination::Error::ZNONODE)
-                    throw Exception("Table " + zookeeper_path + " was suddenly removed.", ErrorCodes::ALL_REPLICAS_LOST);
-                else
-                    throw;
-            }
-
-            if (!is_first_replica)
-                createReplica(metadata_snapshot);
-        }
-        catch (...)
-        {
-            /// If replica was not created, rollback creation of data directory.
-            dropIfEmpty();
-            throw;
-        }
-    }
-    else
-    {
-        /// In old tables this node may missing or be empty
-        String replica_metadata;
-        const bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
-
-        if (!replica_metadata_exists || replica_metadata.empty())
-        {
-            /// We have to check shared node granularity before we create ours.
-            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
-
-            ReplicatedMergeTreeTableMetadata current_metadata(*this, metadata_snapshot);
-
-            current_zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(),
-                zkutil::CreateMode::Persistent);
-        }
-
-        checkTableStructure(replica_path, metadata_snapshot);
-        checkParts(skip_sanity_checks);
-
-        if (current_zookeeper->exists(replica_path + "/metadata_version"))
-        {
-            metadata_version = parse<int>(current_zookeeper->get(replica_path + "/metadata_version"));
-        }
-        else
-        {
-            /// This replica was created with old clickhouse version, so we have
-            /// to take version of global node. If somebody will alter our
-            /// table, then we will fill /metadata_version node in zookeeper.
-            /// Otherwise on the next restart we can again use version from
-            /// shared metadata node because it was not changed.
             Coordination::Stat metadata_stat;
             current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
             metadata_version = metadata_stat.version;
         }
-        /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
-        /// don't allow to reinitialize them, delete each of them immediately.
-        clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_"});
-        clearOldWriteAheadLogs();
-        if (getSettings()->merge_tree_enable_clear_old_broken_detached)
-            clearOldBrokenPartsFromDetachedDirecory();
+        catch (Coordination::Exception & e)
+        {
+            if (!is_first_replica && e.code == Coordination::Error::ZNONODE)
+                throw Exception("Table " + zookeeper_path + " was suddenly removed.", ErrorCodes::ALL_REPLICAS_LOST);
+            else
+                throw;
+        }
+
+        if (!is_first_replica)
+            createReplica(metadata_snapshot);
+    }
+    catch (...)
+    {
+        /// If replica was not created, rollback creation of data directory.
+        dropIfEmpty();
+        throw;
     }
 
-    createNewZooKeeperNodes();
-    syncPinnedPartUUIDs();
+    createNewZooKeeperNodes(getZooKeeper());
+    syncPinnedPartUUIDs(getZooKeeper());
 
-    createTableSharedID();
+    createTableSharedID(getZooKeeper());
+
+    init_phase = InitializationPhase::INITIALIZATION_DONE;
 }
 
 
@@ -491,9 +451,8 @@ String StorageReplicatedMergeTree::getDefaultReplicaName(const Poco::Util::Abstr
 }
 
 
-bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper()
+bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(zkutil::ZooKeeperPtr zookeeper)
 {
-    auto zookeeper = getZooKeeper();
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
     return metadata_from_zk.index_granularity_bytes == 0;
@@ -603,10 +562,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     }
 }
 
-void StorageReplicatedMergeTree::createNewZooKeeperNodes()
+void StorageReplicatedMergeTree::createNewZooKeeperNodes(zkutil::ZooKeeperPtr zookeeper)
 {
-    auto zookeeper = getZooKeeper();
-
     std::vector<zkutil::ZooKeeper::FutureCreate> futures;
 
     /// These 4 nodes used to be created in createNewZookeeperNodes() and they were moved to createTable()
@@ -858,7 +815,8 @@ void StorageReplicatedMergeTree::drop()
     /// or metadata of staled replica were removed manually,
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
 
-    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
+    const auto has_metadata_in_zk = hasMetadataInZooKeeper();
+    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zk.has_value() || *has_metadata_in_zk;
     if (maybe_has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
@@ -1084,10 +1042,8 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 /** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/metadata).
   * If not, throw an exception.
   */
-void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
+void StorageReplicatedMergeTree::checkTableStructure(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
 {
-    auto zookeeper = getZooKeeper();
-
     ReplicatedMergeTreeTableMetadata old_metadata(*this, metadata_snapshot);
 
     Coordination::Stat metadata_stat;
@@ -1142,10 +1098,8 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
 }
 
 
-void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
+void StorageReplicatedMergeTree::checkParts(zkutil::ZooKeeperPtr zookeeper, bool skip_sanity_checks)
 {
-    auto zookeeper = getZooKeeper();
-
     Strings expected_parts_vec = zookeeper->getChildren(fs::path(replica_path) / "parts");
 
     /// Parts in ZK.
@@ -1282,10 +1236,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 }
 
 
-void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
+void StorageReplicatedMergeTree::syncPinnedPartUUIDs(zkutil::ZooKeeperPtr zookeeper)
 {
-    auto zookeeper = getZooKeeper();
-
     Coordination::Stat stat;
     String s = zookeeper->get(zookeeper_path + "/pinned_part_uuids", &stat);
 
@@ -1608,7 +1560,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         case LogEntry::ALTER_METADATA:
             return executeMetadataAlter(entry);
         case LogEntry::SYNC_PINNED_PART_UUIDS:
-            syncPinnedPartUUIDs();
+            syncPinnedPartUUIDs(getZooKeeper());
             return true;
         case LogEntry::CLONE_PART_FROM_SHARD:
             executeClonePartFromShard(entry);
@@ -3475,15 +3427,16 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::startBeingLeader()
+void StorageReplicatedMergeTree::startBeingLeader(zkutil::ZooKeeperPtr zookeeper)
 {
+    assert(zookeeper);
     if (!getSettings()->replicated_can_become_leader)
     {
         LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
         return;
     }
 
-    zkutil::checkNoOldLeaders(log, *current_zookeeper, fs::path(zookeeper_path) / "leader_election");
+    zkutil::checkNoOldLeaders(log, *zookeeper, fs::path(zookeeper_path) / "leader_election");
 
     LOG_INFO(log, "Became leader");
     is_leader = true;
@@ -4173,11 +4126,44 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     return part->data_part_storage;
 }
 
+std::optional<bool> StorageReplicatedMergeTree::hasMetadataInZooKeeper() const
+{
+    {
+        std::lock_guard lock(initialization_mutex);
+        if (init_phase == InitializationPhase::INITIALIZING)
+            throw Exception(ErrorCodes::NOT_INITIALIZED, "Table {} is not initialized yet", getStorageID().getFullTableName());
+    }
+
+    return has_metadata_in_zookeeper;
+}
 
 void StorageReplicatedMergeTree::startup()
 {
+    using enum InitializationPhase;
+    {
+        std::lock_guard lock(initialization_mutex);
+        if (init_phase == INITIALIZING)
+        {
+            startup_called = true;
+            return;
+        }
+        else if (init_phase == STARTUP_IN_PROGRESS || init_phase == STARTUP_DONE)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Startup called twice");
+        }
+
+        init_phase = STARTUP_IN_PROGRESS;
+    }
+
+    startupImpl(getZooKeeper());
+}
+
+void StorageReplicatedMergeTree::startupImpl(zkutil::ZooKeeperPtr zookeeper)
+{
+    auto has_metadata_in_zk = hasMetadataInZooKeeper();
+
     /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
-    if (!has_metadata_in_zookeeper.has_value() || !*has_metadata_in_zookeeper)
+    if (!has_metadata_in_zk.has_value() || !*has_metadata_in_zk)
         return;
 
     try
@@ -4187,7 +4173,7 @@ void StorageReplicatedMergeTree::startup()
         assert(prev_ptr == nullptr);
         getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
-        startBeingLeader();
+        startBeingLeader(zookeeper);
 
         /// In this thread replica will be activated.
         restarting_thread.start();
@@ -4201,6 +4187,9 @@ void StorageReplicatedMergeTree::startup()
         startBackgroundMovesIfNeeded();
 
         part_moves_between_shards_orchestrator.start();
+
+        std::lock_guard lock(initialization_mutex);
+        init_phase = InitializationPhase::STARTUP_DONE;
     }
     catch (...)
     {
@@ -4241,6 +4230,7 @@ void StorageReplicatedMergeTree::shutdown()
     mutations_finalizing_task->deactivate();
     stopBeingLeader();
 
+    attach_thread.shutdown();
     restarting_thread.shutdown();
     background_operations_assignee.finish();
     part_moves_between_shards_orchestrator.shutdown();
@@ -4963,7 +4953,8 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
                         "If you are sure that metadata is lost and that replica path contains some garbage, "
                         "then use SYSTEM DROP REPLICA query first.", replica_path);
 
-    if (has_metadata_in_zookeeper.has_value() && *has_metadata_in_zookeeper)
+    const auto has_metadata_in_zk = hasMetadataInZooKeeper();
+    if (has_metadata_in_zk.has_value() && *has_metadata_in_zk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica has metadata in ZooKeeper: "
                                                    "it's either a bug or it's a result of manual intervention to ZooKeeper");
 
@@ -4996,7 +4987,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     if (!is_first_replica)
         createReplica(metadata_snapshot);
 
-    createNewZooKeeperNodes();
+    createNewZooKeeperNodes(getZooKeeper());
 
     LOG_INFO(log, "Created ZK nodes for table");
 
@@ -6851,7 +6842,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
     {
         /// Optimistic check that for compatible destination table structure.
-        checkTableStructure(to, getInMemoryMetadataPtr());
+        checkTableStructure(getZooKeeper(), to, getInMemoryMetadataPtr());
     }
 
     PinnedPartUUIDs src_pins;
@@ -7372,12 +7363,11 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 }
 
 
-void StorageReplicatedMergeTree::createTableSharedID()
+void StorageReplicatedMergeTree::createTableSharedID(zkutil::ZooKeeperPtr zookeeper)
 {
     if (table_shared_id != UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
 
-    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
     String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
     String id;
     if (!zookeeper->tryGet(zookeeper_table_id_path, id))

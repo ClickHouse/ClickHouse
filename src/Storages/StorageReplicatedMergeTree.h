@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
@@ -339,6 +340,7 @@ private:
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
     friend class ReplicatedMergeTreeRestartingThread;
+    friend class ReplicatedMergeTreeAttachThread;
     friend class ReplicatedMergeTreeMergeStrategyPicker;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
@@ -444,7 +446,20 @@ private:
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
 
+    ReplicatedMergeTreeAttachThread attach_thread;
+
     PartMovesBetweenShardsOrchestrator part_moves_between_shards_orchestrator;
+
+    enum class InitializationPhase : uint8_t
+    {
+        INITIALIZING,
+        INITIALIZATION_DONE,
+        STARTUP_IN_PROGRESS,
+        STARTUP_DONE
+    };
+    mutable std::mutex initialization_mutex;
+    InitializationPhase init_phase{InitializationPhase::INITIALIZING};
+    bool startup_called{false};
 
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
@@ -480,9 +495,9 @@ private:
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */
-    void createNewZooKeeperNodes();
+    void createNewZooKeeperNodes(zkutil::ZooKeeperPtr zookeeper);
 
-    void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
+    void checkTableStructure(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
@@ -493,11 +508,11 @@ private:
       * If any local parts are not mentioned in ZK, remove them.
       *  But if there are too many, throw an exception just in case - it's probably a configuration error.
       */
-    void checkParts(bool skip_sanity_checks);
+    void checkParts(zkutil::ZooKeeperPtr zookeeper, bool skip_sanity_checks);
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.
-    void syncPinnedPartUUIDs();
+    void syncPinnedPartUUIDs(zkutil::ZooKeeperPtr zookeeper);
 
     /** Check that the part's checksum is the same as the checksum of the same part on some other replica.
       * If no one has such a part, nothing checks.
@@ -589,7 +604,7 @@ private:
 
     /// Start being leader (if not disabled by setting).
     /// Since multi-leaders are allowed, it just sets is_leader flag.
-    void startBeingLeader();
+    void startBeingLeader(zkutil::ZooKeeperPtr zookeeper);
     void stopBeingLeader();
 
     /** Selects the parts to merge and writes to the log.
@@ -792,7 +807,7 @@ private:
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
-    bool checkFixedGranularityInZookeeper();
+    bool checkFixedGranularityInZookeeper(zkutil::ZooKeeperPtr zookeeper);
 
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(
@@ -824,7 +839,7 @@ private:
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
     // Create table id if needed
-    void createTableSharedID();
+    void createTableSharedID(zkutil::ZooKeeperPtr zookeeper);
 
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
@@ -834,6 +849,10 @@ private:
     /// Create ephemeral lock in zookeeper for part and disk which support zero copy replication.
     /// If somebody already holding the lock -- return std::nullopt.
     std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
+
+    void startupImpl(zkutil::ZooKeeperPtr zookeeper);
+
+    std::optional<bool> hasMetadataInZooKeeper() const;
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
