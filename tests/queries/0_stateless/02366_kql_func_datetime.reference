@@ -1,0 +1,28 @@
+-- dayofmonth()
+31
+-- dayofweek()
+4
+-- dayofyear()
+365
+-- getmonth()
+10
+-- getyear()
+2015
+-- hoursofday()
+23
+-- startofday()
+2017-01-02 00:00:00.000000000
+-- startofmonth()
+2016-12-01 00:00:00.000000000
+2017-02-01 00:00:00.000000000
+-- startofweek()
+2017-01-08 00:00:00.000000000
+-- startofyear()
+2018-01-01 00:00:00.000000000
+-- unixtime_seconds_todatetime()
+2019-01-01 00:00:00.000000000
+-- weekofyear()
+52
+-- monthofyear()
+-- now()
+1
