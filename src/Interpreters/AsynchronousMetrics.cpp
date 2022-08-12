@@ -12,9 +12,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/FileCacheFactory.h>
-#include <Common/IFileCache.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Common/FileCache.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
