@@ -38,7 +38,8 @@ void CatBoostLibraryHandlerFactory::remove(const String & model_path)
 {
     std::lock_guard lock(mutex);
     bool deleted = library_handlers.erase(model_path);
-    if (!deleted) {
+    if (!deleted)
+    {
         LOG_DEBUG(&Poco::Logger::get("CatBoostLibraryHandlerFactory"), "Cannot unload catboost library handler for model path: {}", model_path);
         return;
     }

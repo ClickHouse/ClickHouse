@@ -15,7 +15,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int EXTERNAL_LIBRARY_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
