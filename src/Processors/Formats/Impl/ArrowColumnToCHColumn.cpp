@@ -362,14 +362,14 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         /// positions.
         /// Example:
         /// Dictionary:
-        ///     dict: ["one", "", "two"]
-        ///     indexes: [0, 2, 0]
+        ///     dict: ["one", "two", "", "three"]
+        ///     indexes: [0, 1, 2, 3, 0]
         /// LowCardinality :
-        ///     dict: ["", "one", "two"]
-        ///     indexes: [1, 2, 1]
+        ///     dict: ["", "one", "two", "three"]
+        ///     indexes: [1, 2, 0, 3, 1]
         /// LowCardinality(Nullable):
-        ///     dict: [null, "", "one", "two"]
-        ///     indexes: [2, 3, 2]
+        ///     dict: [null, "", "one", "two", "three"]
+        ///     indexes: [2, 3, 1, 4, 2]
         {
             NumericType new_default_index = is_nullable ? 1 : 0;
             NumericType default_index = NumericType(default_value_index);
