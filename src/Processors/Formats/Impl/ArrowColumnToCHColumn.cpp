@@ -311,8 +311,6 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
  * when null values have an index of 0 and default values have an index of 1.
  * So, we should remap indexes while converting Arrow Dictionary to ClickHouse LowCardinality
  * */
-/// Read arrow dictionary indexes with possible remapping of indexes
-/// to conver it to LowCardinalit
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
 static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, Int64 default_value_index, bool is_nullable)
 {
