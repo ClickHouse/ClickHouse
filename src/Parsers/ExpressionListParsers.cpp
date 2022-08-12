@@ -1171,7 +1171,7 @@ public:
 class Layer
 {
 public:
-    Layer(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = true) :
+    explicit Layer(bool allow_alias_ = true, bool allow_alias_without_as_keyword_ = true) :
         allow_alias(allow_alias_), allow_alias_without_as_keyword(allow_alias_without_as_keyword_)
     {
     }
@@ -1385,7 +1385,6 @@ public:
         return true;
     }
 
-public:
     /// 'AND' in operator '... BETWEEN ... AND ...'  mirrors logical operator 'AND'.
     ///  In order to distinguish them we keep a counter of BETWEENs without matching ANDs.
     int between_counter = 0;
@@ -2566,9 +2565,51 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
+struct ParserExpressionImpl
+{
+    static std::vector<std::pair<const char *, Operator>> op_table;
+    static std::vector<std::pair<const char *, Operator>> op_table_unary;
+    static Operator finish_between_operator;
+
+    ParserCompoundIdentifier identifier_parser{false, true};
+    ParserNumber number_parser;
+    ParserAsterisk asterisk_parser;
+    ParserLiteral literal_parser;
+    ParserTupleOfLiterals tuple_literal_parser;
+    ParserArrayOfLiterals array_literal_parser;
+    ParserSubstitution substitution_parser;
+    ParserMySQLGlobalVariable mysql_global_variable_parser;
+
+    ParserKeyword any_parser{"ANY"};
+    ParserKeyword all_parser{"ALL"};
+
+    // Recursion
+    ParserQualifiedAsterisk qualified_asterisk_parser;
+    ParserColumnsMatcher columns_matcher_parser;
+    ParserSubquery subquery_parser;
+
+    bool parse(IParser::Pos & pos, ASTPtr & node, Expected & expected);
+
+    enum class ParseResult
+    {
+        OPERAND,
+        OPERATOR,
+        ERROR,
+        END,
+    };
+
+    using Layers = std::vector<std::unique_ptr<Layer>>;
+
+    ParseResult tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
+    static ParseResult tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected);
+};
+
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    static std::vector<std::pair<const char *, Operator>> op_table({
+    return ParserExpressionImpl().parse(pos, node, expected);
+}
+
+std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::op_table({
         {"+",             Operator("plus",            11)},
         {"-",             Operator("minus",           11)},
         {"*",             Operator("multiply",        12)},
@@ -2607,30 +2648,15 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {"->",            Operator("lambda",          1,  2, OperatorType::Lambda)}
     });
 
-    static std::vector<std::pair<const char *, Operator>> op_table_unary({
+std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::op_table_unary({
         {"NOT",           Operator("not",             5,  1)},
         {"-",             Operator("negate",          13, 1)}
     });
 
-    auto finish_between_operator = Operator("",       7, 0, OperatorType::FinishBetween);
+Operator ParserExpressionImpl::finish_between_operator = Operator("",       7, 0, OperatorType::FinishBetween);
 
-    ParserCompoundIdentifier identifier_parser(false, true);
-    ParserNumber number_parser;
-    ParserAsterisk asterisk_parser;
-    ParserLiteral literal_parser;
-    ParserTupleOfLiterals tuple_literal_parser;
-    ParserArrayOfLiterals array_literal_parser;
-    ParserSubstitution substitution_parser;
-    ParserMySQLGlobalVariable mysql_global_variable_parser;
-
-    ParserKeyword any_parser("ANY");
-    ParserKeyword all_parser("ALL");
-
-    // Recursion
-    ParserQualifiedAsterisk qualified_asterisk_parser;
-    ParserColumnsMatcher columns_matcher_parser;
-    ParserSubquery subquery_parser;
-
+bool ParserExpressionImpl::parse(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+{
     Action next = Action::OPERAND;
 
     std::vector<std::unique_ptr<Layer>> layers;
@@ -2661,323 +2687,21 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             continue;
         }
 
+        ParseResult result;
+
         if (next == Action::OPERAND)
-        {
-            next = Action::OPERATOR;
-            ASTPtr tmp;
-
-            /// Special case for cast expression
-            if (layers.back()->previousType() != OperatorType::TupleElement &&
-                ParseCastExpression(pos, tmp, expected))
-            {
-                layers.back()->pushOperand(std::move(tmp));
-                continue;
-            }
-
-            if (layers.back()->previousType() == OperatorType::Comparison)
-            {
-                SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
-
-                if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
-                    subquery_function_type = SubqueryFunctionType::ANY;
-                else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
-                    subquery_function_type = SubqueryFunctionType::ALL;
-
-                if (subquery_function_type != SubqueryFunctionType::NONE)
-                {
-                    Operator prev_op;
-                    ASTPtr function, argument;
-
-                    if (!layers.back()->popOperator(prev_op))
-                        return false;
-                    if (!layers.back()->popOperand(argument))
-                        return false;
-
-                    function = makeASTFunction(prev_op.function_name, argument, tmp);
-
-                    if (!modifyAST(function, subquery_function_type))
-                        return false;
-
-                    layers.back()->pushOperand(std::move(function));
-                    continue;
-                }
-            }
-
-            /// Try to find any unary operators
-            auto cur_op = op_table_unary.begin();
-            for (; cur_op != op_table_unary.end(); ++cur_op)
-            {
-                if (parseOperator(pos, cur_op->first, expected))
-                    break;
-            }
-
-            if (cur_op != op_table_unary.end())
-            {
-                next = Action::OPERAND;
-                layers.back()->pushOperator(cur_op->second);
-                continue;
-            }
-
-            auto old_pos = pos;
-            std::unique_ptr<Layer> layer;
-            if (parseOperator(pos, "INTERVAL", expected))
-                layer = std::make_unique<IntervalLayer>();
-            else if (parseOperator(pos, "CASE", expected))
-                layer = std::make_unique<CaseLayer>();
-
-            /// Here we check that CASE or INTERVAL is not an identifier
-            /// It is needed for backwards compatibility
-            if (layer)
-            {
-                Expected stub;
-
-                auto stub_cur_op = op_table.begin();
-                for (; stub_cur_op != op_table.end(); ++stub_cur_op)
-                {
-                    /// Minus can be unary
-                    /// TODO: check cases 'select case - number from table' and 'select case -x when 10 then 5 else 0 end'
-                    if (stub_cur_op->second.function_name == "minus")
-                        continue;
-                    if (parseOperator(pos, stub_cur_op->first, stub))
-                        break;
-                }
-
-                auto check_pos = pos;
-
-                if (stub_cur_op != op_table.end() ||
-                    ParserToken(TokenType::Comma).ignore(pos, stub) ||
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, stub) ||
-                    ParserToken(TokenType::ClosingSquareBracket).ignore(pos, stub) ||
-                    ParserToken(TokenType::Semicolon).ignore(pos, stub) ||
-                    ParserKeyword("AS").ignore(pos, stub) ||
-                    ParserKeyword("FROM").ignore(pos, stub) ||
-                    !pos.isValid())
-                {
-                    pos = old_pos;
-                }
-                else if (ParserAlias(true).ignore(check_pos, stub) &&
-                         (ParserToken(TokenType::Comma).ignore(check_pos, stub) ||
-                          ParserToken(TokenType::ClosingRoundBracket).ignore(check_pos, stub) ||
-                          ParserToken(TokenType::ClosingSquareBracket).ignore(check_pos, stub) ||
-                          ParserToken(TokenType::Semicolon).ignore(check_pos, stub) ||
-                          ParserKeyword("FROM").ignore(check_pos, stub) ||
-                          !check_pos.isValid()))
-                {
-                    pos = old_pos;
-                }
-                else
-                {
-                    next = Action::OPERAND;
-                    layers.push_back(std::move(layer));
-                    continue;
-                }
-            }
-
-            if (ParseDateOperatorExpression(pos, tmp, expected) ||
-                ParseTimestampOperatorExpression(pos, tmp, expected) ||
-                tuple_literal_parser.parse(pos, tmp, expected) ||
-                array_literal_parser.parse(pos, tmp, expected) ||
-                number_parser.parse(pos, tmp, expected) ||
-                literal_parser.parse(pos, tmp, expected) ||
-                asterisk_parser.parse(pos, tmp, expected) ||
-                qualified_asterisk_parser.parse(pos, tmp, expected) ||
-                columns_matcher_parser.parse(pos, tmp, expected))
-            {
-                layers.back()->pushOperand(std::move(tmp));
-            }
-            else if (identifier_parser.parse(pos, tmp, expected))
-            {
-                if (pos->type == TokenType::OpeningRoundBracket)
-                {
-                    ++pos;
-
-                    next = Action::OPERAND;
-
-                    String function_name = getIdentifierName(tmp);
-                    String function_name_lowercase = Poco::toLower(function_name);
-
-                    if (function_name_lowercase == "cast")
-                        layers.push_back(std::make_unique<CastLayer>());
-                    else if (function_name_lowercase == "extract")
-                        layers.push_back(std::make_unique<ExtractLayer>());
-                    else if (function_name_lowercase == "substring")
-                        layers.push_back(std::make_unique<SubstringLayer>());
-                    else if (function_name_lowercase == "position")
-                        layers.push_back(std::make_unique<PositionLayer>());
-                    else if (function_name_lowercase == "exists")
-                        layers.push_back(std::make_unique<ExistsLayer>());
-                    else if (function_name_lowercase == "trim")
-                        layers.push_back(std::make_unique<TrimLayer>(false, false));
-                    else if (function_name_lowercase == "ltrim")
-                        layers.push_back(std::make_unique<TrimLayer>(true, false));
-                    else if (function_name_lowercase == "rtrim")
-                        layers.push_back(std::make_unique<TrimLayer>(false, true));
-                    else if (function_name_lowercase == "dateadd" || function_name_lowercase == "date_add"
-                        || function_name_lowercase == "timestampadd" || function_name_lowercase == "timestamp_add")
-                        layers.push_back(std::make_unique<DateAddLayer>("plus"));
-                    else if (function_name_lowercase == "datesub" || function_name_lowercase == "date_sub"
-                        || function_name_lowercase == "timestampsub" || function_name_lowercase == "timestamp_sub")
-                        layers.push_back(std::make_unique<DateAddLayer>("minus"));
-                    else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
-                        || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
-                        layers.push_back(std::make_unique<DateDiffLayer>());
-                    else if (function_name_lowercase == "grouping")
-                        layers.push_back(std::make_unique<FunctionLayer>(function_name_lowercase));
-                    else
-                        layers.push_back(std::make_unique<FunctionLayer>(function_name));
-                }
-                else
-                {
-                    layers.back()->pushOperand(std::move(tmp));
-                }
-            }
-            else if (substitution_parser.parse(pos, tmp, expected))
-            {
-                layers.back()->pushOperand(std::move(tmp));
-            }
-            else if (pos->type == TokenType::OpeningRoundBracket)
-            {
-                if (subquery_parser.parse(pos, tmp, expected))
-                {
-                    layers.back()->pushOperand(std::move(tmp));
-                    continue;
-                }
-                next = Action::OPERAND;
-                layers.push_back(std::make_unique<RoundBracketsLayer>());
-                ++pos;
-            }
-            else if (pos->type == TokenType::OpeningSquareBracket)
-            {
-                ++pos;
-
-                next = Action::OPERAND;
-                layers.push_back(std::make_unique<ArrayLayer>());
-            }
-            else if (mysql_global_variable_parser.parse(pos, tmp, expected))
-            {
-                layers.back()->pushOperand(std::move(tmp));
-            }
-            else
-            {
-                break;
-            }
-        }
+            result = tryParseOperator(layers, pos, expected);
         else
-        {
+            result = tryParseOperand(layers, pos, expected);
+
+        if (result == ParseResult::END)
+            break;
+        else if (result == ParseResult::ERROR)
+            return false;
+        else if (result == ParseResult::OPERATOR)
+            next = Action::OPERATOR;
+        else if (result == ParseResult::OPERAND)
             next = Action::OPERAND;
-            ASTPtr tmp;
-
-            /// ParserExpression can be called in this part of the query:
-            ///  ALTER TABLE partition_all2 CLEAR INDEX [ p ] IN PARTITION ALL
-            ///
-            /// 'IN PARTITION' here is not an 'IN' operator, so we should stop parsing immediately
-            Expected stub;
-            if (ParserKeyword("IN PARTITION").checkWithoutMoving(pos, stub))
-                break;
-
-            /// Try to find operators from 'op_table'
-            auto cur_op = op_table.begin();
-            for (; cur_op != op_table.end(); ++cur_op)
-            {
-                if (parseOperator(pos, cur_op->first, expected))
-                    break;
-            }
-
-            if (cur_op != op_table.end())
-            {
-                auto op = cur_op->second;
-
-                if (op.type == OperatorType::Lambda)
-                {
-                    if (!layers.back()->parseLambda())
-                        return false;
-
-                    layers.back()->pushOperator(op);
-                    continue;
-                }
-
-                // 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
-                if (op.function_name == "and" && layers.back()->between_counter)
-                {
-                    layers.back()->between_counter--;
-                    op = finish_between_operator;
-                }
-
-                while (layers.back()->previousPriority() >= op.priority)
-                {
-                    ASTPtr function;
-                    Operator prev_op;
-                    layers.back()->popOperator(prev_op);
-
-                    /// Mergeable operators are operators that are merged into one function:
-                    /// For example: 'a OR b OR c' -> 'or(a, b, c)' and not 'or(or(a,b), c)'
-                    if (prev_op.type == OperatorType::Mergeable && op.function_name == prev_op.function_name)
-                    {
-                        op.arity += prev_op.arity - 1;
-                        break;
-                    }
-
-                    if (prev_op.type == OperatorType::FinishBetween)
-                    {
-                        Operator tmp_op;
-                        if (!layers.back()->popOperator(tmp_op))
-                            return false;
-
-                        if (tmp_op.type != OperatorType::StartBetween && tmp_op.type != OperatorType::StartNotBetween)
-                            return false;
-
-                        bool negative = tmp_op.type == OperatorType::StartNotBetween;
-
-                        ASTs arguments;
-                        if (!layers.back()->popLastNOperands(arguments, 3))
-                            return false;
-
-                        function = makeBetweenOperator(negative, arguments);
-                    }
-                    else
-                    {
-                        function = makeASTFunction(prev_op.function_name);
-
-                        if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
-                            return false;
-                    }
-
-                    layers.back()->pushOperand(function);
-                }
-                layers.back()->pushOperator(op);
-
-                if (op.type == OperatorType::ArrayElement)
-                    layers.push_back(std::make_unique<ArrayElementLayer>());
-
-                // isNull & isNotNull is postfix unary operator
-                if (op.type == OperatorType::IsNull)
-                    next = Action::OPERATOR;
-
-                if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
-                    layers.back()->between_counter++;
-
-                if (op.type == OperatorType::Cast)
-                {
-                    next = Action::OPERATOR;
-
-                    ASTPtr type_ast;
-                    if (!ParserDataType().parse(pos, type_ast, expected))
-                        return false;
-
-                    layers.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
-                }
-            }
-            else if (layers.back()->allow_alias &&
-                     ParserAlias(layers.back()->allow_alias_without_as_keyword).parse(pos, tmp, expected))
-            {
-                if (!layers.back()->insertAlias(tmp))
-                    return false;
-            }
-            else
-            {
-                break;
-            }
-        }
     }
 
     // When we exit the loop we should be on the 1st level
@@ -2988,6 +2712,329 @@ bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     return true;
+}
+
+ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected)
+{
+    ASTPtr tmp;
+
+    /// Special case for cast expression
+    if (layers.back()->previousType() != OperatorType::TupleElement &&
+        ParseCastExpression(pos, tmp, expected))
+    {
+        layers.back()->pushOperand(std::move(tmp));
+        return ParseResult::OPERATOR;
+    }
+
+    if (layers.back()->previousType() == OperatorType::Comparison)
+    {
+        SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+
+        if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
+            subquery_function_type = SubqueryFunctionType::ANY;
+        else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
+            subquery_function_type = SubqueryFunctionType::ALL;
+
+        if (subquery_function_type != SubqueryFunctionType::NONE)
+        {
+            Operator prev_op;
+            ASTPtr function, argument;
+
+            if (!layers.back()->popOperator(prev_op))
+                return ParseResult::ERROR;
+            if (!layers.back()->popOperand(argument))
+                return ParseResult::ERROR;
+
+            function = makeASTFunction(prev_op.function_name, argument, tmp);
+
+            if (!modifyAST(function, subquery_function_type))
+                return ParseResult::ERROR;
+
+            layers.back()->pushOperand(std::move(function));
+            return ParseResult::OPERATOR;
+        }
+    }
+
+    /// Try to find any unary operators
+    auto cur_op = op_table_unary.begin();
+    for (; cur_op != op_table_unary.end(); ++cur_op)
+    {
+        if (parseOperator(pos, cur_op->first, expected))
+            break;
+    }
+
+    if (cur_op != op_table_unary.end())
+    {
+        layers.back()->pushOperator(cur_op->second);
+        return ParseResult::OPERAND;
+    }
+
+    auto old_pos = pos;
+    std::unique_ptr<Layer> layer;
+    if (parseOperator(pos, "INTERVAL", expected))
+        layer = std::make_unique<IntervalLayer>();
+    else if (parseOperator(pos, "CASE", expected))
+        layer = std::make_unique<CaseLayer>();
+
+    /// Here we check that CASE or INTERVAL is not an identifier
+    /// It is needed for backwards compatibility
+    if (layer)
+    {
+        Expected stub;
+
+        auto stub_cur_op = op_table.begin();
+        for (; stub_cur_op != op_table.end(); ++stub_cur_op)
+        {
+            /// Minus can be unary
+            /// TODO: check cases 'select case - number from table' and 'select case -x when 10 then 5 else 0 end'
+            if (stub_cur_op->second.function_name == "minus")
+                continue;
+            if (parseOperator(pos, stub_cur_op->first, stub))
+                break;
+        }
+
+        auto check_pos = pos;
+
+        if (stub_cur_op != op_table.end() ||
+            ParserToken(TokenType::Comma).ignore(pos, stub) ||
+            ParserToken(TokenType::ClosingRoundBracket).ignore(pos, stub) ||
+            ParserToken(TokenType::ClosingSquareBracket).ignore(pos, stub) ||
+            ParserToken(TokenType::Semicolon).ignore(pos, stub) ||
+            ParserKeyword("AS").ignore(pos, stub) ||
+            ParserKeyword("FROM").ignore(pos, stub) ||
+            !pos.isValid())
+        {
+            pos = old_pos;
+        }
+        else if (ParserAlias(true).ignore(check_pos, stub) &&
+                    (ParserToken(TokenType::Comma).ignore(check_pos, stub) ||
+                    ParserToken(TokenType::ClosingRoundBracket).ignore(check_pos, stub) ||
+                    ParserToken(TokenType::ClosingSquareBracket).ignore(check_pos, stub) ||
+                    ParserToken(TokenType::Semicolon).ignore(check_pos, stub) ||
+                    ParserKeyword("FROM").ignore(check_pos, stub) ||
+                    !check_pos.isValid()))
+        {
+            pos = old_pos;
+        }
+        else
+        {
+            layers.push_back(std::move(layer));
+            return ParseResult::OPERAND;
+        }
+    }
+
+    if (ParseDateOperatorExpression(pos, tmp, expected) ||
+        ParseTimestampOperatorExpression(pos, tmp, expected) ||
+        tuple_literal_parser.parse(pos, tmp, expected) ||
+        array_literal_parser.parse(pos, tmp, expected) ||
+        number_parser.parse(pos, tmp, expected) ||
+        literal_parser.parse(pos, tmp, expected) ||
+        asterisk_parser.parse(pos, tmp, expected) ||
+        qualified_asterisk_parser.parse(pos, tmp, expected) ||
+        columns_matcher_parser.parse(pos, tmp, expected))
+    {
+        layers.back()->pushOperand(std::move(tmp));
+    }
+    else if (identifier_parser.parse(pos, tmp, expected))
+    {
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+
+            String function_name = getIdentifierName(tmp);
+            String function_name_lowercase = Poco::toLower(function_name);
+
+            if (function_name_lowercase == "cast")
+                layers.push_back(std::make_unique<CastLayer>());
+            else if (function_name_lowercase == "extract")
+                layers.push_back(std::make_unique<ExtractLayer>());
+            else if (function_name_lowercase == "substring")
+                layers.push_back(std::make_unique<SubstringLayer>());
+            else if (function_name_lowercase == "position")
+                layers.push_back(std::make_unique<PositionLayer>());
+            else if (function_name_lowercase == "exists")
+                layers.push_back(std::make_unique<ExistsLayer>());
+            else if (function_name_lowercase == "trim")
+                layers.push_back(std::make_unique<TrimLayer>(false, false));
+            else if (function_name_lowercase == "ltrim")
+                layers.push_back(std::make_unique<TrimLayer>(true, false));
+            else if (function_name_lowercase == "rtrim")
+                layers.push_back(std::make_unique<TrimLayer>(false, true));
+            else if (function_name_lowercase == "dateadd" || function_name_lowercase == "date_add"
+                || function_name_lowercase == "timestampadd" || function_name_lowercase == "timestamp_add")
+                layers.push_back(std::make_unique<DateAddLayer>("plus"));
+            else if (function_name_lowercase == "datesub" || function_name_lowercase == "date_sub"
+                || function_name_lowercase == "timestampsub" || function_name_lowercase == "timestamp_sub")
+                layers.push_back(std::make_unique<DateAddLayer>("minus"));
+            else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
+                || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
+                layers.push_back(std::make_unique<DateDiffLayer>());
+            else if (function_name_lowercase == "grouping")
+                layers.push_back(std::make_unique<FunctionLayer>(function_name_lowercase));
+            else
+                layers.push_back(std::make_unique<FunctionLayer>(function_name));
+
+            return ParseResult::OPERAND;
+        }
+        else
+        {
+            layers.back()->pushOperand(std::move(tmp));
+        }
+    }
+    else if (substitution_parser.parse(pos, tmp, expected))
+    {
+        layers.back()->pushOperand(std::move(tmp));
+    }
+    else if (pos->type == TokenType::OpeningRoundBracket)
+    {
+        if (subquery_parser.parse(pos, tmp, expected))
+        {
+            layers.back()->pushOperand(std::move(tmp));
+            return ParseResult::OPERATOR;
+        }
+
+        ++pos;
+        layers.push_back(std::make_unique<RoundBracketsLayer>());
+        return ParseResult::OPERAND;
+    }
+    else if (pos->type == TokenType::OpeningSquareBracket)
+    {
+        ++pos;
+        layers.push_back(std::make_unique<ArrayLayer>());
+        return ParseResult::OPERAND;
+    }
+    else if (mysql_global_variable_parser.parse(pos, tmp, expected))
+    {
+        layers.back()->pushOperand(std::move(tmp));
+    }
+    else
+    {
+        return ParseResult::END;
+    }
+
+    return ParseResult::OPERATOR;
+}
+
+
+ParserExpressionImpl::ParseResult ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
+{
+    ASTPtr tmp;
+
+    /// ParserExpression can be called in this part of the query:
+    ///  ALTER TABLE partition_all2 CLEAR INDEX [ p ] IN PARTITION ALL
+    ///
+    /// 'IN PARTITION' here is not an 'IN' operator, so we should stop parsing immediately
+    Expected stub;
+    if (ParserKeyword("IN PARTITION").checkWithoutMoving(pos, stub))
+        return ParseResult::END;
+
+    /// Try to find operators from 'op_table'
+    auto cur_op = op_table.begin();
+    for (; cur_op != op_table.end(); ++cur_op)
+    {
+        if (parseOperator(pos, cur_op->first, expected))
+            break;
+    }
+
+    if (cur_op == op_table.end())
+    {
+        if (layers.back()->allow_alias && ParserAlias(layers.back()->allow_alias_without_as_keyword).parse(pos, tmp, expected))
+        {
+            if (!layers.back()->insertAlias(tmp))
+                return ParseResult::ERROR;
+
+            return ParseResult::OPERAND;
+        }
+
+        return ParseResult::END;
+    }
+
+    auto op = cur_op->second;
+
+    if (op.type == OperatorType::Lambda)
+    {
+        if (!layers.back()->parseLambda())
+            return ParseResult::ERROR;
+
+        layers.back()->pushOperator(op);
+        return ParseResult::OPERAND;
+    }
+
+    // 'AND' can be both boolean function and part of the '... BETWEEN ... AND ...' operator
+    if (op.function_name == "and" && layers.back()->between_counter)
+    {
+        layers.back()->between_counter--;
+        op = finish_between_operator;
+    }
+
+    while (layers.back()->previousPriority() >= op.priority)
+    {
+        ASTPtr function;
+        Operator prev_op;
+        layers.back()->popOperator(prev_op);
+
+        /// Mergeable operators are operators that are merged into one function:
+        /// For example: 'a OR b OR c' -> 'or(a, b, c)' and not 'or(or(a,b), c)'
+        if (prev_op.type == OperatorType::Mergeable && op.function_name == prev_op.function_name)
+        {
+            op.arity += prev_op.arity - 1;
+            break;
+        }
+
+        if (prev_op.type == OperatorType::FinishBetween)
+        {
+            Operator tmp_op;
+            if (!layers.back()->popOperator(tmp_op))
+                return ParseResult::ERROR;
+
+            if (tmp_op.type != OperatorType::StartBetween && tmp_op.type != OperatorType::StartNotBetween)
+                return ParseResult::ERROR;
+
+            bool negative = tmp_op.type == OperatorType::StartNotBetween;
+
+            ASTs arguments;
+            if (!layers.back()->popLastNOperands(arguments, 3))
+                return ParseResult::ERROR;
+
+            function = makeBetweenOperator(negative, arguments);
+        }
+        else
+        {
+            function = makeASTFunction(prev_op.function_name);
+
+            if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
+                return ParseResult::ERROR;
+        }
+
+        layers.back()->pushOperand(function);
+    }
+    layers.back()->pushOperator(op);
+
+    if (op.type == OperatorType::ArrayElement)
+        layers.push_back(std::make_unique<ArrayElementLayer>());
+
+
+    ParseResult next = ParseResult::OPERAND;
+
+    // isNull & isNotNull is postfix unary operator
+    if (op.type == OperatorType::IsNull)
+        next = ParseResult::OPERATOR;
+
+    if (op.type == OperatorType::StartBetween || op.type == OperatorType::StartNotBetween)
+        layers.back()->between_counter++;
+
+    if (op.type == OperatorType::Cast)
+    {
+        next = ParseResult::OPERATOR;
+
+        ASTPtr type_ast;
+        if (!ParserDataType().parse(pos, type_ast, expected))
+            return ParseResult::ERROR;
+
+        layers.back()->pushOperand(std::make_shared<ASTLiteral>(queryToString(type_ast)));
+    }
+
+    return next;
 }
 
 }
