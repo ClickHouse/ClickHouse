@@ -367,12 +367,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             throw Exception("Can't create replicated table without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
         }
 
-        /// Do not activate the replica. It will be readonly.
-        LOG_ERROR(log, "No ZooKeeper: table will be in readonly mode.");
         has_metadata_in_zookeeper = std::nullopt;
 
         if (!has_zookeeper)
+        {
+            /// Do not activate the replica. It will be readonly.
+            LOG_ERROR(log, "No ZooKeeper defined: table will stay in readonly mode.");
             return;
+        }
     }
 
     if (attach)
@@ -4190,6 +4192,7 @@ void StorageReplicatedMergeTree::startupImpl(zkutil::ZooKeeperPtr zookeeper)
 
         std::lock_guard lock(initialization_mutex);
         init_phase = InitializationPhase::STARTUP_DONE;
+        LOG_INFO(log, "Startup is done");
     }
     catch (...)
     {
