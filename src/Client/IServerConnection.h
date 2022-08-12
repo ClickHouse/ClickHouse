@@ -86,6 +86,7 @@ public:
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
+        const NameToNameMap & query_parameters,
         const String & query_id_,
         UInt64 stage,
         const Settings * settings,

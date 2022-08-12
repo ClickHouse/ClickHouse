@@ -57,11 +57,29 @@
 #include <Common/config_version.h>
 
 using namespace std::literals;
+using namespace DB;
 
 
 namespace CurrentMetrics
 {
     extern const Metric QueryThread;
+}
+
+namespace
+{
+NameToNameMap convertToQueryParameters(const Settings & passed_params)
+{
+    NameToNameMap query_parameters;
+    for (const auto & param : passed_params)
+    {
+        std::string value;
+        ReadBufferFromOwnString buf(param.getValueString());
+        readQuoted(value, buf);
+        query_parameters.emplace(param.getName(), value);
+    }
+    return query_parameters;
+}
+
 }
 
 namespace DB
@@ -1332,6 +1350,10 @@ void TCPHandler::receiveQuery()
 
     readStringBinary(state.query, *in);
 
+    Settings passed_params;
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+        passed_params.read(*in, settings_format);
+
     /// TODO Unify interserver authentication (and make sure that it's secure enough)
     if (is_interserver_mode)
     {
@@ -1422,6 +1444,8 @@ void TCPHandler::receiveQuery()
     /// so we have to apply the changes first.
     query_context->setCurrentQueryId(state.query_id);
 
+    query_context->addQueryParameters(convertToQueryParameters(passed_params));
+
     /// For testing hedged requests
     if (unlikely(sleep_after_receiving_query.totalMilliseconds()))
     {
@@ -1457,6 +1481,9 @@ void TCPHandler::receiveUnexpectedQuery()
     last_block_in.compression = static_cast<Protocol::Compression>(skip_uint_64);
 
     readStringBinary(skip_string, *in);
+
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+        skip_settings.read(*in, settings_format);
 
     throw NetException("Unexpected packet Query received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }

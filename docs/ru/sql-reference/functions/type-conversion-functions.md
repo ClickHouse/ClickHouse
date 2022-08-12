@@ -209,7 +209,7 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+┌──────value─┬─toTypeName(toDate32('1955-01-01'))─┐
 │ 1955-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
 ```
@@ -217,23 +217,23 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 2. Значение выходит за границы диапазона:
 
 ``` sql
-SELECT toDate32('1924-01-01') AS value, toTypeName(value);
+SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
-│ 1925-01-01 │ Date32                             │
+┌──────value─┬─toTypeName(toDate32('1899-01-01'))─┐
+│ 1900-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
 ```
 
 3. С аргументом типа `Date`:
 
 ``` sql
-SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
+SELECT toDate32(toDate('1899-01-01')) AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
+┌──────value─┬─toTypeName(toDate32(toDate('1899-01-01')))─┐
 │ 1970-01-01 │ Date32                                     │
 └────────────┴────────────────────────────────────────────┘
 ```
@@ -247,14 +247,14 @@ SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
 Запрос:
 
 ``` sql
-SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
+SELECT toDate32OrZero('1899-01-01'), toDate32OrZero('');
 ```
 
 Результат:
 
 ``` text
-┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
-│                   1925-01-01 │         1925-01-01 │
+┌─toDate32OrZero('1899-01-01')─┬─toDate32OrZero('')─┐
+│                   1900-01-01 │         1900-01-01 │
 └──────────────────────────────┴────────────────────┘
 ```
 
@@ -1162,7 +1162,7 @@ FORMAT PrettyCompactMonoBlock;
 
 ## toLowCardinality {#tolowcardinality}
 
-Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+Преобразует входные данные в версию [LowCardinality](../data-types/lowcardinality.md) того же типа данных.
 
 Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
 
@@ -1209,6 +1209,7 @@ SELECT toLowCardinality('1');
 
 :::info "Примечание"
     Возвращаемое значение — это временная метка в UTC, а не в часовом поясе `DateTime64`.
+:::
 
 **Синтаксис**
 
