@@ -156,8 +156,10 @@ struct SelectQueryInfo
     TreeRewriterResultPtr syntax_analyzer_result;
 
     /// This is an additional filer applied to current table.
-    /// It is needed only for additional PK filtering.
     ASTPtr additional_filter_ast;
+
+    /// It is needed for PK analysis based on row_level_policy and additional_filters.
+    ASTs filter_asts;
 
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
