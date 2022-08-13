@@ -318,6 +318,11 @@ DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypes()
     return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule());
 }
 
+void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings, reader.getEscapingRule());
+}
+
 void registerInputFormatCustomSeparated(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
