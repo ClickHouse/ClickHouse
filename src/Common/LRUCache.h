@@ -328,7 +328,6 @@ private:
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
-   
         while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) && (queue_size > 1))
         {
             const Key & key = queue.front();
