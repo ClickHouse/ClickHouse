@@ -1162,7 +1162,7 @@ FORMAT PrettyCompactMonoBlock;
 
 ## toLowCardinality {#tolowcardinality}
 
-Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+Преобразует входные данные в версию [LowCardinality](../data-types/lowcardinality.md) того же типа данных.
 
 Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
 

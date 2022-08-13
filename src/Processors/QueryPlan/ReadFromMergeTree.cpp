@@ -827,8 +827,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
     return selectRangesToRead(
         std::move(parts),
         prewhere_info,
-        added_filter,
-        added_filter_column_name,
+        added_filter_nodes,
         storage_snapshot->metadata,
         storage_snapshot->getMetadataForQuery(),
         query_info,
@@ -844,8 +843,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
     const PrewhereInfoPtr & prewhere_info,
-    const ActionsDAGPtr & added_filter,
-    const std::string & added_filter_column_name,
+    const ActionDAGNodes & added_filter_nodes,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -887,17 +885,23 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         ActionDAGNodes nodes;
         if (prewhere_info)
         {
-            const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
-            nodes.nodes.push_back(&node);
+            {
+                const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+                nodes.nodes.push_back(&node);
+            }
+
+            if (prewhere_info->row_level_filter)
+            {
+                const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
+                nodes.nodes.push_back(&node);
+            }
         }
 
-        if (added_filter)
-        {
-            const auto & node = added_filter->findInOutputs(added_filter_column_name);
-            nodes.nodes.push_back(&node);
-        }
+        for (const auto & node : added_filter_nodes.nodes)
+            nodes.nodes.push_back(node);
 
-        key_condition.emplace(std::move(nodes), query_info.syntax_analyzer_result, query_info.prepared_sets, context, primary_key_columns, primary_key.expression);
+        key_condition.emplace(
+            std::move(nodes), query_info.syntax_analyzer_result, query_info.prepared_sets, context, primary_key_columns, primary_key.expression);
     }
     else
     {

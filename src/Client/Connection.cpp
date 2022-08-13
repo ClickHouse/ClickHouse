@@ -69,8 +69,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
-    Protocol::Secure secure_,
-    Poco::Timespan sync_request_timeout_)
+    Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_), quota_key(quota_key_)
     , cluster(cluster_)
@@ -78,7 +77,6 @@ Connection::Connection(const String & host_, UInt16 port_,
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
-    , sync_request_timeout(sync_request_timeout_)
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -386,7 +384,7 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
     {
         connect(timeouts);
     }
-    else if (!ping())
+    else if (!ping(timeouts))
     {
         LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
         connect(timeouts);
@@ -406,11 +404,11 @@ void Connection::sendClusterNameAndSalt()
 }
 #endif
 
-bool Connection::ping()
+bool Connection::ping(const ConnectionTimeouts & timeouts)
 {
     try
     {
-        TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
+        TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
         UInt64 pong = 0;
         writeVarUInt(Protocol::Client::Ping, *out);
@@ -454,7 +452,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (!connected)
         connect(timeouts);
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
+    TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
@@ -477,6 +475,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
+    const NameToNameMap & query_parameters,
     const String & query_id_,
     UInt64 stage,
     const Settings * settings,
@@ -568,6 +567,14 @@ void Connection::sendQuery(
     writeVarUInt(static_cast<bool>(compression), *out);
 
     writeStringBinary(query, *out);
+
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    {
+        Settings params;
+        for (const auto & [name, value] : query_parameters)
+            params.set(name, value);
+        params.write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
 
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
