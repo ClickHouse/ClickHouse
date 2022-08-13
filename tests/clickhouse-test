@@ -1759,7 +1759,7 @@ def main(args):
         stop_time = time() + args.global_time_limit
 
     if args.zookeeper is None:
-       args.zookeeper = True
+        args.zookeeper = True
 
     if args.shard is None:
         args.shard = bool(extract_key(' --key listen_host | grep -E "127.0.0.2|::"'))
