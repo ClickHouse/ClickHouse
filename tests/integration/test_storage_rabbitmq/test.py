@@ -2590,9 +2590,17 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'mv',
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_queue_base = 'drop_mv';
+    """
+    )
+    instance.query(
+        """
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree()
             ORDER BY key;
+    """
+    )
+    instance.query(
+        """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.rabbitmq;
     """
@@ -2610,6 +2618,14 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
+
+    start = time.time()
+    while time.time() - start < 30:
+        res = instance.query("SELECT COUNT(*) FROM test.view")
+        if "20" == res:
+            break
+        else:
+            logging.debug(f"Number of rows in test.view: {res}")
 
     instance.query("DROP VIEW test.consumer")
     for i in range(20, 40):
@@ -2643,7 +2659,8 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     connection.close()
 
     count = 0
-    while True:
+    start = time.time()
+    while time.time() - start < 30:
         count = int(instance.query("SELECT count() FROM test.rabbitmq"))
         if count:
             break
@@ -2685,7 +2702,7 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
         channel = connection.channel()
 
         messages = []
-        for i in range(messages_num):
+        for j in range(messages_num):
             messages.append(json.dumps({"key": i[0], "value": i[0]}))
             i[0] += 1
             mes_id = str(i)

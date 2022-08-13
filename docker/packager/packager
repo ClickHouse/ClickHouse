@@ -62,7 +62,7 @@ def pre_build(repo_path: str, env_variables: List[str]):
                 f"git -C {repo_path} fetch --no-recurse-submodules "
                 "--no-tags origin master:master"
             )
-            logging.info("Getting master branch for performance artifact: ''%s'", cmd)
+            logging.info("Getting master branch for performance artifact: '%s'", cmd)
             subprocess.check_call(cmd, shell=True)
 
 
@@ -215,7 +215,7 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
-    # Create combined output archive for split build and for performance tests.
+    # Create combined output archive for shared library build and for performance tests.
     if package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
@@ -234,6 +234,7 @@ def parse_env_variables(
 
     if cache:
         result.append("CCACHE_DIR=/ccache")
+        result.append("CCACHE_COMPRESSLEVEL=5")
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
@@ -242,7 +243,6 @@ def parse_env_variables(
             # 15G is not enough for tidy build
             cache_maxsize = "25G"
         result.append(f"CCACHE_MAXSIZE={cache_maxsize}")
-        # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
         hosts_with_params = [f"{host}/24,lzo" for host in distcc_hosts] + [
@@ -269,8 +269,8 @@ def parse_env_variables(
             "-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1"
         )
         # We can't always build utils because it requires too much space, but
-        # we have to build them at least in some way in CI. The split build is
-        # probably the least heavy disk-wise.
+        # we have to build them at least in some way in CI. The shared library
+        # build is probably the least heavy disk-wise.
         cmake_flags.append("-DENABLE_UTILS=1")
         # utils are not included into clickhouse-bundle, so build everything
         build_target = "all"
@@ -333,7 +333,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compiler",
         choices=(
-            "clang-13",  # For TSAN builds, see #39450
+            "clang-15",  # For TSAN builds, see #39450
             "clang-14",
             "clang-14-darwin",
             "clang-14-darwin-aarch64",
