@@ -13,13 +13,24 @@ on: # yamllint disable-line rule:truthy
     - 'v*-prestable'
     - 'v*-stable'
     - 'v*-lts'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Test tag'
+        required: true 
+        type: string
 
 
 jobs:
   UpdateVersions:
     runs-on: [self-hosted, style-checker]
     steps:
+    - name: Set test tag
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        echo "GITHUB_TAG=${{ inputs.tag }}" >> "$GITHUB_ENV"
     - name: Get tag name
+      if: github.event_name != 'workflow_dispatch'
       run: |
         echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
     - name: Check out repository code
