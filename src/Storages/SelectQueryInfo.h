@@ -60,6 +60,24 @@ struct PrewhereInfo
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 
     std::string dump() const;
+
+    PrewhereInfoPtr clone() const
+    {
+        PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
+
+        if (row_level_filter)
+            prewhere_info->row_level_filter = row_level_filter->clone();
+
+        if (prewhere_actions)
+            prewhere_info->prewhere_actions = prewhere_actions->clone();
+
+        prewhere_info->row_level_column_name = row_level_column_name;
+        prewhere_info->prewhere_column_name = prewhere_column_name;
+        prewhere_info->remove_prewhere_column = remove_prewhere_column;
+        prewhere_info->need_filter = need_filter;
+
+        return prewhere_info;
+    }
 };
 
 /// Helper struct to store all the information about the filter expression.
