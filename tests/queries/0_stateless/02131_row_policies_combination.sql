@@ -52,3 +52,9 @@ SELECT 'None';
 SELECT * FROM 02131_rptable;
 
 DROP TABLE 02131_rptable;
+
+SELECT 'Check system.query_log';
+
+SYSTEM FLUSH LOGS;
+
+SELECT query, used_row_policies.name, used_row_policies.type FROM system.query_log WHERE event_date >= yesterday() AND current_database == currentDatabase() AND type == 'QueryStart' AND query_kind == 'Select';

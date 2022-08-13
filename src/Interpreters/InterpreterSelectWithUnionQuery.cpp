@@ -1,8 +1,11 @@
+#include <Access/AccessControl.h>
+
 #include <Columns/getLeastSuperColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
+#include <Interpreters/QueryLog.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -21,6 +24,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 
 #include <algorithm>
+
 
 namespace DB
 {
@@ -380,6 +384,27 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 {
     for (auto & interpreter : nested_interpreters)
         interpreter->ignoreWithTotals();
+}
+
+void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const
+{
+    extendQueryLogElemImplImpl(elem, ast, context_);
+
+    const auto & access_control = context_->getAccessControl();
+
+    for (auto & interpreter : nested_interpreters)
+    {
+        if (auto select_interpreter = dynamic_cast<InterpreterSelectQuery *>(interpreter.get()))
+        {
+            auto policies = select_interpreter->getUsedRowPolicies();
+            for (const auto & row_policy : policies)
+            {
+                auto name = row_policy->getFullName().toString();
+                std::optional<UUID> id = access_control.find<RowPolicy>(name);
+                elem.used_row_policies.emplace(std::move(name), std::move(*id));
+            }
+        }
+    }
 }
 
 }

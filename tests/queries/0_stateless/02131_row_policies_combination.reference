@@ -31,3 +31,27 @@ None
 2
 3
 4
+Check system.query_log
+SELECT \'None\';	[]	[]
+SELECT * FROM 02131_rptable;	[]	[]
+SELECT \'R1: x == 1\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_1']	['Permissive']
+SELECT \'R1, R2: (x == 1) OR (x == 2)\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_1','02131_filter_2']	['Permissive','Permissive']
+SELECT \'R1, R2, R3: (x == 1) OR (x == 2) OR (x == 3)\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_3','02131_filter_1','02131_filter_2']	['Permissive','Permissive','Permissive']
+SELECT \'R1, R2, R3, R4: ((x == 1) OR (x == 2) OR (x == 3)) AND (x <= 2)\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_3','02131_filter_1','02131_filter_4','02131_filter_2']	['Permissive','Permissive','Restrictive','Permissive']
+SELECT \'R1, R2, R3, R4, R5: ((x == 1) OR (x == 2) OR (x == 3)) AND (x <= 2) AND (x >= 2)\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_5','02131_filter_3','02131_filter_1','02131_filter_4','02131_filter_2']	['Restrictive','Permissive','Permissive','Restrictive','Permissive']
+SELECT \'R2, R3, R4, R5: ((x == 2) OR (x == 3)) AND (x <= 2) AND (x >= 2)\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_5','02131_filter_3','02131_filter_4','02131_filter_2']	['Restrictive','Permissive','Restrictive','Permissive']
+SELECT \'R3, R4, R5: (x == 3) AND (x <= 2) AND (x >= 2)\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_5','02131_filter_3','02131_filter_4']	['Restrictive','Permissive','Restrictive']
+SELECT \'R4, R5: (x <= 2) AND (x >= 2)\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_5','02131_filter_4']	['Restrictive','Restrictive']
+SELECT \'R5: (x >= 2)\';	[]	[]
+SELECT * FROM 02131_rptable;	['02131_filter_5']	['Restrictive']
+SELECT \'None\';	[]	[]
+SELECT * FROM 02131_rptable;	[]	[]
+SELECT \'Check system.query_log\';	[]	[]

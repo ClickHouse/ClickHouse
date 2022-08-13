@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/ClickHouseRevision.h>
@@ -38,13 +39,6 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
             {"QueryFinish",                 static_cast<Int8>(QUERY_FINISH)},
             {"ExceptionBeforeStart",        static_cast<Int8>(EXCEPTION_BEFORE_START)},
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
-        });
-
-    auto row_policy_order_type = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            {"Restrictive",                 static_cast<Int8>(RowPolicyOrderType::Restrictive)},
-            {"Permissive",                  static_cast<Int8>(RowPolicyOrderType::Permissive)},
         });
 
     return
@@ -130,7 +124,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     
         {"used_row_policies.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()))},
-        {"used_row_policies.type", std::make_shared<DataTypeArray>(row_policy_order_type)},
+        {"used_row_policies.uuid", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUUID>())},
 
         {"transaction_id", getTransactionIDDataType()},
     };
@@ -250,7 +244,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_row_policies_order_types = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_row_policies_uuids = typeid_cast<ColumnUUID &>(*columns[i++]);
 
         auto fill_column = [](const auto & data, ColumnArray & column)
         {
@@ -273,8 +267,24 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_functions, column_function_factory_objects);
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
-        fill_column(row_policies_names, column_row_policies_names);
-        fill_column(row_policies_order_types, column_row_policies_order_types);
+
+        {
+            size_t size = 0;
+            Array uuid_array;
+            uuid_array.reserve(used_row_policies.size());
+
+            for (const auto & [name, uuid] : used_row_policies)
+            {
+                column_row_policies_names.getData().insert(name);
+                uuid_array.emplace_back(uuid);
+                ++size;
+            }
+
+            auto & column_row_policies_names_offsets = column_row_policies_names.getOffsets();
+            column_row_policies_names_offsets.push_back(column_row_policies_names_offsets.back() + size);
+
+            column_row_policies_uuids.insert(uuid_array);
+        }
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
