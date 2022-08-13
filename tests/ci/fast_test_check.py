@@ -31,6 +31,9 @@ from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
 NAME = "Fast test"
 
+# Will help to avoid errors like _csv.Error: field larger than field limit (131072)
+csv.field_size_limit(sys.maxsize)
+
 
 def get_fasttest_cmd(
     workspace, output_path, ccache_path, repo_path, pr_number, commit_sha, image
