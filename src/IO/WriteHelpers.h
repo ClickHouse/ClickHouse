@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iterator>
 #include <concepts>
+#include <bit>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -1110,13 +1111,15 @@ template <typename T>
 requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void writeBinaryBigEndian(T x, WriteBuffer & buf)    /// Assuming little endian architecture.
 {
-    if constexpr (sizeof(x) == 2)
-        x = __builtin_bswap16(x);
-    else if constexpr (sizeof(x) == 4)
-        x = __builtin_bswap32(x);
-    else if constexpr (sizeof(x) == 8)
-        x = __builtin_bswap64(x);
-
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        if constexpr (sizeof(x) == 2)
+            x = __builtin_bswap16(x);
+        else if constexpr (sizeof(x) == 4)
+            x = __builtin_bswap32(x);
+        else if constexpr (sizeof(x) == 8)
+            x = __builtin_bswap64(x);
+    }
     writePODBinary(x, buf);
 }
 
