@@ -16,5 +16,5 @@ SET max_rows_to_read = 1000000;
 SELECT count() FROM test.hits WHERE CounterID > (SELECT count() FROM test.hits WHERE NOT ignore(AdvEngineID)); -- { serverError 158 }
 
 -- this query is using index but have to read all the data twice.
-SET max_rows_to_read = 15000000;
+SET max_rows_to_read = 10000000;
 SELECT count() FROM test.hits WHERE CounterID < (SELECT count() FROM test.hits WHERE NOT ignore(AdvEngineID)); -- { serverError 158 }
