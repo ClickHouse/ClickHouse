@@ -1,7 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
-#include <Common/typeid_cast.h>
-#include <Columns/ColumnArray.h>
+
 
 /// Available events. Add something here as you wish.
 #define APPLY_FOR_EVENTS(M) \
@@ -450,7 +449,7 @@ void increment(Event event, Count amount)
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
 {
     init();
-    std::memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
+    memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)

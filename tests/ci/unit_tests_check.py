@@ -7,7 +7,7 @@ import subprocess
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH, S3_URL
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -147,7 +147,7 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_result(test_output)
 
     ch_helper = ClickHouseHelper()

@@ -17,7 +17,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
@@ -54,7 +54,7 @@ public:
         size_t median_size; // roughly the size we're going to preallocate on each thread
     };
 
-    using Cache = DB::LRUCache<UInt64, Entry>;
+    using Cache = DB::CacheBase<UInt64, Entry>;
     using CachePtr = std::shared_ptr<Cache>;
     using Params = DB::Aggregator::Params::StatsCollectingParams;
 

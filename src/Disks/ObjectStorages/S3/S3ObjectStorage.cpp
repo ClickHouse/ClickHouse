@@ -24,7 +24,7 @@
 #include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/model/AbortMultipartUploadRequest.h>
 
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileCacheFactory.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -128,7 +128,7 @@ void S3ObjectStorage::removeCacheIfExists(const std::string & path_key)
     if (!cache || path_key.empty())
         return;
 
-    IFileCache::Key key = cache->hash(path_key);
+    FileCache::Key key = cache->hash(path_key);
     cache->removeIfExists(key);
 }
 
@@ -500,7 +500,7 @@ ReadSettings S3ObjectStorage::patchSettings(const ReadSettings & read_settings) 
     ReadSettings settings{read_settings};
     if (cache)
     {
-        if (IFileCache::isReadOnly())
+        if (FileCache::isReadOnly())
             settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
 
         settings.remote_fs_cache = cache;

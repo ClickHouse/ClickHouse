@@ -608,11 +608,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (storage)
         {
+            query_info.filter_asts.clear();
+
             /// Fix source_header for filter actions.
             if (row_policy_filter)
             {
                 filter_info = generateFilterActions(
                     table_id, row_policy_filter, context, storage, storage_snapshot, metadata_snapshot, required_columns);
+
+                query_info.filter_asts.push_back(row_policy_filter);
             }
 
             if (query_info.additional_filter_ast)
@@ -621,6 +625,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns);
 
                 additional_filter_info->do_remove_column = true;
+
+                query_info.filter_asts.push_back(query_info.additional_filter_ast);
             }
 
             source_header = storage_snapshot->getSampleBlockForColumns(required_columns);
@@ -2003,8 +2009,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && storage
         && storage->getName() != "MaterializedMySQL"
         && !storage->hasLightweightDeletedMask()
-        && !row_policy_filter
-        && !query_info.additional_filter_ast
+        && query_info.filter_asts.empty()
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
@@ -2104,7 +2109,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query.limit_with_ties
         && !query.prewhere()
         && !query.where()
-        && !query_info.additional_filter_ast
+        && query_info.filter_asts.empty()
         && !query.groupBy()
         && !query.having()
         && !query.orderBy()
