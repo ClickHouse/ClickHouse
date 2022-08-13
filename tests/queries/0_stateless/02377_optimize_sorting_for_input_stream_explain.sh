@@ -29,12 +29,15 @@ $CLICKHOUSE_CLIENT -nq "$ENABLE_OPTIMIZATION;explain pipeline select a from (sel
 
 $CLICKHOUSE_CLIENT -q "select '-- PLAN: ExpressionStep preserves sort mode'"
 $CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN sortmode=1 SELECT a FROM optimize_sorting ORDER BY a" | eval $FIND_SORTMODE
+# $CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sortmode=1 SELECT a FROM optimize_sorting ORDER BY a+1" | eval $FIND_SORTMODE
 
 $CLICKHOUSE_CLIENT -q "select '-- PLAN: ExpressionStep breaks sort mode'"
 $CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN sortmode=1 SELECT a+1 FROM optimize_sorting ORDER BY a+1" | eval $FIND_SORTMODE
 
 $CLICKHOUSE_CLIENT -q "select '-- PLAN: FilterStep preserves sort mode'"
 $CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN sortmode=1 SELECT a FROM optimize_sorting WHERE a > 0" | eval $FIND_SORTMODE
+# $CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN sortmode=1 SELECT a FROM optimize_sorting WHERE a+1 > 0" | eval $FIND_SORTMODE
+# $CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN sortmode=1 SELECT a, a+1 FROM optimize_sorting WHERE a+1 > 0" | eval $FIND_SORTMODE
 
 $CLICKHOUSE_CLIENT -q "select '-- PLAN: FilterStep breaks sort mode'"
 $CLICKHOUSE_CLIENT -nq "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN sortmode=1 SELECT a > 0 FROM optimize_sorting WHERE a > 0" | eval $FIND_SORTMODE

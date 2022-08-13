@@ -2018,7 +2018,7 @@ bool ActionsDAG::isSortingPreserved(
         }
 
         /// check if any output node is related to the sorted column and sorting order is preserved
-        bool found = false;
+        bool preserved = false;
         for (const auto * output_node : outputs)
         {
             if (output_node->result_name == ignore_output_column)
@@ -2026,13 +2026,14 @@ bool ActionsDAG::isSortingPreserved(
 
             if (findColumn(output_node, desc.column_name))
             {
-                if (!chainPreservesSorting(output_node))
-                    return false;
-
-                found = true;
+                if (chainPreservesSorting(output_node))
+                {
+                    preserved = true;
+                    break;
+                }
             }
         }
-        if (!found)
+        if (!preserved)
             return false;
     }
 
