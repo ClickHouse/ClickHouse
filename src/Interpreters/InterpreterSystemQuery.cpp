@@ -8,7 +8,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
 #include <Common/FileCacheFactory.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>

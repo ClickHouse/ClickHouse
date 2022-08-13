@@ -75,6 +75,7 @@ void LocalConnection::sendProfileEvents()
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
     const String & query,
+    const NameToNameMap & query_parameters,
     const String & query_id,
     UInt64 stage,
     const Settings *,
@@ -82,6 +83,9 @@ void LocalConnection::sendQuery(
     bool,
     std::function<void(const Progress &)> process_progress_callback)
 {
+    if (!query_parameters.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "clickhouse local does not support query parameters");
+
     /// Suggestion comes without client_info.
     if (client_info)
         query_context = session.makeQueryContext(*client_info);

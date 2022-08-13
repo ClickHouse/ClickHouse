@@ -1013,7 +1013,11 @@ void BaseDaemon::setupWatchdog()
         /// If streaming compression of logs is used then we write watchdog logs to cerr
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
-            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+            Poco::AutoPtr<OwnPatternFormatter> pf;
+            if (config().getString("logger.formatting", "") == "json")
+                pf = new OwnJSONPatternFormatter;
+            else
+                pf = new OwnPatternFormatter;
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }

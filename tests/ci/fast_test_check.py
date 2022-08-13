@@ -9,7 +9,7 @@ import atexit
 
 from github import Github
 
-from env_helper import CACHES_PATH, TEMP_PATH
+from env_helper import CACHES_PATH, TEMP_PATH, S3_URL
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -30,6 +30,9 @@ from tee_popen import TeePopen
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
 NAME = "Fast test"
+
+# Will help to avoid errors like _csv.Error: field larger than field limit (131072)
+csv.field_size_limit(sys.maxsize)
 
 
 def get_fasttest_cmd(
@@ -105,7 +108,7 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(temp_path, "clickhouse/fasttest")
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper(S3_URL)
 
     workspace = os.path.join(temp_path, "fasttest-workspace")
     if not os.path.exists(workspace):
