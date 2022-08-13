@@ -94,6 +94,7 @@ public:
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
+        const NameToNameMap & query_parameters,
         const String & query_id/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
@@ -121,7 +122,7 @@ public:
 
     bool isConnected() const override { return true; }
 
-    bool checkConnected() override { return true; }
+    bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
 
     void disconnect() override {}
 

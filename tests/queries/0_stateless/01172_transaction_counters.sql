@@ -1,5 +1,6 @@
 -- Tags: no-s3-storage, no-ordinary-database
 -- FIXME this test fails with S3 due to a bug in DiskCacheWrapper
+
 drop table if exists txn_counters;
 
 create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n;
