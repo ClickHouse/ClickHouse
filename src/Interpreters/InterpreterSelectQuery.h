@@ -129,6 +129,10 @@ public:
 
     FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
 
+    const std::vector<RowPolicyPtr> & getUsedRowPolicies() const;
+
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
+
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
@@ -152,8 +156,6 @@ private:
         const Names & required_result_column_names = {},
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         PreparedSetsPtr prepared_sets_ = nullptr);
-
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 

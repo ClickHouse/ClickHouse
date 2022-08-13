@@ -1,3 +1,5 @@
+#include <Access/AccessControl.h>
+
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
 
@@ -620,7 +622,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     table_id, row_policy_filter.expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
-                query_info.filter_asts.push_back(row_policy_filter);
+                query_info.filter_asts.push_back(row_policy_filter.expression);
             }
 
             if (query_info.additional_filter_ast)
@@ -1867,14 +1869,22 @@ void InterpreterSelectQuery::setProperClientInfo(size_t replica_num, size_t repl
     context->getClientInfo().number_of_current_replica = replica_num;
 }
 
+const std::vector<RowPolicyPtr> & InterpreterSelectQuery::getUsedRowPolicies() const
+{
+    return row_policy_filter.policies;
+}
+
 void InterpreterSelectQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const
 {
     extendQueryLogElemImplImpl(elem, ast, context_);
 
+    const auto & access_control = context_->getAccessControl();
+
     for (const auto & row_policy : row_policy_filter.policies)
     {
-        elem.row_policies_names.push_back(row_policy->getShortName());
-        elem.row_policies_order_types.push_back(row_policy->getOrderType());
+        auto name = row_policy->getFullName().toString();
+        std::optional<UUID> id = access_control.find<RowPolicy>(name);
+        elem.used_row_policies.emplace(std::move(name), std::move(*id));
     }
 }
 
