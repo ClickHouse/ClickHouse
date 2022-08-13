@@ -8,6 +8,9 @@ CREATE TABLE set_array
 ) ENGINE = MergeTree()
 ORDER BY (primary_key);
 
+-- for this test we assume the rows will be inserted consecutively.
+SET max_insert_threads = 1;
+
 INSERT INTO set_array
 select
   toString(intDiv(number, 1000000)) as primary_key,
