@@ -23,6 +23,7 @@ REPORTS_PATH = os.getenv("REPORTS_PATH", p.abspath(p.join(module_dir, "./reports
 REPO_COPY = os.getenv("REPO_COPY", git_root)
 RUNNER_TEMP = os.getenv("RUNNER_TEMP", p.abspath(p.join(module_dir, "./tmp")))
 S3_URL = os.getenv("S3_URL", "https://s3.amazonaws.com")
+S3_DOWNLOAD = os.getenv("S3_DOWNLOAD", S3_URL)
 S3_BUILDS_BUCKET = os.getenv("S3_BUILDS_BUCKET", "clickhouse-builds")
 S3_TEST_REPORTS_BUCKET = os.getenv("S3_TEST_REPORTS_BUCKET", "clickhouse-test-reports")
 
