@@ -9,7 +9,7 @@
 
 #include <QueryPipeline/SizeLimits.h>
 
-#include <Storages/IKVStorage.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -23,7 +23,7 @@ public:
     DirectKeyValueJoin(
         std::shared_ptr<TableJoin> table_join_,
         const Block & right_sample_block_,
-        std::shared_ptr<IKeyValueStorage> storage_);
+        std::shared_ptr<const IKeyValueEntity> storage_);
 
     virtual const TableJoin & getTableJoin() const override { return *table_join; }
 
@@ -50,7 +50,7 @@ public:
 
 private:
     std::shared_ptr<TableJoin> table_join;
-    std::shared_ptr<IKeyValueStorage> storage;
+    std::shared_ptr<const IKeyValueEntity> storage;
     Block right_sample_block;
     Block sample_block_with_columns_to_add;
     Poco::Logger * log;

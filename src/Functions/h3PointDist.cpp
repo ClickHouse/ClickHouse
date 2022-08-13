@@ -144,9 +144,9 @@ struct H3PointDistRads
 };
 
 
-void registerFunctionH3PointDistM(FunctionFactory & factory) { factory.registerFunction<FunctionH3PointDist<H3PointDistM>>(); }
-void registerFunctionH3PointDistKm(FunctionFactory & factory) { factory.registerFunction<FunctionH3PointDist<H3PointDistKm>>(); }
-void registerFunctionH3PointDistRads(FunctionFactory & factory) { factory.registerFunction<FunctionH3PointDist<H3PointDistRads>>(); }
+REGISTER_FUNCTION(H3PointDistM) { factory.registerFunction<FunctionH3PointDist<H3PointDistM>>(); }
+REGISTER_FUNCTION(H3PointDistKm) { factory.registerFunction<FunctionH3PointDist<H3PointDistKm>>(); }
+REGISTER_FUNCTION(H3PointDistRads) { factory.registerFunction<FunctionH3PointDist<H3PointDistRads>>(); }
 
 }
 

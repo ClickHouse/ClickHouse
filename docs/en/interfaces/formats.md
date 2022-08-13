@@ -49,10 +49,17 @@ The supported formats are:
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔      |
 | [TSKV](#tskv)                                                                             | ✔    | ✔      |
 | [Pretty](#pretty)                                                                         | ✗    | ✔      |
-| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
 | [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔      |
+| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗    | ✔      |
+| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗    | ✔      |
+| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
+| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗    | ✔      |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
+| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗    | ✔      |
 | [PrettySpace](#prettyspace)                                                               | ✗    | ✔      |
+| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗    | ✔      |
+| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗    | ✔      |
+| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗    | ✔      |
 | [Prometheus](#prometheus)                                                                 | ✗    | ✔      |
 | [Protobuf](#protobuf)                                                                     | ✔    | ✔      |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔      |
@@ -194,18 +201,25 @@ Differs from the `TabSeparated` format in that the column names are written in t
 
 During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
+:::warning
 If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
+:::
 
 This format is also available under the name `TSVWithNames`.
 
 ## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
-The first row with names is processed the same way as in `TabSeparatedWithNames` format.
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
 If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 This format is also available under the name `TSVWithNamesAndTypes`.
 
@@ -451,9 +465,23 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## CSVWithNamesAndTypes {#csvwithnamesandtypes}
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ## CustomSeparated {#format-customseparated}
 
@@ -465,9 +493,23 @@ There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [Templat
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ## SQLInsert {#sqlinsert}
 
@@ -911,17 +953,45 @@ Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yie
 
 Differs from `JSONCompactEachRow` format in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
 
 Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ## JSONCompactStringsEachRowWithNames {#jsoncompactstringseachrowwithnames}
 
 Differs from `JSONCompactStringsEachRow` in that in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
 Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ```json
 ["num", "str", "arr"]
@@ -1135,18 +1205,9 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## PrettyCompact {#prettycompact}
-
-Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
-This format is used by default in the command-line client in interactive mode.
-
-## PrettyCompactMonoBlock {#prettycompactmonoblock}
-
-Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
-
 ## PrettyNoEscapes {#prettynoescapes}
 
-Differs from Pretty in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+Differs from [Pretty](#pretty) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
 
 Example:
 
@@ -1156,19 +1217,49 @@ $ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events F
 
 You can use the HTTP interface for displaying in the browser.
 
-### PrettyCompactNoEscapes {#prettycompactnoescapes}
+## PrettyMonoBlock {#prettymonoblock}
 
-The same as the previous setting.
+Differs from [Pretty](#pretty) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
-### PrettySpaceNoEscapes {#prettyspacenoescapes}
+## PrettyNoEscapesMonoBlock {#prettynoescapesmonoblock}
 
-The same as the previous setting.
+Differs from [PrettyNoEscapes](#prettynoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+
+## PrettyCompact {#prettycompact}
+
+Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
+This format is used by default in the command-line client in interactive mode.
+
+## PrettyCompactNoEscapes {#prettynoescapes}
+
+Differs from [PrettyCompact](#prettycompact) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+
+## PrettyCompactMonoBlock {#prettycompactmonoblock}
+
+Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## PrettyCompactNoEscapesMonoBlock {#prettycompactnoescapesmonoblock}
+
+Differs from [PrettyCompactNoEscapes](#prettycompactnoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
 
 ## PrettySpace {#prettyspace}
 
 Differs from [PrettyCompact](#prettycompact) in that whitespace (space characters) is used instead of the grid.
 
-### Pretty formats settings {#pretty-formats-settings}
+## PrettySpaceNoEscapes {#prettyspacenoescapes}
+
+Differs from [PrettySpace](#prettyspace) in that ANSI-escape sequences aren’t used. This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
+
+## PrettySpaceMonoBlock {#prettyspacemonoblock}
+
+Differs from [PrettySpace](#prettyspace) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## PrettySpaceNoEscapesMonoBlock {#prettyspacenoescapesmonoblock}
+
+Differs from [PrettySpaceNoEscapes](#prettyspacenoescapes) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
+
+## Pretty formats settings {#pretty-formats-settings}
 
 - [output_format_pretty_max_rows](../operations/settings/settings.md#output_format_pretty_max_rows) - rows limit for Pretty formats. Default value - `10000`.
 - [output_format_pretty_max_column_pad_width](../operations/settings/settings.md#output_format_pretty_max_column_pad_width) - maximum width to pad all values in a column in Pretty formats. Default value - `250`.
@@ -1199,6 +1290,12 @@ Similar to [RowBinary](#rowbinary), but with added header:
 -   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
 -   N `String`s specifying column names
 
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+:::
+
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
 Similar to [RowBinary](#rowbinary), but with added header:
@@ -1206,6 +1303,14 @@ Similar to [RowBinary](#rowbinary), but with added header:
 -   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
 -   N `String`s specifying column names
 -   N `String`s specifying column types
+
+:::warning
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
+:::
 
 ## Values {#data-format-values}
 

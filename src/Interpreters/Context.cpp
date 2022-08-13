@@ -1659,14 +1659,14 @@ ProcessList::Element * Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(size_t max_size_in_bytes)
+void Context::setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes, uncompressed_cache_policy);
 }
 
 
@@ -1685,14 +1685,14 @@ void Context::dropUncompressedCache() const
 }
 
 
-void Context::setMarkCache(size_t cache_size_in_bytes)
+void Context::setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
+    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, mark_cache_policy);
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -2992,6 +2992,11 @@ void Context::setQueryParameter(const String & name, const String & value)
         throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
 
+void Context::addQueryParameters(const NameToNameMap & parameters)
+{
+    for (const auto & [name, value] : parameters)
+        query_parameters.insert_or_assign(name, value);
+}
 
 void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
 {
