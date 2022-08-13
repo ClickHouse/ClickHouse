@@ -22,5 +22,9 @@
         </s3_and_default>
     </policies>
 
+    <merge_tree>
+        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
+    </merge_tree>
+
   </storage_configuration>
 </clickhouse>
