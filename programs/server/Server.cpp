@@ -623,6 +623,13 @@ static void sanityChecks(Server & server)
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
                 server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
+
+        if (server.context()->getMergeTreeSettings().allow_remote_fs_zero_copy_replication)
+        {
+            server.context()->addWarningMessage("The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
+                " But the feature of 'zero-copy replication' is under development and is not ready for production."
+                " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
+        }
     }
     catch (...)
     {
