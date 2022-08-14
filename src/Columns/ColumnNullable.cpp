@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -38,6 +39,11 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
 
     if (isColumnConst(*null_map))
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
+}
+
+StringRef ColumnNullable::getDataAt(size_t) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
 
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
