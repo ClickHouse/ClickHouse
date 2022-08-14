@@ -194,6 +194,8 @@ Features:
 - Query Presets and History
 - 100% browser based, no server/backend
 
+The client is available for instant usage through github pages: https://metrico.github.io/clickhouse-mate/
+
 
 ## Commercial {#commercial}
 
