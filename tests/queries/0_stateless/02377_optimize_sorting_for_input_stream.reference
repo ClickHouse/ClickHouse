@@ -1,3 +1,5 @@
+-- TODO: uncomment line below when we'll correctly do minus from max UInt64
+-- INSERT INTO optimize_sorting SELECT 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF;
 -- { echoOn }
 SELECT a from optimize_sorting order by a;
 0
@@ -34,39 +36,39 @@ SELECT a from optimize_sorting order by toFloat64(a);
 8
 9
 -- queries with non-unary function in order by
-SELECT a from optimize_sorting order by a+1;
-0
-1
-2
-3
-4
-5
-6
-7
-8
-9
-SELECT a from optimize_sorting order by a-1;
-0
-1
-2
-3
-4
-5
-6
-7
-8
-9
-SELECT a from optimize_sorting order by sipHash64(a, 'a');
-3
-8
-0
-9
-5
-1
-2
-6
-4
-7
+SELECT a, a+1 from optimize_sorting order by a+1;
+0	1
+1	2
+2	3
+3	4
+4	5
+5	6
+6	7
+7	8
+8	9
+9	10
+SELECT a, a-1 from optimize_sorting order by a-1;
+0	-1
+1	0
+2	1
+3	2
+4	3
+5	4
+6	5
+7	6
+8	7
+9	8
+SELECT a, sipHash64(a,'a') from optimize_sorting order by sipHash64(a,'a');
+3	1173123105019859883
+8	1721650864755082841
+0	5764203013335897168
+9	7186398762098957933
+5	7941328890117047678
+1	11604135878754760071
+2	14554472274185621678
+6	15415898319530396106
+4	15793726040922926059
+7	18182906236422157798
 -- queries with aliases
 SELECT a as a from optimize_sorting order by a;
 0
@@ -112,7 +114,7 @@ SELECT sipHash64(a) as a from optimize_sorting order by a;
 14454559127837024772
 14848019510572519333
 16738165381834614119
--- queries with filter+expression
+-- queries with filter
 SELECT a FROM optimize_sorting WHERE a > 0 ORDER BY a;
 1
 2
