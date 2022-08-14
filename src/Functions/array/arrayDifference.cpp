@@ -84,7 +84,7 @@ struct ArrayDifferenceImpl
                 }
                 else
                 {
-                    dst[pos] = curr - prev;
+                    dst[pos] = static_cast<Result>(curr) - static_cast<Result>(prev);
                 }
 
                 prev = curr;
@@ -102,7 +102,11 @@ struct ArrayDifferenceImpl
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
         if (!column)
+        {
+            fmt::print(stderr, "nope\n");
             return false;
+        }
+        fmt::print(stderr, "boom\n");
 
         const IColumn::Offsets & offsets = array.getOffsets();
         const typename ColVecType::Container & data = column->getData();
