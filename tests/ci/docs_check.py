@@ -6,7 +6,7 @@ import os
 import sys
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, S3_URL
+from env_helper import TEMP_PATH, REPO_COPY
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         else:
             lines.append(("Non zero exit code", "FAIL"))
 
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
     ch_helper = ClickHouseHelper()
 
     report_url = upload_results(
