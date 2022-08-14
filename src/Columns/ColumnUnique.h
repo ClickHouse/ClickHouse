@@ -136,20 +136,6 @@ public:
 
     UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
 
-    std::optional<UInt64> getOrFindValueIndex(StringRef value) const override
-    {
-        if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
-            return res;
-
-        auto& nested = *getNestedColumn();
-
-        for (size_t i = 0; i < nested.size(); ++i)
-            if (nested.getDataAt(i) == value)
-                return i;
-
-        return {};
-    }
-
 private:
     IColumn::WrappedPtr column_holder;
     bool is_nullable;
