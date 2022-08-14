@@ -740,11 +740,11 @@ private:
 
         const auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
-        const IColumn& col_arg = *arguments[1].column.get();
+        const IColumn & col_arg = *arguments[1].column.get();
 
         if (const ColumnConst * const col_arg_const = checkAndGetColumn<ColumnConst>(col_arg))
         {
-            const IColumnUnique& col_lc_dict = col_lc->getDictionary();
+            const IColumnUnique & col_lc_dict = col_lc->getDictionary();
 
             const bool different_inner_types = col_lc_dict.isNullable()
                 ? !col_arg_const->structureEquals(*col_lc_dict.getNestedColumn().get())
@@ -768,19 +768,18 @@ private:
 
             UInt64 index = 0;
 
-            if (elem != EMPTY_STRING_REF)
+            if (std::optional<UInt64> maybe_index = col_lc_dict.getOrFindValueIndex(elem); maybe_index)
             {
-                if (std::optional<UInt64> maybe_index = col_lc_dict.getOrFindValueIndex(elem); maybe_index)
-                    index = *maybe_index;
-                else
-                {
-                    const size_t offsets_size = col_array->getOffsets().size();
-                    auto& data = col_result->getData();
+                index = *maybe_index;
+            }
+            else
+            {
+                const size_t offsets_size = col_array->getOffsets().size();
+                auto& data = col_result->getData();
 
-                    data.resize_fill(offsets_size);
+                data.resize_fill(offsets_size);
 
-                    return col_result;
-                }
+                return col_result;
             }
 
             Impl::Main<ConcreteAction, true>::vector(
