@@ -322,9 +322,12 @@ struct ToDateTimeImpl
         return time_zone.fromDayNum(DayNum(d));
     }
 
-    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d));
+        if (d < 0)
+            return 0;
+
+        return time_zone.fromDayNum(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
     }
 
     static inline UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
@@ -332,10 +335,15 @@ struct ToDateTimeImpl
         return dt;
     }
 
-    // TODO: return UInt32 ???
-    static inline Int64 execute(Int64 dt64, const DateLUTImpl & /*time_zone*/)
+    static inline UInt32 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
-        return dt64;
+        if (dt64 < 0)
+            return 0;
+
+        auto day_num = time_zone.toDayNum(dt64);
+        return (day_num < DATE_LUT_MAX_DAY_NUM)
+            ? dt64
+            : time_zone.toDayNum(std::min(time_t(dt64), time_t(0xFFFFFFFF)));
     }
 };
 
@@ -355,6 +363,8 @@ struct ToDateTransform32Or64
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // since converting to Date, no need in values outside of default LUT range.
+        if (from < 0)
+            return time_t(0);
         return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
             : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
@@ -509,11 +519,14 @@ struct ToDateTimeTransform64Signed
 {
     static constexpr auto name = "toDateTime";
 
-    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         if (from < 0)
             return 0;
-        return std::min(time_t(from), time_t(0xFFFFFFFF));
+        else if (time_zone.toDayNum(from) > DATE_LUT_MAX_DAY_NUM)
+            return DATE_LUT_MAX_DAY_NUM;
+        else
+            return time_t(from);
     }
 };
 
@@ -1786,7 +1799,7 @@ private:
                 {
                     /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
-                        throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DataTypeDateTime64.",
+                        throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DateTime64.",
                             ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
                 }
                 else if (arguments.size() != 2)
