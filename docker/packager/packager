@@ -336,7 +336,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--output-dir", type=dir_name, required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-<<<<<<< HEAD
 
     parser.add_argument(
         "--compiler",
@@ -347,6 +346,7 @@ if __name__ == "__main__":
             "clang-14-darwin-aarch64",
             "clang-14-aarch64",
             "clang-14-ppc64le",
+            "clang-14-riscv64",
             "clang-14-freebsd",
             "gcc-11",
         ),
@@ -360,16 +360,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--shared-libraries", action="store_true")
-=======
-    parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-darwin-aarch64", "clang-11-aarch64",
-                                               "clang-12", "clang-12-darwin", "clang-12-darwin-aarch64", "clang-12-aarch64",
-                                               "clang-13", "clang-13-darwin", "clang-13-darwin-aarch64", "clang-13-aarch64",
-                                               "clang-13-ppc64le", "clang-13-riscv64",
-                                               "clang-11-freebsd", "clang-12-freebsd", "clang-13-freebsd", "gcc-11"), default="clang-13")
-    parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
-    parser.add_argument("--unbundled", action="store_true")
-    parser.add_argument("--split-binary", action="store_true")
->>>>>>> 8bc7bf3d87 (Add Linux RISC-V 64 build to CI)
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
     parser.add_argument(
