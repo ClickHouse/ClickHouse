@@ -73,6 +73,18 @@ Features:
 
 ClickHouse datasource plugin provides a support for ClickHouse as a backend database.
 
+### qryn (#qryn)
+
+[qryn](https://metrico.in) is a polyglot, high-performance observability stack for ClickHouse _(formerly cLoki)_ with native Grafana integrations allowing users to ingest and analyze logs, metrics and telemetry traces from any agent supporting Loki/LogQL, Prometheus/PromQL, OTLP/Tempo, Elastic, InfluxDB and many more.
+
+Features:
+
+- Built in Explore UI and LogQL CLI for querying, extracting and visualizing data
+- Native Grafana APIs support for querying, processing, ingesting, tracing and alerting without plugins
+- Powerful pipeline to dynamically search, filter and extract data from logs, events, traces and beyond
+- Ingestion and PUSH APIs transparently compatible with LogQL, PromQL, InfluxDB, Elastic and many more
+- Ready to use with Agents such as Promtail, Grafana-Agent, Vector, Logstash, Telegraf and many others
+
 ### DBeaver {#dbeaver}
 
 [DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
@@ -168,6 +180,20 @@ Features:
 - Supports user-defined index configuration
 - Supports alarm configuration
 - Support permission granularity to library and table permission configuration
+
+### ClickHouse-Mate {#clickmate}
+
+[ClickHouse-Mate](https://github.com/metrico/clickhouse-mate) is an angular web client + user interface to search and explore data in ClickHouse.
+
+Features:
+
+- ClickHouse SQL Query autocompletion
+- Fast Database and Table tree navigation
+- Advanced result Filtering and Sorting
+- Inline ClickHouse SQL documentation
+- Query Presets and History
+- 100% browser based, no server/backend
+
 
 ## Commercial {#commercial}
 
