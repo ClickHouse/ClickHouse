@@ -60,16 +60,9 @@ public:
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
 
-    /**
-     * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
-     * EMPTY_STRING_REF indicating that data is not present.
-     */
-    StringRef getDataAt(size_t n) const override
+    StringRef getDataAt(size_t) const override
     {
-        if (isNullAt(n))
-            return EMPTY_STRING_REF;
-
-        return getNestedColumn().getDataAt(n);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
     }
 
     /// Will insert null value if pos=nullptr
