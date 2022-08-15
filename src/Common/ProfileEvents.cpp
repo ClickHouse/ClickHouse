@@ -121,10 +121,12 @@
     \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
+    M(ExternalSortCompressedBytes, "Number of compressed bytes written by external sort") \
+    M(ExternalSortUncompressedBytes, "Number of uncompressed bytes written by external sort") \
     M(ExternalAggregationWritePart, "") \
     M(ExternalAggregationMerge, "") \
-    M(ExternalAggregationCompressedBytes, "") \
-    M(ExternalAggregationUncompressedBytes, "") \
+    M(ExternalAggregationCompressedBytes, "Number of compressed bytes written by external aggregation") \
+    M(ExternalAggregationUncompressedBytes, "Number of uncompressed bytes written by external aggregation") \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.") \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \

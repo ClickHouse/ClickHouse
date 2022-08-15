@@ -2,6 +2,7 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -15,6 +16,8 @@ namespace ProfileEvents
 {
     extern const Event ExternalSortWritePart;
     extern const Event ExternalSortMerge;
+    extern const Event ExternalSortCompressedBytes;
+    extern const Event ExternalSortUncompressedBytes;
 }
 
 
@@ -44,15 +47,20 @@ public:
     void consume(Chunk chunk) override
     {
         out_stream->write(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        updateStat();
     }
 
     Chunk generate() override
     {
         if (out_stream)
         {
+            out_stream->flush();
             compressed_buf_out.next();
             file_buf_out.next();
-            LOG_INFO(log, "Done writing part of data into temporary file {}", path);
+
+            updateStat();
+            LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
+                path, ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
 
             out_stream.reset();
 
@@ -76,6 +84,17 @@ public:
     }
 
 private:
+    void updateStat()
+    {
+        /// Keep previous values of compressed and uncompressed sizes to calculate difference for ProfileEvents::increment.
+        size_t current_compressed_size = file_buf_out.count();
+        size_t current_uncompressed_size = compressed_buf_out.count();
+        ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, current_compressed_size - stat.compressed_size);
+        ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, current_uncompressed_size - stat.uncompressed_size);
+        stat.compressed_size = current_compressed_size;
+        stat.uncompressed_size = current_uncompressed_size;
+    }
+
     Poco::Logger * log;
     std::string path;
     WriteBufferFromFile file_buf_out;
@@ -85,6 +104,12 @@ private:
     std::unique_ptr<ReadBufferFromFile> file_in;
     std::unique_ptr<CompressedReadBuffer> compressed_in;
     std::unique_ptr<NativeReader> block_in;
+
+    struct
+    {
+        size_t compressed_size = 0;
+        size_t uncompressed_size = 0;
+    } stat;
 };
 
 MergeSortingTransform::MergeSortingTransform(
