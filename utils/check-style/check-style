@@ -346,3 +346,8 @@ fi
 
 # Forbid files that differ only by character case
 find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
+
+# Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -P '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"

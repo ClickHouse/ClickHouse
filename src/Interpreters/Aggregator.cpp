@@ -34,11 +34,14 @@
 
 namespace ProfileEvents
 {
-extern const Event ExternalAggregationWritePart;
-extern const Event ExternalAggregationCompressedBytes;
-extern const Event ExternalAggregationUncompressedBytes;
-extern const Event AggregationPreallocatedElementsInHashTables;
-extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event ExternalAggregationWritePart;
+    extern const Event ExternalAggregationCompressedBytes;
+    extern const Event ExternalAggregationUncompressedBytes;
+    extern const Event AggregationPreallocatedElementsInHashTables;
+    extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event OverflowThrow;
+    extern const Event OverflowBreak;
+    extern const Event OverflowAny;
 }
 
 namespace
@@ -1667,14 +1670,17 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
         switch (params.group_by_overflow_mode)
         {
             case OverflowMode::THROW:
+                ProfileEvents::increment(ProfileEvents::OverflowThrow);
                 throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
                     + " rows, maximum: " + toString(params.max_rows_to_group_by),
                     ErrorCodes::TOO_MANY_ROWS);
 
             case OverflowMode::BREAK:
+                ProfileEvents::increment(ProfileEvents::OverflowBreak);
                 return false;
 
             case OverflowMode::ANY:
+                ProfileEvents::increment(ProfileEvents::OverflowAny);
                 no_more_keys = true;
                 break;
         }
