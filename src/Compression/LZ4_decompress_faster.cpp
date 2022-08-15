@@ -515,7 +515,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         UInt8 * copy_end;
         size_t real_length;
 
-        /// It migth be true fairly often for well-compressed columns.
+        /// It might be true fairly often for well-compressed columns.
         /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
         /// In such cases this `if` will significantly increase number of mispredicted instructions. But seems like it results in a
         /// noticeable slowdown only for implementations with `copy_amount` > 8. Probably because they use havier instructions.
