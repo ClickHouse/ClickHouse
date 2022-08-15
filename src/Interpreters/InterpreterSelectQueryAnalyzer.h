@@ -31,9 +31,14 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-private:
     void initializeQueryPlanIfNeeded();
 
+    QueryPlan && extractQueryPlan() &&
+    {
+        return std::move(query_plan);
+    }
+
+private:
     ASTPtr query;
     QueryTreeNodePtr query_tree;
     QueryPlan query_plan;

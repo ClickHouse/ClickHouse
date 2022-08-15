@@ -12,7 +12,14 @@ namespace DB
   * Column can be table expression, lambda, subquery.
   * Column source must be valid during column node lifetime.
   *
-  * For table ALIAS columns. Column node must contain ALIAS expression.
+  * For table ALIAS columns. Column node must contain expression.
+  * For ARRAY JOIN join expression column. Column node must contain expression.
+  *
+  * Additionaly column must be initialized with column name qualification if there are multiple
+  * unqualified columns with same name in query scope.
+  * Example: SELECT a.id, b.id FROM test_table_join_1 AS a, test_table_join_1.
+  * Both columns a.id and b.id have same unqualified name id. And additionally must be initialized
+  * with qualification a and b.
   *
   * During query analysis pass identifier node is resolved into column. See IdentifierNode.h.
   *
@@ -34,8 +41,14 @@ public:
     /// Construct column node with column name, type and column source weak pointer.
     ColumnNode(NameAndTypePair column_, QueryTreeNodeWeakPtr column_source_);
 
-    /// Construct ALIAS column node with column name, type, column expression and column source weak pointer.
-    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr alias_expression_node_, QueryTreeNodeWeakPtr column_source_);
+    /// Construct expression column node with column name, type, column expression and column source weak pointer.
+    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
+
+    /// Construct column node with column name, type, column name qualification and column source weak pointer.
+    ColumnNode(NameAndTypePair column_, String column_name_qualification_, QueryTreeNodeWeakPtr column_source_);
+
+    /// Construct expression column node with column name, type, column name qualification column expression and column source weak pointer.
+    ColumnNode(NameAndTypePair column_, String column_name_qualification_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
 
     /// Get column
     const NameAndTypePair & getColumn() const
@@ -49,25 +62,35 @@ public:
         return column.name;
     }
 
+    bool hasColumnNameQualfication() const
+    {
+        return !column_name_qualification.empty();
+    }
+
+    const String & getColumnQualification() const
+    {
+        return column_name_qualification;
+    }
+
     /// Get column type
     const DataTypePtr & getColumnType() const
     {
         return column.type;
     }
 
-    bool hasAliasExpression() const
+    bool hasExpression() const
     {
-        return children[alias_expression_child_index] != nullptr;
+        return children[expression_child_index] != nullptr;
     }
 
-    const QueryTreeNodePtr & getAliasExpression() const
+    const QueryTreeNodePtr & getExpression() const
     {
-        return children[alias_expression_child_index];
+        return children[expression_child_index];
     }
 
-    QueryTreeNodePtr & getAliasExpression()
+    QueryTreeNodePtr & getExpression()
     {
-        return children[alias_expression_child_index];
+        return children[expression_child_index];
     }
 
     /** Get column source.
@@ -111,9 +134,11 @@ protected:
 
 private:
     NameAndTypePair column;
+    String column_name_qualification;
     QueryTreeNodeWeakPtr column_source;
 
-    static constexpr size_t alias_expression_child_index = 0;
+    static constexpr size_t expression_child_index = 0;
+    static constexpr size_t children_size = expression_child_index + 1;
 };
 
 }

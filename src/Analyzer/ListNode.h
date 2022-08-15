@@ -16,6 +16,12 @@ using ListNodePtr = std::shared_ptr<ListNode>;
 class ListNode final : public IQueryTreeNode
 {
 public:
+    /// Initialize list node with empty nodes
+    ListNode() = default;
+
+    /// Initialize list node with nodes
+    explicit ListNode(QueryTreeNodes nodes);
+
     /// Get list nodes
     const QueryTreeNodes & getNodes() const
     {
