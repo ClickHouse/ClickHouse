@@ -574,7 +574,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     }
 
     std::optional<ColumnsDescription> columns_from_cache;
-    if (context->getSettingsRef().use_cache_for_url_schema_inference)
+    if (context->getSettingsRef().schema_inference_use_cache_for_url)
         columns_from_cache = tryGetColumnsFromCache(urls_to_check, headers, credentials, format, format_settings, context);
 
     ReadBufferIterator read_buffer_iterator = [&, it = urls_to_check.cbegin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
@@ -606,7 +606,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     else
         columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, urls_to_check.size() > 1, context);
 
-    if (context->getSettingsRef().use_cache_for_url_schema_inference)
+    if (context->getSettingsRef().schema_inference_use_cache_for_url)
         addColumnsToCache(urls_to_check, columns, format, format_settings, context);
 
     return columns;
