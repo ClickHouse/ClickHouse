@@ -58,8 +58,6 @@ private:
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
 
-    static std::atomic<Int64> rss;
-
     Int64 profiler_step = 0;
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
@@ -205,8 +203,8 @@ public:
     /// Reset the accumulated data.
     void reset();
 
-    /// Update RSS.
-    static void setRSS(Int64 to);
+    /// Reset current counter to a new value.
+    void set(Int64 to);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

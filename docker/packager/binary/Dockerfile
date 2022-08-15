@@ -41,6 +41,9 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get install gcc-11 g++-11 --yes \
     && apt-get clean
 
+# A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
+RUN apt-get install binutils-riscv64-linux-gnu
+
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
 ARG NFPM_VERSION=2.16.0

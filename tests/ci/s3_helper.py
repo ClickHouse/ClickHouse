@@ -9,7 +9,14 @@ from multiprocessing.dummy import Pool
 
 import boto3  # type: ignore
 
-from env_helper import S3_TEST_REPORTS_BUCKET, S3_BUILDS_BUCKET, RUNNER_TEMP, CI, S3_URL
+from env_helper import (
+    S3_TEST_REPORTS_BUCKET,
+    S3_BUILDS_BUCKET,
+    RUNNER_TEMP,
+    CI,
+    S3_URL,
+    S3_DOWNLOAD,
+)
 from compress_files import compress_file_fast
 
 
@@ -33,9 +40,11 @@ def _flatten_list(lst):
 
 
 class S3Helper:
-    def __init__(self, host):
+    def __init__(self, host=S3_URL, download_host=S3_DOWNLOAD):
         self.session = boto3.session.Session(region_name="us-east-1")
         self.client = self.session.client("s3", endpoint_url=host)
+        self.host = host
+        self.download_host = download_host
 
     def _upload_file_to_s3(self, bucket_name, file_path, s3_path):
         logging.debug(
@@ -98,7 +107,7 @@ class S3Helper:
         logging.info("Upload %s to %s. Meta: %s", file_path, s3_path, metadata)
         # last two replacements are specifics of AWS urls:
         # https://jamesd3142.wordpress.com/2018/02/28/amazon-s3-and-the-plus-symbol/
-        url = f"{S3_URL}/{bucket_name}/{s3_path}"
+        url = f"{self.download_host}/{bucket_name}/{s3_path}"
         return url.replace("+", "%2B").replace(" ", "%20")
 
     def upload_test_report_to_s3(self, file_path, s3_path):
@@ -170,7 +179,7 @@ class S3Helper:
                     t = time.time()
             except Exception as ex:
                 logging.critical("Failed to upload file, expcetion %s", ex)
-            return f"{S3_URL}/{bucket_name}/{s3_path}"
+            return f"{self.download_host}/{bucket_name}/{s3_path}"
 
         p = Pool(256)
 
@@ -278,6 +287,13 @@ class S3Helper:
                 result.append(obj["Key"])
 
         return result
+
+    def exists(self, key, bucket=S3_BUILDS_BUCKET):
+        try:
+            self.client.head_object(Bucket=bucket, Key=key)
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def copy_file_to_local(bucket_name, file_path, s3_path):
