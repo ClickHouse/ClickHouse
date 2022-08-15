@@ -33,7 +33,7 @@ SELECT count() FROM dt64_monot_test WHERE toDateTime64(date_time,0) >= '2020-01-
 
 SELECT count() FROM dt64_monot_test WHERE toDateTime64(date_time,0) >= '2020-01-01 00:00:01.1' settings force_index_by_date=1, force_primary_key=1;
 
-create table dt64_monot_test_string(date_time String, x String) Engine=MergeTree order by  toDateTime64(date_time,3) ;
+create table dt64_monot_test_string(date_time String, x String) Engine=MergeTree order by date_time;
 insert into dt64_monot_test_string select '2020-01-01 00:00', '' from numbers(1);
 insert into dt64_monot_test_string select '2020-01-01 00:00:00.000000' , '' from numbers(10);
 
