@@ -36,9 +36,9 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 SELECT sum(1) AS impressions
 FROM
 (
-    SELECT ['Istambul', 'Berlin', 'Bobruisk'] AS cities
+    SELECT ['Istanbul', 'Berlin', 'Bobruisk'] AS cities
 )
-WHERE arrayJoin(cities) IN ['Istambul', 'Berlin'];
+WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 ```
 
 ``` text
@@ -59,7 +59,7 @@ SELECT
 FROM
 (
     SELECT
-        ['Istambul', 'Berlin', 'Bobruisk'] AS cities,
+        ['Istanbul', 'Berlin', 'Bobruisk'] AS cities,
         ['Firefox', 'Chrome', 'Chrome'] AS browsers
 )
 GROUP BY
@@ -69,8 +69,8 @@ GROUP BY
 
 ``` text
 ┌─impressions─┬─city─────┬─browser─┐
-│           2 │ Istambul │ Chrome  │
-│           1 │ Istambul │ Firefox │
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
@@ -91,7 +91,7 @@ SELECT
 FROM
 (
     SELECT
-        ['Istambul', 'Berlin', 'Bobruisk'] AS cities,
+        ['Istanbul', 'Berlin', 'Bobruisk'] AS cities,
         ['Firefox', 'Chrome', 'Chrome'] AS browsers
 )
 ARRAY JOIN
@@ -104,7 +104,7 @@ GROUP BY
 
 ``` text
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istambul │ Firefox │
+│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
 └─────────────┴──────────┴─────────┘
@@ -122,7 +122,7 @@ SELECT
 FROM
 (
     SELECT
-        ['Istambul', 'Berlin', 'Bobruisk'] AS cities,
+        ['Istanbul', 'Berlin', 'Bobruisk'] AS cities,
         ['Firefox', 'Chrome', 'Chrome'] AS browsers
 )
 GROUP BY
@@ -132,7 +132,7 @@ GROUP BY
 
 ``` text
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istambul │ Firefox │
+│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
 └─────────────┴──────────┴─────────┘
