@@ -139,14 +139,12 @@ public:
     void makeWindowDescriptionFromAST(const Context & context, const WindowDescriptions & existing_descriptions, WindowDescription & desc, const IAST * ast);
     void makeWindowDescriptions(ActionsDAGPtr actions);
 
-    /**
-      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
+    /** Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options = {});
 
-    /**
-      * Checks if subquery is not a plain StorageSet.
+    /** Checks if subquery is not a plain StorageSet.
       * Because while making set we will read data from StorageSet which is not allowed.
       * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
       */
