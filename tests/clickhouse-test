@@ -1760,10 +1760,7 @@ def main(args):
         stop_time = time() + args.global_time_limit
 
     if args.zookeeper is None:
-        try:
-            args.zookeeper = int(extract_key(" --key zookeeper | grep . | wc -l")) > 0
-        except ValueError:
-            args.zookeeper = False
+        args.zookeeper = True
 
     if args.shard is None:
         args.shard = bool(extract_key(' --key listen_host | grep -E "127.0.0.2|::"'))
