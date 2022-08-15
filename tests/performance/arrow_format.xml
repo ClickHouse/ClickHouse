@@ -1,14 +1,10 @@
 <test>
     <create_query>CREATE TABLE test (uint32 UInt32, n_uint32 Nullable(UInt32), lc LowCardinality(String)) ENGINE=File(Arrow) SETTINGS output_format_arrow_low_cardinality_as_dictionary=1</create_query>
-    <create_query>CREATE TABLE test_lc_nullable (lc LowCardinality(Nullable(String))) ENGINE=File(Arrow) SETTINGS output_format_arrow_low_cardinality_as_dictionary=1</create_query>
     <fill_query>insert into test select number, number, toString(number % 10000) from numbers(10000000)</fill_query>
-    <fill_query>insert into test_lc_nullable select toString(number % 10000) from numbers(10000000)</fill_query>
 
     <query>SELECT uint32 from test format Null</query>
     <query>SELECT n_uint32 from test format Null</query>
     <query>SELECT lc from test format Null</query>
-    <query>SELECT lc from test_nlc_ullable format Null</query>
 
     <drop_query>DROP TABLE IF EXISTS test</drop_query>
-    <drop_query>DROP TABLE IF EXISTS test_lc_nullable</drop_query>
 </test>
