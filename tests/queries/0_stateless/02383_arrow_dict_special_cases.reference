@@ -20,3 +20,5 @@ three
 one
 two
 three
+lc	LowCardinality(Nullable(String))					
+OK

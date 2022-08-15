@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "desc file('test_02383/dictionary3.arrow')"
 $CLICKHOUSE_CLIENT -q "select * from file('test_02383/dictionary3.arrow')"
 
 $CLICKHOUSE_CLIENT -q "desc file('test_02383/corrupted.arrow')"
-$CLICKHOUSE_CLIENT -q "select * from file('test_02383/corrupted.arrow')"
+$CLICKHOUSE_CLIENT -q "select * from file('test_02383/corrupted.arrow')" 2>&1 | grep -F -q "INCORRECT_DATA" && echo OK || echo FAIL
 
 
 rm -rf $USER_FILES_PATH/test_02383

@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int INCORRECT_DATA;
 }
 
 /// Inserts numeric data right into internal column data to reduce an overhead
@@ -312,7 +313,7 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
  * So, we should remap indexes while converting Arrow Dictionary to ClickHouse LowCardinality
  * */
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
-static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, Int64 default_value_index, bool is_nullable)
+static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, Int64 default_value_index, NumericType dict_size, bool is_nullable)
 {
     auto internal_type = std::make_shared<DataTypeNumber<NumericType>>();
     auto internal_column = internal_type->createColumn();
@@ -329,6 +330,13 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         /// buffers[0] is a null bitmap and buffers[1] are actual values
         std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
         const auto * data = reinterpret_cast<const NumericType *>(buffer->data());
+
+        /// Check that indexes are correct (protection against corrupted files)
+        for (int64_t i = 0; i != chunk->length(); ++i)
+        {
+            if (data[i] < 0 || data[i] >= dict_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Index {} in Dictionary column is out of bounds, dictionary size is {}", Int64(data[i]), UInt64(dict_size));
+        }
 
         /// If dictionary type is not nullable and arrow dictionary contains default type
         /// at 0 index, we don't need to remap anything (it's the case when this data
@@ -370,6 +378,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         /// LowCardinality(Nullable):
         ///     dict: [null, "", "one", "two", "three"]
         ///     indexes: [2, 3, 1, 4, 2]
+        else
         {
             NumericType new_default_index = is_nullable ? 1 : 0;
             NumericType default_index = NumericType(default_value_index);
@@ -389,14 +398,14 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, Int64 default_value_index, bool is_nullable)
+static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, Int64 default_value_index, UInt64 dict_size, bool is_nullable)
 {
     switch (arrow_column->type()->id())
     {
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
             case ARROW_NUMERIC_TYPE: \
             { \
-                    return readColumnWithIndexesDataImpl<CPP_NUMERIC_TYPE>(arrow_column, "", default_value_index, is_nullable).column; \
+                    return readColumnWithIndexesDataImpl<CPP_NUMERIC_TYPE>(arrow_column, "", default_value_index, dict_size, is_nullable).column; \
             }
         FOR_ARROW_INDEXES_TYPES(DISPATCH)
 #    undef DISPATCH
@@ -574,9 +583,10 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
                 auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_column.type) : dict_column.type);
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
-                static_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
+                dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
                 dict_column.column = std::move(tmp_dict_column);
                 dict_info.values = std::make_shared<ColumnWithTypeAndName>(std::move(dict_column));
+                dict_info.dictionary_size = arrow_dict_column->length();
             }
 
             arrow::ArrayVector indexes_array;
@@ -587,7 +597,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             }
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
-            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, is_lc_nullable);
+            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, is_lc_nullable);
             auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column);
             auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_info.values->type) : dict_info.values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
