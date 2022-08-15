@@ -1,5 +1,8 @@
--- TODO: uncomment line below when we'll correctly do minus from max UInt64
--- INSERT INTO optimize_sorting SELECT 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF;
+-- { echoOn }
+-- order by for MergeTree w/o sorting key
+SELECT a, b from optimize_sorting order by a, b;
+0	0
+18446744073709551615	18446744073709551615
 -- { echoOn }
 SELECT a from optimize_sorting order by a;
 0
@@ -12,6 +15,17 @@ SELECT a from optimize_sorting order by a;
 7
 8
 9
+SELECT c from optimize_sorting order by c;
+0
+0
+0
+0
+0
+1
+1
+1
+1
+1
 -- queries with unary function in order by
 SELECT a from optimize_sorting order by -a;
 9

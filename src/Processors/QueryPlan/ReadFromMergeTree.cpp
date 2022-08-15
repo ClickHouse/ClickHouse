@@ -139,12 +139,17 @@ ReadFromMergeTree::ReadFromMergeTree(
                 break;
             sort_description.emplace_back(column_name, sort_direction);
         }
-        output_stream->sort_description = std::move(sort_description);
-        output_stream->sort_mode = DataStream::SortMode::Chunk;
+        if (!sort_description.empty())
+        {
+            auto const & settings = context->getSettingsRef();
+            if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
+                output_stream->sort_mode = DataStream::SortMode::Port;
+            else
+                output_stream->sort_mode = DataStream::SortMode::Chunk;
+        }
 
-        auto const& settings = context->getSettingsRef();
-        if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
-            output_stream->sort_mode = DataStream::SortMode::Port;
+        output_stream->sort_description = std::move(sort_description);
+
     }
 }
 
