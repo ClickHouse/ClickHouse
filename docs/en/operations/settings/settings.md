@@ -3345,25 +3345,25 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
 
-## use_cache_for_file_schema_inference {use_cache_for_file_schema_inference}
+## schema_inference_use_cache_for_file {schema_inference_use_cache_for_file}
 
 Enable schemas cache for schema inference in `file` table function.
 
 Default value: `true`.
 
-## use_cache_for_s3_schema_inference {use_cache_for_s3_schema_inference}
+## schema_inference_use_cache_for_s3 {schema_inference_use_cache_for_s3}
 
 Enable schemas cache for schema inference in `s3` table function.
 
 Default value: `true`.
 
-## use_cache_for_url_schema_inference {use_cache_for_url_schema_inference}
+## schema_inference_use_cache_for_url {schema_inference_use_cache_for_url}
 
 Enable schemas cache for schema inference in `url` table function.
 
 Default value: `true`.
 
-## use_cache_for_hdfs_schema_inference {use_cache_for_hdfs_schema_inference}
+## schema_inference_use_cache_for_hdfs {schema_inference_use_cache_for_hdfs}
 
 Enable schemas cache for schema inference in `hdfs` table function.
 

@@ -606,10 +606,10 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, allow_deprecated_database_ordinary, false, "Allow to create databases with deprecated Ordinary engine", 0) \
     M(Bool, allow_deprecated_syntax_for_merge_tree, false, "Allow to create *MergeTree tables with deprecated engine definition syntax", 0) \
     \
-    M(Bool, use_cache_for_file_schema_inference, true, "Use cache in schema inference while using file table function", 0) \
-    M(Bool, use_cache_for_s3_schema_inference, true, "Use cache in schema inference while using s3 table function", 0) \
-    M(Bool, use_cache_for_hdfs_schema_inference, true, "Use cache in schema inference while using hdfs table function", 0) \
-    M(Bool, use_cache_for_url_schema_inference, true, "Use cache in schema inference while using url table function", 0) \
+    M(Bool, schema_inference_use_cache_for_file, true, "Use cache in schema inference while using file table function", 0) \
+    M(Bool, schema_inference_use_cache_for_s3, true, "Use cache in schema inference while using s3 table function", 0) \
+    M(Bool, schema_inference_use_cache_for_hdfs, true, "Use cache in schema inference while using hdfs table function", 0) \
+    M(Bool, schema_inference_use_cache_for_url, true, "Use cache in schema inference while using url table function", 0) \
     M(Bool, schema_inference_cache_require_modification_time_for_url, true, "Use schema from cache for URL with last modification time validation (for urls with Last-Modified header)", 0) \
     \
     M(String, compatibility, "", "Changes other settings according to provided ClickHouse version. If we know that we changed some behaviour in ClickHouse by changing some settings in some version, this compatibility setting will control these settings", 0) \

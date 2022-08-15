@@ -7,4 +7,4 @@ select * from file('02267_data*.jsonl') order by x;
 insert into function file('02267_data1.jsonl', 'TSV') select 1 as x;
 insert into function file('02267_data1.jsonl', 'TSV') select [1,2,3] as x;
 
-select * from file('02267_data*.jsonl') settings use_cache_for_file_schema_inference=0; --{serverError CANNOT_EXTRACT_TABLE_STRUCTURE}
+select * from file('02267_data*.jsonl') settings schema_inference_use_cache_for_file=0; --{serverError CANNOT_EXTRACT_TABLE_STRUCTURE}

@@ -309,7 +309,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
             format);
 
     std::optional<ColumnsDescription> columns_from_cache;
-    if (context->getSettingsRef().use_cache_for_file_schema_inference)
+    if (context->getSettingsRef().schema_inference_use_cache_for_file)
         columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
 
     ReadBufferIterator read_buffer_iterator = [&, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
@@ -326,7 +326,7 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     else
         columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 
-    if (context->getSettingsRef().use_cache_for_file_schema_inference)
+    if (context->getSettingsRef().schema_inference_use_cache_for_file)
         addColumnsToCache(paths, columns, format, format_settings, context);
 
     return columns;

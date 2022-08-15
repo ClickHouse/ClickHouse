@@ -1186,7 +1186,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 
     std::optional<ColumnsDescription> columns_from_cache;
     size_t prev_read_keys_size = read_keys.size();
-    if (ctx->getSettingsRef().use_cache_for_s3_schema_inference)
+    if (ctx->getSettingsRef().schema_inference_use_cache_for_s3)
         columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), s3_configuration, object_infos, format, format_settings, ctx);
 
     ReadBufferIterator read_buffer_iterator = [&, first = true](ColumnsDescription & cached_columns) mutable -> std::unique_ptr<ReadBuffer>
@@ -1206,7 +1206,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         }
 
         /// S3 file iterator could get new keys after new iteration, check them in schema cache.
-        if (ctx->getSettingsRef().use_cache_for_s3_schema_inference && read_keys.size() > prev_read_keys_size)
+        if (ctx->getSettingsRef().schema_inference_use_cache_for_s3 && read_keys.size() > prev_read_keys_size)
         {
             columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), s3_configuration, object_infos, format, format_settings, ctx);
             prev_read_keys_size = read_keys.size();
@@ -1232,7 +1232,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     else
         columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, is_key_with_globs, ctx);
 
-    if (ctx->getSettingsRef().use_cache_for_s3_schema_inference)
+    if (ctx->getSettingsRef().schema_inference_use_cache_for_s3)
         addColumnsToCache(read_keys, s3_configuration, columns, format, format_settings, ctx);
 
     if (distributed_processing && read_keys_in_distributed_processing)

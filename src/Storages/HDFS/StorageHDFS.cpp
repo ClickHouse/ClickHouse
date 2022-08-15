@@ -198,7 +198,7 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
             format);
 
     std::optional<ColumnsDescription> columns_from_cache;
-    if (ctx->getSettingsRef().use_cache_for_hdfs_schema_inference)
+    if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
         columns_from_cache = tryGetColumnsFromCache(paths, path_from_uri, last_mod_time, format, ctx);
 
     ReadBufferIterator read_buffer_iterator = [&, uri_without_path = uri_without_path, it = paths.begin()](ColumnsDescription &) mutable -> std::unique_ptr<ReadBuffer>
@@ -217,7 +217,7 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     else
         columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths.size() > 1, ctx);
 
-    if (ctx->getSettingsRef().use_cache_for_hdfs_schema_inference)
+    if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
         addColumnsToCache(paths, path_from_uri, columns, format, ctx);
 
     return columns;

@@ -554,7 +554,7 @@ def test_schema_inference_with_globs(started_cluster):
     filename = "data{1,3}.jsoncompacteachrow"
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings use_cache_for_hdfs_schema_inference=0"
+        f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings schema_inference_use_cache_for_hdfs=0"
     )
 
     assert "All attempts to extract table structure from files failed" in result
@@ -564,7 +564,7 @@ def test_schema_inference_with_globs(started_cluster):
     )
 
     result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings use_cache_for_hdfs_schema_inference=0"
+        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0"
     )
 
     assert (
