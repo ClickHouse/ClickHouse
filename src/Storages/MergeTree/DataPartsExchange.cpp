@@ -420,6 +420,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (blocker.isCancelled())
         throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
 
+    /// It should be "tmp-fetch_" and not "tmp_fetch_", because we can fetch part to detached/,
+    /// but detached part name prefix should not contain underscore.
+    static const String TMP_PREFIX = "tmp-fetch_";
+    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+    String part_dir = tmp_prefix + part_name;
+    auto temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
+
     /// Validation of the input that may come from malicious replica.
     auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
     const auto data_settings = data.getSettings();
@@ -555,7 +562,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
         try
         {
-            return downloadPartToDiskRemoteMeta(part_name, replica_path, to_detached, tmp_prefix_, disk, *in, throttler);
+            return downloadPartToDiskRemoteMeta(part_name, replica_path, to_detached, tmp_prefix, disk, *in, throttler);
         }
         catch (const Exception & e)
         {
@@ -575,9 +582,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
                 tryLogCurrentException(log);
             }
 
+            temporary_directory_lock = {};
+
             /// Try again but without zero-copy
             return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
-                user, password, interserver_scheme, throttler, to_detached, tmp_prefix_, nullptr, false, disk);
+                user, password, interserver_scheme, throttler, to_detached, tmp_prefix, nullptr, false, disk);
         }
     }
 
@@ -597,7 +606,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     MergeTreeData::DataPart::Checksums checksums;
     return part_type == "InMemory"
         ? downloadPartToMemory(part_name, part_uuid, metadata_snapshot, context, disk, *in, projections, throttler)
-        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix_, sync, disk, *in, projections, checksums, throttler);
+        : downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, sync, disk, *in, projections, checksums, throttler);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
@@ -755,7 +764,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     const String & part_name,
     const String & replica_path,
     bool to_detached,
-    const String & tmp_prefix_,
+    const String & tmp_prefix,
     bool sync,
     DiskPtr disk,
     PooledReadWriteBufferFromHTTP & in,
@@ -763,8 +772,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     MergeTreeData::DataPart::Checksums & checksums,
     ThrottlerPtr throttler)
 {
-    static const String TMP_PREFIX = "tmp-fetch_";
-    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+    assert(!tmp_prefix.empty());
 
     /// We will remove directory if it's already exists. Make precautions.
     if (tmp_prefix.empty() //-V560
@@ -836,7 +844,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
     const String & part_name,
     const String & replica_path,
     bool to_detached,
-    const String & tmp_prefix_,
+    const String & tmp_prefix,
     DiskPtr disk,
     PooledReadWriteBufferFromHTTP & in,
     ThrottlerPtr throttler)
@@ -854,8 +862,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDiskRemoteMeta(
 
     data.lockSharedDataTemporary(part_name, part_id, disk);
 
-    static const String TMP_PREFIX = "tmp-fetch_";
-    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+    assert(!tmp_prefix.empty());
 
     String part_dir = tmp_prefix + part_name;
     String part_relative_path = data.getRelativeDataPath() + String(to_detached ? "detached/" : "");
