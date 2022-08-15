@@ -12,6 +12,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
 #include <Common/config.h>
+#include <base/defines.h>
 #include <base/StringRef.h>
 
 #include "config_functions.h"
@@ -41,7 +42,7 @@ using Regexp = OptimizedRegularExpressionSingleThreaded;
 using RegexpPtr = std::shared_ptr<Regexp>;
 
 template <bool like, bool no_capture, bool case_insensitive>
-inline Regexp createRegexp(const std::string & pattern)
+inline Regexp createRegexp(const String & pattern)
 {
     int flags = OptimizedRegularExpression::RE_DOT_NL;
     if constexpr (no_capture)
@@ -66,39 +67,32 @@ public:
     using RegexpPtr = std::shared_ptr<Regexp>;
 
     template <bool like, bool no_capture, bool case_insensitive>
-    void getOrSet(const String & pattern, RegexpPtr & regexp)
+    RegexpPtr getOrSet(const String & pattern)
     {
-        StringAndRegexp & bucket = known_regexps[hasher(pattern) % max_regexp_cache_size];
+        Bucket & bucket = known_regexps[hasher(pattern) % CACHE_SIZE];
 
-        if (likely(bucket.regexp != nullptr))
-        {
-            if (pattern == bucket.pattern)
-                regexp = bucket.regexp;
-            else
-            {
-                regexp = std::make_shared<Regexp>(createRegexp<like, no_capture, case_insensitive>(pattern));
-                bucket = {pattern, regexp};
-            }
-        }
+        if (bucket.regexp == nullptr) [[unlikely]]
+            /// insert new entry
+            bucket = {pattern, std::make_shared<Regexp>(createRegexp<like, no_capture, case_insensitive>(pattern))};
         else
-        {
-            regexp = std::make_shared<Regexp>(createRegexp<like, no_capture, case_insensitive>(pattern));
-            bucket = {pattern, regexp};
-        }
+            if (pattern != bucket.pattern)
+                /// replace existing entry
+                bucket = {pattern, std::make_shared<Regexp>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+
+        return bucket.regexp;
     }
 
 private:
-    constexpr static size_t max_regexp_cache_size = 100; // collision probability
+    constexpr static size_t CACHE_SIZE = 100; // collision probability
 
-    std::hash<std::string> hasher;
-    struct StringAndRegexp
+    std::hash<String> hasher;
+    struct Bucket
     {
-        std::string pattern;
-        RegexpPtr regexp;
+        String pattern;   /// key
+        RegexpPtr regexp; /// value
     };
-    using CacheTable = std::array<StringAndRegexp, max_regexp_cache_size>;
+    using CacheTable = std::array<Bucket, CACHE_SIZE>;
     CacheTable known_regexps;
-
 };
 
 }
@@ -136,25 +130,23 @@ private:
     ScratchPtr scratch;
 };
 
-class RegexpsConstructor
+class DeferredConstructedRegexps
 {
 public:
-    RegexpsConstructor() = default;
-
     void setConstructor(std::function<Regexps()> constructor_) { constructor = std::move(constructor_); }
 
-    Regexps * operator()()
+    Regexps * get()
     {
         std::lock_guard lock(mutex);
-        if (regexp)
-            return &*regexp;
-        regexp = constructor();
-        return &*regexp;
+        if (regexps)
+            return &*regexps;
+        regexps = constructor();
+        return &*regexps;
     }
 
 private:
     std::function<Regexps()> constructor;
-    std::optional<Regexps> regexp;
+    std::optional<Regexps> regexps TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 };
 
@@ -162,8 +154,8 @@ struct Pool
 {
     /// Mutex for finding in map.
     std::mutex mutex;
-    /// Patterns + possible edit_distance to database and scratch.
-    std::map<std::pair<std::vector<String>, std::optional<UInt32>>, RegexpsConstructor> storage;
+    /// (Patterns + possible edit_distance) -> (database + scratch area)
+    std::map<std::pair<std::vector<String>, std::optional<UInt32>>, DeferredConstructedRegexps> storage;
 };
 
 template <bool save_indices, bool WithEditDistance>
@@ -186,9 +178,9 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
         ext_exprs_ptrs.reserve(str_patterns.size());
     }
 
-    for (const StringRef ref : str_patterns)
+    for (std::string_view ref : str_patterns)
     {
-        patterns.push_back(ref.data);
+        patterns.push_back(ref.data());
         /* Flags below are the pattern matching flags.
          * HS_FLAG_DOTALL is a compile flag where matching a . will not exclude newlines. This is a good
          * performance practice according to Hyperscan API. https://intel.github.io/hyperscan/dev-reference/performance.html#dot-all-mode
@@ -251,11 +243,9 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
         CompilerError error(compile_error);
 
         if (error->expression < 0)
-            throw Exception(String(error->message), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, String(error->message));
         else
-            throw Exception(
-                "Pattern '" + str_patterns[error->expression] + "' failed with error '" + String(error->message),
-                ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", str_patterns[error->expression], String(error->message));
     }
 
     ProfileEvents::increment(ProfileEvents::RegexpCreated);
@@ -267,7 +257,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
 
     /// If not HS_SUCCESS, it is guaranteed that the memory would not be allocated for scratch.
     if (err != HS_SUCCESS)
-        throw Exception("Could not allocate scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for hyperscan");
 
     return {db, scratch};
 }
@@ -284,28 +274,32 @@ inline Regexps * get(const std::vector<std::string_view> & patterns, std::option
     std::vector<String> str_patterns;
     str_patterns.reserve(patterns.size());
     for (const auto & pattern : patterns)
-        str_patterns.emplace_back(std::string(pattern.data(), pattern.size()));
+        str_patterns.emplace_back(String(pattern));
 
-    /// Get the lock for finding database.
+    /// Lock pool to find compiled regexp for given pattern + edit distance.
     std::unique_lock lock(known_regexps.mutex);
 
     auto it = known_regexps.storage.find({str_patterns, edit_distance});
 
-    /// If not found, compile and let other threads wait.
     if (known_regexps.storage.end() == it)
     {
-        it = known_regexps.storage
-                 .emplace(std::piecewise_construct, std::make_tuple(std::move(str_patterns), edit_distance), std::make_tuple())
-                 .first;
-        it->second.setConstructor([&str_patterns = it->first.first, edit_distance]()
-        {
-            return constructRegexps<save_indices, WithEditDistance>(str_patterns, edit_distance);
-        });
+        /// Not found. Pattern compilation is expensive and we don't want to block other threads reading from /inserting into the pool while
+        /// we hold the pool lock during pattern compilation. Therefore, only set the constructor method and compile outside the pool lock.
+        it = known_regexps.storage.emplace(
+                std::piecewise_construct,
+                std::make_tuple(std::move(str_patterns), edit_distance),
+                std::make_tuple())
+            .first;
+        it->second.setConstructor(
+            [&str_patterns = it->first.first, edit_distance]()
+            {
+                return constructRegexps<save_indices, WithEditDistance>(str_patterns, edit_distance);
+            }
+        );
     }
 
-    /// Unlock before possible construction.
     lock.unlock();
-    return it->second();
+    return it->second.get(); /// Possibly compile pattern now.
 }
 
 }
