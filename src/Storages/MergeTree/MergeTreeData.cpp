@@ -1599,6 +1599,12 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
     return cleared_count;
 }
 
+scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_dir_name)
+{
+    temporary_parts.add(part_dir_name);
+    return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
+}
+
 
 MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 {
@@ -2857,6 +2863,13 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
 {
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
+
+    assert([&]()
+           {
+               String dir_name = fs::path(part->data_part_storage->getRelativePath()).filename();
+               bool may_be_cleaned_up = dir_name.starts_with("tmp_") || dir_name.starts_with("tmp-fetch_");
+               return !may_be_cleaned_up || temporary_parts.contains(dir_name);
+           }());
 
     part->renameTo(part->name, true, builder);
 
@@ -5142,8 +5155,7 @@ static void selectBestProjection(
     const MergeTreeDataSelectExecutor & reader,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
-    const ActionsDAGPtr & added_filter,
-    const std::string & added_filter_column_name,
+    const ActionDAGNodes & added_filter_nodes,
     const Names & required_columns,
     ProjectionCandidate & candidate,
     ContextPtr query_context,
@@ -5174,8 +5186,7 @@ static void selectBestProjection(
         storage_snapshot->metadata,
         candidate.desc->metadata,
         query_info,
-        added_filter,
-        added_filter_column_name,
+        added_filter_nodes,
         query_context,
         settings.max_threads,
         max_added_blocks);
@@ -5198,8 +5209,7 @@ static void selectBestProjection(
             storage_snapshot->metadata,
             storage_snapshot->metadata,
             query_info, // TODO syntax_analysis_result set in index
-            added_filter,
-            added_filter_column_name,
+            added_filter_nodes,
             query_context,
             settings.max_threads,
             max_added_blocks);
@@ -5524,6 +5534,14 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     const auto & before_where = analysis_result.before_where;
     const auto & where_column_name = analysis_result.where_column_name;
 
+    /// For PK analysis
+    ActionDAGNodes added_filter_nodes;
+    if (auto additional_filter_info = select.getAdditionalQueryInfo())
+        added_filter_nodes.nodes.push_back(&additional_filter_info->actions->findInOutputs(additional_filter_info->column_name));
+
+    if (before_where)
+        added_filter_nodes.nodes.push_back(&before_where->findInOutputs(where_column_name));
+
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
     /// we cannot use aggregate projection.
@@ -5575,7 +5593,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 
         if (analysis_result.prewhere_info)
         {
-            candidate.prewhere_info = analysis_result.prewhere_info;
+            candidate.prewhere_info = analysis_result.prewhere_info->clone();
 
             auto prewhere_actions = candidate.prewhere_info->prewhere_actions->clone();
             auto prewhere_required_columns = required_columns;
@@ -5750,7 +5768,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
             metadata_snapshot,
             minmax_count_projection_candidate->required_columns,
-            analysis_result.prewhere_info || analysis_result.before_where,
+            !query_info.filter_asts.empty() || analysis_result.prewhere_info || analysis_result.before_where,
             query_info,
             parts,
             normal_parts,
@@ -5792,8 +5810,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                 metadata_snapshot,
                 metadata_snapshot,
                 query_info,
-                before_where,
-                where_column_name,
+                added_filter_nodes,
                 query_context,
                 settings.max_threads,
                 max_added_blocks);
@@ -5825,8 +5842,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             metadata_snapshot,
             metadata_snapshot,
             query_info,
-            before_where,
-            where_column_name,
+            added_filter_nodes,
             query_context,
             settings.max_threads,
             max_added_blocks);
@@ -5852,8 +5868,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                     reader,
                     storage_snapshot,
                     query_info,
-                    before_where,
-                    where_column_name,
+                    added_filter_nodes,
                     analysis_result.required_columns,
                     candidate,
                     query_context,
@@ -5874,8 +5889,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
                     reader,
                     storage_snapshot,
                     query_info,
-                    before_where,
-                    where_column_name,
+                    added_filter_nodes,
                     analysis_result.required_columns,
                     candidate,
                     query_context,
@@ -5967,7 +5981,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
+std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
     const MergeTreePartInfo & dst_part_info,
@@ -5995,6 +6009,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String dst_part_name = src_part->getNewName(dst_part_info);
     assert(!tmp_part_prefix.empty());
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
+    auto temporary_directory_lock = getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
     /// Why it is needed if we only hardlink files?
     auto reservation = src_part->data_part_storage->reserve(src_part->getBytesOnDisk());
@@ -6042,7 +6057,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = dst_part_storage->getLastModified().epochTime();
-    return dst_data_part;
+    return std::make_pair(dst_data_part, std::move(temporary_directory_lock));
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const

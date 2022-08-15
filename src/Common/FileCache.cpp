@@ -1044,8 +1044,13 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
         fs::directory_iterator key_it{key_prefix_it->path()};
         for (; key_it != fs::directory_iterator(); ++key_it)
         {
-            key = Key(unhexUInt<UInt128>(key_it->path().filename().string().data()));
+            if (!key_it->is_directory())
+            {
+                LOG_WARNING(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
+                continue;
+            }
 
+            key = Key(unhexUInt<UInt128>(key_it->path().filename().string().data()));
             fs::directory_iterator offset_it{key_it->path()};
             for (; offset_it != fs::directory_iterator(); ++offset_it)
             {
@@ -1064,7 +1069,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
 
                 if (!parsed)
                 {
-                    LOG_WARNING(log, "Unexpected file: ", offset_it->path().string());
+                    LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
                     continue; /// Or just remove? Some unexpected file.
                 }
 
