@@ -8,15 +8,6 @@ namespace DB
 {
 
 BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
-    const String & file_path_,
-    const std::optional<UInt64> & file_size_,
-    const std::optional<UInt128> & checksum_,
-    const std::shared_ptr<Poco::TemporaryFile> & temporary_file_)
-    : file_path(file_path_), file_size(file_size_), checksum(checksum_), temporary_file(temporary_file_)
-{
-}
-
-BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     const DiskPtr & disk_,
     const String & file_path_,
     const std::optional<UInt64> & file_size_,
