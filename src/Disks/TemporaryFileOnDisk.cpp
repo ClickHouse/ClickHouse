@@ -6,6 +6,11 @@
 namespace DB
 {
 
+TemporaryFileOnDisk::TemporaryFileOnDisk(const String & prefix_)
+    : tmp_file(std::make_unique<Poco::TemporaryFile>(prefix_))
+{
+}
+
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_)
     : disk(disk_)
 {

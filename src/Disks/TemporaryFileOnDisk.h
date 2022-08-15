@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <memory>
+#include <Poco/TemporaryFile.h>
 
 namespace DB
 {
@@ -16,14 +17,20 @@ class TemporaryFileOnDisk
 {
 public:
     explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_ = "tmp");
+    explicit TemporaryFileOnDisk(const String & prefix_ = "tmp");
     ~TemporaryFileOnDisk();
 
     DiskPtr getDisk() const { return disk; }
     const String & getPath() const { return filepath; }
+    const String & path() const { return filepath; }
 
 private:
     DiskPtr disk;
     String filepath;
+
+    /// If disk is not provided, fallback to Poco::TemporaryFile
+    /// TODO: it's better to use DiskLocal for that case
+    std::unique_ptr<Poco::TemporaryFile> tmp_file;
 };
 
 }

@@ -23,6 +23,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/JSONBuilder.h>
+#include <Common/filesystemHelpers.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
@@ -1470,8 +1471,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
 
-        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
-
+        auto file = createTemporaryFile(params.tmp_volume->getDisk());
         // enoughSpaceInDirectory() is not enough to make it right, since
         // another process (or another thread of aggregator) can consume all
         // space.
@@ -1481,23 +1481,22 @@ bool Aggregator::executeOnBlock(Columns columns,
         // will reserve way more that actually will be used.
         //
         // Hence let's do a simple check.
-        if (!enoughSpaceInDirectory(tmp_path, size))
-            throw Exception("Not enough space for external aggregation in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+        if (!enoughSpaceInDirectory(file->path(), size))
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for external aggregation in '{}'", file->path());
 
-        writeToTemporaryFile(result, tmp_path);
+        writeToTemporaryFile(result, std::move(file));
     }
 
     return true;
 }
 
 
-void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const
+void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, std::unique_ptr<TemporaryFile> file) const
 {
     Stopwatch watch;
     size_t rows = data_variants.size();
 
-    auto file = createTemporaryFile(tmp_path);
-    const std::string & path = file->path();
+    std::string path = file->getPath();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
     NativeWriter block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
@@ -1565,8 +1564,8 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants) const
 {
-    String tmp_path = params.tmp_volume->getDisk()->getPath();
-    return writeToTemporaryFile(data_variants, tmp_path);
+    auto file = createTemporaryFile(params.tmp_volume->getDisk());
+    return writeToTemporaryFile(data_variants, std::move(file));
 }
 
 
@@ -2832,7 +2831,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
 
-        std::string tmp_path = params.tmp_volume->getDisk()->getPath();
+        auto file = createTemporaryFile(params.tmp_volume->getDisk());
 
         // enoughSpaceInDirectory() is not enough to make it right, since
         // another process (or another thread of aggregator) can consume all
@@ -2843,10 +2842,10 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
         // will reserve way more that actually will be used.
         //
         // Hence let's do a simple check.
-        if (!enoughSpaceInDirectory(tmp_path, size))
-            throw Exception("Not enough space for external aggregation in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+        if (!enoughSpaceInDirectory(file->path(), size))
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for external aggregation in '{}'", file->path());
 
-        writeToTemporaryFile(result, tmp_path);
+        writeToTemporaryFile(result, std::move(file));
     }
 
     return true;
