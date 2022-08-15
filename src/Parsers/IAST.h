@@ -275,8 +275,11 @@ public:
 private:
     size_t checkDepthImpl(size_t max_depth) const;
 
-    /// This deleter is used in ~IAST to avoid possible stack overflow in destructor.
-    std::list<ASTs> * deleter = nullptr;
+    /** Forward linked list of ASTPtr to delete.
+      * Used in IAST destructor to avoid possible stack overflow.
+      */
+    ASTPtr next_to_delete = nullptr;
+    ASTPtr * next_to_delete_list_head = nullptr;
 };
 
 template <typename AstArray>

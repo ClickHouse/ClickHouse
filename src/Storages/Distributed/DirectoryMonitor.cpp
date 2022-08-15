@@ -538,6 +538,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             address.default_database,
             address.user,
             address.password,
+            address.quota_key,
             address.cluster,
             address.cluster_secret,
             storage.getName() + '_' + address.user, /* client */

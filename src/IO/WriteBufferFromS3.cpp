@@ -3,8 +3,8 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
-#include <Common/IFileCache.h>
 #include <Common/Throttler.h>
+#include <Common/FileCache.h>
 
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
