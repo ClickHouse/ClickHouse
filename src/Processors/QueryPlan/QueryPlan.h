@@ -71,8 +71,8 @@ public:
         bool actions = false;
         /// Add information about indexes actions.
         bool indexes = false;
-        /// Add information about sort mode
-        bool sort_mode = false;
+        /// Add information about sorting
+        bool sorting = false;
     };
 
     struct ExplainPipelineOptions
