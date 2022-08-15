@@ -11,7 +11,7 @@ QUERY_ID=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString
 
 ${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID}" <<EOF
 SELECT sum(number) FROM numbers_mt(1000000)
-SETTINGS log_processors_profiles=true, log_queries=1, log_queries_min_type='QUERY_FINISH';
+SETTINGS max_threads = 4, log_processors_profiles=true, log_queries=1, log_queries_min_type='QUERY_FINISH';
 EOF
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
