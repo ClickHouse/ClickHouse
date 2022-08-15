@@ -276,11 +276,13 @@ YWUzMTMzZjItNmUyMi00OWFlLWIwNmEtMTZlNmE5YjIxMmVi
 kusto		xxx
 -- trim()
 https://www.ibm.com
+Te st1
 -- trim_start()
 www.ibm.com
 Te st1// $
 -- trim_end()
 https
+- Te st1
 -- replace_regex
 Number was: 1
 -- has_any_index()
