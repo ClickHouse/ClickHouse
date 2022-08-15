@@ -1,4 +1,4 @@
-[![ClickHouse — open source distributed column-oriented DBMS](https://github.com/ClickHouse/ClickHouse/raw/master/website/images/logo-400x240.png)](https://clickhouse.com)
+[![ClickHouse — open source distributed column-oriented DBMS](https://github.com/ClickHouse/clickhouse-presentations/raw/master/images/logo-400x240.png)](https://clickhouse.com)
 
 ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real-time.
 
@@ -15,4 +15,4 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
 ## Upcoming events
-* **v22.8 Release Webinar** Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.
+* [**v22.8 Release Webinar**](https://clickhouse.com/company/events/v22-8-release-webinar) Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.

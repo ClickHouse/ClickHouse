@@ -1,6 +1,7 @@
 #include <string_view>
 
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -9,6 +10,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -663,6 +665,13 @@ bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected
 {
     if (ParserTableFunctionView().parse(pos, node, expected))
         return true;
+    ParserKeyword s_settings("SETTINGS");
+    if (s_settings.ignore(pos, expected))
+    {
+        ParserSetQuery parser_settings(true);
+        if (parser_settings.parse(pos, node, expected))
+            return true;
+    }
     return elem_parser.parse(pos, node, expected);
 }
 
