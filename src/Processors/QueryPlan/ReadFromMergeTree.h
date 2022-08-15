@@ -114,6 +114,18 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
+    void addFilter(ActionsDAGPtr expression, std::string column_name)
+    {
+        added_filter_dags.push_back(expression);
+        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
+    }
+
+    void addFilterNodes(const ActionDAGNodes & filter_nodes)
+    {
+        for (const auto & node : filter_nodes.nodes)
+            added_filter_nodes.nodes.push_back(node);
+    }
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
@@ -121,6 +133,8 @@ public:
 
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
+        const PrewhereInfoPtr & prewhere_info,
+        const ActionDAGNodes & added_filter_nodes,
         const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -150,6 +164,9 @@ private:
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
+
+    std::vector<ActionsDAGPtr> added_filter_dags;
+    ActionDAGNodes added_filter_nodes;
 
     StorageSnapshotPtr storage_snapshot;
     StorageMetadataPtr metadata_for_reading;

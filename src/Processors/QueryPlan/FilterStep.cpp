@@ -34,7 +34,7 @@ FilterStep::FilterStep(
         input_stream_,
         FilterTransform::transformHeader(
             input_stream_.header,
-            *actions_dag_,
+            actions_dag_.get(),
             filter_column_name_,
             remove_filter_column_),
         getTraits(actions_dag_))
@@ -109,7 +109,7 @@ void FilterStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
-        FilterTransform::transformHeader(input_streams.front().header, *actions_dag, filter_column_name, remove_filter_column),
+        FilterTransform::transformHeader(input_streams.front().header, actions_dag.get(), filter_column_name, remove_filter_column),
         getDataStreamTraits());
 }
 
