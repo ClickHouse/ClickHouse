@@ -1,5 +1,5 @@
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/JSONEachRowUtils.h>
+#include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -9,8 +9,12 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -71,7 +75,7 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
-    String tmp;
+    NullOutput out;
     constexpr const char * field_name = "<SKIPPED COLUMN>";
     constexpr size_t field_name_len = 16;
     switch (escaping_rule)
@@ -80,19 +84,19 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             /// Empty field, just skip spaces
             break;
         case FormatSettings::EscapingRule::Escaped:
-            readEscapedString(tmp, buf);
+            readEscapedStringInto(out, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
-            readQuotedFieldIntoString(tmp, buf);
+            readQuotedFieldInto(out, buf);
             break;
         case FormatSettings::EscapingRule::CSV:
-            readCSVString(tmp, buf, format_settings.csv);
+            readCSVStringInto(out, buf, format_settings.csv);
             break;
         case FormatSettings::EscapingRule::JSON:
             skipJSONField(buf, StringRef(field_name, field_name_len));
             break;
         case FormatSettings::EscapingRule::Raw:
-            readString(tmp, buf);
+            readStringInto(out, buf);
             break;
         default:
             __builtin_unreachable();
@@ -219,13 +223,13 @@ String readByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escapin
             if constexpr (read_string)
                 readQuotedString(result, buf);
             else
-                readQuotedFieldIntoString(result, buf);
+                readQuotedField(result, buf);
             break;
         case FormatSettings::EscapingRule::JSON:
             if constexpr (read_string)
                 readJSONString(result, buf);
             else
-                readJSONFieldIntoString(result, buf);
+                readJSONField(result, buf);
             break;
         case FormatSettings::EscapingRule::Raw:
             readString(result, buf);
@@ -255,7 +259,220 @@ String readStringByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule e
     return readByEscapingRule<true>(buf, escaping_rule, format_settings);
 }
 
-static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
+void transformInferredTypesIfNeededImpl(DataTypes & types, const FormatSettings & settings, bool is_json, const std::unordered_set<const IDataType *> * numbers_parsed_from_json_strings = nullptr)
+{
+    /// Do nothing if we didn't try to infer something special.
+    if (!settings.try_infer_integers && !settings.try_infer_dates && !settings.try_infer_datetimes && !is_json)
+        return;
+
+    auto transform_simple_types = [&](DataTypes & data_types)
+    {
+        /// If we have floats and integers convert them all to float.
+        if (settings.try_infer_integers)
+        {
+            bool have_floats = false;
+            bool have_integers = false;
+            for (const auto & type : data_types)
+            {
+                have_floats |= isFloat(type);
+                have_integers |= isInteger(type) && !isBool(type);
+            }
+
+            if (have_floats && have_integers)
+            {
+                for (auto & type : data_types)
+                {
+                    if (isInteger(type))
+                        type = std::make_shared<DataTypeFloat64>();
+                }
+            }
+        }
+
+        /// If we have only dates and datetimes, convert dates to datetime.
+        /// If we have date/datetimes and smth else, convert them to string, because
+        /// There is a special case when we inferred both Date/DateTime and Int64 from Strings,
+        /// for example: "arr: ["2020-01-01", "2000"]" -> Tuple(Date, Int64),
+        /// so if we have Date/DateTime and smth else (not only String) we should
+        /// convert Date/DateTime back to String, so then we will be able to
+        /// convert Int64 back to String as well.
+        if (settings.try_infer_dates || settings.try_infer_datetimes)
+        {
+            bool have_dates = false;
+            bool have_datetimes = false;
+            bool all_dates_or_datetimes = true;
+
+            for (const auto & type : data_types)
+            {
+                have_dates |= isDate(type);
+                have_datetimes |= isDateTime64(type);
+                all_dates_or_datetimes &= isDate(type) || isDateTime64(type);
+            }
+
+            if (!all_dates_or_datetimes && (have_dates || have_datetimes))
+            {
+                for (auto & type : data_types)
+                {
+                    if (isDate(type) || isDateTime64(type))
+                        type = std::make_shared<DataTypeString>();
+                }
+            }
+            else if (have_dates && have_datetimes)
+            {
+                for (auto & type : data_types)
+                {
+                    if (isDate(type))
+                        type = std::make_shared<DataTypeDateTime64>(9);
+                }
+            }
+        }
+
+        if (!is_json)
+            return;
+
+        /// Check settings specific for JSON formats.
+
+        /// If we have numbers and strings, convert numbers to strings.
+        if (settings.json.try_infer_numbers_from_strings)
+        {
+            bool have_strings = false;
+            bool have_numbers = false;
+            for (const auto & type : data_types)
+            {
+                have_strings |= isString(type);
+                have_numbers |= isNumber(type);
+            }
+
+            if (have_strings && have_numbers)
+            {
+                for (auto & type : data_types)
+                {
+                    if (isNumber(type) && (!numbers_parsed_from_json_strings || numbers_parsed_from_json_strings->contains(type.get())))
+                        type = std::make_shared<DataTypeString>();
+                }
+            }
+        }
+
+        if (settings.json.read_bools_as_numbers)
+        {
+            /// Note that have_floats and have_integers both cannot be
+            /// equal to true as in one of previous checks we convert
+            /// integers to floats if we have both.
+            bool have_floats = false;
+            bool have_integers = false;
+            bool have_bools = false;
+            for (const auto & type : data_types)
+            {
+                have_floats |= isFloat(type);
+                have_integers |= isInteger(type) && !isBool(type);
+                have_bools |= isBool(type);
+            }
+
+            if (have_bools && (have_integers || have_floats))
+            {
+                for (auto & type : data_types)
+                {
+                    if (isBool(type))
+                    {
+                        if (have_integers)
+                            type = std::make_shared<DataTypeInt64>();
+                        else
+                            type = std::make_shared<DataTypeFloat64>();
+                    }
+                }
+            }
+        }
+    };
+
+    auto transform_complex_types = [&](DataTypes & data_types)
+    {
+        if (!is_json)
+            return;
+
+        bool have_maps = false;
+        bool have_objects = false;
+        bool are_maps_equal = true;
+        DataTypePtr first_map_type;
+        for (const auto & type : data_types)
+        {
+            if (isMap(type))
+            {
+                if (!have_maps)
+                {
+                    first_map_type = type;
+                    have_maps = true;
+                }
+                else
+                {
+                    are_maps_equal &= type->equals(*first_map_type);
+                }
+            }
+            else if (isObject(type))
+            {
+                have_objects = true;
+            }
+        }
+
+        if (have_maps && (have_objects || !are_maps_equal))
+        {
+            for (auto & type : data_types)
+            {
+                if (isMap(type))
+                    type = std::make_shared<DataTypeObject>("json", true);
+            }
+        }
+    };
+
+    transformTypesRecursively(types, transform_simple_types, transform_complex_types);
+}
+
+void transformInferredTypesIfNeeded(DataTypes & types, const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
+{
+    transformInferredTypesIfNeededImpl(types, settings, escaping_rule == FormatSettings::EscapingRule::JSON);
+}
+
+void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, FormatSettings::EscapingRule escaping_rule)
+{
+    DataTypes types = {first, second};
+    transformInferredTypesIfNeeded(types, settings, escaping_rule);
+    first = std::move(types[0]);
+    second = std::move(types[1]);
+}
+
+void transformInferredJSONTypesIfNeeded(DataTypes & types, const FormatSettings & settings, const std::unordered_set<const IDataType *> * numbers_parsed_from_json_strings)
+{
+    transformInferredTypesIfNeededImpl(types, settings, true, numbers_parsed_from_json_strings);
+}
+
+void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings)
+{
+    DataTypes types = {first, second};
+    transformInferredJSONTypesIfNeeded(types, settings);
+    first = std::move(types[0]);
+    second = std::move(types[1]);
+}
+
+DataTypePtr tryInferDateOrDateTime(const std::string_view & field, const FormatSettings & settings)
+{
+    if (settings.try_infer_dates)
+    {
+        ReadBufferFromString buf(field);
+        DayNum tmp;
+        if (tryReadDateText(tmp, buf) && buf.eof())
+            return makeNullable(std::make_shared<DataTypeDate>());
+    }
+
+    if (settings.try_infer_datetimes)
+    {
+        ReadBufferFromString buf(field);
+        DateTime64 tmp;
+        if (tryReadDateTime64Text(tmp, 9, buf) && buf.eof())
+            return makeNullable(std::make_shared<DataTypeDateTime64>(9));
+    }
+
+    return nullptr;
+}
+
+static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBufferFromString & buf, const FormatSettings & settings)
 {
     if (buf.eof())
         return nullptr;
@@ -279,7 +496,7 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
             else
                 first = false;
 
-            auto nested_type = determineDataTypeForSingleFieldImpl(buf);
+            auto nested_type = determineDataTypeForSingleFieldImpl(buf, settings);
             if (!nested_type)
                 return nullptr;
 
@@ -293,6 +510,8 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
 
         if (nested_types.empty())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNothing>());
+
+        transformInferredTypesIfNeeded(nested_types, settings);
 
         auto least_supertype = tryGetLeastSupertype(nested_types);
         if (!least_supertype)
@@ -320,7 +539,7 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
             else
                 first = false;
 
-            auto nested_type = determineDataTypeForSingleFieldImpl(buf);
+            auto nested_type = determineDataTypeForSingleFieldImpl(buf, settings);
             if (!nested_type)
                 return nullptr;
 
@@ -355,7 +574,7 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
             else
                 first = false;
 
-            auto key_type = determineDataTypeForSingleFieldImpl(buf);
+            auto key_type = determineDataTypeForSingleFieldImpl(buf, settings);
             if (!key_type)
                 return nullptr;
 
@@ -366,7 +585,7 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
                 return nullptr;
             skipWhitespaceIfAny(buf);
 
-            auto value_type = determineDataTypeForSingleFieldImpl(buf);
+            auto value_type = determineDataTypeForSingleFieldImpl(buf, settings);
             if (!value_type)
                 return nullptr;
 
@@ -381,6 +600,9 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
 
         if (key_types.empty())
             return std::make_shared<DataTypeMap>(std::make_shared<DataTypeNothing>(), std::make_shared<DataTypeNothing>());
+
+        transformInferredTypesIfNeeded(key_types, settings);
+        transformInferredTypesIfNeeded(value_types, settings);
 
         auto key_least_supertype = tryGetLeastSupertype(key_types);
 
@@ -398,9 +620,11 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
     if (*buf.position() == '\'')
     {
         ++buf.position();
+        String field;
         while (!buf.eof())
         {
             char * next_pos = find_first_symbols<'\\', '\''>(buf.position(), buf.buffer().end());
+            field.append(buf.position(), next_pos);
             buf.position() = next_pos;
 
             if (!buf.hasPendingData())
@@ -409,6 +633,7 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
             if (*buf.position() == '\'')
                 break;
 
+            field.push_back(*buf.position());
             if (*buf.position() == '\\')
                 ++buf.position();
         }
@@ -417,6 +642,9 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
             return nullptr;
 
         ++buf.position();
+        if (auto type = tryInferDateOrDateTime(field, settings))
+            return type;
+
         return std::make_shared<DataTypeString>();
     }
 
@@ -430,15 +658,29 @@ static DataTypePtr determineDataTypeForSingleFieldImpl(ReadBuffer & buf)
 
     /// Number
     Float64 tmp;
+    auto * pos_before_float = buf.position();
     if (tryReadFloatText(tmp, buf))
+    {
+        if (settings.try_infer_integers)
+        {
+            auto * float_end_pos = buf.position();
+            buf.position() = pos_before_float;
+            Int64 tmp_int;
+            if (tryReadIntText(tmp_int, buf) && buf.position() == float_end_pos)
+                return std::make_shared<DataTypeInt64>();
+
+            buf.position() = float_end_pos;
+        }
+
         return std::make_shared<DataTypeFloat64>();
+    }
 
     return nullptr;
 }
 
-static DataTypePtr determineDataTypeForSingleField(ReadBuffer & buf)
+static DataTypePtr determineDataTypeForSingleField(ReadBufferFromString & buf, const FormatSettings & settings)
 {
-    return makeNullableRecursivelyAndCheckForNothing(determineDataTypeForSingleFieldImpl(buf));
+    return makeNullableRecursivelyAndCheckForNothing(determineDataTypeForSingleFieldImpl(buf, settings));
 }
 
 DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule)
@@ -448,11 +690,11 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
         case FormatSettings::EscapingRule::Quoted:
         {
             ReadBufferFromString buf(field);
-            auto type = determineDataTypeForSingleField(buf);
+            auto type = determineDataTypeForSingleField(buf, format_settings);
             return buf.eof() ? type : nullptr;
         }
         case FormatSettings::EscapingRule::JSON:
-            return getDataTypeFromJSONField(field);
+            return JSONUtils::getDataTypeFromField(field, format_settings);
         case FormatSettings::EscapingRule::CSV:
         {
             if (!format_settings.csv.input_format_use_best_effort_in_schema_inference)
@@ -466,9 +708,13 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
 
             if (field.size() > 1 && ((field.front() == '\'' && field.back() == '\'') || (field.front() == '"' && field.back() == '"')))
             {
-                ReadBufferFromString buf(std::string_view(field.data() + 1, field.size() - 2));
+                auto data = std::string_view(field.data() + 1, field.size() - 2);
+                if (auto date_type = tryInferDateOrDateTime(data, format_settings))
+                    return date_type;
+
+                ReadBufferFromString buf(data);
                 /// Try to determine the type of value inside quotes
-                auto type = determineDataTypeForSingleField(buf);
+                auto type = determineDataTypeForSingleField(buf, format_settings);
 
                 if (!type)
                     return nullptr;
@@ -481,6 +727,14 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
             }
 
             /// Case when CSV value is not in quotes. Check if it's a number, and if not, determine it's as a string.
+            if (format_settings.try_infer_integers)
+            {
+                ReadBufferFromString buf(field);
+                Int64 tmp_int;
+                if (tryReadIntText(tmp_int, buf) && buf.eof())
+                    return makeNullable(std::make_shared<DataTypeInt64>());
+            }
+
             ReadBufferFromString buf(field);
             Float64 tmp;
             if (tryReadFloatText(tmp, buf) && buf.eof())
@@ -500,8 +754,11 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
             if (field == format_settings.bool_false_representation || field == format_settings.bool_true_representation)
                 return DataTypeFactory::instance().get("Nullable(Bool)");
 
+            if (auto date_type = tryInferDateOrDateTime(field, format_settings))
+                return date_type;
+
             ReadBufferFromString buf(field);
-            auto type = determineDataTypeForSingleField(buf);
+            auto type = determineDataTypeForSingleField(buf, format_settings);
             if (!buf.eof())
                 return makeNullable(std::make_shared<DataTypeString>());
 

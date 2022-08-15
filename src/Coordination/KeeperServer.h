@@ -8,6 +8,8 @@
 #include <libnuraft/raft_params.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Coordination/Keeper4LWInfo.h>
+#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -60,6 +62,10 @@ private:
 
     std::atomic_bool is_recovering = false;
 
+    std::shared_ptr<KeeperContext> keeper_context;
+
+    const bool create_snapshot_on_exit;
+
 public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,
@@ -94,6 +100,8 @@ public:
     bool isObserver() const;
 
     bool isLeaderAlive() const;
+
+    Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
     /// @return follower count if node is not leader return 0
     uint64_t getFollowerCount() const;

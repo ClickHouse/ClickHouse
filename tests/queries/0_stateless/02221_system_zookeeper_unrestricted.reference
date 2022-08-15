@@ -60,15 +60,7 @@ quorum
 quorum
 replicas
 replicas
-shared
-shared
-shared
-shared
 table_shared_id
 table_shared_id
 temp
 temp
-zero_copy_hdfs
-zero_copy_hdfs
-zero_copy_s3
-zero_copy_s3

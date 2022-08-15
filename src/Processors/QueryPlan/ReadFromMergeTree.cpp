@@ -1,14 +1,17 @@
+#include <algorithm>
+#include <functional>
+#include <memory>
+#include <numeric>
+#include <queue>
+#include <stdexcept>
+#include <IO/Operators.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ConcatProcessor.h>
-#include <Processors/Transforms/ReverseTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <Processors/Transforms/AddingSelectorTransform.h>
-#include <Processors/Transforms/CopyTransform.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/GraphiteRollupSortedTransform.h>
@@ -16,17 +19,22 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/ReverseTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeInOrderSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <IO/Operators.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
+#include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 
 namespace ProfileEvents
@@ -55,6 +63,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
+        .apply_deleted_mask = context->applyDeletedMask(),
     };
 }
 
@@ -62,6 +71,18 @@ static const PrewhereInfoPtr & getPrewhereInfo(const SelectQueryInfo & query_inf
 {
     return query_info.projection ? query_info.projection->prewhere_info
                                  : query_info.prewhere_info;
+}
+
+static int getSortDirection(const SelectQueryInfo & query_info)
+{
+    const InputOrderInfoPtr & order_info = query_info.input_order_info
+        ? query_info.input_order_info
+        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+
+    if (!order_info)
+        return 1;
+
+    return order_info->direction;
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
@@ -117,6 +138,22 @@ ReadFromMergeTree::ReadFromMergeTree(
 
     /// Add explicit description.
     setStepDescription(data.getStorageID().getFullNameNotQuoted());
+
+    { /// build sort description for output stream
+        SortDescription sort_description;
+        const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
+        const Block & header = output_stream->header;
+        const int sort_direction = getSortDirection(query_info);
+        for (const auto & column_name : sorting_key_columns)
+        {
+            if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
+                == header.end())
+                break;
+            sort_description.emplace_back(column_name, sort_direction);
+        }
+        output_stream->sort_description = std::move(sort_description);
+        output_stream->sort_mode = DataStream::SortMode::Chunk;
+    }
 }
 
 Pipe ReadFromMergeTree::readFromPool(
@@ -149,6 +186,7 @@ Pipe ReadFromMergeTree::readFromPool(
         storage_snapshot,
         prewhere_info,
         required_columns,
+        virt_column_names,
         backoff_settings,
         settings.preferred_block_size_bytes,
         false);
@@ -524,6 +562,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         const auto & sorting_columns = metadata_for_reading->getSortingKey().column_names;
 
         SortDescription sort_description;
+        sort_description.compile_sort_description = settings.compile_sort_description;
+        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+
         for (size_t j = 0; j < prefix_size; ++j)
             sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
 
@@ -545,7 +586,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                         pipe.getHeader(),
                         pipe.numOutputPorts(),
                         sort_description,
-                        max_block_size);
+                        max_block_size,
+                        SortingQueueStrategy::Batch);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -557,7 +599,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
 static void addMergingFinal(
     Pipe & pipe,
-    size_t num_output_streams,
     const SortDescription & sort_description,
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
@@ -574,7 +615,7 @@ static void addMergingFinal(
         {
             case MergeTreeData::MergingParams::Ordinary:
                 return std::make_shared<MergingSortedTransform>(header, num_outputs,
-                            sort_description, max_block_size);
+                            sort_description, max_block_size, SortingQueueStrategy::Batch);
 
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedTransform>(header, num_outputs,
@@ -604,56 +645,7 @@ static void addMergingFinal(
         __builtin_unreachable();
     };
 
-    if (num_output_streams <= 1 || sort_description.empty())
-    {
-        pipe.addTransform(get_merging_processor());
-        return;
-    }
-
-    ColumnNumbers key_columns;
-    key_columns.reserve(sort_description.size());
-    for (const auto & desc : sort_description)
-        key_columns.push_back(header.getPositionByName(desc.column_name));
-
-    pipe.addSimpleTransform([&](const Block & stream_header)
-    {
-        return std::make_shared<AddingSelectorTransform>(stream_header, num_output_streams, key_columns);
-    });
-
-    pipe.transform([&](OutputPortRawPtrs ports)
-    {
-        Processors transforms;
-        std::vector<OutputPorts::iterator> output_ports;
-        transforms.reserve(ports.size() + num_output_streams);
-        output_ports.reserve(ports.size());
-
-        for (auto & port : ports)
-        {
-            auto copier = std::make_shared<CopyTransform>(header, num_output_streams);
-            connect(*port, copier->getInputPort());
-            output_ports.emplace_back(copier->getOutputs().begin());
-            transforms.emplace_back(std::move(copier));
-        }
-
-        for (size_t i = 0; i < num_output_streams; ++i)
-        {
-            auto merge = get_merging_processor();
-            merge->setSelectorPosition(i);
-            auto input = merge->getInputs().begin();
-
-            /// Connect i-th merge with i-th input port of every copier.
-            for (size_t j = 0; j < ports.size(); ++j)
-            {
-                connect(*output_ports[j], *input);
-                ++output_ports[j];
-                ++input;
-            }
-
-            transforms.emplace_back(std::move(merge));
-        }
-
-        return transforms;
-    });
+    pipe.addTransform(get_merging_processor());
 }
 
 
@@ -707,8 +699,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
-        Pipe pipe;
-
+        Pipes pipes;
         {
             RangesInDataParts new_parts;
 
@@ -735,21 +726,39 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (new_parts.empty())
                 continue;
 
-            pipe = read(std::move(new_parts), column_names, ReadFromMergeTree::ReadType::InOrder,
-                num_streams, 0, info.use_uncompressed_cache);
+            if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
+            {
+                // Let's split parts into layers to ensure data parallelism of FINAL.
+                auto reading_step_getter = [this, &column_names, &info](auto parts)
+                {
+                    return this->read(
+                        std::move(parts),
+                        column_names,
+                        ReadFromMergeTree::ReadType::InOrder,
+                        1 /* num_streams */,
+                        0 /* min_marks_for_concurrent_read */,
+                        info.use_uncompressed_cache);
+                };
+                pipes = buildPipesForReadingByPKRanges(
+                    metadata_for_reading->getPrimaryKey(), std::move(new_parts), num_streams, context, std::move(reading_step_getter));
+            }
+            else
+            {
+                pipes.emplace_back(read(
+                    std::move(new_parts), column_names, ReadFromMergeTree::ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache));
+            }
 
             /// Drop temporary columns, added by 'sorting_key_expr'
             if (!out_projection)
-                out_projection = createProjection(pipe.getHeader());
+                out_projection = createProjection(pipes.front().getHeader());
         }
 
         auto sorting_expr = std::make_shared<ExpressionActions>(
             metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
 
-        pipe.addSimpleTransform([sorting_expr](const Block & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, sorting_expr);
-        });
+        for (auto & pipe : pipes)
+            pipe.addSimpleTransform([sorting_expr](const Block & header)
+                                    { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
 
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't postprocess this part
@@ -757,12 +766,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
             parts_to_merge_ranges[range_index]->data_part->info.level > 0)
         {
-            partition_pipes.emplace_back(std::move(pipe));
+            partition_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
             continue;
         }
 
         Names sort_columns = metadata_for_reading->getSortingKeyColumns();
         SortDescription sort_description;
+        sort_description.compile_sort_description = settings.compile_sort_description;
+        sort_description.min_count_to_compile_sort_description = settings.min_count_to_compile_sort_description;
+
         size_t sort_columns_size = sort_columns.size();
         sort_description.reserve(sort_columns_size);
 
@@ -771,20 +783,20 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         for (size_t i = 0; i < sort_columns_size; ++i)
             sort_description.emplace_back(sort_columns[i], 1, 1);
 
-        addMergingFinal(
-            pipe,
-            std::min<size_t>(num_streams, settings.max_final_threads),
-            sort_description, data.merging_params, partition_key_columns, max_block_size);
+        for (auto & pipe : pipes)
+            addMergingFinal(
+                pipe,
+                sort_description,
+                data.merging_params,
+                partition_key_columns,
+                max_block_size);
 
-        partition_pipes.emplace_back(std::move(pipe));
+        partition_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
 
     if (!lonely_parts.empty())
     {
-        RangesInDataParts new_parts;
-
         size_t num_streams_for_lonely_parts = num_streams * lonely_parts.size();
-
 
         const size_t min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             settings.merge_tree_min_rows_for_concurrent_read,
@@ -822,6 +834,8 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
 {
     return selectRangesToRead(
         std::move(parts),
+        prewhere_info,
+        added_filter_nodes,
         storage_snapshot->metadata,
         storage_snapshot->getMetadataForQuery(),
         query_info,
@@ -836,6 +850,8 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
 
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
+    const PrewhereInfoPtr & prewhere_info,
+    const ActionDAGNodes & added_filter_nodes,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -870,9 +886,37 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
-    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
+    std::optional<KeyCondition> key_condition;
 
-    if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
+    if (settings.query_plan_optimize_primary_key)
+    {
+        ActionDAGNodes nodes;
+        if (prewhere_info)
+        {
+            {
+                const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
+                nodes.nodes.push_back(&node);
+            }
+
+            if (prewhere_info->row_level_filter)
+            {
+                const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
+                nodes.nodes.push_back(&node);
+            }
+        }
+
+        for (const auto & node : added_filter_nodes.nodes)
+            nodes.nodes.push_back(node);
+
+        key_condition.emplace(
+            std::move(nodes), query_info.syntax_analyzer_result, query_info.prepared_sets, context, primary_key_columns, primary_key.expression);
+    }
+    else
+    {
+        key_condition.emplace(query_info, context, primary_key_columns, primary_key.expression);
+    }
+
+    if (settings.force_primary_key && key_condition->alwaysUnknownOrTrue())
     {
         return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{
             .result = std::make_exception_ptr(Exception(
@@ -880,7 +924,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 "Primary key ({}) is not used and setting 'force_primary_key' is set",
                 fmt::join(primary_key_columns, ", ")))});
     }
-    LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
+    LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
@@ -903,7 +947,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             select,
             metadata_snapshot->getColumns().getAllPhysical(),
             parts,
-            key_condition,
+            *key_condition,
             data,
             metadata_snapshot,
             context,
@@ -928,7 +972,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             metadata_snapshot,
             query_info,
             context,
-            key_condition,
+            *key_condition,
             reader_settings,
             log,
             num_streams,
@@ -974,6 +1018,30 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                                                              : ReadType::InReverseOrder;
 
     return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
+}
+
+void ReadFromMergeTree::setQueryInfoOrderOptimizer(std::shared_ptr<ReadInOrderOptimizer> order_optimizer)
+{
+    if (query_info.projection)
+    {
+        query_info.projection->order_optimizer = order_optimizer;
+    }
+    else
+    {
+        query_info.order_optimizer = order_optimizer;
+    }
+}
+
+void ReadFromMergeTree::setQueryInfoInputOrderInfo(InputOrderInfoPtr order_info)
+{
+    if (query_info.projection)
+    {
+        query_info.projection->input_order_info = order_info;
+    }
+    else
+    {
+        query_info.input_order_info = order_info;
+    }
 }
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
@@ -1059,7 +1127,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             column_names_to_read,
             result_projection);
     }
-    else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
+    else if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order || settings.optimize_read_in_window_order) && input_order_info)
     {
         pipe = spreadMarkRangesAmongStreamsWithOrder(
             std::move(result.parts_with_ranges),
@@ -1073,6 +1141,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             std::move(result.parts_with_ranges),
             column_names_to_read);
     }
+
+    for (const auto & processor : pipe.getProcessors())
+        processor->setStorageLimits(query_info.storage_limits);
 
     if (pipe.empty())
     {
@@ -1142,11 +1213,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
-    // Attach QueryIdHolder if needed
-    if (query_id_holder)
-        pipe.addQueryIdHolder(std::move(query_id_holder));
 
     pipeline.init(std::move(pipe));
+    // Attach QueryIdHolder if needed
+    if (query_id_holder)
+        pipeline.setQueryIdHolder(std::move(query_id_holder));
 }
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type)

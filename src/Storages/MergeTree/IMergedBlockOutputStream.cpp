@@ -6,14 +6,14 @@ namespace DB
 {
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
+    DataPartStorageBuilderPtr data_part_storage_builder_,
     const MergeTreeDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , volume(data_part->volume)
-    , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
+    , data_part_storage_builder(std::move(data_part_storage_builder_))
     , reset_columns(reset_columns_)
 {
     if (reset_columns)
@@ -41,14 +41,17 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     if (empty_columns.empty() || isCompactPart(data_part))
         return {};
 
+    for (const auto & column : empty_columns)
+        LOG_TRACE(storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
+
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
     for (const auto & column : columns)
     {
-        data_part->getSerialization(column)->enumerateStreams(
+        data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
+                ++stream_counts[ISerialization::getFileNameForStream(column.name, substream_path)];
             });
     }
 
@@ -56,13 +59,13 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
-        auto column_with_type = columns.tryGetByName(column_name);
-        if (!column_with_type)
-           continue;
+        auto serialization = data_part->tryGetSerialization(column_name);
+        if (!serialization)
+            continue;
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = ISerialization::getFileNameForStream(*column_with_type, substream_path);
+            String stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
             /// Delete files if they are no longer shared with another column.
             if (--stream_counts[stream_name] == 0)
             {
@@ -71,7 +74,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        data_part->getSerialization(*column_with_type)->enumerateStreams(callback);
+        serialization->enumerateStreams(callback);
         serialization_infos.erase(column_name);
     }
 

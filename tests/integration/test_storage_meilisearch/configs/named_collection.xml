@@ -1,0 +1,24 @@
+<clickhouse>
+  <named_collections>
+    <named_collection_for_meili>
+        <database>MeiliSearch</database>
+        <addresses_expr>http://meili1:7700</addresses_expr> 
+        <table>new_table</table>
+    </named_collection_for_meili>
+
+
+    <named_collection_for_meili_secure>
+        <database>MeiliSearch</database>
+        <addresses_expr>http://meili_secure:7700</addresses_expr> 
+        <table>new_table</table>
+        <password>password</password>
+    </named_collection_for_meili_secure>
+
+
+    <named_collection_for_meili_secure_no_password>
+        <database>MeiliSearch</database>
+        <addresses_expr>http://meili_secure:7700</addresses_expr> 
+        <table>new_table</table>
+    </named_collection_for_meili_secure_no_password>
+  </named_collections>
+</clickhouse>

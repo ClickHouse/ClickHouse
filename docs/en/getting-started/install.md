@@ -6,7 +6,7 @@ description: ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86_64, 
 slug: /en/getting-started/install
 ---
 
-# Installation {#installation}
+# Installation
 
 ## System Requirements {#system-requirements}
 
@@ -70,7 +70,7 @@ You can also download and install packages manually from [here](https://packages
 -   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
-:::info    
+:::info
 If you need to install specific version of ClickHouse you have to install all packages with the same version:
 `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
 :::
@@ -127,22 +127,36 @@ After that downloaded archives should be unpacked and installed with installatio
 LATEST_VERSION=$(curl -s https://packages.clickhouse.com/tgz/stable/ | \
     grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
 export LATEST_VERSION
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-$LATEST_VERSION-amd64.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$LATEST_VERSION-amd64.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-server-$LATEST_VERSION-amd64.tgz"
-curl -O "https://packages.clickhouse.com/tgz/stable/clickhouse-client-$LATEST_VERSION-amd64.tgz"
 
-tar -xzvf "clickhouse-common-static-$LATEST_VERSION-amd64.tgz"
+case $(uname -m) in
+  x86_64) ARCH=amd64 ;;
+  aarch64) ARCH=arm64 ;;
+  *) echo "Unknown architecture $(uname -m)"; exit 1 ;;
+esac
+
+for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client
+do
+  curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
+    || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
+done
+
+exit 0
+
+tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
 
-tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-amd64.tgz"
+tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
 sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
 
-tar -xzvf "clickhouse-server-$LATEST_VERSION-amd64.tgz"
+tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
 sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh"
 sudo /etc/init.d/clickhouse-server start
 
-tar -xzvf "clickhouse-client-$LATEST_VERSION-amd64.tgz"
+tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
+  || tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
 sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
@@ -190,22 +204,21 @@ sudo ./clickhouse install
 
 ### From Precompiled Binaries for Non-Standard Environments {#from-binaries-non-linux}
 
-For non-Linux operating systems and for AArch64 CPU arhitecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay). 
-
+For non-Linux operating systems and for AArch64 CPU architecture, ClickHouse builds are provided as a cross-compiled binary from the latest commit of the `master` branch (with a few hours delay).
 
 -   [MacOS x86_64](https://builds.clickhouse.com/master/macos/clickhouse)
      ```bash
      curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse
      ```
--   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse) 
+-   [MacOS Aarch64 (Apple Silicon)](https://builds.clickhouse.com/master/macos-aarch64/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/macos-aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
--   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse) 
+-   [FreeBSD x86_64](https://builds.clickhouse.com/master/freebsd/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse
     ```
--   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) 
+-   [Linux AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse)
     ```bash
     curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse
     ```
@@ -238,7 +251,7 @@ To start the server as a daemon, run:
 $ sudo clickhouse start
 ```
 
-There are also another ways to run ClickHouse:
+There are also other ways to run ClickHouse:
 
 ``` bash
 $ sudo service clickhouse-server start

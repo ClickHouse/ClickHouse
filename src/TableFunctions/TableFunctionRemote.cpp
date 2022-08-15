@@ -2,6 +2,8 @@
 
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -13,7 +15,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <base/range.h>
@@ -79,7 +80,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 else
                 {
                     auto database_literal = evaluateConstantExpressionOrIdentifierAsLiteral(arg_value, context);
-                    configuration.database = database_literal->as<ASTLiteral>()->value.safeGet<String>();
+                    configuration.database = checkAndGetLiteralArgument<String>(database_literal, "database");
                 }
             }
             else
@@ -113,7 +114,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         if (is_cluster_function)
         {
             args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-            cluster_name = args[arg_num]->as<ASTLiteral &>().value.safeGet<const String &>();
+            cluster_name = checkAndGetLiteralArgument<String>(args[arg_num], "cluster_name");
         }
         else
         {
@@ -134,7 +135,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         else
         {
             args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
-            configuration.database = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
+            configuration.database = checkAndGetLiteralArgument<String>(args[arg_num], "database");
 
             ++arg_num;
 
@@ -149,7 +150,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 {
                     std::swap(qualified_name.database, qualified_name.table);
                     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                    qualified_name.table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
+                    qualified_name.table = checkAndGetLiteralArgument<String>(args[arg_num], "table");
                     ++arg_num;
                 }
             }
@@ -201,11 +202,10 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (!cluster_name.empty())
     {
         /// Use an existing cluster from the main config
-        String cluster_name_expanded = context->getMacros()->expand(cluster_name);
         if (name != "clusterAllReplicas")
-            cluster = context->getCluster(cluster_name_expanded);
+            cluster = context->getCluster(cluster_name);
         else
-            cluster = context->getCluster(cluster_name_expanded)->getClusterWithReplicasAsShards(context->getSettingsRef());
+            cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettingsRef());
     }
     else
     {

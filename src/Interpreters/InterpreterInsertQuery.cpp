@@ -26,8 +26,11 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
 
@@ -71,7 +74,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         {
             InterpreterSelectWithUnionQuery interpreter_select{
                 query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-            QueryPipelineBuilder tmp_pipeline = interpreter_select.buildQueryPipeline();
+            auto tmp_pipeline = interpreter_select.buildQueryPipeline();
             ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
@@ -102,7 +105,9 @@ Block InterpreterInsertQuery::getSampleBlock(
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        if (no_destination)
+        if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
+            return window_view->getInputHeader();
+        else if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtuals());
         else
             return metadata_snapshot->getSampleBlockNonMaterialized();
@@ -157,7 +162,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 static bool hasAggregateFunctions(const IAST * ast)
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast))
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
+        if (AggregateUtils::isAggregateFunction(*func))
             return true;
 
     for (const auto & child : ast->children)
@@ -203,7 +208,7 @@ static bool isTrivialSelect(const ASTPtr & select)
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
-};
+}
 
 Chain InterpreterInsertQuery::buildChain(
     const StoragePtr & table,
@@ -298,6 +303,8 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     QueryPipelineBuilder pipeline;
+    std::optional<QueryPipeline> distributed_pipeline;
+    QueryPlanResourceHolder resources;
 
     StoragePtr table = getTable(query);
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
@@ -319,20 +326,12 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    bool is_distributed_insert_select = false;
-
-    if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
-    {
+    if (query.select && settings.parallel_distributed_insert_select)
         // Distributed INSERT SELECT
-        if (auto maybe_pipeline = table->distributedWrite(query, getContext()))
-        {
-            pipeline = std::move(*maybe_pipeline);
-            is_distributed_insert_select = true;
-        }
-    }
+        distributed_pipeline = table->distributedWrite(query, getContext());
 
     std::vector<Chain> out_chains;
-    if (!is_distributed_insert_select || query.watch)
+    if (!distributed_pipeline || query.watch)
     {
         size_t out_streams_size = 1;
 
@@ -432,9 +431,9 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
-    if (is_distributed_insert_select)
+    if (distributed_pipeline)
     {
-        res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
+        res.pipeline = std::move(*distributed_pipeline);
     }
     else if (query.select || query.watch)
     {
@@ -458,16 +457,26 @@ BlockIO InterpreterInsertQuery::execute()
         });
 
         size_t num_select_threads = pipeline.getNumThreads();
-        size_t num_insert_threads = std::max_element(out_chains.begin(), out_chains.end(), [&](const auto &a, const auto &b)
-        {
-            return a.getNumThreads() < b.getNumThreads();
-        })->getNumThreads();
+
+        for (auto & chain : out_chains)
+            resources = chain.detachResources();
+
         pipeline.addChains(std::move(out_chains));
 
-        pipeline.setMaxThreads(num_insert_threads);
-        /// Don't use more threads for insert then for select to reduce memory consumption.
-        if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
-            pipeline.setMaxThreads(num_select_threads);
+        if (!settings.parallel_view_processing)
+        {
+            /// Don't use more threads for INSERT than for SELECT to reduce memory consumption.
+            if (pipeline.getNumThreads() > num_select_threads)
+                pipeline.setMaxThreads(num_select_threads);
+        }
+        else if (pipeline.getNumThreads() < settings.max_threads)
+        {
+            /// It is possible for query to have max_threads=1, due to optimize_trivial_insert_select,
+            /// however in case of parallel_view_processing and multiple views, views can still be processed in parallel.
+            ///
+            /// Note, number of threads will be limited by buildPushingToViewsChain() to max_threads.
+            pipeline.setMaxThreads(settings.max_threads);
+        }
 
         pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
         {
@@ -495,6 +504,8 @@ BlockIO InterpreterInsertQuery::execute()
             res.pipeline.complete(std::move(pipe));
         }
     }
+
+    res.pipeline.addResources(std::move(resources));
 
     res.pipeline.addStorageHolder(table);
     if (inner_table)

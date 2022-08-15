@@ -58,13 +58,14 @@ ProtobufListSchemaReader::ProtobufListSchemaReader(const FormatSettings & format
           true,
           format_settings.schema.is_server,
           format_settings.schema.format_schema_path)
+    , skip_unsopported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
 {
 }
 
 NamesAndTypesList ProtobufListSchemaReader::readSchema()
 {
     const auto * message_descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::Yes);
-    return protobufSchemaToCHSchema(message_descriptor);
+    return protobufSchemaToCHSchema(message_descriptor, skip_unsopported_fields);
 }
 
 void registerInputFormatProtobufList(FormatFactory & factory)
@@ -79,7 +80,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
                 return std::make_shared<ProtobufListInputFormat>(buf, sample, std::move(params),
                     FormatSchemaInfo(settings, "Protobuf", true), settings.protobuf.input_flatten_google_wrappers);
             });
-    factory.markFormatAsColumnOriented("ProtobufList");
+    factory.markFormatSupportsSubsetOfColumns("ProtobufList");
 }
 
 void registerProtobufListSchemaReader(FormatFactory & factory)

@@ -143,29 +143,16 @@ void convertObjectsToTuples(Block & block, const NamesAndTypesList & extended_st
             continue;
 
         const auto & column_object = assert_cast<const ColumnObject &>(*column.column);
-        const auto & subcolumns = column_object.getSubcolumns();
-
         if (!column_object.isFinalized())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert to tuple column '{}' from type {}. Column should be finalized first",
                 column.name, column.type->getName());
 
-        PathsInData tuple_paths;
-        DataTypes tuple_types;
-        Columns tuple_columns;
-
-        for (const auto & entry : subcolumns)
-        {
-            tuple_paths.emplace_back(entry->path);
-            tuple_types.emplace_back(entry->data.getLeastCommonType());
-            tuple_columns.emplace_back(entry->data.getFinalizedColumnPtr());
-        }
+        std::tie(column.column, column.type) = unflattenObjectToTuple(column_object);
 
         auto it = storage_columns_map.find(column.name);
         if (it == storage_columns_map.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", column.name);
-
-        std::tie(column.column, column.type) = unflattenTuple(tuple_paths, tuple_types, tuple_columns);
 
         /// Check that constructed Tuple type and type in storage are compatible.
         getLeastCommonTypeForObject({column.type, it->second}, true);
@@ -274,7 +261,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
                     key.getPath(), subtypes[0]->getName(), subtypes[i]->getName());
 
         tuple_paths.emplace_back(key);
-        tuple_types.emplace_back(getLeastSupertype(subtypes, /*allow_conversion_to_string=*/ true));
+        tuple_types.emplace_back(getLeastSupertypeOrString(subtypes));
     }
 
     if (tuple_paths.empty())
@@ -468,7 +455,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node * node)
         }
 
         /// Sort to always create the same type for the same set of subcolumns.
-        std::sort(tuple_elements.begin(), tuple_elements.end(),
+        ::sort(tuple_elements.begin(), tuple_elements.end(),
             [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
 
         auto tuple_names = extractVector<0>(tuple_elements);
@@ -585,6 +572,28 @@ DataTypePtr unflattenTuple(const PathsInData & paths, const DataTypes & tuple_ty
     return unflattenTuple(paths, tuple_types, tuple_columns).second;
 }
 
+std::pair<ColumnPtr, DataTypePtr> unflattenObjectToTuple(const ColumnObject & column)
+{
+    const auto & subcolumns = column.getSubcolumns();
+
+    PathsInData paths;
+    DataTypes types;
+    Columns columns;
+
+    paths.reserve(subcolumns.size());
+    types.reserve(subcolumns.size());
+    columns.reserve(subcolumns.size());
+
+    for (const auto & entry : subcolumns)
+    {
+        paths.emplace_back(entry->path);
+        types.emplace_back(entry->data.getLeastCommonType());
+        columns.emplace_back(entry->data.getFinalizedColumnPtr());
+    }
+
+    return unflattenTuple(paths, types, columns);
+}
+
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const PathsInData & paths,
     const DataTypes & tuple_types,
@@ -683,7 +692,7 @@ void replaceMissedSubcolumnsByConstants(
                 res.emplace_back(full_name, types[i]);
             }
 
-            std::sort(res.begin(), res.end());
+            ::sort(res.begin(), res.end());
             return res;
         };
 
@@ -709,9 +718,9 @@ void replaceMissedSubcolumnsByConstants(
             addConstantToWithClause(query, name, type);
 }
 
-void finalizeObjectColumns(MutableColumns & columns)
+void finalizeObjectColumns(const MutableColumns & columns)
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         if (auto * column_object = typeid_cast<ColumnObject *>(column.get()))
             column_object->finalize();
 }

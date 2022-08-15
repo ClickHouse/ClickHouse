@@ -26,7 +26,7 @@ struct PositionCaseSensitiveASCII
     using MultiSearcherInBigHaystack = MultiVolnitsky;
 
     /// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
-    using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
+    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -38,7 +38,7 @@ struct PositionCaseSensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -62,7 +62,7 @@ struct PositionCaseInsensitiveASCII
     /// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
     using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitive;
-    using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
+    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ true>;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
     {
@@ -74,7 +74,7 @@ struct PositionCaseInsensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -94,7 +94,7 @@ struct PositionCaseSensitiveUTF8
 {
     using SearcherInBigHaystack = VolnitskyUTF8;
     using MultiSearcherInBigHaystack = MultiVolnitskyUTF8;
-    using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
+    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -106,7 +106,7 @@ struct PositionCaseSensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -154,7 +154,7 @@ struct PositionCaseInsensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -182,19 +182,21 @@ struct PositionImpl
     static constexpr bool supports_start_pos = true;
     static constexpr auto name = Name::name;
 
+    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {};}
+
     using ResultType = UInt64;
 
     /// Find one substring in many strings.
     static void vectorConstant(
-        const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
         const std::string & needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res)
     {
-        const UInt8 * begin = data.data();
+        const UInt8 * const begin = haystack_data.data();
+        const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
-        const UInt8 * end = pos + data.size();
 
         /// Current index in the array of strings.
         size_t i = 0;
@@ -205,7 +207,7 @@ struct PositionImpl
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
             /// Determine which index it refers to.
-            while (begin + offsets[i] <= pos)
+            while (begin + haystack_offsets[i] <= pos)
             {
                 res[i] = 0;
                 ++i;
@@ -213,14 +215,14 @@ struct PositionImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + offsets[i])
+            if (pos + needle.size() < begin + haystack_offsets[i])
             {
-                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
+                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos < start)
                 {
                     pos = reinterpret_cast<const UInt8 *>(Impl::advancePos(
                         reinterpret_cast<const char *>(pos),
-                        reinterpret_cast<const char *>(begin + offsets[i]),
+                        reinterpret_cast<const char *>(begin + haystack_offsets[i]),
                         start - res_pos));
                     continue;
                 }
@@ -230,7 +232,7 @@ struct PositionImpl
             {
                 res[i] = 0;
             }
-            pos = begin + offsets[i];
+            pos = begin + haystack_offsets[i];
             ++i;
         }
 
@@ -408,6 +410,12 @@ struct PositionImpl
 
     template <typename... Args>
     static void vectorFixedConstant(Args &&...)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
+    }
+
+    template <typename... Args>
+    static void vectorFixedVector(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }

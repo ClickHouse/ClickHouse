@@ -3,9 +3,9 @@ sidebar_position: 44
 sidebar_label: TTL
 ---
 
-# Manipulations with Table TTL {#manipulations-with-table-ttl}
+# Manipulations with Table TTL
 
-## MODIFY TTL {#modify-ttl}
+## MODIFY TTL
 
 You can change [table TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-table-ttl) with a request of the following form:
 
@@ -13,7 +13,7 @@ You can change [table TTL](../../../engines/table-engines/mergetree-family/merge
 ALTER TABLE table_name MODIFY TTL ttl_expression;
 ```
 
-## REMOVE TTL {#remove-ttl}
+## REMOVE TTL
 
 TTL-property can be removed from table with the following query:
 
@@ -34,7 +34,7 @@ CREATE TABLE table_with_ttl
 )
 ENGINE MergeTree()
 ORDER BY tuple()
-TTL event_time + INTERVAL 3 MONTH;
+TTL event_time + INTERVAL 3 MONTH
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO table_with_ttl VALUES (now(), 1, 'username1');

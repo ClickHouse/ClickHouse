@@ -537,7 +537,7 @@ private:
 
 }
 
-void registerFunctionToStartOfInterval(FunctionFactory & factory)
+REGISTER_FUNCTION(ToStartOfInterval)
 {
     factory.registerFunction<FunctionToStartOfInterval>();
 }
