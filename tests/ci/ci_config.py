@@ -178,7 +178,7 @@ CI_CONFIG = {
             "with_coverage": False,
         },
         "binary_riscv64": {
-            "compiler": "clang-14-riscv64",
+            "compiler": "clang-trunk-riscv64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",

@@ -189,7 +189,7 @@ def parse_env_variables(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake"
         )
     elif is_cross_riscv:
-        cc = compiler[: -len(RISCV_SUFFIX)]
+        cc = "clang"
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-riscv64.cmake"
         )
@@ -346,7 +346,7 @@ if __name__ == "__main__":
             "clang-14-darwin-aarch64",
             "clang-14-aarch64",
             "clang-14-ppc64le",
-            "clang-14-riscv64",
+            "clang-trunk-riscv64",
             "clang-14-freebsd",
             "gcc-11",
         ),
