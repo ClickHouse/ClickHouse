@@ -13,11 +13,11 @@
 namespace DB
 {
 
-TableNode::TableNode(StoragePtr storage_, ContextPtr context)
+TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
     : storage(std::move(storage_))
     , storage_id(storage->getStorageID())
-    , table_lock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout))
-    , storage_snapshot(storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context))
+    , storage_lock(std::move(storage_lock_))
+    , storage_snapshot(std::move(storage_snapshot_))
 {
 }
 
@@ -62,7 +62,7 @@ QueryTreeNodePtr TableNode::cloneImpl() const
 
     result_table_node->storage = storage;
     result_table_node->storage_id = storage_id;
-    result_table_node->table_lock = table_lock;
+    result_table_node->storage_lock = storage_lock;
     result_table_node->storage_snapshot = storage_snapshot;
 
     return result_table_node;

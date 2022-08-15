@@ -1,16 +1,22 @@
 #include <Analyzer/QueryNode.h>
 
+#include <Common/SipHash.h>
+
+#include <Core/NamesAndTypes.h>
+
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 
-#include <Common/SipHash.h>
-
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -20,6 +26,29 @@ QueryNode::QueryNode()
     children.resize(children_size);
     children[with_child_index] = std::make_shared<ListNode>();
     children[projection_child_index] = std::make_shared<ListNode>();
+}
+
+NamesAndTypesList QueryNode::computeProjectionColumns() const
+{
+    NamesAndTypes query_columns;
+
+    const auto & projection_nodes = getProjection();
+    query_columns.reserve(projection_nodes.getNodes().size());
+
+    for (const auto & projection_node : projection_nodes.getNodes())
+    {
+        auto column_type = projection_node->getResultType();
+        std::string column_name;
+
+        if (projection_node->hasAlias())
+            column_name = projection_node->getAlias();
+        else
+            column_name = projection_node->getName();
+
+        query_columns.emplace_back(column_name, column_type);
+    }
+
+    return {query_columns.begin(), query_columns.end()};
 }
 
 String QueryNode::getName() const
@@ -121,21 +150,8 @@ ASTPtr QueryNode::toASTImpl() const
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, children[projection_child_index]->toAST());
 
-    auto table_expression_ast = std::make_shared<ASTTableExpression>();
-    table_expression_ast->children.push_back(children[from_child_index]->toAST());
-
-    if (children[from_child_index]->getNodeType() == QueryTreeNodeType::TABLE)
-        table_expression_ast->database_and_table_name = table_expression_ast->children.back();
-    else if (children[from_child_index]->getNodeType() == QueryTreeNodeType::QUERY)
-        table_expression_ast->subquery = table_expression_ast->children.back();
-
-    auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
-    tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
-    tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
-
-    auto tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
-    tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
-
+    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    addTableExpressionIntoTablesInSelectQuery(tables_in_select_query_ast, children[from_child_index]);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
     if (getPrewhere())
