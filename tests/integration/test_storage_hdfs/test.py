@@ -2,10 +2,13 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", with_hdfs=True)
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/macro.xml"], with_hdfs=True
+)
 
 
 @pytest.fixture(scope="module")
@@ -534,7 +537,7 @@ def test_schema_inference_with_globs(started_cluster):
     )
 
     result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')")
-    assert result.strip() == "c1\tNullable(Float64)"
+    assert result.strip() == "c1\tNullable(Int64)"
 
     result = node1.query(
         f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
@@ -587,6 +590,22 @@ def test_cluster_join(started_cluster):
     """
     )
     assert "AMBIGUOUS_COLUMN_NAME" not in result
+
+
+def test_cluster_macro(started_cluster):
+    with_macro = node1.query(
+        """
+        SELECT id FROM hdfsCluster('{default_cluster_macro}', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
+    """
+    )
+
+    no_macro = node1.query(
+        """
+        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
+    """
+    )
+
+    assert TSV(with_macro) == TSV(no_macro)
 
 
 def test_virtual_columns_2(started_cluster):

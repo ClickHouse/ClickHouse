@@ -319,12 +319,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         size_t columns_size;
         in >> columns_size >> "\n";
         columns_str.resize(columns_size);
-        in.readStrict(&columns_str[0], columns_size);
+        in.readStrict(columns_str.data(), columns_size);
         in >> "\nmetadata_str_size:\n";
         size_t metadata_size;
         in >> metadata_size >> "\n";
         metadata_str.resize(metadata_size);
-        in.readStrict(&metadata_str[0], metadata_size);
+        in.readStrict(metadata_str.data(), metadata_size);
     }
     else if (type_str == "sync_pinned_part_uuids")
     {

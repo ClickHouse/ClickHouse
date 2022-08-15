@@ -5,19 +5,95 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSetQuery.h>
 
-#include <Common/typeid_cast.h>
+#include <Core/Names.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
-
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+static NameToNameMap::value_type convertToQueryParameter(SettingChange change)
+{
+    auto name = change.name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
+
+    auto value = applyVisitor(FieldVisitorToString(), change.value);
+    /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
+    if (value.starts_with('\''))
+    {
+        ReadBufferFromOwnString buf(value);
+        readQuoted(value, buf);
+    }
+    return {name, value};
+}
+
+
+class ParserLiteralOrMap : public IParserBase
+{
+public:
+protected:
+    const char * getName() const override { return "literal or map"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        {
+            ParserLiteral literal;
+            if (literal.parse(pos, node, expected))
+                return true;
+        }
+
+        ParserToken l_br(TokenType::OpeningCurlyBrace);
+        ParserToken r_br(TokenType::ClosingCurlyBrace);
+        ParserToken comma(TokenType::Comma);
+        ParserToken colon(TokenType::Colon);
+        ParserStringLiteral literal;
+
+        if (!l_br.ignore(pos, expected))
+            return false;
+
+        Map map;
+
+        while (!r_br.ignore(pos, expected))
+        {
+            if (!map.empty() && !comma.ignore(pos, expected))
+                return false;
+
+            ASTPtr key;
+            ASTPtr val;
+
+            if (!literal.parse(pos, key, expected))
+                return false;
+
+            if (!colon.ignore(pos, expected))
+                return false;
+
+            if (!literal.parse(pos, val, expected))
+                return false;
+
+            Tuple tuple;
+            tuple.push_back(std::move(key->as<ASTLiteral>()->value));
+            tuple.push_back(std::move(val->as<ASTLiteral>()->value));
+            map.push_back(std::move(tuple));
+        }
+
+        node = std::make_shared<ASTLiteral>(std::move(map));
+        return true;
+    }
+};
 
 /// Parse `name = value`.
 bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
     ParserCompoundIdentifier name_p;
-    ParserLiteral value_p;
+    ParserLiteralOrMap value_p;
     ParserToken s_eq(TokenType::Equals);
 
     ASTPtr name;
@@ -60,16 +136,23 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     SettingsChanges changes;
+    NameToNameMap query_parameters;
 
     while (true)
     {
-        if (!changes.empty() && !s_comma.ignore(pos))
+        if ((!changes.empty() || !query_parameters.empty()) && !s_comma.ignore(pos))
             break;
 
-        changes.push_back(SettingChange{});
+        /// Either a setting or a parameter for prepared statement (if name starts with QUERY_PARAMETER_NAME_PREFIX)
+        SettingChange current;
 
-        if (!parseNameValuePair(changes.back(), pos, expected))
+        if (!parseNameValuePair(current, pos, expected))
             return false;
+
+        if (current.name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
+            query_parameters.emplace(convertToQueryParameter(std::move(current)));
+        else
+            changes.push_back(std::move(current));
     }
 
     auto query = std::make_shared<ASTSetQuery>();
@@ -77,6 +160,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->is_standalone = !parse_only_internals;
     query->changes = std::move(changes);
+    query->query_parameters = std::move(query_parameters);
 
     return true;
 }

@@ -4,7 +4,7 @@
 #include <Interpreters/Context.h>
 
 #include <memory>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 
 
@@ -25,10 +25,10 @@ StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription 
 }
 
 
-class StorageInputSource : public SourceWithProgress, WithContext
+class StorageInputSource : public ISource, WithContext
 {
 public:
-    StorageInputSource(ContextPtr context_, Block sample_block) : SourceWithProgress(std::move(sample_block)), WithContext(context_) {}
+    StorageInputSource(ContextPtr context_, Block sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
 
     Chunk generate() override
     {

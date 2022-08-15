@@ -162,7 +162,7 @@ protected:
     bool is_table_function;
 };
 
-// A special function parser for view table function.
+// A special function parser for view and viewIfPermitted table functions.
 // It parses an SELECT query as its argument and doesn't support getColumnName().
 class ParserTableFunctionView : public IParserBase
 {
@@ -215,6 +215,18 @@ class ParserCodec : public IParserBase
 protected:
     const char * getName() const override { return "codec"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/** Parse collation
+  * COLLATE utf8_unicode_ci NOT NULL
+  */
+class ParserCollation : public IParserBase
+{
+protected:
+    const char * getName() const override { return "collation"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+private:
+    static const char * valid_collations[];
 };
 
 /// Fast path of cast operator "::".

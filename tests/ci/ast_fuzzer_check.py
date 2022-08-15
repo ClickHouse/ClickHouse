@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         "core.gz": os.path.join(workspace_path, "core.gz"),
     }
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     for f in paths:
         try:
             paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + "/" + f)
@@ -168,6 +168,8 @@ if __name__ == "__main__":
         report_url,
         check_name,
     )
+
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")

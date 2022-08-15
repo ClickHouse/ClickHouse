@@ -75,12 +75,18 @@
         *
         {
             box-sizing: border-box;
+            /* For iPad */
+            margin: 0;
+            border-radius: 0;
+            tab-size: 4;
         }
 
         html, body
         {
             height: 100%;
             margin: 0;
+            /* This enables position: sticky on controls */
+            overflow: auto;
         }
 
         html
@@ -89,7 +95,19 @@
             font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
+        }
+
+        body
+        {
+            /* This element will show scroll-bar on overflow, and the scroll-bar will be outside of the padding. */
             padding: 0.5rem;
+        }
+
+        #controls
+        {
+            /* When a page will be scrolled horizontally due to large table size, keep controls in place. */
+            position: sticky;
+            left: 0;
         }
 
         /* Otherwise Webkit based browsers will display ugly border on focus. */
@@ -127,16 +145,12 @@
             background-color: var(--element-background-color);
         }
 
-        #query_div
-        {
-            /* Make enough space for medium/large queries but allowing query textarea to grow. */
-            min-height: 20%;
-        }
-
         #query
         {
-            height: 100%;
-            width: 100%;
+            /* Make enough space for even big queries. */
+            height: 20vh;
+            /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
+            min-width: 100%;
         }
 
         #inputs
@@ -265,11 +279,21 @@
             display: none;
         }
 
-        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut. */
-        td.left:hover
+        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
+         * We also keep it for some time on mouseout for "hysteresis" effect.
+         */
+        td.left:hover, .td-hover-hysteresis
         {
             white-space: pre-wrap;
             max-width: none;
+        }
+
+        .td-selected
+        {
+            white-space: pre-wrap;
+            max-width: none;
+            background-color: var(--table-hover-color);
+            border: 2px solid var(--border-color);
         }
 
         td.transposed
@@ -283,6 +307,14 @@
         {
             text-align: center;
             vertical-align: middle;
+        }
+
+        .row-number
+        {
+            width: 1%;
+            text-align: right;
+            background-color: var(--table-header-color);
+            color: var(--misc-text-color);
         }
 
         div.empty-result
@@ -376,28 +408,64 @@
             text-align: center;
             margin-top: 5em;
         }
+
+        #chart
+        {
+            background-color: var(--element-background-color);
+            filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+            display: none;
+            height: 70vh;
+        }
+
+        /* This is for charts (uPlot), Copyright (c) 2022 Leon Sorokin, MIT License, https://github.com/leeoniya/uPlot/ */
+        .u-wrap {position: relative;user-select: none;}
+        .u-over, .u-under, .u-axis {position: absolute;}
+        .u-under {overflow: hidden;}
+        .uplot canvas {display: block;position: relative;width: 100%;height: 100%;}
+        .u-legend {margin: auto;text-align: center; margin-top: 1em; font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;}
+        .u-inline {display: block;}
+        .u-inline * {display: inline-block;}
+        .u-inline tr {margin-right: 16px;}
+        .u-legend th {font-weight: 600;}
+        .u-legend th > * {vertical-align: middle;display: inline-block;}
+        .u-legend td { min-width: 13em; }
+        .u-legend .u-marker {width: 1em;height: 1em;margin-right: 4px;background-clip: padding-box !important;}
+        .u-inline.u-live th::after {content: ":";vertical-align: middle;}
+        .u-inline:not(.u-live) .u-value {display: none;}
+        .u-series > * {padding: 4px;}
+        .u-series th {cursor: pointer;}
+        .u-legend .u-off > * {opacity: 0.3;}
+        .u-select {background: rgba(0,0,0,0.07);position: absolute;pointer-events: none;}
+        .u-cursor-x, .u-cursor-y {position: absolute;left: 0;top: 0;pointer-events: none;will-change: transform;z-index: 100;}
+        .u-hz .u-cursor-x, .u-vt .u-cursor-y {height: 100%;border-right: 1px dashed #607D8B;}
+        .u-hz .u-cursor-y, .u-vt .u-cursor-x {width: 100%;border-bottom: 1px dashed #607D8B;}
+        .u-cursor-pt {position: absolute;top: 0;left: 0;border-radius: 50%;border: 0 solid;pointer-events: none;will-change: transform;z-index: 100;/*this has to be !important since we set inline "background" shorthand */background-clip: padding-box !important;}
+        .u-axis.u-off, .u-select.u-off, .u-cursor-x.u-off, .u-cursor-y.u-off, .u-cursor-pt.u-off {display: none;}
     </style>
 </head>
 
 <body>
-    <div id="inputs">
-        <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
-    </div>
-    <div id="query_div">
-        <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
-    </div>
-    <div id="run_div">
-        <button class="shadow" id="run">Run</button>
-        <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
-        <span id="hourglass">⧗</span>
-        <span id="check-mark">✔</span>
-        <span id="stats"></span>
-        <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
+    <div id="controls">
+        <div id="inputs">
+            <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
+        </div>
+        <div id="query_div">
+            <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
+        </div>
+        <div id="run_div">
+            <button class="shadow" id="run">Run</button>
+            <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
+            <span id="hourglass">⧗</span>
+            <span id="check-mark">✔</span>
+            <span id="stats"></span>
+            <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
+        </div>
     </div>
     <div id="data_div">
         <table class="monospace-table shadow" id="data-table"></table>
         <pre class="monospace-table shadow" id="data-unparsed"></pre>
     </div>
+    <div id="chart"></div>
     <svg id="graph" fill="none"></svg>
     <p id="error" class="monospace shadow">
     </p>
@@ -455,20 +523,27 @@
 
         const server_address = document.getElementById('url').value;
 
-        const url = server_address +
+        var url = server_address +
             (server_address.indexOf('?') >= 0 ? '&' : '?') +
             /// Ask server to allow cross-domain requests.
             'add_http_cors_header=1' +
-            '&user=' + encodeURIComponent(user) +
-            '&password=' + encodeURIComponent(password) +
             '&default_format=JSONCompact' +
             /// Safety settings to prevent results that browser cannot display.
             '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
+        // If play.html is opened locally, append username and password to the URL parameter to avoid CORS issue.
+        if (document.location.href.startsWith("file://")) {
+            url += '&user=' + encodeURIComponent(user) +
+            '&password=' + encodeURIComponent(password)
+        }
+
         const xhr = new XMLHttpRequest;
 
         xhr.open('POST', url, true);
-
+        // If play.html is open normally, use Basic auth to prevent username and password being exposed in URL parameters
+        if (!document.location.href.startsWith("file://")) {
+            xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
+        }
         xhr.onreadystatechange = function()
         {
             if (posted_request_num != request_num) {
@@ -518,8 +593,13 @@
         if (status === 200) {
             let json;
             try { json = JSON.parse(response); } catch (e) {}
+
             if (json !== undefined && json.statistics !== undefined) {
                 renderResult(json);
+            } else if (Array.isArray(json) && json.length == 2 &&
+                Array.isArray(json[0]) && Array.isArray(json[1]) && json[0].length > 1 && json[0].length == json[1].length) {
+                /// If user requested FORMAT JSONCompactColumns, we will render it as a chart.
+                renderChart(json);
             } else {
                 renderUnparsedResult(response);
             }
@@ -530,11 +610,13 @@
         }
     }
 
+    let query_area = document.getElementById('query');
+
     window.onpopstate = function(event) {
         if (!event.state) {
             return;
         }
-        document.getElementById('query').value = event.state.query;
+        query_area.value = event.state.query;
         if (!event.state.response) {
             clear();
             return;
@@ -543,13 +625,13 @@
     };
 
     if (window.location.hash) {
-        document.getElementById('query').value = window.atob(window.location.hash.substr(1));
+        query_area.value = window.atob(window.location.hash.substr(1));
     }
 
     function post()
     {
         ++request_num;
-        let query = document.getElementById('query').value;
+        let query = query_area.value;
         postImpl(request_num, query);
     }
 
@@ -566,30 +648,52 @@
         }
     }
 
+    /// Pressing Tab in textarea will increase indentation.
+    /// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
+
+    let user_prefers_tab_navigation = false;
+
+    [...document.querySelectorAll('input')].map(elem => {
+        elem.onkeydown = (e) => {
+            if (e.key == 'Tab') { user_prefers_tab_navigation = true; }
+        };
+    });
+
+    query_area.onkeydown = (e) => {
+        if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
+            let elem = e.target;
+            let selection_start = elem.selectionStart;
+            let selection_end = elem.selectionEnd;
+
+            elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
+            elem.selectionStart = selection_start + 4;
+            elem.selectionEnd = selection_start + 4;
+
+            e.preventDefault();
+            return false;
+        }
+    };
+
+    function clearElement(id)
+    {
+        let elem = document.getElementById(id);
+        while (elem.firstChild) {
+            elem.removeChild(elem.lastChild);
+        }
+        elem.style.display = 'none';
+    }
+
     function clear()
     {
-        let table = document.getElementById('data-table');
-        while (table.firstChild) {
-            table.removeChild(table.lastChild);
-        }
+        clearElement('data-table');
+        clearElement('graph');
+        clearElement('chart');
+        clearElement('data-unparsed');
+        clearElement('error');
 
-        let graph = document.getElementById('graph');
-        while (graph.firstChild) {
-            graph.removeChild(graph.lastChild);
-        }
-        graph.style.display = 'none';
-
-        document.getElementById('data-unparsed').innerText = '';
-        document.getElementById('data-unparsed').style.display = 'none';
-
-        document.getElementById('error').innerText = '';
-        document.getElementById('error').style.display = 'none';
-
+        document.getElementById('check-mark').display = 'none';
+        document.getElementById('hourglass').display = 'none';
         document.getElementById('stats').innerText = '';
-
-        document.getElementById('hourglass').style.display = 'none';
-        document.getElementById('check-mark').style.display = 'none';
-
         document.getElementById('logo-container').style.display = 'block';
     }
 
@@ -626,7 +730,7 @@
         stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
-        if (response.data.length > 3 && document.getElementById('query').value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
+        if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
             renderGraph(response);
         } else {
             renderTable(response);
@@ -726,6 +830,7 @@
         }
         let table = document.getElementById('data-table');
         table.appendChild(tbody);
+        table.style.display = 'table';
     }
 
     function renderTable(response)
@@ -735,7 +840,17 @@
             return;
         }
 
+        const should_display_row_numbers = response.data.length > 3;
+
         let thead = document.createElement('thead');
+
+        if (should_display_row_numbers) {
+            let th = document.createElement('th');
+            th.className = 'row-number';
+            th.appendChild(document.createTextNode('№'));
+            thead.appendChild(th);
+        }
+
         for (let idx in response.meta) {
             let th = document.createElement('th');
             const name = document.createTextNode(response.meta[idx].name);
@@ -745,7 +860,9 @@
 
         /// To prevent hanging the browser, limit the number of cells in a table.
         /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
+        /// Also we permit rendering of more records but only if elapsed time is not large.
         const max_rows = 10000 / response.meta.length;
+        const max_render_ms = 200;
         let row_num = 0;
 
         const column_is_number = response.meta.map(elem => !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/));
@@ -761,18 +878,35 @@
             column_need_render_bars: column_need_render_bars,
         };
 
+        const start_time = performance.now();
+
         let tbody = document.createElement('tbody');
         for (let row_idx in response.data) {
             let tr = document.createElement('tr');
+            if (should_display_row_numbers) {
+                let td = document.createElement('td');
+                td.className = 'row-number';
+                td.appendChild(document.createTextNode(1 + +row_idx));
+                tr.appendChild(td);
+            }
             for (let col_idx in response.data[row_idx]) {
                 let cell = response.data[row_idx][col_idx];
                 const td = renderCell(cell, col_idx, settings);
+
+                td.onclick = () => { td.classList.add('td-selected') };
+                td.onmouseenter = () => {
+                    td.classList.add('td-hover-hysteresis');
+                    td.onmouseleave = () => {
+                        setTimeout(() => { td && td.classList.remove('td-hover-hysteresis') }, 1000);
+                    };
+                };
+
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);
 
             ++row_num;
-            if (row_num >= max_rows) {
+            if (row_num >= max_rows && performance.now() - start_time >= max_render_ms) {
                 break;
             }
         }
@@ -780,6 +914,7 @@
         let table = document.getElementById('data-table');
         table.appendChild(thead);
         table.appendChild(tbody);
+        table.style.display = 'table';
     }
 
     /// A function to render raw data when non-default format is specified.
@@ -861,15 +996,79 @@
         svg.style.height = graph.graph().height;
     }
 
-    function setColorTheme(theme) {
-        window.localStorage.setItem('theme', theme);
-        document.documentElement.setAttribute('data-theme', theme);
+    let load_uplot_promise;
+    function loadUplot() {
+        if (load_uplot_promise) { return load_uplot_promise; }
+        load_uplot_promise = loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
+            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
+        return load_uplot_promise;
     }
+
+    let uplot;
+    async function renderChart(json)
+    {
+        await loadUplot();
+        clear();
+
+        let chart = document.getElementById('chart');
+        chart.style.display = 'block';
+
+        let paths = uPlot.paths.stepped({align:  1});
+
+        const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
+            ? ["#F80", "#FED", "#c7d0d9", "#2c3235"]
+            : ["#888", "#045", "#2c3235", "#c7d0d9"];
+
+        const opts = {
+            width: chart.clientWidth,
+            height: chart.clientHeight,
+            scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
+            axes: [ { stroke: axes_color,
+                      grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+					  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+					{ stroke: axes_color,
+					  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+					  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+            series: [ { label: "x" },
+                      { label: "y", stroke: line_color, fill: fill_color,
+                        drawStyle: 0, lineInterpolation: 1, paths } ],
+            padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
+        };
+
+        uplot = new uPlot(opts, json, chart);
+    }
+
+    function resizeChart() {
+        if (uplot) {
+            let chart = document.getElementById('chart');
+            uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
+        }
+    }
+
+    function redrawChart() {
+        if (uplot && document.getElementById('chart').style.display == 'block') {
+            renderChart(uplot.data);
+        }
+    }
+
+    new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
 
     /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
     let theme = current_url.searchParams.get('theme');
     if (['dark', 'light'].indexOf(theme) === -1) {
         theme = window.localStorage.getItem('theme');
+    }
+    if (!theme) {
+        theme = 'light';
+    }
+
+    function setColorTheme(new_theme, update_preference) {
+        theme = new_theme;
+        if (update_preference) {
+            window.localStorage.setItem('theme', theme);
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+        redrawChart();
     }
 
     if (theme) {
@@ -878,26 +1077,21 @@
         /// Obtain system-level user preference
         const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
         if (media_query_list.matches) {
-            /// Set without saving to localstorage
-            document.documentElement.setAttribute('data-theme', 'dark');
+            setColorTheme('dark');
         }
 
         /// There is a rumor that on some computers, the theme is changing automatically on day/night.
         media_query_list.addEventListener('change', function(e) {
-            if (e.matches) {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'light');
-            }
+            setColorTheme(e.matches ? 'dark' : 'light');
         });
     }
 
     document.getElementById('toggle-light').onclick = function() {
-        setColorTheme('light');
+        setColorTheme('light', true);
     }
 
     document.getElementById('toggle-dark').onclick = function() {
-        setColorTheme('dark');
+        setColorTheme('dark', true);
     }
 </script>
 </html>

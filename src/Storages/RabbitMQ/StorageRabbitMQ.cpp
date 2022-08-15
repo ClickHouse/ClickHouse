@@ -3,12 +3,16 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/RabbitMQ/RabbitMQSink.h>
 #include <Storages/RabbitMQ/RabbitMQSource.h>
@@ -89,18 +93,40 @@ StorageRabbitMQ::StorageRabbitMQ(
         , milliseconds_to_wait(RESCHEDULE_MS)
         , is_attach(is_attach_)
 {
-    auto parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
-    context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+    const auto & config = getContext()->getConfigRef();
 
-    auto rabbitmq_username = rabbitmq_settings->rabbitmq_username.value;
-    auto rabbitmq_password = rabbitmq_settings->rabbitmq_password.value;
+    std::pair<String, UInt16> parsed_address;
+    auto setting_rabbitmq_username = rabbitmq_settings->rabbitmq_username.value;
+    auto setting_rabbitmq_password = rabbitmq_settings->rabbitmq_password.value;
+    String username, password;
+
+    if (rabbitmq_settings->rabbitmq_host_port.changed)
+    {
+        username = setting_rabbitmq_username.empty() ? config.getString("rabbitmq.username", "") : setting_rabbitmq_username;
+        password = setting_rabbitmq_password.empty() ? config.getString("rabbitmq.password", "") : setting_rabbitmq_password;
+        if (username.empty() || password.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "No username or password. They can be specified either in config or in storage settings");
+
+        parsed_address = parseAddress(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port), 5672);
+        if (parsed_address.first.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Host or port is incorrect (host: {}, port: {})", parsed_address.first, parsed_address.second);
+
+        context_->getRemoteHostFilter().checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+    }
+    else if (!rabbitmq_settings->rabbitmq_address.changed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ requires either `rabbitmq_host_port` or `rabbitmq_address` setting");
+
     configuration =
     {
         .host = parsed_address.first,
         .port = parsed_address.second,
-        .username = rabbitmq_username.empty() ? getContext()->getConfigRef().getString("rabbitmq.username") : rabbitmq_username,
-        .password = rabbitmq_password.empty() ? getContext()->getConfigRef().getString("rabbitmq.password") : rabbitmq_password,
-        .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost)),
+        .username = username,
+        .password = password,
+        .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost)),
         .secure = rabbitmq_settings->rabbitmq_secure.value,
         .connection_string = getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_address)
     };
@@ -552,16 +578,6 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
         }
     }
 
-    /// Impose default settings if there are no user-defined settings.
-    if (!queue_settings.contains("x-max-length"))
-    {
-        queue_settings["x-max-length"] = queue_size;
-    }
-    if (!queue_settings.contains("x-overflow"))
-    {
-        queue_settings["x-overflow"] = "reject-publish";
-    }
-
     /// If queue_base - a single name, then it can be used as one specific queue, from which to read.
     /// Otherwise it is used as a generator (unique for current table) of queue names, because it allows to
     /// maximize performance - via setting `rabbitmq_num_queues`.
@@ -648,10 +664,11 @@ void StorageRabbitMQ::unbindExchange()
 }
 
 
-Pipe StorageRabbitMQ::read(
+void StorageRabbitMQ::read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & /* query_info */,
+        SelectQueryInfo & query_info,
         ContextPtr local_context,
         QueryProcessingStage::Enum /* processed_stage */,
         size_t /* max_block_size */,
@@ -661,7 +678,11 @@ Pipe StorageRabbitMQ::read(
         throw Exception("RabbitMQ setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
 
     if (num_created_consumers == 0)
-        return {};
+    {
+        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
+        return;
+    }
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
@@ -708,9 +729,19 @@ Pipe StorageRabbitMQ::read(
         startLoop();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
-    auto united_pipe = Pipe::unitePipes(std::move(pipes));
-    united_pipe.addInterpreterContext(modified_context);
-    return united_pipe;
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    if (pipe.empty())
+    {
+        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
+    }
+    else
+    {
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
+        query_plan.addStep(std::move(read_step));
+        query_plan.addInterpreterContext(modified_context);
+    }
 }
 
 
@@ -1045,16 +1076,11 @@ bool StorageRabbitMQ::streamToViews()
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
-        // Limit read batch to maximum block size to allow DDL
-        StreamLocalLimits limits;
+        Poco::Timespan max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
+                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
 
-        limits.speed_limits.max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                                  ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                                  : getContext()->getSettingsRef().stream_flush_interval_ms;
-
-        limits.timeout_overflow_mode = OverflowMode::BREAK;
-
-        source->setLimits(limits);
+        source->setTimeLimit(max_execution_time);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -1154,7 +1180,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!with_named_collection && !args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");
 
-        rabbitmq_settings->loadFromQuery(*args.storage_def);
+        if (args.storage_def->settings)
+            rabbitmq_settings->loadFromQuery(*args.storage_def);
 
         if (!rabbitmq_settings->rabbitmq_host_port.changed
            && !rabbitmq_settings->rabbitmq_address.changed)

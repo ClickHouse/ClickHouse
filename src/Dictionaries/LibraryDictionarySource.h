@@ -1,6 +1,6 @@
 #pragma once
 
-#include <BridgeHelper/LibraryBridgeHelper.h>
+#include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 #include <Common/LocalDateTime.h>
 #include <Core/UUID.h>
 #include "DictionaryStructure.h"
@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 class CStringsHolder;
-using LibraryBridgeHelperPtr = std::shared_ptr<LibraryBridgeHelper>;
+using ExternalDictionaryLibraryBridgeHelperPtr = std::shared_ptr<ExternalDictionaryLibraryBridgeHelper>;
 
 class LibraryDictionarySource final : public IDictionarySource
 {
@@ -46,16 +46,16 @@ public:
 
     ~LibraryDictionarySource() override;
 
-    Pipe loadAll() override;
+    QueryPipeline loadAll() override;
 
-    Pipe loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for LibraryDictionarySource");
     }
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -85,7 +85,7 @@ private:
     Block sample_block;
     ContextPtr context;
 
-    LibraryBridgeHelperPtr bridge_helper;
+    ExternalDictionaryLibraryBridgeHelperPtr bridge_helper;
     ExternalResultDescription description;
 };
 

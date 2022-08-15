@@ -1,7 +1,7 @@
 drop table if exists t1;
 create table t1(x1 Date32) engine Memory;
 
-insert into t1 values ('1925-01-01'),('1924-01-01'),('2282-12-31'),('2283-12-31'),('2021-06-22');
+insert into t1 values ('1900-01-01'),('1899-01-01'),('2299-12-15'),('2300-12-31'),('2021-06-22');
 
 select x1 from t1;
 select '-------toYear---------';
@@ -23,7 +23,7 @@ select toMinute(x1) from t1; -- { serverError 43 }
 select '-------toSecond---------';
 select toSecond(x1) from t1; -- { serverError 43 }
 select '-------toStartOfDay---------';
-select toStartOfDay(x1, 'Europe/Moscow') from t1;
+select toStartOfDay(x1, 'Asia/Istanbul') from t1;
 select '-------toMonday---------';
 select toMonday(x1) from t1;
 select '-------toISOWeek---------';
@@ -57,21 +57,21 @@ select toStartOfHour(x1) from t1; -- { serverError 43 }
 select '-------toStartOfISOYear---------';
 select toStartOfISOYear(x1) from t1;
 select '-------toRelativeYearNum---------';
-select toRelativeYearNum(x1, 'Europe/Moscow') from t1;
+select toRelativeYearNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeQuarterNum---------';
-select toRelativeQuarterNum(x1, 'Europe/Moscow') from t1;
+select toRelativeQuarterNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeMonthNum---------';
-select toRelativeMonthNum(x1, 'Europe/Moscow') from t1;
+select toRelativeMonthNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeWeekNum---------';
-select toRelativeWeekNum(x1, 'Europe/Moscow') from t1;
+select toRelativeWeekNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeDayNum---------';
-select toRelativeDayNum(x1, 'Europe/Moscow') from t1;
+select toRelativeDayNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeHourNum---------';
-select toRelativeHourNum(x1, 'Europe/Moscow') from t1;
+select toRelativeHourNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeMinuteNum---------';
-select toRelativeMinuteNum(x1, 'Europe/Moscow') from t1;
+select toRelativeMinuteNum(x1, 'Asia/Istanbul') from t1;
 select '-------toRelativeSecondNum---------';
-select toRelativeSecondNum(x1, 'Europe/Moscow') from t1;
+select toRelativeSecondNum(x1, 'Asia/Istanbul') from t1;
 select '-------toTime---------';
 select toTime(x1) from t1; -- { serverError 43 }
 select '-------toYYYYMM---------';
@@ -113,9 +113,19 @@ select subtractQuarters(x1, 1) from t1;
 select '-------subtractYears---------';
 select subtractYears(x1, 1) from t1;
 select '-------toDate32---------';
-select toDate32('1925-01-01'), toDate32(toDate('2000-01-01'));
-select toDate32OrZero('1924-01-01'), toDate32OrNull('1924-01-01');
+select toDate32('1900-01-01'), toDate32(toDate('2000-01-01'));
+select toDate32OrZero('1899-01-01'), toDate32OrNull('1899-01-01');
 select toDate32OrZero(''), toDate32OrNull('');
 select (select toDate32OrZero(''));
 select (select toDate32OrNull(''));
-
+SELECT toString(T.d) dateStr
+FROM
+    (
+    SELECT '1900-01-01'::Date32 d
+    UNION ALL SELECT '1969-12-31'::Date32
+    UNION ALL SELECT '1970-01-01'::Date32
+    UNION ALL SELECT '2149-06-06'::Date32
+    UNION ALL SELECT '2149-06-07'::Date32
+    UNION ALL SELECT '2299-12-31'::Date32
+    ) AS T
+ORDER BY T.d

@@ -1,9 +1,8 @@
 ---
 sidebar_position: 48
 sidebar_label: Access Control and Account Management
+title: Access Control and Account Management
 ---
-
-# Access Control and Account Management {#access-control}
 
 ClickHouse supports access control management based on [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) approach.
 
@@ -24,7 +23,7 @@ You can configure access entities using:
 
 We recommend using SQL-driven workflow. Both of the configuration methods work simultaneously, so if you use the server configuration files for managing accounts and access rights, you can smoothly switch to SQL-driven workflow.
 
-:::warning    
+:::warning
 You can’t manage the same access entity by both configuration methods simultaneously.
 :::
 
@@ -102,7 +101,7 @@ Privileges can be granted to a role by the [GRANT](../sql-reference/statements/g
 
 Row policy is a filter that defines which of the rows are available to a user or a role. Row policy contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 
-:::warning    
+:::warning
 Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.
 :::
 

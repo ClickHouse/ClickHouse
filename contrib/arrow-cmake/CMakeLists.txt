@@ -20,7 +20,7 @@ endif()
 option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
 
 if (NOT ENABLE_PARQUET)
-    message(STATUS "Building without Parquet support")
+    message(STATUS "Not using parquet")
     return()
 endif()
 
@@ -462,5 +462,7 @@ foreach (TOOL ${PARQUET_TOOLS})
 endforeach ()
 
 # The library is large - avoid bloat.
-target_compile_options (_arrow PRIVATE -g0)
-target_compile_options (_parquet PRIVATE -g0)
+if (OMIT_HEAVY_DEBUG_SYMBOLS)
+    target_compile_options (_arrow PRIVATE -g0)
+    target_compile_options (_parquet PRIVATE -g0)
+endif()

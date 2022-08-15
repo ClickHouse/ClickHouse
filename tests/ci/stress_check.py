@@ -31,11 +31,14 @@ def get_run_command(
 ):
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
-        "-e S3_URL='https://clickhouse-datasets.s3.amazonaws.com' "
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
+        # For dmesg
+        "--cap-add syslog "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_folder}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_folder}:/var/log/clickhouse-server {image}"
+        f"--volume={server_log_folder}:/var/log/clickhouse-server {image} "
     )
 
     return cmd
@@ -109,7 +112,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
@@ -148,7 +151,7 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )

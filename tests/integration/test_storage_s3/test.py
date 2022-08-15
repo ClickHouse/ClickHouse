@@ -9,18 +9,13 @@ import time
 
 import helpers.client
 import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_instances_dir
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
 from helpers.test_tools import exec_query_with_retry
 
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-CONFIG_PATH = os.path.join(
-    SCRIPT_DIR, "./{}/dummy/configs/config.d/defaultS3.xml".format(get_instances_dir())
-)
-
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(started_cluster):
@@ -324,7 +319,7 @@ def test_empty_put(started_cluster, auth):
 
     run_query(instance, put_query)
 
-    try:
+    assert (
         run_query(
             instance,
             "select count(*) from s3('http://{}:{}/{}/{}', {}'CSV', '{}')".format(
@@ -336,10 +331,8 @@ def test_empty_put(started_cluster, auth):
                 table_format,
             ),
         )
-
-        assert False, "Query should be failed."
-    except helpers.client.QueryRuntimeException as e:
-        assert str(e).find("The specified key does not exist") != 0
+        == "0\n"
+    )
 
 
 # Test put values in CSV format.
@@ -726,17 +719,24 @@ def run_s3_mocks(started_cluster):
     logging.info("S3 mocks started")
 
 
-def replace_config(old, new):
-    config = open(CONFIG_PATH, "r")
+def replace_config(path, old, new):
+    config = open(path, "r")
     config_lines = config.readlines()
     config.close()
     config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(CONFIG_PATH, "w")
+    config = open(path, "w")
     config.writelines(config_lines)
     config.close()
 
 
 def test_custom_auth_headers(started_cluster):
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./{}/dummy/configs/config.d/defaultS3.xml".format(
+            started_cluster.instances_dir_name
+        ),
+    )
+
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
@@ -760,6 +760,7 @@ def test_custom_auth_headers(started_cluster):
     assert run_query(instance, "SELECT * FROM test") == "1\t2\t3\n"
 
     replace_config(
+        config_path,
         "<header>Authorization: Bearer TOKEN",
         "<header>Authorization: Bearer INVALID_TOKEN",
     )
@@ -767,6 +768,7 @@ def test_custom_auth_headers(started_cluster):
     ret, err = instance.query_and_get_answer_with_error("SELECT * FROM test")
     assert ret == "" and err != ""
     replace_config(
+        config_path,
         "<header>Authorization: Bearer INVALID_TOKEN",
         "<header>Authorization: Bearer TOKEN",
     )
@@ -807,10 +809,7 @@ def test_infinite_redirect(started_cluster):
 
 @pytest.mark.parametrize(
     "extension,method",
-    [
-        pytest.param("bin", "gzip", id="bin"),
-        pytest.param("gz", "auto", id="gz"),
-    ],
+    [pytest.param("bin", "gzip", id="bin"), pytest.param("gz", "auto", id="gz")],
 )
 def test_storage_s3_get_gzip(started_cluster, extension, method):
     bucket = started_cluster.minio_bucket
@@ -1054,61 +1053,61 @@ def test_seekable_formats(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
-    instance.query(
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000) settings s3_truncate_on_insert=1"
+    exec_query_with_retry(
+        instance,
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 5000000
+    assert int(result) == 1000000
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
     )
 
-    result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 5000000
+    result = instance.query(
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
+    )
+    assert int(result) == 1000000
+
+    instance.query(f"SELECT * FROM {table_function} FORMAT Null")
 
     instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(
-        f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM s3') AND memory_usage > 0 ORDER BY event_time desc"
+        f"SELECT formatReadableSize(ProfileEvents['ReadBufferFromS3Bytes']) FROM system.query_log WHERE startsWith(query, 'SELECT * FROM s3') AND memory_usage > 0 AND type='QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1"
     )
-
+    result = result.strip()
+    assert result.endswith("MiB")
     result = result[: result.index(".")]
-    assert int(result) < 200
+    assert int(result) > 80
 
 
 def test_seekable_formats_url(started_cluster):
     bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
-    instance.query(
-        f"insert into table function {table_function} select number, randomString(100) from numbers(5000000) settings s3_truncate_on_insert=1"
+    exec_query_with_retry(
+        instance,
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
     )
 
-    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 5000000
+    assert int(result) == 1000000
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} select number, randomString(100) from numbers(5000000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
     )
 
-    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_orc', 'ORC', 'a Int32, b String')"
-    result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 5000000
-
-    instance.query("SYSTEM FLUSH LOGS")
+    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
     result = instance.query(
-        f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM url') AND memory_usage > 0 ORDER BY event_time desc"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
     )
-
-    result = result[: result.index(".")]
-    assert int(result) < 200
+    assert int(result) == 1000000
 
 
 def test_empty_file(started_cluster):
@@ -1308,7 +1307,7 @@ def test_schema_inference_from_globs(started_cluster):
     result = instance.query(
         f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
     )
-    assert result.strip() == "c1\tNullable(Float64)"
+    assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
         f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
@@ -1318,7 +1317,7 @@ def test_schema_inference_from_globs(started_cluster):
     result = instance.query(
         f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
     )
-    assert result.strip() == "c1\tNullable(Float64)"
+    assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"

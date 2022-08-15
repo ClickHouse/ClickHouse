@@ -1,4 +1,4 @@
-# contributors {#system-contributors}
+# contributors
 
 Contains information about contributors. The order is random at query execution time.
 

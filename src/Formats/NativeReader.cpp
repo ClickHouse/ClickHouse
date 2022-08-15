@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int INCORRECT_INDEX;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -31,8 +32,8 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_)
 {
 }
 
-NativeReader::NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
-    : istr(istr_), header(header_), server_revision(server_revision_)
+NativeReader::NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool skip_unknown_columns_)
+    : istr(istr_), header(header_), server_revision(server_revision_), skip_unknown_columns(skip_unknown_columns_)
 {
 }
 
@@ -186,18 +187,29 @@ Block NativeReader::read()
 
         column.column = std::move(read_column);
 
+        bool use_in_result = true;
         if (header)
         {
-            /// Support insert from old clients without low cardinality type.
-            auto & header_column = header.getByName(column.name);
-            if (!header_column.type->equals(*column.type))
+            if (header.has(column.name))
             {
-                column.column = recursiveTypeConversion(column.column, column.type, header.safeGetByPosition(i).type);
-                column.type = header.safeGetByPosition(i).type;
+                /// Support insert from old clients without low cardinality type.
+                auto & header_column = header.getByName(column.name);
+                if (!header_column.type->equals(*column.type))
+                {
+                    column.column = recursiveTypeConversion(column.column, column.type, header.safeGetByPosition(i).type);
+                    column.type = header.safeGetByPosition(i).type;
+                }
+            }
+            else
+            {
+                if (!skip_unknown_columns)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} found while reading data in Native format", column.name);
+                use_in_result = false;
             }
         }
 
-        res.insert(std::move(column));
+        if (use_in_result)
+            res.insert(std::move(column));
 
         if (use_index)
             ++index_column_it;

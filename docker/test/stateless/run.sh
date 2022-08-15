@@ -18,7 +18,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-./setup_minio.sh
+./setup_minio.sh stateless
+./setup_hdfs_minicluster.sh
 
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
@@ -40,28 +41,36 @@ if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
     export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
+    mkdir -p /var/run/clickhouse-server
     # simpliest way to forward env variables to server
-    sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
+    sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon --pid-file /var/run/clickhouse-server/clickhouse-server.pid
 else
     sudo clickhouse start
 fi
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-
+    mkdir -p /var/run/clickhouse-server1
+    sudo chown clickhouse:clickhouse /var/run/clickhouse-server1
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
+    --pid-file /var/run/clickhouse-server1/clickhouse-server.pid \
     -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
     --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
     --mysql_port 19004 --postgresql_port 19005 \
     --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
+    --prometheus.port 19988 \
     --macros.replica r2   # It doesn't work :(
 
+    mkdir -p /var/run/clickhouse-server2
+    sudo chown clickhouse:clickhouse /var/run/clickhouse-server2
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server2/config.xml --daemon \
+    --pid-file /var/run/clickhouse-server2/clickhouse-server.pid \
     -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
     --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
     --mysql_port 29004 --postgresql_port 29005 \
     --keeper_server.tcp_port 29181 --keeper_server.server_id 3 \
+    --prometheus.port 29988 \
     --macros.shard s2   # It doesn't work :(
 
     MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
@@ -77,13 +86,9 @@ function run_tests()
     # more idiologically correct.
     read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
 
-    # Skip these tests, because they fail when we rerun them multiple times
+    # Use random order in flaky check
     if [ "$NUM_TRIES" -gt "1" ]; then
         ADDITIONAL_OPTIONS+=('--order=random')
-        ADDITIONAL_OPTIONS+=('--skip')
-        ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
-        # Note that flaky check must be ran in parallel, but for now we run
-        # everything in parallel except DatabaseReplicated. See below.
     fi
 
     if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
@@ -92,8 +97,6 @@ function run_tests()
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
-        # Cannot be used with replicated database, due to distributed_ddl_output_mode=none
-        ADDITIONAL_OPTIONS+=('--no-left-queries-check')
         ADDITIONAL_OPTIONS+=('--jobs')
         ADDITIONAL_OPTIONS+=('2')
     else
@@ -110,6 +113,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
     fi
 
+    if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--db-engine=Ordinary')
+    fi
+
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
             --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
@@ -119,6 +126,13 @@ function run_tests()
 }
 
 export -f run_tests
+
+if [ "$NUM_TRIES" -gt "1" ]; then
+    # We don't run tests with Ordinary database in PRs, only in master.
+    # So run new/changed tests with Ordinary at least once in flaky check.
+    timeout "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+      | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
+fi
 
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
@@ -134,18 +148,10 @@ clickhouse-client -q "system flush logs" ||:
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
 # Because it's the simplest way to read it when server has crashed.
-if [ "$NUM_TRIES" -gt "1" ]; then
-    clickhouse-client -q "system shutdown" ||:
-    sleep 10
-else
-    sudo clickhouse stop ||:
-fi
-
-
+sudo clickhouse stop ||:
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    clickhouse-client --port 19000 -q "system shutdown" ||:
-    clickhouse-client --port 29000 -q "system shutdown" ||:
-    sleep 10
+    sudo clickhouse stop --pid-path /var/run/clickhouse-server1 ||:
+    sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
 grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:

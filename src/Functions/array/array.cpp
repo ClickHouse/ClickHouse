@@ -20,7 +20,10 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// array(..., Nothing, ...) -> Array(..., Nothing, ...)
+    bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -97,7 +100,7 @@ private:
 };
 
 
-void registerFunctionArray(FunctionFactory & factory)
+REGISTER_FUNCTION(Array)
 {
     factory.registerFunction<FunctionArray>();
 }

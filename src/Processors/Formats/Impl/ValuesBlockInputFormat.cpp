@@ -49,11 +49,8 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
         params(params_), format_settings(format_settings_), num_columns(header_.columns()),
         parser_type_for_column(num_columns, ParserType::Streaming),
         attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
-        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
+        rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes()), serializations(header_.getSerializations())
 {
-    serializations.resize(types.size());
-    for (size_t i = 0; i < types.size(); ++i)
-        serializations[i] = types[i]->getDefaultSerialization();
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -570,7 +567,7 @@ void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_), buf(in_), format_settings(format_settings_)
+    : IRowSchemaReader(buf, format_settings_), buf(in_)
 {
 }
 
@@ -599,7 +596,7 @@ DataTypes ValuesSchemaReader::readRowAndGetDataTypes()
             skipWhitespaceIfAny(buf);
         }
 
-        readQuotedFieldIntoString(value, buf);
+        readQuotedField(value, buf);
         auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }
