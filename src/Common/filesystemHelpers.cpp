@@ -16,6 +16,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
 
@@ -60,6 +61,12 @@ std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 
     /// NOTE: std::make_shared cannot use protected constructors
     return std::make_unique<TemporaryFile>(path);
+}
+
+std::unique_ptr<TemporaryFile> createTemporaryFile(const DiskPtr & disk)
+{
+    disk->createDirectories(disk->getPath());
+    return std::make_unique<TemporaryFile>(disk);
 }
 
 #if !defined(OS_LINUX)

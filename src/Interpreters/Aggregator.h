@@ -1058,14 +1058,14 @@ public:
     std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, std::unique_ptr<TemporaryFile> file) const;
     void writeToTemporaryFile(AggregatedDataVariants & data_variants) const;
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
     struct TemporaryFiles
     {
-        std::vector<std::unique_ptr<Poco::TemporaryFile>> files;
+        std::vector<std::unique_ptr<TemporaryFile>> files;
         size_t sum_size_uncompressed = 0;
         size_t sum_size_compressed = 0;
         mutable std::mutex mutex;
