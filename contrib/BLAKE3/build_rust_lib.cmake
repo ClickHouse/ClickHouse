@@ -7,7 +7,8 @@ function(build_cargo target_name project_dir)
         set(compile_message "${compile_message} in release mode")
     endif()
 
-    set(TARGET_SPEC "")
+    set(TARGET_SPEC "x86_64-unknown-linux-musl")
+    message("Initializing Rust toolchain, default is ${TARGET_SPEC}")
 
     set(OSX_RUST_ROOT "")
 
