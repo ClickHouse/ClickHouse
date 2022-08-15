@@ -3208,8 +3208,10 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
                 pos = (*it)->info.max_block + 1;
                 restored.push_back((*it)->name);
             }
-            else
+            else if ((*it)->info.partition_id == part->info.partition_id)
                 update_error(it);
+            else
+                error = true;
         }
         else
             error = true;
@@ -3230,7 +3232,7 @@ void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr
                 update_error(it);
 
             if ((*it)->getState() != DataPartState::Active)
-                    activate_part(it);
+                activate_part(it);
 
             pos = (*it)->info.max_block + 1;
             restored.push_back((*it)->name);
