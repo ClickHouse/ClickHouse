@@ -3,6 +3,13 @@
 #include <Core/Types.h>
 #include <memory>
 #include <Poco/TemporaryFile.h>
+#include <Common/CurrentMetrics.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric TotalTemporaryFiles;
+}
 
 namespace DB
 {
@@ -16,8 +23,8 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class TemporaryFileOnDisk
 {
 public:
-    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_ = "tmp");
-    explicit TemporaryFileOnDisk(const String & prefix_ = "tmp");
+    explicit TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_ = "tmp", std::unique_ptr<CurrentMetrics::Increment> increment_ = nullptr);
+    explicit TemporaryFileOnDisk(const String & prefix_);
     ~TemporaryFileOnDisk();
 
     DiskPtr getDisk() const { return disk; }
@@ -27,6 +34,10 @@ public:
 private:
     DiskPtr disk;
     String filepath;
+
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::TotalTemporaryFiles};
+    /// Specified if we know what for file is used (sort/aggregate/join).
+    std::unique_ptr<CurrentMetrics::Increment> sub_metric_increment;
 
     /// If disk is not provided, fallback to Poco::TemporaryFile
     /// TODO: it's better to use DiskLocal for that case

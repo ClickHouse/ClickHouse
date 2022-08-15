@@ -9,6 +9,21 @@
 #include <Disks/IVolume.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event ExternalJoinWritePart;
+    extern const Event ExternalJoinMerge;
+    extern const Event ExternalJoinCompressedBytes;
+    extern const Event ExternalJoinUncompressedBytes;
+    extern const Event ExternalProcessingCompressedBytesTotal;
+    extern const Event ExternalProcessingUncompressedBytesTotal;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForJoin;
+}
+
 namespace DB
 {
 
@@ -17,8 +32,16 @@ namespace
 
 std::unique_ptr<TemporaryFile> flushToFile(const DiskPtr & disk, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
 {
-    auto tmp_file = createTemporaryFile(disk);
-    TemporaryFileStream::write(tmp_file->getPath(), header, std::move(pipeline), codec);
+    auto tmp_file = createTemporaryFile(disk, std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::TemporaryFilesForJoin));
+    auto write_stat = TemporaryFileStream::write(tmp_file->getPath(), header, std::move(pipeline), codec);
+
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, write_stat.compressed_bytes);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, write_stat.uncompressed_bytes);
+
+    ProfileEvents::increment(ProfileEvents::ExternalJoinCompressedBytes, write_stat.compressed_bytes);
+    ProfileEvents::increment(ProfileEvents::ExternalJoinUncompressedBytes, write_stat.uncompressed_bytes);
+    ProfileEvents::increment(ProfileEvents::ExternalJoinWritePart);
+
     return tmp_file;
 }
 
@@ -216,6 +239,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 
     if (pipeline.getNumStreams() > 1)
     {
+        ProfileEvents::increment(ProfileEvents::ExternalJoinMerge);
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getHeader(),
             pipeline.getNumStreams(),
