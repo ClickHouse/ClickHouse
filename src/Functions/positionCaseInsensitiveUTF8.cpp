@@ -14,11 +14,11 @@ struct NamePositionCaseInsensitiveUTF8
 };
 
 using FunctionPositionCaseInsensitiveUTF8
-    = FunctionsStringSearch<PositionImpl<NamePositionCaseInsensitiveUTF8, PositionCaseInsensitiveUTF8>>;
+    = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
 
 }
 
-REGISTER_FUNCTION(PositionCaseInsensitiveUTF8)
+void registerFunctionPositionCaseInsensitiveUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();
 }

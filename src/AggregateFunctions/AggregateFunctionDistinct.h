@@ -152,8 +152,8 @@ template <typename Data>
 class AggregateFunctionDistinct : public IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct<Data>>
 {
 private:
+    static constexpr auto prefix_size = sizeof(Data);
     AggregateFunctionPtr nested_func;
-    size_t prefix_size;
     size_t arguments_num;
 
     AggregateDataPtr getNestedPlace(AggregateDataPtr __restrict place) const noexcept
@@ -170,11 +170,7 @@ public:
     AggregateFunctionDistinct(AggregateFunctionPtr nested_func_, const DataTypes & arguments, const Array & params_)
     : IAggregateFunctionDataHelper<Data, AggregateFunctionDistinct>(arguments, params_)
     , nested_func(nested_func_)
-    , arguments_num(arguments.size())
-    {
-        size_t nested_size = nested_func->alignOfData();
-        prefix_size = (sizeof(Data) + nested_size - 1) / nested_size * nested_size;
-    }
+    , arguments_num(arguments.size()) {}
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -186,12 +182,12 @@ public:
         this->data(place).merge(this->data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         this->data(place).deserialize(buf, arena);
     }
@@ -204,7 +200,7 @@ public:
             arguments_raw[i] = arguments[i].get();
 
         assert(!arguments.empty());
-        nested_func->addBatchSinglePlace(0, arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
+        nested_func->addBatchSinglePlace(arguments[0]->size(), getNestedPlace(place), arguments_raw.data(), arena);
         nested_func->insertResultInto(getNestedPlace(place), to, arena);
     }
 

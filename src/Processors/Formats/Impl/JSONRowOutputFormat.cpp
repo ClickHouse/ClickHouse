@@ -2,7 +2,6 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/JSONUtils.h>
 
 
 namespace DB
@@ -16,9 +15,23 @@ JSONRowOutputFormat::JSONRowOutputFormat(
     bool yield_strings_)
     : IRowOutputFormat(header, out_, params_), settings(settings_), yield_strings(yield_strings_)
 {
+    const auto & sample = getPort(PortKind::Main).getHeader();
+    NamesAndTypesList columns(sample.getNamesAndTypesList());
+    fields.assign(columns.begin(), columns.end());
+
     bool need_validate_utf8 = false;
-    fields = header.getNamesAndTypes();
-    JSONUtils::makeNamesAndTypesWithValidUTF8(fields, settings, need_validate_utf8);
+    for (size_t i = 0; i < sample.columns(); ++i)
+    {
+        if (!sample.getByPosition(i).type->textCanContainOnlyValidUTF8())
+            need_validate_utf8 = true;
+
+        WriteBufferFromOwnString buf;
+        {
+            WriteBufferValidUTF8 validating_buf(buf);
+            writeJSONString(fields[i].name, validating_buf, settings);
+        }
+        fields[i].name = buf.str();
+    }
 
     if (need_validate_utf8)
     {
@@ -32,34 +45,88 @@ JSONRowOutputFormat::JSONRowOutputFormat(
 
 void JSONRowOutputFormat::writePrefix()
 {
-    JSONUtils::writeObjectStart(*ostr);
-    JSONUtils::writeMetadata(fields, settings, *ostr);
-    JSONUtils::writeFieldDelimiter(*ostr, 2);
-    JSONUtils::writeArrayStart(*ostr, 1, "data");
+    writeCString("{\n", *ostr);
+    writeCString("\t\"meta\":\n", *ostr);
+    writeCString("\t[\n", *ostr);
+
+    for (size_t i = 0; i < fields.size(); ++i)
+    {
+        writeCString("\t\t{\n", *ostr);
+
+        writeCString("\t\t\t\"name\": ", *ostr);
+        writeString(fields[i].name, *ostr);
+        writeCString(",\n", *ostr);
+        writeCString("\t\t\t\"type\": ", *ostr);
+        writeJSONString(fields[i].type->getName(), *ostr, settings);
+        writeChar('\n', *ostr);
+
+        writeCString("\t\t}", *ostr);
+        if (i + 1 < fields.size())
+            writeChar(',', *ostr);
+        writeChar('\n', *ostr);
+    }
+
+    writeCString("\t],\n", *ostr);
+    writeChar('\n', *ostr);
+    writeCString("\t\"data\":\n", *ostr);
+    writeCString("\t[\n", *ostr);
 }
 
 
 void JSONRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    JSONUtils::writeFieldFromColumn(column, serialization, row_num, yield_strings, settings, *ostr, fields[field_number].name, 3);
+    writeCString("\t\t\t", *ostr);
+    writeString(fields[field_number].name, *ostr);
+    writeCString(": ", *ostr);
+
+    if (yield_strings)
+    {
+        WriteBufferFromOwnString buf;
+
+        serialization.serializeText(column, row_num, buf, settings);
+        writeJSONString(buf.str(), *ostr, settings);
+    }
+    else
+        serialization.serializeTextJSON(column, row_num, *ostr, settings);
+
+    ++field_number;
+}
+
+void JSONRowOutputFormat::writeTotalsField(const IColumn & column, const ISerialization & serialization, size_t row_num)
+{
+    writeCString("\t\t", *ostr);
+    writeString(fields[field_number].name, *ostr);
+    writeCString(": ", *ostr);
+
+    if (yield_strings)
+    {
+        WriteBufferFromOwnString buf;
+
+        serialization.serializeText(column, row_num, buf, settings);
+        writeJSONString(buf.str(), *ostr, settings);
+    }
+    else
+        serialization.serializeTextJSON(column, row_num, *ostr, settings);
+
     ++field_number;
 }
 
 void JSONRowOutputFormat::writeFieldDelimiter()
 {
-    JSONUtils::writeFieldDelimiter(*ostr);
+    writeCString(",\n", *ostr);
 }
 
 
 void JSONRowOutputFormat::writeRowStartDelimiter()
 {
-    JSONUtils::writeObjectStart(*ostr, 2);
+    writeCString("\t\t{\n", *ostr);
 }
 
 
 void JSONRowOutputFormat::writeRowEndDelimiter()
 {
-    JSONUtils::writeObjectEnd(*ostr, 2);
+    writeChar('\n', *ostr);
+    writeCString("\t\t}", *ostr);
     field_number = 0;
     ++row_count;
 }
@@ -67,42 +134,71 @@ void JSONRowOutputFormat::writeRowEndDelimiter()
 
 void JSONRowOutputFormat::writeRowBetweenDelimiter()
 {
-    JSONUtils::writeFieldDelimiter(*ostr);
+    writeCString(",\n", *ostr);
 }
 
 
 void JSONRowOutputFormat::writeSuffix()
 {
-    JSONUtils::writeArrayEnd(*ostr, 1);
+    writeChar('\n', *ostr);
+    writeCString("\t]", *ostr);
 }
 
 void JSONRowOutputFormat::writeBeforeTotals()
 {
-    JSONUtils::writeFieldDelimiter(*ostr, 2);
-    JSONUtils::writeObjectStart(*ostr, 1, "totals");
+    writeCString(",\n", *ostr);
+    writeChar('\n', *ostr);
+    writeCString("\t\"totals\":\n", *ostr);
+    writeCString("\t{\n", *ostr);
 }
 
 void JSONRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
-    JSONUtils::writeColumns(columns, fields, serializations, row_num, yield_strings, settings, *ostr, 2);
+    size_t num_columns = columns.size();
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        if (i != 0)
+            writeTotalsFieldDelimiter();
+
+        writeTotalsField(*columns[i], *serializations[i], row_num);
+    }
 }
 
 void JSONRowOutputFormat::writeAfterTotals()
 {
-    JSONUtils::writeObjectEnd(*ostr, 1);
+    writeChar('\n', *ostr);
+    writeCString("\t}", *ostr);
+    field_number = 0;
 }
 
 void JSONRowOutputFormat::writeBeforeExtremes()
 {
-    JSONUtils::writeFieldDelimiter(*ostr, 2);
-    JSONUtils::writeObjectStart(*ostr, 1, "extremes");
+    writeCString(",\n", *ostr);
+    writeChar('\n', *ostr);
+    writeCString("\t\"extremes\":\n", *ostr);
+    writeCString("\t{\n", *ostr);
 }
 
 void JSONRowOutputFormat::writeExtremesElement(const char * title, const Columns & columns, size_t row_num)
 {
-    JSONUtils::writeObjectStart(*ostr, 2, title);
-    JSONUtils::writeColumns(columns, fields, serializations, row_num, yield_strings, settings, *ostr, 3);
-    JSONUtils::writeObjectEnd(*ostr, 2);
+    writeCString("\t\t\"", *ostr);
+    writeCString(title, *ostr);
+    writeCString("\":\n", *ostr);
+    writeCString("\t\t{\n", *ostr);
+
+    size_t extremes_columns = columns.size();
+    for (size_t i = 0; i < extremes_columns; ++i)
+    {
+        if (i != 0)
+            writeFieldDelimiter();
+
+        writeField(*columns[i], *serializations[i], row_num);
+    }
+
+    writeChar('\n', *ostr);
+    writeCString("\t\t}", *ostr);
+    field_number = 0;
 }
 
 void JSONRowOutputFormat::writeMinExtreme(const Columns & columns, size_t row_num)
@@ -117,39 +213,64 @@ void JSONRowOutputFormat::writeMaxExtreme(const Columns & columns, size_t row_nu
 
 void JSONRowOutputFormat::writeAfterExtremes()
 {
-    JSONUtils::writeObjectEnd(*ostr, 1);
+    writeChar('\n', *ostr);
+    writeCString("\t}", *ostr);
 }
 
-void JSONRowOutputFormat::finalizeImpl()
+void JSONRowOutputFormat::writeLastSuffix()
 {
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
+    writeCString(",\n\n", *ostr);
+    writeCString("\t\"rows\": ", *ostr);
+    writeIntText(row_count, *ostr);
 
-    JSONUtils::writeAdditionalInfo(
-        row_count,
-        statistics.rows_before_limit,
-        statistics.applied_limit,
-        statistics.watch,
-        statistics.progress,
-        settings.write_statistics,
-        *ostr);
+    writeRowsBeforeLimitAtLeast();
 
-    JSONUtils::writeObjectEnd(*ostr);
+    if (settings.write_statistics)
+        writeStatistics();
+
     writeChar('\n', *ostr);
+    writeCString("}\n", *ostr);
     ostr->next();
 }
 
+void JSONRowOutputFormat::writeRowsBeforeLimitAtLeast()
+{
+    if (applied_limit)
+    {
+        writeCString(",\n\n", *ostr);
+        writeCString("\t\"rows_before_limit_at_least\": ", *ostr);
+        writeIntText(rows_before_limit, *ostr);
+    }
+}
+
+void JSONRowOutputFormat::writeStatistics()
+{
+    writeCString(",\n\n", *ostr);
+    writeCString("\t\"statistics\":\n", *ostr);
+    writeCString("\t{\n", *ostr);
+
+    writeCString("\t\t\"elapsed\": ", *ostr);
+    writeText(watch.elapsedSeconds(), *ostr);
+    writeCString(",\n", *ostr);
+    writeCString("\t\t\"rows_read\": ", *ostr);
+    writeText(progress.read_rows.load(), *ostr);
+    writeCString(",\n", *ostr);
+    writeCString("\t\t\"bytes_read\": ", *ostr);
+    writeText(progress.read_bytes.load(), *ostr);
+    writeChar('\n', *ostr);
+
+    writeCString("\t}", *ostr);
+}
 
 void JSONRowOutputFormat::onProgress(const Progress & value)
 {
-    statistics.progress.incrementPiecewiseAtomically(value);
+    progress.incrementPiecewiseAtomically(value);
 }
 
 
-void registerOutputFormatJSON(FormatFactory & factory)
+void registerOutputFormatProcessorJSON(FormatFactory & factory)
 {
-    factory.registerOutputFormat("JSON", [](
+    factory.registerOutputFormatProcessor("JSON", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -158,10 +279,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
         return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("JSON");
-    factory.markFormatHasNoAppendSupport("JSON");
-
-    factory.registerOutputFormat("JSONStrings", [](
+    factory.registerOutputFormatProcessor("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -169,9 +287,6 @@ void registerOutputFormatJSON(FormatFactory & factory)
     {
         return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, true);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
-    factory.markFormatHasNoAppendSupport("JSONStrings");
 }
 
 }

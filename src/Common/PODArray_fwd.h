@@ -4,7 +4,7 @@
   * PODArray.
   */
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/Allocator_fwd.h>
 
 namespace DB

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(EmbeddedDictionaries)
+void registerFunctionsEmbeddedDictionaries(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRegionToCity>();
     factory.registerFunction<FunctionRegionToArea>();

@@ -1,17 +1,14 @@
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions_url .)
-add_library(clickhouse_functions_url OBJECT ${clickhouse_functions_url_sources} ${clickhouse_functions_url_headers})
+add_library(clickhouse_functions_url ${clickhouse_functions_url_sources} ${clickhouse_functions_url_headers})
 target_link_libraries(clickhouse_functions_url PRIVATE dbms)
 
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
+if (STRIP_DEBUG_SYMBOLS_FUNCTIONS)
     target_compile_options(clickhouse_functions_url PRIVATE "-g0")
 endif()
 
 # TODO: move Functions/Regexps.h to some lib and use here
-if (TARGET ch_contrib::vectorscan)
-    target_link_libraries(clickhouse_functions_url PRIVATE ch_contrib::vectorscan)
-    list (APPEND PRIVATE_LIBS ch_contrib::vectorscan PARENT_SCOPE)
-endif()
+target_link_libraries(clickhouse_functions_url PRIVATE hyperscan)
 
 if (USE_GPERF)
     # Only for regenerate

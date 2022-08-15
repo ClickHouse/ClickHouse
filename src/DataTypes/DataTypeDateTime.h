@@ -2,10 +2,32 @@
 
 #include <Core/Types.h>
 #include <DataTypes/DataTypeNumberBase.h>
-#include <DataTypes/TimezoneMixin.h>
+
+class DateLUTImpl;
 
 namespace DB
 {
+
+/** Mixin-class that manages timezone info for timezone-aware DateTime implementations
+ *
+ * Must be used as a (second) base for class implementing IDateType-interface.
+ */
+class TimezoneMixin
+{
+public:
+    explicit TimezoneMixin(const String & time_zone_name = "");
+    TimezoneMixin(const TimezoneMixin &) = default;
+
+    const DateLUTImpl & getTimeZone() const { return time_zone; }
+    bool hasExplicitTimeZone() const { return has_explicit_time_zone; }
+
+protected:
+    /// true if time zone name was provided in data type parameters, false if it's using default time zone.
+    bool has_explicit_time_zone;
+
+    const DateLUTImpl & time_zone;
+    const DateLUTImpl & utc_time_zone;
+};
 
 /** DateTime stores time as unix timestamp.
   * The value itself is independent of time zone.
@@ -16,7 +38,7 @@ namespace DB
   *
   * To cast from/to text format, time zone may be specified explicitly or implicit time zone may be used.
   *
-  * Time zone may be specified explicitly as type parameter, example: DateTime('Pacific/Pitcairn').
+  * Time zone may be specified explicitly as type parameter, example: DateTime('Europe/Moscow').
   * As it does not affect the internal representation of values,
   *  all types with different time zones are equivalent and may be used interchangingly.
   * Time zone only affects parsing and displaying in text formats.
@@ -48,3 +70,4 @@ public:
 };
 
 }
+

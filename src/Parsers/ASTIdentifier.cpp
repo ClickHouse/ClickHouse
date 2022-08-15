@@ -32,7 +32,7 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, s
     semantic->legacy_compound = true;
     if (!name_params.empty())
     {
-        [[maybe_unused]] size_t params = 0;
+        size_t params = 0;
         for (const auto & part [[maybe_unused]] : name_parts)
         {
             if (part.empty())
@@ -198,40 +198,6 @@ StorageID ASTTableIdentifier::getTableId() const
 String ASTTableIdentifier::getDatabaseName() const
 {
     if (name_parts.size() == 2) return name_parts[0];
-    else return {};
-}
-
-ASTPtr ASTTableIdentifier::getTable() const
-{
-    if (name_parts.size() == 2)
-    {
-        if (!name_parts[1].empty())
-            return std::make_shared<ASTIdentifier>(name_parts[1]);
-
-        if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[1]->clone());
-        else
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
-    }
-    else if (name_parts.size() == 1)
-    {
-        if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
-        else
-            return std::make_shared<ASTIdentifier>(name_parts[0]);
-    }
-    else return {};
-}
-
-ASTPtr ASTTableIdentifier::getDatabase() const
-{
-    if (name_parts.size() == 2)
-    {
-        if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
-        else
-            return std::make_shared<ASTIdentifier>(name_parts[0]);
-    }
     else return {};
 }
 

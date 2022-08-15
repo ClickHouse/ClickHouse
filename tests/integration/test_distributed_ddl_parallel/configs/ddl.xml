@@ -1,5 +1,5 @@
-<clickhouse>
+<yandex>
     <distributed_ddl>
         <pool_size replace="1">2</pool_size>
     </distributed_ddl>
-</clickhouse>
+</yandex>

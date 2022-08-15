@@ -1,8 +1,5 @@
--- Tags: no-parallel
-
 DROP DATABASE IF EXISTS dict_db_01224;
 DROP DATABASE IF EXISTS dict_db_01224_dictionary;
-set allow_deprecated_database_ordinary=1;
 CREATE DATABASE dict_db_01224 ENGINE=Ordinary;  -- Different internal dictionary name with Atomic
 CREATE DATABASE dict_db_01224_dictionary Engine=Dictionary;
 

@@ -1,97 +1,62 @@
-## Generating ClickHouse documentation {#how-clickhouse-documentation-is-generated}
+## How ClickHouse documentation is generated? {#how-clickhouse-documentation-is-generated}
 
-ClickHouse documentation is built using [Docusaurus](https://docusaurus.io). 
+ClickHouse documentation is built using [build.py](build.py) script that uses [mkdocs](https://www.mkdocs.org) library and it’s dependencies to separately build all version of documentations (all languages in either single and multi page mode) as static HTMLs and then a PDF for each single page version. The results are then put in the correct directory structure. It is recommended to use Python 3.7 to run this script.
 
-## Check the look of your documentation changes {#how-to-check-if-the-documentation-will-look-fine}
+[release.sh](release.sh) also pulls static files needed for [official ClickHouse website](https://clickhouse.tech) from [../../website](../../website) folder then pushes to specified GitHub repo to be served via [GitHub Pages](https://pages.github.com).
 
-There are a few options that are all useful depending on how large or complex your edits are.
+## How to check if the documentation will look fine? {#how-to-check-if-the-documentation-will-look-fine}
 
-### Use the GitHub web interface to edit
+There are few options that are all useful depending on how large or complex your edits are.
 
-Every page in the docs has an **Edit this page** link that opens the page in the GitHub editor.  GitHub has Markdown support with a preview feature. The details of GitHub Markdown and the documentation Markdown are a bit different but generally this is close enough, and the person merging your PR will build the docs and check them.
+### Use GitHub web interface to edit
 
-### Install a Markdown editor or plugin for your IDE {#install-markdown-editor-or-plugin-for-your-ide}
+GitHub has Markdown support with preview feature, but the details of GitHub Markdown dialect are a bit different in ClickHouse documentation.
 
-Usually, these plugins provide a preview of how the markdown will render, and they catch basic errors like unclosed tags very early.
+### Install Markdown editor or plugin for your IDE {#install-markdown-editor-or-plugin-for-your-ide}
 
+Usually those also have some way to preview how Markdown will look like, which allows to catch basic errors like unclosed tags very early.
 
-## Build the docs locally {#use-build-py}
+### Use build.py {#use-build-py}
 
-You can build the docs locally.  It takes a few minutes to set up, but once you have done it the first time, the process is very simple.
+It’ll take some effort to go through, but the result will be very close to production documentation.
 
-### Clone the repos
+For the first time you’ll need to:
 
-The documentation is in two repos, clone both of them:
-- [ClickHouse/ClickHouse](https://github.com/ClickHouse/ClickHouse)
-- [ClickHouse/ClickHouse-docs](https://github.com/ClickHouse/clickhouse-docs)
+#### 1. Install [wkhtmltopdf](https://wkhtmltopdf.org/)
 
-### Install Node.js
+Follow the instructions on it's official website: <https://wkhtmltopdf.org/downloads.html>
 
-The documentation is built with Docusaurus, which requires Node.js.  We recommend version 16. Install [Node.js](https://nodejs.org/en/download/).
+#### 2. Install CLI tools from npm
 
-### Copy files into place
+1. `sudo apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
+2. `sudo npm install -g purify-css amphtml-validator`.
 
-Docusaurus expects all of the markdown files to be located in the directory tree `clickhouse-docs/docs/`.  This is not the way our repos are set up, so some copying of files is needed to build the docs:
+#### 3. Set up virtualenv
 
-```bash
-# from the parent directory of both the ClickHouse/ClickHouse and ClickHouse-clickhouse-docs repos:
-cp -r ClickHouse/docs/en/development     clickhouse-docs/docs/en/
-cp -r ClickHouse/docs/en/engines         clickhouse-docs/docs/en/
-cp -r ClickHouse/docs/en/getting-started clickhouse-docs/docs/en/
-cp -r ClickHouse/docs/en/interfaces      clickhouse-docs/docs/en/
-cp -r ClickHouse/docs/en/operations      clickhouse-docs/docs/en/
-cp -r ClickHouse/docs/en/sql-reference   clickhouse-docs/docs/en/
-
-cp -r ClickHouse/docs/ru/*               clickhouse-docs/docs/ru/
-cp -r ClickHouse/docs/zh                 clickhouse-docs/docs/
+``` bash
+$ cd ClickHouse/docs/tools
+$ mkdir venv
+$ virtualenv -p $(which python3) venv
+$ source venv/bin/activate
+$ pip3 install -r requirements.txt
 ```
 
-#### Note: Symlinks will not work.
-### Setup Docusaurus
+#### 4. Run build.py
 
-There are two commands that you may need to use with Docusaurus:
-- `yarn install`
-- `yarn start`
+When all prerequisites are installed, running `build.py` without args (there are some, check `build.py --help`) will generate `ClickHouse/docs/build` folder with complete static html website.
 
-#### Install Docusaurus and its dependencies:
-
-```bash
-cd clickhouse-docs
-yarn install
-```
-
-#### Start a development Docusaurus environment
-
-This command will start Docusaurus in development mode, which means that as you edit source (for example, `.md` files) files the changes will be rendered into HTML files and served by the Docusaurus development server.
-
-```bash
-yarn start
-```
-
-### Make your changes to the markdown files
-
-Edit your files.  Remember that if you are editing files in the `ClickHouse/ClickHouse` repo then you should edit them
-in that repo and then copy the edited file into the `ClickHouse/clickhouse-docs/` directory structure so that they are updated in your develoment environment.
-
-`yarn start` probably opened a browser for you when you ran it; if not, open a browser to `http://localhost:3000/docs/en/intro` and navigate to the documentation that you are changing.  If you have already made the changes, you can verify them here; if not, make them, and you will see the page update as you save the changes.  
+The easiest way to see the result is to use `--livereload=8888` argument of build.py. Alternatively, you can manually launch a HTTP server to serve the docs, for example by running `cd ClickHouse/docs/build && python3 -m http.server 8888`. Then go to http://localhost:8888 in browser. Feel free to use any other port instead of 8888.
 
 ## How to change code highlighting? {#how-to-change-code-hl}
 
-Code highlighting is based on the language chosen for your code blocks.  Specify the language when you start the code block:
+ClickHouse does not use mkdocs `highlightjs` feature. It uses modified pygments styles instead.
+If you want to change code highlighting, edit the `website/css/highlight.css` file.
+Currently, an [eighties](https://github.com/idleberg/base16-pygments/blob/master/css/base16-eighties.dark.css) theme
+is used.
 
-<pre lang="no-highlight"><code>```sql
-SELECT firstname from imdb.actors;
-```
-</code></pre>
-
-```sql
-SELECT firstname from imdb.actors;
-```
-
-If you need a language supported then open an issue in [ClickHouse-docs](https://github.com/ClickHouse/clickhouse-docs/issues).
 ## How to subscribe on documentation changes? {#how-to-subscribe-on-documentation-changes}
 
 At the moment there’s no easy way to do just that, but you can consider:
 
 -   To hit the “Watch” button on top of GitHub web interface to know as early as possible, even during pull request. Alternative to this is `#github-activity` channel of [public ClickHouse Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-qfort0u8-TWqK4wIP0YSdoDE0btKa1w).
--   Some search engines allow to subscribe on specific website changes via email and you can opt-in for that for https://clickhouse.com.
+-   Some search engines allow to subscribe on specific website changes via email and you can opt-in for that for https://clickhouse.tech.

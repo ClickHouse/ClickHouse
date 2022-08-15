@@ -3,7 +3,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
@@ -16,11 +15,6 @@
 #include <unordered_map>
 
 
-namespace Poco
-{
-class Logger;
-}
-
 namespace DB
 {
 
@@ -30,11 +24,6 @@ class ReadBuffer;
 using AsynchronousMetricValue = double;
 using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
-struct ProtocolServerMetrics
-{
-    String port_name;
-    size_t current_threads;
-};
 
 /** Periodically (by default, each minute, starting at 30 seconds offset)
   *  calculates and updates some metrics,
@@ -46,25 +35,39 @@ struct ProtocolServerMetrics
 class AsynchronousMetrics : WithContext
 {
 public:
-    using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
+    /// The default value of update_period_seconds is for ClickHouse-over-YT
+    /// in Arcadia -- it uses its own server implementation that also uses these
+    /// metrics.
     AsynchronousMetrics(
         ContextPtr global_context_,
         int update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
+        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
+        std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_);
 
     ~AsynchronousMetrics();
 
     /// Separate method allows to initialize the `servers` variable beforehand.
     void start();
 
-    void stop();
-
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
 
+#if defined(ARCADIA_BUILD)
+    /// This constructor needs only to provide backward compatibility with some other projects (hello, Arcadia).
+    /// Never use this in the ClickHouse codebase.
+    AsynchronousMetrics(
+        ContextPtr global_context_,
+        int update_period_seconds = 60)
+        : WithContext(global_context_)
+        , update_period(update_period_seconds)
+    {
+    }
+#endif
+
 private:
     const std::chrono::seconds update_period;
-    ProtocolServerMetricsFunc protocol_server_metrics_func;
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables{nullptr};
+    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers{nullptr};
 
     mutable std::mutex mutex;
     std::condition_variable wait_cond;
@@ -76,31 +79,28 @@ private:
     bool first_run = true;
     std::chrono::system_clock::time_point previous_update_time;
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
-    MemoryStatisticsOS memory_stat;
-    Int64 last_logged_rss_drift = 0;
-#endif
-
 #if defined(OS_LINUX)
-    std::optional<ReadBufferFromFilePRead> meminfo;
-    std::optional<ReadBufferFromFilePRead> loadavg;
-    std::optional<ReadBufferFromFilePRead> proc_stat;
-    std::optional<ReadBufferFromFilePRead> cpuinfo;
-    std::optional<ReadBufferFromFilePRead> file_nr;
-    std::optional<ReadBufferFromFilePRead> uptime;
-    std::optional<ReadBufferFromFilePRead> net_dev;
+    MemoryStatisticsOS memory_stat;
 
-    std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal;
+    std::optional<ReadBufferFromFile> meminfo;
+    std::optional<ReadBufferFromFile> loadavg;
+    std::optional<ReadBufferFromFile> proc_stat;
+    std::optional<ReadBufferFromFile> cpuinfo;
+    std::optional<ReadBufferFromFile> file_nr;
+    std::optional<ReadBufferFromFile> uptime;
+    std::optional<ReadBufferFromFile> net_dev;
+
+    std::vector<std::unique_ptr<ReadBufferFromFile>> thermal;
 
     std::unordered_map<String /* device name */,
         std::unordered_map<String /* label name */,
-            std::unique_ptr<ReadBufferFromFilePRead>>> hwmon_devices;
+            std::unique_ptr<ReadBufferFromFile>>> hwmon_devices;
 
     std::vector<std::pair<
-        std::unique_ptr<ReadBufferFromFilePRead> /* correctable errors */,
-        std::unique_ptr<ReadBufferFromFilePRead> /* uncorrectable errors */>> edac;
+        std::unique_ptr<ReadBufferFromFile> /* correctable errors */,
+        std::unique_ptr<ReadBufferFromFile> /* uncorrectable errors */>> edac;
 
-    std::unordered_map<String /* device name */, std::unique_ptr<ReadBufferFromFilePRead>> block_devs;
+    std::unordered_map<String /* device name */, std::unique_ptr<ReadBufferFromFile>> block_devs;
 
     /// TODO: socket statistics.
 
@@ -175,20 +175,12 @@ private:
 
     std::unordered_map<String /* device name */, NetworkInterfaceStatValues> network_interface_stats;
 
-    Stopwatch block_devices_rescan_delay;
-
-    void openSensors();
-    void openBlockDevices();
-    void openSensorsChips();
-    void openEDAC();
 #endif
 
     std::unique_ptr<ThreadFromGlobalPool> thread;
 
     void run();
     void update(std::chrono::system_clock::time_point update_time);
-
-    Poco::Logger * log;
 };
 
 }

@@ -114,7 +114,7 @@ FROM
 (
     SELECT
         1 AS id,
-        identity(_CAST(1, \'Nullable(UInt8)\')) AS subquery
+        identity(CAST(1, \'Nullable(UInt8)\')) AS subquery
     WHERE subquery = 1
 )
 WHERE subquery = 1
@@ -402,8 +402,8 @@ FROM
 ANY LEFT JOIN
 (
     SELECT
-        id,
         date,
+        id,
         name,
         value
     FROM test_00597
@@ -472,8 +472,8 @@ FROM
 ANY LEFT JOIN
 (
     SELECT
-        id,
         date,
+        id,
         name,
         value
     FROM test_00597
@@ -537,10 +537,10 @@ FROM
     ANY LEFT JOIN
     (
         SELECT
-            name,
-            value,
             date,
-            id
+            id,
+            name,
+            value
         FROM test_00597
     ) AS b ON id = b.id
     WHERE id = 1
@@ -567,8 +567,8 @@ FROM
 SEMI LEFT JOIN
 (
     SELECT
-        id,
         date,
+        id,
         name,
         value
     FROM

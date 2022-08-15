@@ -1,5 +1,3 @@
-SET cast_keep_nullable = 0;
-
 -- https://github.com/ClickHouse/ClickHouse/issues/5818#issuecomment-619628445
 SELECT CAST(CAST(NULL AS Nullable(String)) AS Nullable(Enum8('Hello' = 1)));
 SELECT CAST(CAST(NULL AS Nullable(FixedString(1))) AS Nullable(Enum8('Hello' = 1)));

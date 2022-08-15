@@ -1,17 +1,18 @@
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <dlfcn.h>
 #include <unistd.h>
+#include <time.h>
 #include <csignal>
 
-#include <Common/logger_useful.h>
-#include <base/errnoToString.h>
+#include <common/logger_useful.h>
+#include <common/errnoToString.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <Common/waitForPid.h>
 
 
 namespace
@@ -19,18 +20,11 @@ namespace
     /// By these return codes from the child process, we learn (for sure) about errors when creating it.
     enum class ReturnCodes : int
     {
-        CANNOT_DUP_STDIN            = 0x55555555,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
-        CANNOT_DUP_STDOUT           = 0x55555556,
-        CANNOT_DUP_STDERR           = 0x55555557,
-        CANNOT_EXEC                 = 0x55555558,
-        CANNOT_DUP_READ_DESCRIPTOR  = 0x55555559,
-        CANNOT_DUP_WRITE_DESCRIPTOR = 0x55555560,
+        CANNOT_DUP_STDIN    = 0x55555555,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
+        CANNOT_DUP_STDOUT   = 0x55555556,
+        CANNOT_DUP_STDERR   = 0x55555557,
+        CANNOT_EXEC         = 0x55555558,
     };
-}
-
-namespace ProfileEvents
-{
-    extern const Event ExecuteShellCommand;
 }
 
 namespace DB
@@ -45,12 +39,12 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_CHILD_PROCESS;
 }
 
-ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
-    : in(in_fd_)
+ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, ShellCommandDestructorStrategy destructor_strategy_)
+    : pid(pid_)
+    , destructor_strategy(destructor_strategy_)
+    , in(in_fd_)
     , out(out_fd_)
     , err(err_fd_)
-    , pid(pid_)
-    , config(config_)
 {
 }
 
@@ -64,19 +58,19 @@ ShellCommand::~ShellCommand()
     if (wait_called)
         return;
 
-    if (config.terminate_in_destructor_strategy.terminate_in_destructor)
+    if (destructor_strategy.terminate_in_destructor)
     {
-        size_t try_wait_timeout = config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds;
+        size_t try_wait_timeout = destructor_strategy.wait_for_normal_exit_before_termination_seconds;
         bool process_terminated_normally = tryWaitProcessWithTimeout(try_wait_timeout);
 
-        if (process_terminated_normally)
-            return;
+        if (!process_terminated_normally)
+        {
+            LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
 
-        LOG_TRACE(getLogger(), "Will kill shell command pid {} with SIGTERM", pid);
-
-        int retcode = kill(pid, SIGTERM);
-        if (retcode != 0)
-            LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
+            int retcode = kill(pid, SIGTERM);
+            if (retcode != 0)
+                LOG_WARNING(getLogger(), "Cannot kill shell command pid {} errno '{}'", pid, errnoToString(retcode));
+        }
     }
     else
     {
@@ -93,15 +87,49 @@ ShellCommand::~ShellCommand()
 
 bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
 {
-    LOG_TRACE(getLogger(), "Try wait for shell command pid {} with timeout {}", pid, timeout_in_seconds);
+    int status = 0;
+
+    LOG_TRACE(getLogger(), "Try wait for shell command pid ({}) with timeout ({})", pid, timeout_in_seconds);
 
     wait_called = true;
+    struct timespec interval {.tv_sec = 1, .tv_nsec = 0};
 
     in.close();
     out.close();
     err.close();
 
-    return waitForPid(pid, timeout_in_seconds);
+    if (timeout_in_seconds == 0)
+    {
+        /// If there is no timeout before signal try to waitpid 1 time without block so we can avoid sending
+        /// signal if process is already normally terminated.
+
+        int waitpid_res = waitpid(pid, &status, WNOHANG);
+        bool process_terminated_normally = (waitpid_res == pid);
+        return process_terminated_normally;
+    }
+
+    /// If timeout is positive try waitpid without block in loop until
+    /// process is normally terminated or waitpid return error
+
+    while (timeout_in_seconds != 0)
+    {
+        int waitpid_res = waitpid(pid, &status, WNOHANG);
+        bool process_terminated_normally = (waitpid_res == pid);
+
+        if (process_terminated_normally)
+            return true;
+        else if (waitpid_res == 0)
+        {
+            --timeout_in_seconds;
+            nanosleep(&interval, nullptr);
+
+            continue;
+        }
+        else if (waitpid_res == -1 && errno != EINTR)
+            return false;
+    }
+
+    return false;
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
@@ -121,22 +149,17 @@ void ShellCommand::logCommand(const char * filename, char * const argv[])
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     const char * filename,
     char * const argv[],
-    const Config & config)
+    bool pipe_stdin_only,
+    ShellCommandDestructorStrategy terminate_in_destructor_strategy)
 {
     logCommand(filename, argv);
-    ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
 
-#if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
       * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html
       * Therefore, separate the resolving of the symbol from the call.
       */
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    /// If we use Musl with static linking, there is no dlsym and no issue with vfork.
-    static void * real_vfork = reinterpret_cast<void *>(&vfork);
-#endif
 
     if (!real_vfork)
         throwFromErrno("Cannot find symbol vfork in myself", ErrorCodes::CANNOT_DLSYM);
@@ -145,18 +168,9 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     PipeFDs pipe_stdout;
     PipeFDs pipe_stderr;
 
-    std::vector<std::unique_ptr<PipeFDs>> read_pipe_fds;
-    std::vector<std::unique_ptr<PipeFDs>> write_pipe_fds;
-
-    for (size_t i = 0; i < config.read_fds.size(); ++i)
-        read_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
-
-    for (size_t i = 0; i < config.write_fds.size(); ++i)
-        write_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
-
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
-    if (pid == -1)
+    if (-1 == pid)
         throwFromErrno("Cannot vfork", ErrorCodes::CANNOT_FORK);
 
     if (0 == pid)
@@ -168,33 +182,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
         /// Replace the file descriptors with the ends of our pipes.
         if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
-            _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN));
+            _exit(int(ReturnCodes::CANNOT_DUP_STDIN));
 
-        if (!config.pipe_stdin_only)
+        if (!pipe_stdin_only)
         {
             if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT));
+                _exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
 
             if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR));
-        }
-
-        for (size_t i = 0; i < config.read_fds.size(); ++i)
-        {
-            auto & fds = *read_pipe_fds[i];
-            auto fd = config.read_fds[i];
-
-            if (fd != dup2(fds.fds_rw[1], fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR));
-        }
-
-        for (size_t i = 0; i < config.write_fds.size(); ++i)
-        {
-            auto & fds = *write_pipe_fds[i];
-            auto fd = config.write_fds[i];
-
-            if (fd != dup2(fds.fds_rw[0], fd))
-                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
+                _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
         // Reset the signal mask: it may be non-empty and will be inherited
@@ -207,53 +203,39 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
-        _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
+        _exit(int(ReturnCodes::CANNOT_EXEC));
     }
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(
-        pid,
-        pipe_stdin.fds_rw[1],
-        pipe_stdout.fds_rw[0],
-        pipe_stderr.fds_rw[0],
-        config));
-
-    for (size_t i = 0; i < config.read_fds.size(); ++i)
-    {
-        auto & fds = *read_pipe_fds[i];
-        auto fd = config.read_fds[i];
-        res->read_fds.emplace(fd, fds.fds_rw[0]);
-    }
-
-    for (size_t i = 0; i < config.write_fds.size(); ++i)
-    {
-        auto & fds = *write_pipe_fds[i];
-        auto fd = config.write_fds[i];
-        res->write_fds.emplace(fd, fds.fds_rw[1]);
-    }
+        pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor_strategy));
 
     LOG_TRACE(getLogger(), "Started shell command '{}' with pid {}", filename, pid);
     return res;
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::execute(const ShellCommand::Config & config)
+std::unique_ptr<ShellCommand> ShellCommand::execute(
+    const std::string & command,
+    bool pipe_stdin_only,
+    ShellCommandDestructorStrategy terminate_in_destructor_strategy)
 {
-    auto config_copy = config;
-    config_copy.command = "/bin/sh";
-    config_copy.arguments = {"-c", config.command};
+    /// Arguments in non-constant chunks of memory (as required for `execv`).
+    /// Moreover, their copying must be done before calling `vfork`, so after `vfork` do a minimum of things.
+    std::vector<char> argv0("sh", &("sh"[3]));
+    std::vector<char> argv1("-c", &("-c"[3]));
+    std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
 
-    for (const auto & argument : config.arguments)
-        config_copy.arguments.emplace_back(argument);
+    char * const argv[] = { argv0.data(), argv1.data(), argv2.data(), nullptr };
 
-    return executeDirect(config_copy);
+    return executeImpl("/bin/sh", argv, pipe_stdin_only, terminate_in_destructor_strategy);
 }
 
 
-std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Config & config)
+std::unique_ptr<ShellCommand> ShellCommand::executeDirect(
+    const std::string & path,
+    const std::vector<std::string> & arguments,
+    ShellCommandDestructorStrategy terminate_in_destructor_strategy)
 {
-    const auto & path = config.command;
-    const auto & arguments = config.arguments;
-
     size_t argv_sum_size = path.size() + 1;
     for (const auto & arg : arguments)
         argv_sum_size += arg.size() + 1;
@@ -273,7 +255,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const ShellCommand::Co
 
     argv[arguments.size() + 1] = nullptr;
 
-    return executeImpl(path.data(), argv.data(), config);
+    return executeImpl(path.data(), argv.data(), false, terminate_in_destructor_strategy);
 }
 
 
@@ -317,18 +299,14 @@ void ShellCommand::wait()
     {
         switch (retcode)
         {
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDIN):
+            case int(ReturnCodes::CANNOT_DUP_STDIN):
                 throw Exception("Cannot dup2 stdin of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDOUT):
+            case int(ReturnCodes::CANNOT_DUP_STDOUT):
                 throw Exception("Cannot dup2 stdout of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_STDERR):
+            case int(ReturnCodes::CANNOT_DUP_STDERR):
                 throw Exception("Cannot dup2 stderr of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_EXEC):
+            case int(ReturnCodes::CANNOT_EXEC):
                 throw Exception("Cannot execv in child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_READ_DESCRIPTOR):
-                throw Exception("Cannot dup2 read descriptor of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
-            case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
-                throw Exception("Cannot dup2 write descriptor of child process", ErrorCodes::CANNOT_CREATE_CHILD_PROCESS);
             default:
                 throw Exception("Child process was exited with return code " + toString(retcode), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);
         }

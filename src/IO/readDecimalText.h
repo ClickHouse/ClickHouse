@@ -3,7 +3,7 @@
 #include <limits>
 #include <IO/ReadHelpers.h>
 #include <Common/intExp.h>
-#include <base/wide_integer_to_string.h>
+#include <common/wide_integer_to_string.h>
 
 
 namespace DB

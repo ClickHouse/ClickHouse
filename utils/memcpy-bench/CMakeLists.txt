@@ -1,6 +1,6 @@
 enable_language(ASM)
 
-clickhouse_add_executable (memcpy-bench
+add_executable (memcpy-bench
     memcpy-bench.cpp
     FastMemcpy.cpp
     FastMemcpy_Avx.cpp
@@ -16,7 +16,7 @@ clickhouse_add_executable (memcpy-bench
 add_compile_options(memcpy-bench PRIVATE -fno-tree-loop-distribute-patterns)
 
 if (OS_SUNOS)
-    target_compile_options(memcpy-bench PRIVATE "-Wa,--divide")
+	target_compile_options(memcpy-bench PRIVATE "-Wa,--divide")
 endif()
 
 set_source_files_properties(FastMemcpy.cpp PROPERTIES COMPILE_FLAGS "-Wno-old-style-cast")

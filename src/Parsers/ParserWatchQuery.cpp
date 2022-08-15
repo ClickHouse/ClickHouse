@@ -9,6 +9,8 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserWatchQuery.h>
@@ -22,7 +24,7 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_watch("WATCH");
     ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier name_p(true);
+    ParserIdentifier name_p;
     ParserKeyword s_events("EVENTS");
     ParserKeyword s_limit("LIMIT");
 
@@ -60,14 +62,11 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    query->database = database;
-    query->table = table;
-
     if (database)
-        query->children.push_back(database);
+        query->database = getIdentifierName(database);
 
     if (table)
-        query->children.push_back(table);
+        query->table = getIdentifierName(table);
 
     node = query;
 

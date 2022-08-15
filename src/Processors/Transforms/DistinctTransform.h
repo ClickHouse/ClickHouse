@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <DataStreams/SizeLimits.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/SetVariants.h>
 
@@ -25,7 +25,9 @@ private:
     ColumnNumbers key_columns_pos;
     SetVariants data;
     Sizes key_sizes;
-    const UInt64 limit_hint;
+    UInt64 limit_hint;
+
+    bool no_more_rows = false;
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;

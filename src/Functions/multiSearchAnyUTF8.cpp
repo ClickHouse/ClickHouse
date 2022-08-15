@@ -13,11 +13,11 @@ struct NameMultiSearchAnyUTF8
 {
     static constexpr auto name = "multiSearchAnyUTF8";
 };
-using FunctionMultiSearchUTF8 = FunctionsMultiStringSearch<MultiSearchImpl<NameMultiSearchAnyUTF8, PositionCaseSensitiveUTF8>>;
+using FunctionMultiSearchUTF8 = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseSensitiveUTF8>, NameMultiSearchAnyUTF8>;
 
 }
 
-REGISTER_FUNCTION(MultiSearchAnyUTF8)
+void registerFunctionMultiSearchAnyUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearchUTF8>();
 }

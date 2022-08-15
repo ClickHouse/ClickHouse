@@ -27,8 +27,6 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     /// Get the name of the function.
     String getName() const override
     {
@@ -76,7 +74,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(VisibleWidth)
+void registerFunctionVisibleWidth(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVisibleWidth>();
 }

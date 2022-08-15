@@ -9,14 +9,11 @@ namespace DB
 
 class ReadBuffer;
 
-class MarkdownRowOutputFormat final : public IRowOutputFormat
+class MarkdownRowOutputFormat : public IRowOutputFormat
 {
 public:
     MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "MarkdownRowOutputFormat"; }
-
-private:
     /// Write higher part of markdown table like this:
     /// |columnName1|columnName2|...|columnNameN|
     /// |:-:|:-:|...|:-:|
@@ -32,7 +29,9 @@ private:
     void writeRowEndDelimiter() override ;
 
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
+    String getName() const override { return "MarkdownRowOutputFormat"; }
 
+protected:
     const FormatSettings format_settings;
 };
 

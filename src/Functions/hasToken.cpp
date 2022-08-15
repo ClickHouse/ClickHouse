@@ -14,11 +14,11 @@ struct NameHasToken
     static constexpr auto name = "hasToken";
 };
 
-using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<NameHasToken, VolnitskyCaseSensitiveToken, false>>;
+using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseSensitiveToken, false>, NameHasToken>;
 
 }
 
-REGISTER_FUNCTION(HasToken)
+void registerFunctionHasToken(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionHasToken>();
 }

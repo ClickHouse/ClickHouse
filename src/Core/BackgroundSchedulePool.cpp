@@ -3,12 +3,25 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include <chrono>
+#include <common/scope_guard.h>
 
 
 namespace DB
 {
+
+
+class TaskNotification final : public Poco::Notification
+{
+public:
+    explicit TaskNotification(const BackgroundSchedulePoolTaskInfoPtr & task_) : task(task_) {}
+    void execute() { task->execute(); }
+
+private:
+    BackgroundSchedulePoolTaskInfoPtr task;
+};
+
 
 BackgroundSchedulePoolTaskInfo::BackgroundSchedulePoolTaskInfo(
     BackgroundSchedulePool & pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_)
@@ -27,7 +40,7 @@ bool BackgroundSchedulePoolTaskInfo::schedule()
     return true;
 }
 
-bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool overwrite)
+bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t ms, bool overwrite)
 {
     std::lock_guard lock(schedule_mutex);
 
@@ -36,7 +49,7 @@ bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool ove
     if (delayed && !overwrite)
         return false;
 
-    pool.scheduleDelayedTask(shared_from_this(), milliseconds, lock);
+    pool.scheduleDelayedTask(shared_from_this(), ms, lock);
     return true;
 }
 
@@ -94,7 +107,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
     UInt64 milliseconds = watch.elapsedMilliseconds();
 
     /// If the task is executed longer than specified time, it will be logged.
-    static constexpr UInt64 slow_execution_threshold_ms = 200;
+    static const int32_t slow_execution_threshold_ms = 200;
 
     if (milliseconds >= slow_execution_threshold_ms)
         LOG_TRACE(&Poco::Logger::get(log_name), "Execution took {} ms.", milliseconds);
@@ -109,7 +122,7 @@ void BackgroundSchedulePoolTaskInfo::execute()
         /// will have their chance to execute
 
         if (scheduled)
-            pool.scheduleTask(shared_from_this());
+            pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
     }
 }
 
@@ -124,46 +137,30 @@ void BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & 
     /// But if it is currently executing, do nothing because it will be enqueued
     /// at the end of the execute() method.
     if (!executing)
-        pool.scheduleTask(shared_from_this());
+        pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
 }
 
 Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 {
-     return [task = shared_from_this()](const Coordination::WatchResponse &)
+     return [t = shared_from_this()](const Coordination::WatchResponse &)
      {
-        task->schedule();
+         t->schedule();
      };
 }
 
 
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_)
-    : tasks_metric(tasks_metric_)
+    : size(size_)
+    , tasks_metric(tasks_metric_)
     , thread_name(thread_name_)
 {
-    LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size_);
+    LOG_INFO(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size);
 
-    threads.resize(size_);
+    threads.resize(size);
     for (auto & thread : threads)
         thread = ThreadFromGlobalPool([this] { threadFunction(); });
 
     delayed_thread = ThreadFromGlobalPool([this] { delayExecutionThreadFunction(); });
-}
-
-
-void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
-{
-    const size_t old_threads_count = threads.size();
-
-    if (new_threads_count < old_threads_count)
-    {
-        LOG_WARNING(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name),
-            "Tried to increase the number of threads but the new threads count ({}) is not greater than old one ({})", new_threads_count, old_threads_count);
-        return;
-    }
-
-    threads.resize(new_threads_count);
-    for (size_t i = old_threads_count; i < new_threads_count; ++i)
-        threads[i] = ThreadFromGlobalPool([this] { threadFunction(); });
 }
 
 
@@ -172,18 +169,15 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
     try
     {
         {
-            std::lock_guard lock_tasks(tasks_mutex);
-            std::lock_guard lock_delayed_tasks(delayed_tasks_mutex);
-
+            std::unique_lock lock(delayed_tasks_mutex);
             shutdown = true;
+            wakeup_cond.notify_all();
         }
 
-        tasks_cond_var.notify_all();
-        delayed_tasks_cond_var.notify_all();
-
-        LOG_TRACE(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
+        queue.wakeUpAll();
         delayed_thread.join();
 
+        LOG_TRACE(&Poco::Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
         for (auto & thread : threads)
             thread.join();
     }
@@ -199,15 +193,6 @@ BackgroundSchedulePool::TaskHolder BackgroundSchedulePool::createTask(const std:
     return TaskHolder(std::make_shared<TaskInfo>(*this, name, function));
 }
 
-void BackgroundSchedulePool::scheduleTask(TaskInfoPtr task_info)
-{
-    {
-        std::lock_guard tasks_lock(tasks_mutex);
-        tasks.push_back(std::move(task_info));
-    }
-
-    tasks_cond_var.notify_one();
-}
 
 void BackgroundSchedulePool::scheduleDelayedTask(const TaskInfoPtr & task, size_t ms, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */)
 {
@@ -223,7 +208,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskInfoPtr & task, size_
         task->delayed = true;
     }
 
-    delayed_tasks_cond_var.notify_all();
+    wakeup_cond.notify_all();
 }
 
 
@@ -235,7 +220,7 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
         task->delayed = false;
     }
 
-    delayed_tasks_cond_var.notify_all();
+    wakeup_cond.notify_all();
 }
 
 
@@ -261,28 +246,24 @@ void BackgroundSchedulePool::threadFunction()
     setThreadName(thread_name.c_str());
 
     attachToThreadGroup();
+    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
 
     while (!shutdown)
     {
-        TaskInfoPtr task;
-
+        /// We have to wait with timeout to prevent very rare deadlock, caused by the following race condition:
+        /// 1. Background thread N: threadFunction(): checks for shutdown (it's false)
+        /// 2. Main thread: ~BackgroundSchedulePool(): sets shutdown to true, calls queue.wakeUpAll(), it triggers
+        ///    all existing Poco::Events inside Poco::NotificationQueue which background threads are waiting on.
+        /// 3. Background thread N: threadFunction(): calls queue.waitDequeueNotification(), it creates
+        ///    new Poco::Event inside Poco::NotificationQueue and starts to wait on it
+        /// Background thread N will never be woken up.
+        /// TODO Do we really need Poco::NotificationQueue? Why not to use std::queue + mutex + condvar or maybe even DB::ThreadPool?
+        constexpr size_t wait_timeout_ms = 500;
+        if (Poco::AutoPtr<Poco::Notification> notification = queue.waitDequeueNotification(wait_timeout_ms))
         {
-            std::unique_lock<std::mutex> tasks_lock(tasks_mutex);
-
-            tasks_cond_var.wait(tasks_lock, [&]()
-            {
-                return shutdown || !tasks.empty();
-            });
-
-            if (!tasks.empty())
-            {
-                task = tasks.front();
-                tasks.pop_front();
-            }
+            TaskNotification & task_notification = static_cast<TaskNotification &>(*notification);
+            task_notification.execute();
         }
-
-        if (task)
-            task->execute();
     }
 }
 
@@ -292,6 +273,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
     setThreadName((thread_name + "/D").c_str());
 
     attachToThreadGroup();
+    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
 
     while (!shutdown)
     {
@@ -314,7 +296,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (!task)
                 {
-                    delayed_tasks_cond_var.wait(lock);
+                    wakeup_cond.wait(lock);
                     continue;
                 }
 
@@ -322,7 +304,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (min_time > current_time)
                 {
-                    delayed_tasks_cond_var.wait_for(lock, std::chrono::microseconds(min_time - current_time));
+                    wakeup_cond.wait_for(lock, std::chrono::microseconds(min_time - current_time));
                     continue;
                 }
                 else

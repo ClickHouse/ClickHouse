@@ -1,9 +1,0 @@
-1	5
-2	6
-CREATE TABLE default.test_alter_decimal\n(\n    `n` UInt64,\n    `d` Decimal(18, 8)\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/default/01761_alter_decimal_zookeeper\', \'r1\')\nORDER BY tuple()\nSETTINGS index_granularity = 8192
-1	5
-2	6
-CREATE TABLE default.test_alter_decimal\n(\n    `n` UInt64,\n    `d` Decimal(18, 8)\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/default/01761_alter_decimal_zookeeper\', \'r1\')\nORDER BY tuple()\nSETTINGS index_granularity = 8192
-1	5
-2	6
-3	7

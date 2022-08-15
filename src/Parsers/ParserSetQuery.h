@@ -9,8 +9,6 @@ namespace DB
 
 struct SettingChange;
 
-constexpr char QUERY_PARAMETER_NAME_PREFIX[] = "param_";
-
 /** Query like this:
   * SET name1 = value1, name2 = value2, ...
   */

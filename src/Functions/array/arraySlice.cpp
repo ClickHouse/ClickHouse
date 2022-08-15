@@ -41,8 +41,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
@@ -150,7 +148,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(ArraySlice)
+void registerFunctionArraySlice(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArraySlice>();
 }

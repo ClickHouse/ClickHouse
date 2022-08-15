@@ -13,12 +13,11 @@ struct NameCountSubstringsCaseInsensitiveUTF8
     static constexpr auto name = "countSubstringsCaseInsensitiveUTF8";
 };
 
-using FunctionCountSubstringsCaseInsensitiveUTF8 = FunctionsStringSearch<
-        CountSubstringsImpl<NameCountSubstringsCaseInsensitiveUTF8, PositionCaseInsensitiveUTF8>>;
+using FunctionCountSubstringsCaseInsensitiveUTF8 = FunctionsStringSearch<CountSubstringsImpl<PositionCaseInsensitiveUTF8>, NameCountSubstringsCaseInsensitiveUTF8>;
 
 }
 
-REGISTER_FUNCTION(CountSubstringsCaseInsensitiveUTF8)
+void registerFunctionCountSubstringsCaseInsensitiveUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCountSubstringsCaseInsensitiveUTF8>();
 }

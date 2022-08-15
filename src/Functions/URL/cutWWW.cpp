@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include "protocol.h"
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -54,7 +54,7 @@ struct ExtractWWW
 struct NameCutWWW { static constexpr auto name = "cutWWW"; };
 using FunctionCutWWW = FunctionStringToString<CutSubstringImpl<ExtractWWW>, NameCutWWW>;
 
-REGISTER_FUNCTION(CutWWW)
+void registerFunctionCutWWW(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutWWW>();
 }

@@ -10,7 +10,7 @@ template <typename JSONParser>
 class VisitorJSONPathMemberAccess : public IVisitor<JSONParser>
 {
 public:
-    explicit VisitorJSONPathMemberAccess(ASTPtr member_access_ptr_)
+    VisitorJSONPathMemberAccess(ASTPtr member_access_ptr_)
         : member_access_ptr(member_access_ptr_->as<ASTJSONPathMemberAccess>()) { }
 
     const char * getName() const override { return "VisitorJSONPathMemberAccess"; }

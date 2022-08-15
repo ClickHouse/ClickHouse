@@ -17,7 +17,7 @@ using FunctionReplaceOne = FunctionStringReplace<ReplaceStringImpl<true>, NameRe
 
 }
 
-REGISTER_FUNCTION(ReplaceOne)
+void registerFunctionReplaceOne(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReplaceOne>();
 }

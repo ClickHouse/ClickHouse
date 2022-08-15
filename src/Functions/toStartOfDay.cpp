@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionToStartOfDay = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfDayImpl>;
 
-REGISTER_FUNCTION(ToStartOfDay)
+void registerFunctionToStartOfDay(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToStartOfDay>();
 }

@@ -7,30 +7,35 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Access/QuotaUsage.h>
-#include <Access/Common/AccessFlags.h>
-#include <base/range.h>
+#include <Access/AccessFlags.h>
+#include <common/range.h>
 
 
 namespace DB
 {
+using ResourceAmount = Quota::ResourceAmount;
+using ResourceType = Quota::ResourceType;
+using ResourceTypeInfo = Quota::ResourceTypeInfo;
+constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
+
 
 namespace
 {
-    void addValue(IColumn & out_column, NullMap & out_column_null_map, QuotaValue value, const QuotaTypeInfo & type_info)
+    void addValue(IColumn & out_column, NullMap & out_column_null_map, ResourceAmount amount, const ResourceTypeInfo & type_info)
     {
         out_column_null_map.push_back(false);
         if (type_info.output_as_float)
-            static_cast<ColumnFloat64 &>(out_column).getData().push_back(double(value) / type_info.output_denominator);
+            static_cast<ColumnFloat64 &>(out_column).getData().push_back(double(amount) / type_info.output_denominator);
         else
-            static_cast<ColumnUInt64 &>(out_column).getData().push_back(value / type_info.output_denominator);
+            static_cast<ColumnUInt64 &>(out_column).getData().push_back(amount / type_info.output_denominator);
     }
 
-    void addValue(IColumn & out_column, NullMap & out_column_null_map, std::optional<QuotaValue> value, const QuotaTypeInfo & type_info)
+    void addValue(IColumn & out_column, NullMap & out_column_null_map, std::optional<ResourceAmount> amount, const ResourceTypeInfo & type_info)
     {
-        if (value)
-            addValue(out_column, out_column_null_map, *value, type_info);
+        if (amount)
+            addValue(out_column, out_column_null_map, *amount, type_info);
         else
         {
             out_column_null_map.push_back(true);
@@ -59,9 +64,9 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_
     names_and_types.push_back({"end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())});
     names_and_types.push_back({"duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>())});
 
-    for (auto quota_type : collections::range(QuotaType::MAX))
+    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
     {
-        const auto & type_info = QuotaTypeInfo::get(quota_type);
+        const auto & type_info = ResourceTypeInfo::get(resource_type);
         String column_name = type_info.name;
         DataTypePtr data_type;
         if (type_info.output_as_float)
@@ -78,11 +83,7 @@ NamesAndTypesList StorageSystemQuotaUsage::getNamesAndTypesImpl(bool add_column_
 
 void StorageSystemQuotaUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
-    const auto & access_control = context->getAccessControl();
-    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
-        context->checkAccess(AccessType::SHOW_QUOTAS);
-
+    context->checkAccess(AccessType::SHOW_QUOTAS);
     auto usage = context->getQuotaUsage();
     if (!usage)
         return;
@@ -112,17 +113,16 @@ void StorageSystemQuotaUsage::fillDataImpl(
     auto & column_duration = assert_cast<ColumnUInt32 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
     auto & column_duration_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
 
-    IColumn * column_usage[static_cast<size_t>(QuotaType::MAX)];
-    NullMap * column_usage_null_map[static_cast<size_t>(QuotaType::MAX)];
-    IColumn * column_max[static_cast<size_t>(QuotaType::MAX)];
-    NullMap * column_max_null_map[static_cast<size_t>(QuotaType::MAX)];
-    for (auto quota_type : collections::range(QuotaType::MAX))
+    IColumn * column_usage[MAX_RESOURCE_TYPE];
+    NullMap * column_usage_null_map[MAX_RESOURCE_TYPE];
+    IColumn * column_max[MAX_RESOURCE_TYPE];
+    NullMap * column_max_null_map[MAX_RESOURCE_TYPE];
+    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
     {
-        auto quota_type_i = static_cast<size_t>(quota_type);
-        column_usage[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn();
-        column_usage_null_map[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
-        column_max[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn();
-        column_max_null_map[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
+        column_usage[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn();
+        column_usage_null_map[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
+        column_max[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn();
+        column_max_null_map[resource_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     }
 
     std::optional<UUID> current_quota_id;
@@ -148,13 +148,12 @@ void StorageSystemQuotaUsage::fillDataImpl(
             column_end_time_null_map.push_back(true);
             column_duration.insertDefault();
             column_duration_null_map.push_back(true);
-            for (auto quota_type : collections::range(QuotaType::MAX))
+            for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
             {
-                auto quota_type_i = static_cast<size_t>(quota_type);
-                column_usage[quota_type_i]->insertDefault();
-                column_usage_null_map[quota_type_i]->push_back(true);
-                column_max[quota_type_i]->insertDefault();
-                column_max_null_map[quota_type_i]->push_back(true);
+                column_usage[resource_type]->insertDefault();
+                column_usage_null_map[resource_type]->push_back(true);
+                column_max[resource_type]->insertDefault();
+                column_max_null_map[resource_type]->push_back(true);
             }
             return;
         }
@@ -169,12 +168,11 @@ void StorageSystemQuotaUsage::fillDataImpl(
         column_end_time_null_map.push_back(false);
         column_duration_null_map.push_back(false);
 
-        for (auto quota_type : collections::range(QuotaType::MAX))
+        for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
         {
-            auto quota_type_i = static_cast<size_t>(quota_type);
-            const auto & type_info = QuotaTypeInfo::get(quota_type);
-            addValue(*column_max[quota_type_i], *column_max_null_map[quota_type_i], interval->max[quota_type_i], type_info);
-            addValue(*column_usage[quota_type_i], *column_usage_null_map[quota_type_i], interval->used[quota_type_i], type_info);
+            const auto & type_info = ResourceTypeInfo::get(resource_type);
+            addValue(*column_max[resource_type], *column_max_null_map[resource_type], interval->max[resource_type], type_info);
+            addValue(*column_usage[resource_type], *column_usage_null_map[resource_type], interval->used[resource_type], type_info);
         }
     };
 

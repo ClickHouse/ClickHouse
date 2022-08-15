@@ -8,13 +8,10 @@
 #include <queue>
 #include <list>
 #include <optional>
-#include <atomic>
-
-#include <boost/heap/priority_queue.hpp>
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -106,9 +103,10 @@ private:
         }
     };
 
-    boost::heap::priority_queue<JobWithPriority> jobs;
+    std::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::exception_ptr first_exception;
+
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
@@ -147,7 +145,7 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
     {}
 
 public:
-    static void initialize(size_t max_threads = 10000, size_t max_free_threads = 1000, size_t queue_size = 10000);
+    static void initialize(size_t max_threads = 10000);
     static GlobalThreadPool & instance();
 };
 
@@ -155,26 +153,23 @@ public:
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
   */
-class ThreadFromGlobalPool : boost::noncopyable
+class ThreadFromGlobalPool
 {
 public:
-    ThreadFromGlobalPool() = default;
+    ThreadFromGlobalPool() {}
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
-        : state(std::make_shared<State>())
+        : state(std::make_shared<Poco::Event>())
     {
-        /// NOTE:
-        /// - If this will throw an exception, the destructor won't be called
-        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
+        /// NOTE: If this will throw an exception, the destructor won't be called.
         GlobalThreadPool::instance().scheduleOrThrow([
             state = state,
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            SCOPE_EXIT(state->event.set());
-
-            state->thread_id = std::this_thread::get_id();
+            auto event = std::move(state);
+            SCOPE_EXIT(event->set());
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
@@ -188,14 +183,14 @@ public:
         });
     }
 
-    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
+    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs)
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
+    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
-        if (initialized())
+        if (joinable())
             abort();
         state = std::move(rhs.state);
         return *this;
@@ -203,55 +198,34 @@ public:
 
     ~ThreadFromGlobalPool()
     {
-        if (initialized())
+        if (joinable())
             abort();
     }
 
     void join()
     {
-        if (!initialized())
+        if (!joinable())
             abort();
 
-        state->event.wait();
+        state->wait();
         state.reset();
     }
 
     void detach()
     {
-        if (!initialized())
+        if (!joinable())
             abort();
         state.reset();
     }
 
     bool joinable() const
     {
-        if (!state)
-            return false;
-        /// Thread cannot join itself.
-        if (state->thread_id == std::this_thread::get_id())
-            return false;
-        return true;
+        return state != nullptr;
     }
 
 private:
-    struct State
-    {
-        /// Should be atomic() because of possible concurrent access between
-        /// assignment and joinable() check.
-        std::atomic<std::thread::id> thread_id;
-
-        /// The state used in this object and inside the thread job.
-        Poco::Event event;
-    };
-    std::shared_ptr<State> state;
-
-    /// Internally initialized() should be used over joinable(),
-    /// since it is enough to know that the thread is initialized,
-    /// and ignore that fact that thread cannot join itself.
-    bool initialized() const
-    {
-        return static_cast<bool>(state);
-    }
+    /// The state used in this object and inside the thread job.
+    std::shared_ptr<Poco::Event> state;
 };
 
 

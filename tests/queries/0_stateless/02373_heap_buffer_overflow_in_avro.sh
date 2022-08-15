@@ -9,5 +9,5 @@ USER_FILES_PATH=$(clickhouse-client --query "select _path,_file from file('nonex
 
 cp $CURDIR/data_avro/corrupted.avro $USER_FILES_PATH/
 
-$CLICKHOUSE_CLIENT -q "select * from file(corrupted.avro)" 2>&1 | grep -F -q "Cannot read compressed data" && echo "OK" || echo "FAIL"
+$CLICKHOUSE_CLIENT -q "select * from file(corrupted.avro, Avro, 'x String')" 2>&1 | grep -F -q "Cannot read compressed data" && echo "OK" || echo "FAIL"
 

@@ -3,7 +3,6 @@
 #include <Core/UUID.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Databases/TablesLoader.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -20,9 +19,7 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -31,12 +28,10 @@ class IDatabase;
 class Exception;
 class ColumnsDescription;
 struct ConstraintsDescription;
-class IDisk;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 using Databases = std::map<String, std::shared_ptr<IDatabase>>;
-using DiskPtr = std::shared_ptr<IDisk>;
 
 /// Table -> set of table-views that make SELECT from it.
 using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
@@ -102,8 +97,8 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
         const ASTPtr & query = {},
         bool create_for_global_subquery = false);
 
-    TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept;
-    TemporaryTableHolder & operator=(TemporaryTableHolder && rhs) noexcept;
+    TemporaryTableHolder(TemporaryTableHolder && rhs);
+    TemporaryTableHolder & operator = (TemporaryTableHolder && rhs);
 
     ~TemporaryTableHolder();
 
@@ -111,7 +106,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     StoragePtr getTable() const;
 
-    operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
+    operator bool () const { return id != UUIDHelpers::Nil; }
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
@@ -126,14 +121,8 @@ class BackgroundSchedulePoolTaskHolder;
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
-    /// Names of predefined databases.
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
-    static constexpr const char * INFORMATION_SCHEMA = "information_schema";
-    static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
-
-    /// Returns true if a passed name is one of the predefined databases' names.
-    static bool isPredefinedDatabase(std::string_view database_name);
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -141,7 +130,6 @@ public:
 
     void initializeAndLoadTemporaryDatabase();
     void loadDatabases();
-    void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
@@ -157,7 +145,7 @@ public:
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
-    void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
+    void updateDatabaseName(const String & old_name, const String & new_name);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(const String & database_name) const;
@@ -183,11 +171,6 @@ public:
                                   ContextPtr context,
                                   std::optional<Exception> * exception = nullptr) const;
 
-    /// Returns true if a passed table_id refers to one of the predefined tables' names.
-    /// All tables in the "system" database with System* table engine are predefined.
-    /// Four views (tables, views, columns, schemata) in the "information_schema" database are predefined too.
-    bool isPredefinedTable(const StorageID & table_id) const;
-
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);
     Dependencies getDependencies(const StorageID & from) const;
@@ -212,8 +195,6 @@ public:
     /// this method will throw an exception.
     void addUUIDMapping(const UUID & uuid);
 
-    bool hasUUIDMapping(const UUID & uuid);
-
     static String getPathForUUID(const UUID & uuid);
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
@@ -223,16 +204,6 @@ public:
 
     void waitTableFinallyDropped(const UUID & uuid);
 
-    void addLoadingDependencies(const QualifiedTableName & table, TableNamesSet && dependencies);
-    void addLoadingDependencies(const DependenciesInfos & new_infos);
-    DependenciesInfo getLoadingDependenciesInfo(const StorageID & table_id) const;
-
-    TableNamesSet tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
-    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database = false) TSA_REQUIRES(databases_mutex);
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
-
-    void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);
-
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -240,15 +211,15 @@ private:
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
-    void assertDatabaseExistsUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
-    void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
+    void assertDatabaseExistsUnlocked(const String & database_name) const;
+    void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
     void shutdownImpl();
 
 
     struct UUIDToStorageMapPart
     {
-        std::unordered_map<UUID, DatabaseAndTable> map TSA_GUARDED_BY(mutex);
+        std::unordered_map<UUID, DatabaseAndTable> map;
         mutable std::mutex mutex;
     };
 
@@ -269,23 +240,22 @@ private:
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
+    void loadMarkedAsDroppedTables();
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
-
-    void cleanupStoreDirectoryTask();
-    bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     static constexpr size_t reschedule_time_ms = 100;
     static constexpr time_t drop_error_cooldown_sec = 5;
 
+    using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
+
     mutable std::mutex databases_mutex;
 
-    ViewDependencies view_dependencies TSA_GUARDED_BY(databases_mutex);
+    ViewDependencies view_dependencies;
 
-    Databases databases TSA_GUARDED_BY(databases_mutex);
+    Databases databases;
+    UUIDToDatabaseMap db_uuid_map;
     UUIDToStorageMap uuid_map;
-
-    DependenciesInfos loading_dependencies TSA_GUARDED_BY(databases_mutex);
 
     Poco::Logger * log;
 
@@ -297,45 +267,18 @@ private:
     /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
     using DatabaseGuard = std::pair<DDLGuard::Map, std::shared_mutex>;
     using DDLGuards = std::map<String, DatabaseGuard>;
-    DDLGuards ddl_guards TSA_GUARDED_BY(ddl_guards_mutex);
+    DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
     mutable std::mutex ddl_guards_mutex;
 
-    TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
-    std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    TablesMarkedAsDropped tables_marked_dropped;
+    std::unordered_set<UUID> tables_marked_dropped_ids;
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
     static constexpr time_t default_drop_delay_sec = 8 * 60;
     time_t drop_delay_sec = default_drop_delay_sec;
     std::condition_variable wait_table_finally_dropped;
-
-    std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
-    static constexpr time_t default_unused_dir_hide_timeout_sec = 60 * 60;              /// 1 hour
-    time_t unused_dir_hide_timeout_sec = default_unused_dir_hide_timeout_sec;
-    static constexpr time_t default_unused_dir_rm_timeout_sec = 30 * 24 * 60 * 60;      /// 30 days
-    time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
-    static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
-    time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
-};
-
-/// This class is useful when creating a table or database.
-/// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.
-/// But such object may start using a directory in store/ since its creation.
-/// To avoid race with cleanupStoreDirectoryTask() we have to mark UUID as used first.
-/// Then we can either add DatabasePtr/StoragePtr to the created UUID mapping
-/// or remove the lock if creation failed.
-/// See also addUUIDMapping(...)
-class TemporaryLockForUUIDDirectory : private boost::noncopyable
-{
-    UUID uuid = UUIDHelpers::Nil;
-public:
-    TemporaryLockForUUIDDirectory() = default;
-    TemporaryLockForUUIDDirectory(UUID uuid_);
-    ~TemporaryLockForUUIDDirectory();
-
-    TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;
-    TemporaryLockForUUIDDirectory & operator = (TemporaryLockForUUIDDirectory && rhs) noexcept;
 };
 
 }

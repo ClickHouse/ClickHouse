@@ -4,6 +4,7 @@
 #include "ODBCBlockInputStream.h"
 #include "ODBCBlockOutputStream.h"
 #include "getIdentifierQuote.h"
+#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -14,13 +15,9 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
 #include <Poco/ThreadPool.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Common/BridgeProtocolVersion.h>
-#include <Common/logger_useful.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <Common/config.h>
 
 #include <mutex>
 #include <memory>
@@ -47,7 +44,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
     response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
         *response.send() << message << std::endl;
-    LOG_WARNING(log, fmt::runtime(message));
+    LOG_WARNING(log, message);
 }
 
 
@@ -55,28 +52,6 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 {
     HTMLForm params(getContext()->getSettingsRef(), request);
     LOG_TRACE(log, "Request URI: {}", request.getURI());
-
-    size_t version;
-
-    if (!params.has("version"))
-        version = 0; /// assumed version for too old servers which do not send a version
-    else
-    {
-        String version_str = params.get("version");
-        if (!tryParse(version, version_str))
-        {
-            processError(response, "Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
-            return;
-        }
-    }
-
-    if (version != XDBC_BRIDGE_PROTOCOL_VERSION)
-    {
-        /// backwards compatibility is considered unnecessary for now, just let the user know that the server and the bridge must be upgraded together
-        processError(response, "Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
-        return;
-    }
-
 
     if (mode == "read")
         params.read(request.getStream());
@@ -125,7 +100,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     catch (const Exception & ex)
     {
         processError(response, "Invalid 'sample_block' parameter in request body '" + ex.message() + "'");
-        LOG_ERROR(log, fmt::runtime(ex.getStackTraceString()));
+        LOG_ERROR(log, ex.getStackTraceString());
         return;
     }
 
@@ -133,12 +108,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
-        nanodbc::ConnectionHolderPtr connection_handler;
-        if (getContext()->getSettingsRef().odbc_bridge_use_connection_pooling)
-            connection_handler = ODBCPooledConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
-        else
-            connection_handler = std::make_shared<nanodbc::ConnectionHolder>(validateODBCConnectionString(connection_string));
+        auto connection_handler = ODBCConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string),
+                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
         if (mode == "write")
         {
@@ -161,15 +133,10 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             quoting_style = getQuotingStyle(connection_handler);
 #endif
             auto & read_buf = request.getStream();
-            auto input_format = getContext()->getInputFormat(format, read_buf, *sample_block, max_block_size);
-            auto sink = std::make_shared<ODBCSink>(std::move(connection_handler), db_name, table_name, *sample_block, getContext(), quoting_style);
-
-            QueryPipeline pipeline(std::move(input_format));
-            pipeline.complete(std::move(sink));
-
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
-
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, getContext(), max_block_size);
+            auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
+            ODBCBlockOutputStream output_stream(std::move(connection_handler), db_name, table_name, *sample_block, getContext(), quoting_style);
+            copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
         else
@@ -177,14 +144,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            auto writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, out, *sample_block, getContext());
-            auto source = std::make_shared<ODBCSource>(std::move(connection_handler), query, *sample_block, max_block_size);
-
-            QueryPipeline pipeline(std::move(source));
-            pipeline.complete(std::move(writer));
-
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, getContext());
+            ODBCBlockInputStream inp(std::move(connection_handler), query, *sample_block, max_block_size);
+            copyData(inp, *writer);
         }
     }
     catch (...)

@@ -1,6 +1,7 @@
 #include "DictionarySourceHelpers.h"
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include "DictionaryStructure.h"
@@ -15,6 +16,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
+
+void formatBlock(BlockOutputStreamPtr & out, const Block & block)
+{
+    out->writePrefix();
+    out->write(block);
+    out->writeSuffix();
+    out->flush();
 }
 
 /// For simple key
@@ -52,82 +61,94 @@ Block blockForKeys(
 
         auto filtered_column = source_column->filter(filter, requested_rows.size());
 
-        block.insert({filtered_column, (*dict_struct.key)[i].type, (*dict_struct.key)[i].name});
+        block.insert({std::move(filtered_column), (*dict_struct.key)[i].type, (*dict_struct.key)[i].name});
     }
 
     return block;
 }
 
-
-SettingsChanges readSettingsFromDictionaryConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+ContextMutablePtr copyContextAndApplySettings(
+    const std::string & config_prefix,
+    ContextPtr context,
+    const Poco::Util::AbstractConfiguration & config)
 {
-    if (!config.has(config_prefix + ".settings"))
-        return {};
-
-    const auto prefix = config_prefix + ".settings";
-
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(prefix, config_keys);
-
-    SettingsChanges changes;
-
-    for (const std::string & key : config_keys)
+    auto local_context = Context::createCopy(context);
+    if (config.has(config_prefix + ".settings"))
     {
-        const auto value = config.getString(prefix + "." + key);
-        changes.emplace_back(key, value);
+        const auto prefix = config_prefix + ".settings";
+
+        Poco::Util::AbstractConfiguration::Keys config_keys;
+        config.keys(prefix, config_keys);
+
+        SettingsChanges changes;
+
+        for (const std::string & key : config_keys)
+        {
+            const auto value = config.getString(prefix + "." + key);
+            changes.emplace_back(key, value);
+        }
+
+        local_context->applySettingsChanges(changes);
     }
-
-    return changes;
+    return local_context;
 }
 
 
-ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(
-    const ContextPtr & context, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+BlockInputStreamWithAdditionalColumns::BlockInputStreamWithAdditionalColumns(
+    Block block_to_add_, std::unique_ptr<IBlockInputStream> && stream_)
+    : block_to_add(std::move(block_to_add_))
+    , stream(std::move(stream_))
 {
-    auto context_copy = Context::createCopy(context);
-    auto changes = readSettingsFromDictionaryConfig(config, config_prefix);
-    context_copy->applySettingsChanges(changes);
-    return context_copy;
 }
 
-static Block transformHeader(Block header, Block block_to_add)
+Block BlockInputStreamWithAdditionalColumns::getHeader() const
 {
-    for (Int64 i = static_cast<Int64>(block_to_add.columns() - 1); i >= 0; --i)
-        header.insert(0, block_to_add.getByPosition(i).cloneEmpty());
+    auto header = stream->getHeader();
+
+    if (header)
+    {
+        for (Int64 i = static_cast<Int64>(block_to_add.columns() - 1); i >= 0; --i)
+            header.insert(0, block_to_add.getByPosition(i).cloneEmpty());
+    }
 
     return header;
 }
 
-TransformWithAdditionalColumns::TransformWithAdditionalColumns(
-    Block block_to_add_, const Block & header)
-    : ISimpleTransform(header, transformHeader(header, block_to_add_), true)
-    , block_to_add(std::move(block_to_add_))
+Block BlockInputStreamWithAdditionalColumns::readImpl()
 {
-}
+    auto block = stream->read();
 
-void TransformWithAdditionalColumns::transform(Chunk & chunk)
-{
-    if (chunk)
+    if (block)
     {
-        auto num_rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
+        auto block_rows = block.rows();
 
-        auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, num_rows);
+        auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, block_rows);
 
-        if (cut_block.rows() != num_rows)
+        if (cut_block.rows() != block_rows)
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
                 "Number of rows in block to add after cut must equal to number of rows in block from inner stream");
 
         for (Int64 i = static_cast<Int64>(cut_block.columns() - 1); i >= 0; --i)
-            columns.insert(columns.begin(), cut_block.getByPosition(i).column);
+            block.insert(0, cut_block.getByPosition(i));
 
-        current_range_index += num_rows;
-        chunk.setColumns(std::move(columns), num_rows);
+        current_range_index += block_rows;
     }
+
+    return block;
 }
 
-String TransformWithAdditionalColumns::getName() const
+void BlockInputStreamWithAdditionalColumns::readPrefix()
 {
-    return "TransformWithAdditionalColumns";
+    stream->readPrefix();
+}
+
+void BlockInputStreamWithAdditionalColumns::readSuffix()
+{
+    stream->readSuffix();
+}
+
+String BlockInputStreamWithAdditionalColumns::getName() const
+{
+    return "BlockInputStreamWithAdditionalColumns";
 }
 }

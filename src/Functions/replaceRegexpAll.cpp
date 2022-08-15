@@ -17,10 +17,9 @@ using FunctionReplaceRegexpAll = FunctionStringReplace<ReplaceRegexpImpl<false>,
 
 }
 
-REGISTER_FUNCTION(ReplaceRegexpAll)
+void registerFunctionReplaceRegexpAll(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReplaceRegexpAll>();
-    factory.registerAlias("REGEXP_REPLACE", NameReplaceRegexpAll::name, FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -35,18 +35,14 @@ namespace DB
 
 enum class CompressionMethodByte : uint8_t
 {
-    NONE            = 0x02,
-    LZ4             = 0x82,
-    ZSTD            = 0x90,
-    Multiple        = 0x91,
-    Delta           = 0x92,
-    T64             = 0x93,
-    DoubleDelta     = 0x94,
-    Gorilla         = 0x95,
-    AES_128_GCM_SIV = 0x96,
-    AES_256_GCM_SIV = 0x97,
-    FPC             = 0x98,
-    DeflateQpl      = 0x99,
+    NONE     = 0x02,
+    LZ4      = 0x82,
+    ZSTD     = 0x90,
+    Multiple = 0x91,
+    Delta    = 0x92,
+    T64      = 0x93,
+    DoubleDelta  = 0x94,
+    Gorilla      = 0x95,
 };
 
 }

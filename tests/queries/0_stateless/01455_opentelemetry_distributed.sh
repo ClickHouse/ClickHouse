@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: distributed
-
 set -ue
 
 unset CLICKHOUSE_LOG_COMMENT
@@ -14,28 +12,6 @@ function check_log
 ${CLICKHOUSE_CLIENT} --format=JSONEachRow -nq "
 system flush logs;
 
--- Show queries sorted by start time.
-select attribute['db.statement'] as query,
-       attribute['clickhouse.query_status'] as status,
-       attribute['clickhouse.tracestate'] as tracestate,
-       1 as sorted_by_start_time
-    from system.opentelemetry_span_log
-    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
-        and operation_name = 'query'
-    order by start_time_us
-    ;
-
--- Show queries sorted by finish time.
-select attribute['db.statement'] as query,
-       attribute['clickhouse.query_status'] as query_status,
-       attribute['clickhouse.tracestate'] as tracestate,
-       1 as sorted_by_finish_time
-    from system.opentelemetry_span_log
-    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
-        and operation_name = 'query'
-    order by finish_time_us
-    ;
-
 -- Check the number of query spans with given trace id, to verify it was
 -- propagated.
 select count(*) "'"'"total spans"'"'",
@@ -43,7 +19,7 @@ select count(*) "'"'"total spans"'"'",
         uniqExactIf(parent_span_id, parent_span_id != 0)
             "'"'"unique non-zero parent spans"'"'"
     from system.opentelemetry_span_log
-    where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+    where trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and operation_name = 'query'
     ;
 
@@ -56,7 +32,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
                      mapValues(attribute) as attribute_value) o
         join system.query_log on query_id = o.attribute_value
     where
-        trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+        trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and current_database = currentDatabase()
         and operation_name = 'query'
         and parent_span_id = reinterpretAsUInt64(unhex('73'))
@@ -71,7 +47,7 @@ select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
     from system.opentelemetry_span_log
         array join mapKeys(attribute) as name,  mapValues(attribute) as value
     where
-        trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
+        trace_id = reinterpretAsUUID(reverse(unhex('$trace_id')))
         and operation_name = 'query'
         and name = 'clickhouse.tracestate'
         and length(value) > 0
@@ -113,10 +89,10 @@ check_log
 echo "===sampled==="
 query_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
-for i in {1..20}
+for i in {1..200}
 do
     ${CLICKHOUSE_CLIENT} \
-        --opentelemetry_start_trace_probability=0.5 \
+        --opentelemetry_start_trace_probability=0.1 \
         --query_id "$query_id-$i" \
         --query "select 1 from remote('127.0.0.2', system, one) format Null" \
         &
@@ -132,8 +108,8 @@ wait
 
 ${CLICKHOUSE_CLIENT} -q "system flush logs"
 ${CLICKHOUSE_CLIENT} -q "
-    -- expect 20 * 0.5 = 10 sampled events on average
-    select if(2 <= count() and count() <= 18, 'OK', 'Fail')
+    -- expect 200 * 0.1 = 20 sampled events on average
+    select if(count() > 1 and count() < 50, 'OK', 'Fail')
     from system.opentelemetry_span_log
     where operation_name = 'query'
         and parent_span_id = 0  -- only account for the initial queries

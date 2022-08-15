@@ -1,0 +1,30 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+ADDINCL (
+    GLOBAL clickhouse/src
+    contrib/libs/libcpuid
+    contrib/libs/libunwind/include
+    GLOBAL contrib/restricted/dragonbox
+)
+
+PEERDIR(
+    clickhouse/base/common
+    clickhouse/base/pcg-random
+    clickhouse/base/widechar_width
+    contrib/libs/libcpuid
+    contrib/libs/openssl
+    contrib/libs/poco/NetSSL_OpenSSL
+    contrib/libs/re2
+    contrib/restricted/dragonbox
+)
+
+INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

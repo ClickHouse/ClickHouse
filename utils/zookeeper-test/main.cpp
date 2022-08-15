@@ -3,8 +3,8 @@
 #include <Poco/ConsoleChannel.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <base/LineReader.h>
-#include <Common/logger_useful.h>
+#include <common/LineReader.h>
+#include <common/logger_useful.h>
 #include <fmt/format.h>
 #include <random>
 #include <iterator>
@@ -238,9 +238,9 @@ std::string currentDateTime()
     tstruct = *localtime(&now);
     // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
     // for more information about date/time format
-    size_t size = strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tstruct);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tstruct);
 
-    return std::string(buf, size);
+    return buf;
 }
 
 
@@ -282,9 +282,11 @@ void createConcurrent(zkutil::ZooKeeper & testzk, const std::string & zkhost, si
         asyncs.push_back(std::async(std::launch::async, callback));
     }
 
+    size_t i = 0;
     for (auto & async : asyncs)
     {
         async.wait();
+        i++;
     }
 }
 

@@ -76,7 +76,7 @@ using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl, NameReverseU
 
 }
 
-REGISTER_FUNCTION(ReverseUTF8)
+void registerFunctionReverseUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReverseUTF8>();
 }

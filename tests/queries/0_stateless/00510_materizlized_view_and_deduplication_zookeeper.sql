@@ -1,21 +1,18 @@
--- Tags: zookeeper, no-ordinary-database, no-parallel
--- Tag no-parallel: static UUID
-
 DROP TABLE IF EXISTS with_deduplication;
 DROP TABLE IF EXISTS without_deduplication;
 DROP TABLE IF EXISTS with_deduplication_mv;
 DROP TABLE IF EXISTS without_deduplication_mv;
 
 CREATE TABLE with_deduplication(x UInt32)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00510/with_deduplication', 'r1') ORDER BY x;
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00510/with_deduplication', 'r1') ORDER BY x;
 CREATE TABLE without_deduplication(x UInt32)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00510/without_deduplication', 'r1') ORDER BY x SETTINGS replicated_deduplication_window = 0;
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00510/without_deduplication', 'r1') ORDER BY x SETTINGS replicated_deduplication_window = 0;
 
 CREATE MATERIALIZED VIEW with_deduplication_mv UUID '00000510-1000-4000-8000-000000000001'
-    ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{database}/test_00510/with_deduplication_mv', 'r1') ORDER BY dummy
+    ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/test_00510/with_deduplication_mv', 'r1') ORDER BY dummy
     AS SELECT 0 AS dummy, countState(x) AS cnt FROM with_deduplication;
 CREATE MATERIALIZED VIEW without_deduplication_mv UUID '00000510-1000-4000-8000-000000000002'
-    ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{database}/test_00510/without_deduplication_mv', 'r1') ORDER BY dummy
+    ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/test_00510/without_deduplication_mv', 'r1') ORDER BY dummy
     AS SELECT 0 AS dummy, countState(x) AS cnt FROM without_deduplication;
 
 INSERT INTO with_deduplication VALUES (42);

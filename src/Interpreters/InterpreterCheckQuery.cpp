@@ -1,9 +1,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTCheckQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
@@ -48,7 +48,7 @@ BlockIO InterpreterCheckQuery::execute()
     {
         bool result = std::all_of(check_results.begin(), check_results.end(), [] (const CheckResult & res) { return res.success; });
         auto column = ColumnUInt8::create();
-        column->insertValue(static_cast<UInt64>(result));
+        column->insertValue(UInt64(result));
         block = Block{{std::move(column), std::make_shared<DataTypeUInt8>(), "result"}};
     }
     else
@@ -72,7 +72,7 @@ BlockIO InterpreterCheckQuery::execute()
     }
 
     BlockIO res;
-    res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::move(block)));
+    res.in = std::make_shared<OneBlockInputStream>(block);
 
     return res;
 }

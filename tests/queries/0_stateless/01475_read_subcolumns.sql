@@ -1,7 +1,3 @@
--- Tags: no-s3-storage, no-random-settings
-
-SET use_uncompressed_cache = 0;
-
 SELECT '====array====';
 DROP TABLE IF EXISTS t_arr;
 CREATE TABLE t_arr (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;

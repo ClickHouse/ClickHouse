@@ -127,11 +127,6 @@ namespace DB
             return true;
         }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-        {
-            return true;
-        }
-
         bool hasInformationAboutMonotonicity() const override
         {
             return true;
@@ -139,7 +134,10 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return { .is_monotonic = true, .is_always_monotonic = true };
+            return Monotonicity(
+                true,  // is_monotonic
+                true,  // is_positive
+                true); // is_always_monotonic
         }
 
     private:
@@ -232,7 +230,7 @@ namespace DB
         static constexpr auto name = "fromModifiedJulianDayOrNull";
     };
 
-    REGISTER_FUNCTION(FromModifiedJulianDay)
+    void registerFunctionFromModifiedJulianDay(FunctionFactory & factory)
     {
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>();
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDayOrNull, true>>();

@@ -1,6 +1,6 @@
 ---
-sidebar_position: 66
-sidebar_label: "Прочие функции"
+toc_priority: 66
+toc_title: "Прочие функции"
 ---
 
 # Прочие функции {#other-functions}
@@ -8,7 +8,6 @@ sidebar_label: "Прочие функции"
 ## hostName() {#hostname}
 
 Возвращает строку - имя хоста, на котором эта функция была выполнена. При распределённой обработке запроса, это будет имя хоста удалённого сервера, если функция выполняется на удалённом сервере.
-Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 ## getMacro {#getmacro}
 
@@ -644,17 +643,10 @@ SELECT
 ## uptime() {#uptime}
 
 Возвращает аптайм сервера в секундах.
-Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 ## version() {#version}
 
 Возвращает версию сервера в виде строки.
-Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
-
-## buildId() {#buildid}
-
-Возвращает ID сборки, сгенерированный компилятором для данного сервера ClickHouse.
-Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 ## rowNumberInBlock {#function-rownumberinblock}
 
@@ -676,7 +668,7 @@ neighbor(column, offset[, default_value])
 
 Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Функция может получить доступ к значению в столбце соседней строки только внутри обрабатываемого в данный момент блока данных.
 
 Порядок строк, используемый при вычислении функции `neighbor`, может отличаться от порядка строк, возвращаемых пользователю.
@@ -785,7 +777,7 @@ FROM numbers(16)
 Считает разницу между последовательными значениями строк в блоке данных.
 Возвращает 0 для первой строки и разницу с предыдущей строкой для каждой последующей строки.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Функция может взять значение предыдущей строки только внутри текущего обработанного блока данных.
 
 Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
@@ -865,7 +857,7 @@ WHERE diff != 1
 У каждого события есть время начала и время окончания. Считается, что время начала включено в событие, а время окончания исключено из него. Столбцы со временем начала и окончания событий должны иметь одинаковый тип данных.
 Функция подсчитывает количество событий, происходящих одновременно на момент начала каждого из событий в выборке.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     События должны быть отсортированы по возрастанию времени начала. Если это требование нарушено, то функция вызывает исключение.
     Каждый блок данных обрабатывается независимо. Если события из разных блоков данных накладываются по времени, они не могут быть корректно обработаны.
 
@@ -1156,7 +1148,7 @@ SELECT * FROM table WHERE indexHint(<expression>)
 
 Возвращает диапазон индекса, в котором выполняется заданное условие.
 
-Тип: [Uint8](https://clickhouse.com/docs/ru/data_types/int_uint/#diapazony-uint).
+Тип: [Uint8](https://clickhouse.yandex/docs/ru/data_types/int_uint/#diapazony-uint).
 
 **Пример**
 
@@ -1557,7 +1549,7 @@ FROM numbers(10);
 
 Накапливает состояния агрегатной функции для каждой строки блока данных.
 
-:::danger "Warning"
+!!! warning "Warning"
     Функция обнуляет состояние для каждого нового блока.
 
 **Синтаксис**
@@ -2017,9 +2009,9 @@ countDigits(x)
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
-     :::note "Примечание"
+ !!! note "Примечание"
     Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
-    :::
+
 **Пример**
 
 Запрос:
@@ -2096,354 +2088,3 @@ SELECT tcpPort();
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
-## currentProfiles {#current-profiles}
-
-Возвращает список [профилей настроек](../../operations/access-rights.md#settings-profiles-management) для текущего пользователя.
-
-Для изменения текущего профиля настроек может быть использована команда SET PROFILE. Если команда `SET PROFILE` не применялась, функция возвращает профили, указанные при определении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
-
-**Синтаксис**
-
-``` sql
-currentProfiles()
-```
-
-**Возвращаемое значение**
-
--   Список профилей настроек для текущего пользователя.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-## enabledProfiles {#enabled-profiles}
-
-Возвращает профили настроек, назначенные пользователю как явно, так и неявно. Явно назначенные профили — это те же профили, которые возвращает функция [currentProfiles](#current-profiles). Неявно назначенные профили включают родительские профили других назначенных профилей; профили, назначенные с помощью предоставленных ролей; профили, назначенные с помощью собственных настроек; основной профиль по умолчанию (см. секцию `default_profile` в основном конфигурационном файле сервера).
-
-**Синтаксис**
-
-``` sql
-enabledProfiles()
-```
-
-**Возвращаемое значение**
-
--   Список доступных профилей для текущего пользователя.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-## defaultProfiles {#default-profiles}
-
-Возвращает все профили, указанные при объявлении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement))
-
-**Синтаксис**
-
-``` sql
-defaultProfiles()
-```
-
-**Возвращаемое значение**
-
--   Список профилей по умолчанию.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-## currentRoles {#current-roles}
-
-Возвращает список текущих ролей для текущего пользователя. Список ролей пользователя можно изменить с помощью выражения [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement). Если выражение `SET ROLE` не использовалось, данная функция возвращает тот же результат, что и функция [defaultRoles](#default-roles).
-
-**Синтаксис**
-
-``` sql
-currentRoles()
-```
-
-**Возвращаемое значение**
-
--   Список текущих ролей для текущего пользователя.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-## enabledRoles {#enabled-roles}
-
-Возвращает имена текущих ролей, а также ролей, которые разрешено использовать текущему пользователю путем назначения привилегий.
-
-**Синтаксис**
-
-``` sql
-enabledRoles()
-```
-
-**Возвращаемое значение**
-
--   Список доступных ролей для текущего пользователя.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-## defaultRoles {#default-roles}
-
-Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement).
-
-**Синтаксис**
-
-``` sql
-defaultRoles()
-```
-
-**Возвращаемое значение**
-
--   Список ролей по умолчанию.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-## getServerPort {#getserverport}
-
-Возвращает номер порта сервера. Если порт не используется сервером, генерируется исключение.
-
-**Синтаксис**
-
-``` sql
-getServerPort(port_name)
-```
-
-**Аргументы**
-
--   `port_name` — имя порта сервера. [String](../../sql-reference/data-types/string.md#string). Возможные значения:
-
-    -   'tcp_port'
-    -   'tcp_port_secure'
-    -   'http_port'
-    -   'https_port'
-    -   'interserver_http_port'
-    -   'interserver_https_port'
-    -   'mysql_port'
-    -   'postgresql_port'
-    -   'grpc_port'
-    -   'prometheus.port'
-
-**Возвращаемое значение**
-
--   Номер порта сервера.
-
-Тип: [UInt16](../../sql-reference/data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT getServerPort('tcp_port');
-```
-
-Результат:
-
-``` text
-┌─getServerPort('tcp_port')─┐
-│ 9000                      │
-└───────────────────────────┘
-```
-
-## queryID {#query-id}
-
-Возвращает идентификатор текущего запроса. Другие параметры запроса могут быть извлечены из системной таблицы [system.query_log](../../operations/system-tables/query_log.md) через `query_id`.
-
-В отличие от [initialQueryID](#initial-query-id), функция `queryID` может возвращать различные значения для разных шардов (см. пример).
-
-**Синтаксис**
-
-``` sql
-queryID()
-```
-
-**Возвращаемое значение**
-
--   Идентификатор текущего запроса.
-
-Тип: [String](../../sql-reference/data-types/string.md)
-
-**Пример**
-
-Запрос:
-
-``` sql
-CREATE TABLE tmp (str String) ENGINE = Log;
-INSERT INTO tmp (*) VALUES ('a');
-SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
-```
-
-Результат:
-
-``` text
-┌─count()─┐
-│ 3       │
-└─────────┘
-```
-
-## initialQueryID {#initial-query-id}
-
-Возвращает идентификатор родительского запроса. Другие параметры запроса могут быть извлечены из системной таблицы [system.query_log](../../operations/system-tables/query_log.md) через `initial_query_id`.
-
-В отличие от [queryID](#query-id), функция `initialQueryID` возвращает одинаковые значения для разных шардов (см. пример).
-
-**Синтаксис**
-
-``` sql
-initialQueryID()
-```
-
-**Возвращаемое значение**
-
--   Идентификатор родительского запроса.
-
-Тип: [String](../../sql-reference/data-types/string.md)
-
-**Пример**
-
-Запрос:
-
-``` sql
-CREATE TABLE tmp (str String) ENGINE = Log;
-INSERT INTO tmp (*) VALUES ('a');
-SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
-```
-
-Результат:
-
-``` text
-┌─count()─┐
-│ 1       │
-└─────────┘
-```
-
-## shardNum {#shard-num}
-
-Возвращает индекс шарда, который обрабатывает часть данных распределенного запроса. Индексы начинаются с `1`.
-Если запрос не распределенный, то возвращается значение `0`.
-
-**Синтаксис**
-
-``` sql
-shardNum()
-```
-
-**Возвращаемое значение**
-
--   индекс шарда или константа `0`.
-
-Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
-
-**Пример**
-
-В примере ниже используется конфигурация с двумя шардами. На каждом шарде выполняется запрос к таблице [system.one](../../operations/system-tables/one.md).
-
-Запрос:
-
-``` sql
-CREATE TABLE shard_num_example (dummy UInt8)
-    ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
-SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
-```
-
-Результат:
-
-``` text
-┌─dummy─┬─shardNum()─┬─shardCount()─┐
-│     0 │          2 │            2 │
-│     0 │          1 │            2 │
-└───────┴────────────┴──────────────┘
-```
-
-**См. также**
-
--   Табличный движок [Distributed](../../engines/table-engines/special/distributed.md)
-
-## shardCount {#shard-count}
-
-Возвращает общее количество шардов для распределенного запроса.
-Если запрос не распределенный, то возвращается значение `0`.
-
-**Синтаксис**
-
-``` sql
-shardCount()
-```
-
-**Возвращаемое значение**
-
--   Общее количество шардов или `0`.
-
-Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
-
-**См. также**
-
-- Пример использования функции [shardNum()](#shard-num) также содержит вызов `shardCount()`.
-
-## getOSKernelVersion {#getoskernelversion}
-
-Возвращает строку с текущей версией ядра ОС.
-
-**Синтаксис**
-
-``` sql
-getOSKernelVersion()
-```
-
-**Аргументы**
-
--   Нет.
-
-**Возвращаемое значение**
-
--   Текущая версия ядра ОС.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT getOSKernelVersion();
-```
-
-Результат:
-
-``` text
-┌─getOSKernelVersion()────┐
-│ Linux 4.15.0-55-generic │
-└─────────────────────────┘
-```
-
-## zookeeperSessionUptime {#zookeepersessionuptime}
-
-Возвращает аптайм текущего сеанса ZooKeeper в секундах.
-
-**Синтаксис**
-
-``` sql
-zookeeperSessionUptime()
-```
-
-**Аргументы**
-
--   Нет.
-
-**Возвращаемое значение**
-
--   Аптайм текущего сеанса ZooKeeper в секундах.
-
-Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT zookeeperSessionUptime();
-```
-
-Результат:
-
-``` text
-┌─zookeeperSessionUptime()─┐
-│                      286 │
-└──────────────────────────┘
-```

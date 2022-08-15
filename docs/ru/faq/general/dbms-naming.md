@@ -1,6 +1,7 @@
 ---
 title: "Что означает название ClickHouse?"
-sidebar_position: 10
+toc_hidden: true
+toc_priority: 10
 ---
 
 # Что означает название ClickHouse? {#what-does-clickhouse-mean}
@@ -12,6 +13,5 @@ sidebar_position: 10
 -   единственно правильный способ написания — Click**H**ouse — с заглавной буквой H;
 -   если нужно сокращеннное название, используйте **CH**. Исторически сложилось, что в Китае также популярно сокращение CK — в основном, из-за того, что это название использовалось в одном из первых обсуждений ClickHouse на китайском языке.
 
-:::info "Забавный факт"
+!!! info "Забавный факт"
     Спустя годы после того, как ClickHouse получил свое название, принцип комбинирования двух слов, каждое из которых имеет подходящий смысл, был признан лучшим способом назвать базу данных в [исследовании Andy Pavlo](https://www.cs.cmu.edu/~pavlo/blog/2020/03/on-naming-a-database-management-system.html), Associate Professor of Databases в Carnegie Mellon University. ClickHouse разделил награду "за лучшее название СУБД" с Postgres.
-:::

@@ -15,7 +15,7 @@ struct HorizontalImpl
 namespace DB
 {
 
-REGISTER_FUNCTION(ExtractAllGroupsHorizontal)
+void registerFunctionExtractAllGroupsHorizontal(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionExtractAllGroups<HorizontalImpl>>();
 }

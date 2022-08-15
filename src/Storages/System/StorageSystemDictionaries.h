@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -9,8 +10,9 @@ namespace DB
 class Context;
 
 
-class StorageSystemDictionaries final : public IStorageSystemOneBlock<StorageSystemDictionaries>
+class StorageSystemDictionaries final : public shared_ptr_helper<StorageSystemDictionaries>, public IStorageSystemOneBlock<StorageSystemDictionaries>
 {
+    friend struct shared_ptr_helper<StorageSystemDictionaries>;
 public:
     std::string getName() const override { return "SystemDictionaries"; }
 

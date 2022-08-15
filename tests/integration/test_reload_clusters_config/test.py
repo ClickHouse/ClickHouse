@@ -7,33 +7,27 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
-)
-node_1 = cluster.add_instance("node_1", with_zookeeper=True)
-node_2 = cluster.add_instance("node_2", with_zookeeper=True)
-
+node = cluster.add_instance('node', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
+node_1 = cluster.add_instance('node_1', with_zookeeper=True)
+node_2 = cluster.add_instance('node_2', with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
 
-        node.query(
-            """CREATE TABLE distributed (id UInt32) ENGINE =
-            Distributed('test_cluster', 'default', 'replicated')"""
-        )
+        node.query('''CREATE TABLE distributed (id UInt32) ENGINE =
+            Distributed('test_cluster', 'default', 'replicated')''')
+        
+        node.query('''CREATE TABLE distributed2 (id UInt32) ENGINE =
+            Distributed('test_cluster2', 'default', 'replicated')''')
 
-        node.query(
-            """CREATE TABLE distributed2 (id UInt32) ENGINE =
-            Distributed('test_cluster2', 'default', 'replicated')"""
-        )
-
-        cluster.pause_container("node_1")
-        cluster.pause_container("node_2")
+        cluster.pause_container('node_1')
+        cluster.pause_container('node_2')
 
         yield cluster
 
@@ -41,8 +35,8 @@ def started_cluster():
         cluster.shutdown()
 
 
-base_config = """
-<clickhouse>
+base_config = '''
+<yandex>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -71,11 +65,11 @@ base_config = """
             </shard>
         </test_cluster2>
     </remote_servers>
-</clickhouse>
-"""
+</yandex>
+'''
 
-test_config1 = """
-<clickhouse>
+test_config1 = '''
+<yandex>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -100,11 +94,11 @@ test_config1 = """
             </shard>
         </test_cluster2>
     </remote_servers>
-</clickhouse>
-"""
+</yandex>
+'''
 
-test_config2 = """
-<clickhouse>
+test_config2 = '''
+<yandex>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -120,11 +114,11 @@ test_config2 = """
             </shard>
         </test_cluster>
     </remote_servers>
-</clickhouse>
-"""
+</yandex>
+'''
 
-test_config3 = """
-<clickhouse>
+test_config3 = '''
+<yandex>
     <remote_servers>
         <test_cluster>
             <shard>
@@ -162,25 +156,17 @@ test_config3 = """
             </shard>
         </test_cluster3>
     </remote_servers>
-</clickhouse>
-"""
+</yandex>
+'''
 
 
 def send_repeated_query(table, count=5):
     for i in range(count):
-        node.query_and_get_error(
-            "SELECT count() FROM {} SETTINGS receive_timeout=1".format(table)
-        )
+        node.query_and_get_error("SELECT count() FROM {} SETTINGS receive_timeout=1".format(table))
 
 
 def get_errors_count(cluster, host_name="node_1"):
-    return int(
-        node.query(
-            "SELECT errors_count FROM system.clusters WHERE cluster='{}' and host_name='{}'".format(
-                cluster, host_name
-            )
-        )
-    )
+    return int(node.query("SELECT errors_count FROM system.clusters WHERE cluster='{}' and host_name='{}'".format(cluster, host_name)))
 
 
 def set_config(config):
@@ -192,7 +178,7 @@ def test_simple_reload(started_cluster):
     send_repeated_query("distributed")
 
     assert get_errors_count("test_cluster") > 0
-
+    
     node.query("SYSTEM RELOAD CONFIG")
 
     assert get_errors_count("test_cluster") > 0
@@ -223,9 +209,9 @@ def test_delete_cluster(started_cluster):
     set_config(test_config2)
 
     assert get_errors_count("test_cluster") > 0
-
+    
     result = node.query("SELECT * FROM system.clusters WHERE cluster='test_cluster2'")
-    assert result == ""
+    assert result == ''
 
     set_config(base_config)
 
@@ -243,6 +229,7 @@ def test_add_cluster(started_cluster):
     assert get_errors_count("test_cluster2") > 0
 
     result = node.query("SELECT * FROM system.clusters WHERE cluster='test_cluster3'")
-    assert result != ""
+    assert result != ''
 
     set_config(base_config)
+

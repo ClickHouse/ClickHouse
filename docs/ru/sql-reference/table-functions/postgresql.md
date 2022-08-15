@@ -1,6 +1,6 @@
 ---
-sidebar_position: 42
-sidebar_label: postgresql
+toc_priority: 42
+toc_title: postgresql
 ---
 
 # postgresql {#postgresql}
@@ -20,15 +20,14 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 -   `table` — имя таблицы на удалённом сервере.
 -   `user` — пользователь PostgreSQL.
 -   `password` — пароль пользователя.
--   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент.
+-   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент. 
 
 **Возвращаемое значение**
 
 Таблица с теми же столбцами, что и в исходной таблице PostgreSQL.
 
-:::info "Примечание"
+!!! info "Примечание"
     В запросах `INSERT` для того чтобы отличить табличную функцию `postgresql(...)` от таблицы со списком имен столбцов вы должны указывать ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
-:::
 
 ## Особенности реализации {#implementation-details}
 
@@ -42,10 +41,9 @@ postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 
 PostgreSQL массивы конвертируются в массивы ClickHouse.
 
-:::info "Примечание"
+!!! info "Примечание"
     Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
-:::
-
+	
 Поддерживает несколько реплик, которые должны быть перечислены через `|`. Например:
 
 ```sql
@@ -58,7 +56,7 @@ SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgr
 SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
 ```
 
-При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.
+При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.    
 
 **Примеры**
 
@@ -88,7 +86,7 @@ postgresql> SELECT * FROM test;
 Получение данных в ClickHouse:
 
 ```sql
-SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test'); 
 ```
 
 ``` text
@@ -128,7 +126,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 
 **См. также**
 
--   [Движок таблиц PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
--   [Использование PostgreSQL как источника данных для внешнего словаря](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+-   [Движок таблиц PostgreSQL](../../sql-reference/table-functions/postgresql.md)
+-   [Использование PostgreSQL как источника данных для внешнего словаря](../../sql-reference/table-functions/postgresql.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/table-functions/postgresql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/postgresql/) <!--hide-->

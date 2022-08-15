@@ -1,6 +1,6 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
-#include <base/preciseExp10.h>
+#include <common/preciseExp10.h>
 
 namespace DB
 {
@@ -12,7 +12,7 @@ using FunctionExp10 = FunctionMathUnary<UnaryFunctionVectorized<Exp10Name, preci
 
 }
 
-REGISTER_FUNCTION(Exp10)
+void registerFunctionExp10(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionExp10>();
 }

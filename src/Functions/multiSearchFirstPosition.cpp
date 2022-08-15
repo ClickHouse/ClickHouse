@@ -15,11 +15,11 @@ struct NameMultiSearchFirstPosition
 };
 
 using FunctionMultiSearchFirstPosition
-    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<NameMultiSearchFirstPosition, PositionCaseSensitiveASCII>>;
+    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseSensitiveASCII>, NameMultiSearchFirstPosition>;
 
 }
 
-REGISTER_FUNCTION(MultiSearchFirstPosition)
+void registerFunctionMultiSearchFirstPosition(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearchFirstPosition>();
 }

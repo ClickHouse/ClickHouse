@@ -1,6 +1,6 @@
 ---
-sidebar_position: 39
-sidebar_label: "Пользователь"
+toc_priority: 39
+toc_title: "Пользователь"
 ---
 
 # CREATE USER {#create-user-statement}
@@ -10,12 +10,11 @@ sidebar_label: "Пользователь"
 Синтаксис:
 
 ``` sql
-CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
+CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] 
         [, name2 [ON CLUSTER cluster_name2] ...]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
-    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
@@ -29,13 +28,11 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `IDENTIFIED WITH no_password`
 -   `IDENTIFIED WITH plaintext_password BY 'qwerty'`
 -   `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
--   `IDENTIFIED WITH sha256_hash BY 'hash'` or `IDENTIFIED WITH sha256_hash BY 'hash' SALT 'salt'`
+-   `IDENTIFIED WITH sha256_hash BY 'hash'`
 -   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 -   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
 -   `IDENTIFIED WITH ldap SERVER 'server_name'`
 -   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
-
-Для идентификации с sha256_hash используя `SALT` - хэш должен быть вычислен от конкатенации 'password' и 'salt'.
 
 ## Пользовательский хост
 
@@ -45,7 +42,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `HOST ANY` — Пользователь может подключиться с любого хоста. Используется по умолчанию.
 -   `HOST LOCAL` — Пользователь может подключиться только локально.
 -   `HOST NAME 'fqdn'` — Хост задается через FQDN. Например, `HOST NAME 'mysite.com'`.
--   `HOST REGEXP 'regexp'` — Позволяет использовать регулярные выражения [pcre](http://www.pcre.org/), чтобы задать хосты. Например, `HOST REGEXP '.*\.mysite\.com'`.
+-   `HOST NAME REGEXP 'regexp'` — Позволяет использовать регулярные выражения [pcre](http://www.pcre.org/), чтобы задать хосты. Например, `HOST NAME REGEXP '.*\.mysite\.com'`.
 -   `HOST LIKE 'template'` — Позволяет использовать оператор [LIKE](../../functions/string-search-functions.md#function-like) для фильтрации хостов. Например, `HOST LIKE '%'` эквивалентен `HOST ANY`; `HOST LIKE '%.mysite.com'` разрешает подключение со всех хостов в домене `mysite.com`.
 
 Также, чтобы задать хост, вы можете использовать `@` вместе с именем пользователя. Примеры:
@@ -54,10 +51,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 -   `CREATE USER mira@'localhost'` — Эквивалентно `HOST LOCAL`.
 -   `CREATE USER mira@'192.168.%.%'` — Эквивалентно `HOST LIKE`.
 
-:::info "Внимание"
+!!! info "Внимание"
     ClickHouse трактует конструкцию `user_name@'address'` как имя пользователя целиком. То есть технически вы можете создать несколько пользователей с одинаковыми `user_name`, но разными частями конструкции после `@`, но лучше так не делать.
-:::
-
+	
 ## Секция GRANTEES {#grantees}
 
 Указываются пользователи или роли, которым разрешено получать [привилегии](../../../sql-reference/statements/grant.md#grant-privileges) от создаваемого пользователя при условии, что этому пользователю также предоставлен весь необходимый доступ с использованием [GRANT OPTION](../../../sql-reference/statements/grant.md#grant-privigele-syntax). Параметры секции `GRANTEES`:

@@ -8,7 +8,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -195,7 +195,7 @@ std::string getLexicalErrorMessage(
     out << getErrorTokenDescription(last_token.type);
     if (last_token.size())
     {
-       out << ": '" << std::string_view{last_token.begin, last_token.size()} << "'";
+       out << ": '" << StringRef{last_token.begin, last_token.size()} << "'";
     }
 
     return out.str();
@@ -386,8 +386,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     const std::string & queries,
     std::vector<std::string> & queries_list,
     size_t max_query_size,
-    size_t max_parser_depth,
-    bool allow_settings_after_format_in_insert)
+    size_t max_parser_depth)
 {
     ASTPtr ast;
 
@@ -395,7 +394,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     const char * pos = begin; /// parser moves pos from begin to the end of current query
     const char * end = begin + queries.size();
 
-    ParserQuery parser(end, allow_settings_after_format_in_insert);
+    ParserQuery parser(end);
 
     queries_list.clear();
 

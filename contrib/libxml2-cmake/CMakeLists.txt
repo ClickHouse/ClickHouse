@@ -50,11 +50,13 @@ set(SRCS
     "${LIBXML2_SOURCE_DIR}/schematron.c"
     "${LIBXML2_SOURCE_DIR}/xzlib.c"
 )
-add_library(_libxml2 ${SRCS})
+add_library(libxml2 ${SRCS})
 
-target_link_libraries(_libxml2 PRIVATE ch_contrib::zlib)
+target_link_libraries(libxml2 PRIVATE ${ZLIB_LIBRARIES})
+if(M_LIBRARY)
+    target_link_libraries(libxml2 PRIVATE ${M_LIBRARY})
+endif()
 
-target_include_directories(_libxml2 BEFORE PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include")
-target_include_directories(_libxml2 BEFORE PUBLIC "${LIBXML2_SOURCE_DIR}/include")
-
-add_library(ch_contrib::libxml2 ALIAS _libxml2)
+target_include_directories(libxml2 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include")
+target_include_directories(libxml2 PUBLIC "${LIBXML2_SOURCE_DIR}/include")
+target_include_directories(libxml2 SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})

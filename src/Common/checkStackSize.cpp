@@ -1,11 +1,10 @@
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
-#include <base/scope_guard.h>
-#include <base/defines.h> /// THREAD_SANITIZER
+#include <common/scope_guard.h>
 #include <pthread.h>
 #include <cstdint>
 
-#if defined(OS_FREEBSD)
+#if defined(__FreeBSD__)
 #   include <pthread_np.h>
 #endif
 
@@ -48,7 +47,7 @@ size_t getStackSize(void ** out_address)
     address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - size);
 #else
     pthread_attr_t attr;
-#   if defined(OS_FREEBSD) || defined(OS_SUNOS)
+#   if defined(__FreeBSD__) || defined(OS_SUNOS)
     pthread_attr_init(&attr);
     if (0 != pthread_attr_get_np(pthread_self(), &attr))
         throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
@@ -87,24 +86,15 @@ __attribute__((__weak__)) void checkStackSize()
     uintptr_t int_frame_address = reinterpret_cast<uintptr_t>(frame_address);
     uintptr_t int_stack_address = reinterpret_cast<uintptr_t>(stack_address);
 
-#if !defined(THREAD_SANITIZER)
-    /// It's overkill to use more then half of stack.
-    static constexpr double STACK_SIZE_FREE_RATIO = 0.5;
-#else
-    /// Under TSan recursion eats too much RAM, so half of stack is too much.
-    /// So under TSan only 5% of a stack is allowed (this is ~400K)
-    static constexpr double STACK_SIZE_FREE_RATIO = 0.05;
-#endif
-
     /// We assume that stack grows towards lower addresses. And that it starts to grow from the end of a chunk of memory of max_stack_size.
     if (int_frame_address > int_stack_address + max_stack_size)
         throw Exception("Logical error: frame address is greater than stack begin address", ErrorCodes::LOGICAL_ERROR);
 
     size_t stack_size = int_stack_address + max_stack_size - int_frame_address;
-    size_t max_stack_size_allowed = max_stack_size * STACK_SIZE_FREE_RATIO;
 
-    /// Just check if we have eat more than a STACK_SIZE_FREE_RATIO of stack size already.
-    if (stack_size > max_stack_size_allowed)
+    /// Just check if we have already eat more than a half of stack size. It's a bit overkill (a half of stack size is wasted).
+    /// It's safe to assume that overflow in multiplying by two cannot occur.
+    if (stack_size * 2 > max_stack_size)
     {
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
                         "Stack size too large. Stack address: {}, frame address: {}, stack size: {}, maximum stack size: {}",

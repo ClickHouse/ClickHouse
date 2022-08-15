@@ -20,12 +20,13 @@ class AggregateFunctionState final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
+    DataTypes arguments;
+    Array params;
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
         : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_)
-        , nested_func(nested_)
-    {}
+        , nested_func(nested_), arguments(arguments_), params(params_) {}
 
     String getName() const override
     {
@@ -37,27 +38,10 @@ public:
         return getStateType();
     }
 
-    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
-    {
-        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
-    }
-
     DataTypePtr getStateType() const override
     {
         return nested_func->getStateType();
     }
-
-    bool isVersioned() const override
-    {
-        return nested_func->isVersioned();
-    }
-
-    size_t getDefaultVersion() const override
-    {
-        return nested_func->getDefaultVersion();
-    }
-
-    size_t getVersionFromRevision(size_t revision) const override { return nested_func->getVersionFromRevision(revision); }
 
     void create(AggregateDataPtr __restrict place) const override
     {
@@ -94,14 +78,14 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
-        nested_func->serialize(place, buf, version);
+        nested_func->serialize(place, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
-        nested_func->deserialize(place, buf, version, arena);
+        nested_func->deserialize(place, buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

@@ -44,12 +44,6 @@ public:
     {
         return true;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return true;
-    }
-
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -92,7 +86,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(EvalMLMethod)
+void registerFunctionEvalMLMethod(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionEvalMLMethod>();
 }

@@ -2,12 +2,10 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
-#include <Formats/JSONUtils.h>
-#include <Formats/EscapingRuleUtils.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
@@ -63,7 +61,7 @@ const String & JSONEachRowRowInputFormat::columnName(size_t i) const
     return getPort().getHeader().getByPosition(i).name;
 }
 
-inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_index)
+inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
@@ -125,12 +123,12 @@ static inline void skipColonDelimeter(ReadBuffer & istr)
     skipWhitespaceIfAny(istr);
 }
 
-void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
+void JSONEachRowRowInputFormat::skipUnknownField(const StringRef & name_ref)
 {
     if (!format_settings.skip_unknown_fields)
         throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
-    skipJSONField(*in, name_ref);
+    skipJSONField(in, name_ref);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -138,39 +136,66 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     if (seen_columns[index])
         throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
 
-    seen_columns[index] = true;
-    const auto & type = getPort().getHeader().getByPosition(index).type;
-    const auto & serialization = serializations[index];
-    read_columns[index] = JSONUtils::readField(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
+    try
+    {
+        seen_columns[index] = read_columns[index] = true;
+        const auto & type = getPort().getHeader().getByPosition(index).type;
+        const auto & serialization = serializations[index];
+
+        if (yield_strings)
+        {
+            String str;
+            readJSONString(str, in);
+
+            ReadBufferFromString buf(str);
+
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = SerializationNullable::deserializeWholeTextImpl(*columns[index], buf, format_settings, serialization);
+            else
+                serialization->deserializeWholeText(*columns[index], buf, format_settings);
+        }
+        else
+        {
+            if (format_settings.null_as_default && !type->isNullable())
+                read_columns[index] = SerializationNullable::deserializeTextJSONImpl(*columns[index], in, format_settings, serialization);
+            else
+                serialization->deserializeTextJSON(*columns[index], in, format_settings);
+        }
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("(while reading the value of key " + columnName(index) + ")");
+        throw;
+    }
 }
 
 inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
 {
-    skipWhitespaceIfAny(*in);
+    skipWhitespaceIfAny(in);
 
-    if (in->eof())
+    if (in.eof())
         throw ParsingException("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
-    else if (*in->position() == '}')
+    else if (*in.position() == '}')
     {
-        ++in->position();
+        ++in.position();
         return false;
     }
 
     if (key_index > 0)
     {
-        assertChar(',', *in);
-        skipWhitespaceIfAny(*in);
+        assertChar(',', in);
+        skipWhitespaceIfAny(in);
     }
     return true;
 }
 
 void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
 {
-    assertChar('{', *in);
+    assertChar('{', in);
 
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
-        StringRef name_ref = readColumnName(*in);
+        StringRef name_ref = readColumnName(in);
         const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
@@ -182,7 +207,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             current_column_name.assign(name_ref.data, name_ref.size);
             name_ref = StringRef(current_column_name);
 
-            skipColonDelimeter(*in);
+            skipColonDelimeter(in);
 
             if (column_index == UNKNOWN_FIELD)
                 skipUnknownField(name_ref);
@@ -193,7 +218,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
         }
         else
         {
-            skipColonDelimeter(*in);
+            skipColonDelimeter(in);
             readField(column_index, columns);
         }
     }
@@ -213,7 +238,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 {
     if (!allow_new_rows)
         return false;
-    skipWhitespaceIfAny(*in);
+    skipWhitespaceIfAny(in);
 
     /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
     /// The reason is that if we want an exact number of rows read with LIMIT x
@@ -222,25 +247,25 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
     bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
-    if (!in->eof())
+    if (!in.eof())
     {
         /// There may be optional ',' (but not before the first row)
-        if (!is_first_row && *in->position() == ',')
-            ++in->position();
-        else if (!data_in_square_brackets && *in->position() == ';')
+        if (!is_first_row && *in.position() == ',')
+            ++in.position();
+        else if (!data_in_square_brackets && *in.position() == ';')
         {
             /// ';' means the end of query (but it cannot be before ']')
             return allow_new_rows = false;
         }
-        else if (data_in_square_brackets && *in->position() == ']')
+        else if (data_in_square_brackets && *in.position() == ']')
         {
             /// ']' means the end of query
             return allow_new_rows = false;
         }
     }
 
-    skipWhitespaceIfAny(*in);
-    if (in->eof())
+    skipWhitespaceIfAny(in);
+    if (in.eof())
         return false;
 
     size_t num_columns = columns.size();
@@ -257,20 +282,15 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         if (!seen_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
-    /// Return info about defaults set.
-    /// If defaults_for_omitted_fields is set to 0, we should just leave already inserted defaults.
-    if (format_settings.defaults_for_omitted_fields)
-        ext.read_columns = read_columns;
-    else
-        ext.read_columns.assign(read_columns.size(), true);
-
+    /// return info about defaults set
+    ext.read_columns = read_columns;
     return true;
 }
 
 
 void JSONEachRowRowInputFormat::syncAfterError()
 {
-    skipToUnescapedNextLineOrEOF(*in);
+    skipToUnescapedNextLineOrEOF(in);
 }
 
 void JSONEachRowRowInputFormat::resetParser()
@@ -285,77 +305,36 @@ void JSONEachRowRowInputFormat::resetParser()
 void JSONEachRowRowInputFormat::readPrefix()
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(*in);
+    skipBOMIfExists(in);
 
-    skipWhitespaceIfAny(*in);
-    data_in_square_brackets = checkChar('[', *in);
+    skipWhitespaceIfAny(in);
+    if (!in.eof() && *in.position() == '[')
+    {
+        ++in.position();
+        data_in_square_brackets = true;
+    }
 }
 
 void JSONEachRowRowInputFormat::readSuffix()
 {
-    skipWhitespaceIfAny(*in);
+    skipWhitespaceIfAny(in);
     if (data_in_square_brackets)
     {
-        assertChar(']', *in);
-        skipWhitespaceIfAny(*in);
-    }
-    if (!in->eof() && *in->position() == ';')
-    {
-        ++in->position();
-        skipWhitespaceIfAny(*in);
-    }
-    assertEOF(*in);
-}
-
-JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings_)
-    : IRowWithNamesSchemaReader(in_, format_settings_)
-    , json_strings(json_strings_)
-{
-}
-
-NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
-{
-    if (first_row)
-    {
-        skipBOMIfExists(in);
+        assertChar(']', in);
         skipWhitespaceIfAny(in);
-        if (checkChar('[', in))
-            data_in_square_brackets = true;
-        first_row = false;
     }
-    else
+    if (!in.eof() && *in.position() == ';')
     {
+        ++in.position();
         skipWhitespaceIfAny(in);
-        /// If data is in square brackets then ']' means the end of data.
-        if (data_in_square_brackets && checkChar(']', in))
-            return {};
-
-        /// ';' means end of data.
-        if (checkChar(';', in))
-            return {};
-
-        /// There may be optional ',' between rows.
-        checkChar(',', in);
     }
-
-    skipWhitespaceIfAny(in);
-    if (in.eof())
-    {
-        eof = true;
-        return {};
-    }
-
-    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, json_strings);
+    assertEOF(in);
 }
 
-void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+
+void registerInputFormatProcessorJSONEachRow(FormatFactory & factory)
 {
-    transformInferredJSONTypesIfNeeded(type, new_type, format_settings);
-}
-
-void registerInputFormatJSONEachRow(FormatFactory & factory)
-{
-    factory.registerInputFormat("JSONEachRow", [](
+    factory.registerInputFormatProcessor("JSONEachRow", [](
         ReadBuffer & buf,
         const Block & sample,
         IRowInputFormat::Params params,
@@ -364,28 +343,7 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
     });
 
-    factory.registerInputFormat("JSONLines", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
-    {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
-    });
-
-    factory.registerInputFormat("NDJSON", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        IRowInputFormat::Params params,
-        const FormatSettings & settings)
-    {
-        return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
-    });
-
-    factory.registerFileExtension("ndjson", "JSONEachRow");
-    factory.registerFileExtension("jsonl", "JSONEachRow");
-
-    factory.registerInputFormat("JSONStringsEachRow", [](
+    factory.registerInputFormatProcessor("JSONStringsEachRow", [](
         ReadBuffer & buf,
         const Block & sample,
         IRowInputFormat::Params params,
@@ -393,50 +351,12 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     {
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, true);
     });
-
-    factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
-    factory.markFormatSupportsSubsetOfColumns("JSONLines");
-    factory.markFormatSupportsSubsetOfColumns("NDJSON");
-    factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRow");
 }
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONStringsEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONLines", &JSONUtils::fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("NDJSON", &JSONUtils::fileSegmentationEngineJSONEachRow);
-}
-
-void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)
-{
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONLines", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-    factory.registerNonTrivialPrefixAndSuffixChecker("NDJSON", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-}
-
-void registerJSONEachRowSchemaReader(FormatFactory & factory)
-{
-    factory.registerSchemaReader("JSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings)
-    {
-        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
-    });
-
-    factory.registerSchemaReader("JSONStringsEachRow", [](ReadBuffer & buf, const FormatSettings & settings)
-    {
-        return std::make_unique<JSONEachRowSchemaReader>(buf, true, settings);
-    });
-
-    factory.registerSchemaReader("JSONLines", [](ReadBuffer & buf, const FormatSettings & settings)
-    {
-        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
-    });
-
-    factory.registerSchemaReader("NDJSON", [](ReadBuffer & buf, const FormatSettings & settings)
-    {
-        return std::make_unique<JSONEachRowSchemaReader>(buf, false, settings);
-    });
+    factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRowImpl);
 }
 
 }

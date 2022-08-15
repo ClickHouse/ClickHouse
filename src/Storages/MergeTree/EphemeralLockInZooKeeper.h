@@ -24,14 +24,12 @@ namespace ErrorCodes
 /// it would be simpler to allocate block numbers for all partitions in one ZK directory).
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
-    friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path);
-
-protected:
-    EphemeralLockInZooKeeper() = delete;
-    EphemeralLockInZooKeeper(const String & path_prefix_, zkutil::ZooKeeper & zookeeper_, const String & holder_path_);
-
 public:
+    EphemeralLockInZooKeeper(
+        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, Coordination::Requests * precheck_ops = nullptr);
+
+    EphemeralLockInZooKeeper() = default;
+
     EphemeralLockInZooKeeper(EphemeralLockInZooKeeper && rhs) noexcept
     {
         *this = std::move(rhs);
@@ -91,9 +89,6 @@ private:
     String path;
     String holder_path;
 };
-
-std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path);
 
 
 /// Acquires block number locks in all partitions.

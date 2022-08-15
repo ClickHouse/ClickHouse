@@ -1,22 +1,15 @@
-#include <stack>
-
-#include <Common/JSONBuilder.h>
-
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPipeline.h>
+#include <IO/WriteBuffer.h>
+#include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
-
-#include <IO/Operators.h>
-#include <IO/WriteBuffer.h>
-
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-
-#include <QueryPipeline/QueryPipelineBuilder.h>
-
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -28,8 +21,8 @@ namespace ErrorCodes
 
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
-QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
+QueryPlan::QueryPlan(QueryPlan &&) = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) = default;
 
 void QueryPlan::checkInitialized() const
 {
@@ -64,25 +57,22 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     const auto & inputs = step->getInputStreams();
     size_t num_inputs = step->getInputStreams().size();
     if (num_inputs != plans.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot unite QueryPlans using {} because step has different number of inputs. Has {} plans and {} inputs",
-            step->getName(),
-            plans.size(),
-            num_inputs);
+    {
+        throw Exception("Cannot unite QueryPlans using " + step->getName() +
+                        " because step has different number of inputs. "
+                        "Has " + std::to_string(plans.size()) + " plans "
+                        "and " + std::to_string(num_inputs) + " inputs", ErrorCodes::LOGICAL_ERROR);
+    }
 
     for (size_t i = 0; i < num_inputs; ++i)
     {
         const auto & step_header = inputs[i].header;
         const auto & plan_header = plans[i]->getCurrentDataStream().header;
         if (!blocksHaveEqualStructure(step_header, plan_header))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
-                step->getName(),
-                root->step->getName(),
-                plan_header.dumpStructure(),
-                step_header.dumpStructure());
+            throw Exception("Cannot unite QueryPlans using " + step->getName() + " because "
+                            "it has incompatible header with plan " + root->step->getName() + " "
+                            "plan header: " + plan_header.dumpStructure() +
+                            "step header: " + step_header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
     }
 
     for (auto & plan : plans)
@@ -97,7 +87,8 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
-        resources = std::move(plan->resources);
+        interpreter_context.insert(interpreter_context.end(),
+                                   plan->interpreter_context.begin(), plan->interpreter_context.end());
     }
 }
 
@@ -110,10 +101,8 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
     if (num_input_streams == 0)
     {
         if (isInitialized())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because step has no inputs, but QueryPlan is already initialized",
-                step->getName());
+            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
+                            "step has no inputs, but QueryPlan is already initialized", ErrorCodes::LOGICAL_ERROR);
 
         nodes.emplace_back(Node{.step = std::move(step)});
         root = &nodes.back();
@@ -123,36 +112,28 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
     if (num_input_streams == 1)
     {
         if (!isInitialized())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because step has input, but QueryPlan is not initialized",
-                step->getName());
+            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
+                            "step has input, but QueryPlan is not initialized", ErrorCodes::LOGICAL_ERROR);
 
         const auto & root_header = root->step->getOutputStream().header;
         const auto & step_header = step->getInputStreams().front().header;
         if (!blocksHaveEqualStructure(root_header, step_header))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because it has incompatible header with root step {} root header: {} step header: {}",
-                step->getName(),
-                root->step->getName(),
-                root_header.dumpStructure(),
-                step_header.dumpStructure());
+            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
+                            "it has incompatible header with root step " + root->step->getName() + " "
+                            "root header: " + root_header.dumpStructure() +
+                            "step header: " + step_header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
         nodes.emplace_back(Node{.step = std::move(step), .children = {root}});
         root = &nodes.back();
         return;
     }
 
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Cannot add step {} to QueryPlan because it has {} inputs but {} input expected",
-        step->getName(),
-        num_input_streams,
-        isInitialized() ? 1 : 0);
+    throw Exception("Cannot add step " + step->getName() + " to QueryPlan because it has " +
+                    std::to_string(num_input_streams) + " inputs but " + std::to_string(isInitialized() ? 1 : 0) +
+                    " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
-QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
+QueryPipelinePtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings)
 {
@@ -162,10 +143,10 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     struct Frame
     {
         Node * node = {};
-        QueryPipelineBuilders pipelines = {};
+        QueryPipelines pipelines = {};
     };
 
-    QueryPipelineBuilderPtr last_pipeline;
+    QueryPipelinePtr last_pipeline;
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
@@ -195,12 +176,30 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
-    /// last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
-    last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
-    last_pipeline->addResources(std::move(resources));
+    for (auto & context : interpreter_context)
+        last_pipeline->addInterpreterContext(std::move(context));
 
     return last_pipeline;
 }
+
+Pipe QueryPlan::convertToPipe(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const BuildQueryPipelineSettings & build_pipeline_settings)
+{
+    if (!isInitialized())
+        return {};
+
+    if (isCompleted())
+        throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
+
+    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+}
+
+void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
+{
+    interpreter_context.emplace_back(std::move(context));
+}
+
 
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
@@ -385,7 +384,6 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
-
     size_t current_offset = settings.offset;
     step.describePipeline(settings);
     if (current_offset == settings.offset)
@@ -434,62 +432,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
-}
-
-void QueryPlan::explainEstimate(MutableColumns & columns)
-{
-    checkInitialized();
-
-    struct EstimateCounters
-    {
-        std::string database_name;
-        std::string table_name;
-        UInt64 parts = 0;
-        UInt64 rows = 0;
-        UInt64 marks = 0;
-
-        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
-        {
-        }
-    };
-
-    using CountersPtr = std::shared_ptr<EstimateCounters>;
-    std::unordered_map<std::string, CountersPtr> counters;
-    using processNodeFuncType = std::function<void(const Node * node)>;
-    processNodeFuncType process_node = [&counters, &process_node] (const Node * node)
-    {
-        if (!node)
-            return;
-        if (const auto * step = dynamic_cast<ReadFromMergeTree*>(node->step.get()))
-        {
-            const auto & id = step->getStorageID();
-            auto key = id.database_name + "." + id.table_name;
-            auto it = counters.find(key);
-            if (it == counters.end())
-            {
-                it = counters.insert({key, std::make_shared<EstimateCounters>(id.database_name, id.table_name)}).first;
-            }
-            it->second->parts += step->getSelectedParts();
-            it->second->rows += step->getSelectedRows();
-            it->second->marks += step->getSelectedMarks();
-        }
-        for (const auto * child : node->children)
-            process_node(child);
-    };
-    process_node(root);
-
-    for (const auto & counter : counters)
-    {
-        size_t index = 0;
-        const auto & database_name = counter.second->database_name;
-        const auto & table_name = counter.second->table_name;
-        columns[index++]->insertData(database_name.c_str(), database_name.size());
-        columns[index++]->insertData(table_name.c_str(), table_name.size());
-        columns[index++]->insert(counter.second->parts);
-        columns[index++]->insert(counter.second->rows);
-        columns[index++]->insert(counter.second->marks);
-    }
 }
 
 }

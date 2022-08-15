@@ -25,7 +25,7 @@ class DataTypeFactory final : private boost::noncopyable, public IFactoryWithAli
 private:
     using SimpleCreator = std::function<DataTypePtr()>;
     using DataTypesDictionary = std::unordered_map<String, Value>;
-    using CreatorWithCustom = std::function<std::pair<DataTypePtr, DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
+    using CreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
     using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
 
 public:
@@ -51,6 +51,7 @@ public:
 private:
     const Value & findCreatorByName(const String & family_name) const;
 
+private:
     DataTypesDictionary data_types;
 
     /// Case insensitive data types will be additionally added here with lowercased name.
@@ -68,7 +69,6 @@ private:
 void registerDataTypeNumbers(DataTypeFactory & factory);
 void registerDataTypeDecimal(DataTypeFactory & factory);
 void registerDataTypeDate(DataTypeFactory & factory);
-void registerDataTypeDate32(DataTypeFactory & factory);
 void registerDataTypeDateTime(DataTypeFactory & factory);
 void registerDataTypeString(DataTypeFactory & factory);
 void registerDataTypeFixedString(DataTypeFactory & factory);
@@ -84,9 +84,7 @@ void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
-void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
-void registerDataTypeObject(DataTypeFactory & factory);
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/extended_types.h>
+#include <common/extended_types.h>
 #include <Common/Exception.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
@@ -32,19 +32,20 @@ namespace DB
         /** Construct from date in text form 'YYYY-MM-DD' by reading from
           * ReadBuffer.
           */
-        explicit GregorianDate(ReadBuffer & in);
+        GregorianDate(ReadBuffer & in);
 
         /** Construct from Modified Julian Day. The type T is an
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        explicit GregorianDate(is_integer auto mjd);
+        template <typename T, std::enable_if_t<is_integer_v<T>> * = nullptr>
+        GregorianDate(T mjd);
 
         /** Convert to Modified Julian Day. The type T is an integral type
           * which should be at least 32 bits wide, and should preferably
           * signed.
           */
-        template <is_integer T>
+        template <typename T, std::enable_if_t<is_integer_v<T>> * = nullptr>
         T toModifiedJulianDay() const;
 
         /** Write the date in text form 'YYYY-MM-DD' to a buffer.
@@ -65,15 +66,15 @@ namespace DB
             return month_;
         }
 
-        uint8_t day_of_month() const noexcept /// NOLINT
+        uint8_t day_of_month() const noexcept
         {
             return day_of_month_;
         }
 
     private:
-        YearT year_; /// NOLINT
-        uint8_t month_; /// NOLINT
-        uint8_t day_of_month_; /// NOLINT
+        YearT year_;
+        uint8_t month_;
+        uint8_t day_of_month_;
     };
 
     /** ISO 8601 Ordinal Date. YearT is an integral type which should
@@ -89,13 +90,14 @@ namespace DB
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        explicit OrdinalDate(is_integer auto mjd);
+        template <typename T, std::enable_if_t<is_integer_v<T>> * = nullptr>
+        OrdinalDate(T mjd);
 
         /** Convert to Modified Julian Day. The type T is an integral
           * type which should be at least 32 bits wide, and should
           * preferably be signed.
           */
-        template <is_integer T>
+        template <typename T, std::enable_if_t<is_integer_v<T>> * = nullptr>
         T toModifiedJulianDay() const noexcept;
 
         YearT year() const noexcept
@@ -109,8 +111,8 @@ namespace DB
         }
 
     private:
-        YearT year_; /// NOLINT
-        uint16_t day_of_year_; /// NOLINT
+        YearT year_;
+        uint16_t day_of_year_;
     };
 
     class MonthDay
@@ -134,14 +136,14 @@ namespace DB
             return month_;
         }
 
-        uint8_t day_of_month() const noexcept /// NOLINT
+        uint8_t day_of_month() const noexcept
         {
             return day_of_month_;
         }
 
     private:
-        uint8_t month_; /// NOLINT
-        uint8_t day_of_month_; /// NOLINT
+        uint8_t month_;
+        uint8_t day_of_month_;
     };
 }
 
@@ -183,13 +185,13 @@ namespace gd
     template <typename I, typename J>
     static inline constexpr I div(I x, J y)
     {
-        const auto y_cast = static_cast<I>(y);
-        if (x > 0 && y_cast < 0)
-            return ((x - 1) / y_cast) - 1;
-        else if (x < 0 && y_cast > 0)
-            return ((x + 1) / y_cast) - 1;
+        const auto y_ = static_cast<I>(y);
+        if (x > 0 && y_ < 0)
+            return ((x - 1) / y_) - 1;
+        else if (x < 0 && y_ > 0)
+            return ((x + 1) / y_) - 1;
         else
-            return x / y_cast;
+            return x / y_;
     }
 
     /** Integer modulus, satisfying div(x, y)*y + mod(x, y) == x.
@@ -197,10 +199,10 @@ namespace gd
     template <typename I, typename J>
     static inline constexpr I mod(I x, J y)
     {
-        const auto y_cast = static_cast<I>(y);
-        const auto r = x % y_cast;
-        if ((x > 0 && y_cast < 0) || (x < 0 && y_cast > 0))
-            return r == 0 ? static_cast<I>(0) : r + y_cast;
+        const auto y_ = static_cast<I>(y);
+        const auto r = x % y_;
+        if ((x > 0 && y_ < 0) || (x < 0 && y_ > 0))
+            return r == 0 ? static_cast<I>(0) : r + y_;
         else
             return r;
     }
@@ -210,8 +212,8 @@ namespace gd
     template <typename I, typename J>
     static inline constexpr I min(I x, J y)
     {
-        const auto y_cast = static_cast<I>(y);
-        return x < y_cast ? x : y_cast;
+        const auto y_ = static_cast<I>(y);
+        return x < y_ ? x : y_;
     }
 
     static inline char readDigit(ReadBuffer & in)
@@ -257,7 +259,8 @@ namespace DB
     }
 
     template <typename YearT>
-    GregorianDate<YearT>::GregorianDate(is_integer auto mjd)
+    template <typename T, std::enable_if_t<is_integer_v<T>> *>
+    GregorianDate<YearT>::GregorianDate(T mjd)
     {
         const OrdinalDate<YearT> ord(mjd);
         const MonthDay md(gd::is_leap_year(ord.year()), ord.dayOfYear());
@@ -267,7 +270,7 @@ namespace DB
     }
 
     template <typename YearT>
-    template <is_integer T>
+    template <typename T, std::enable_if_t<is_integer_v<T>> *>
     T GregorianDate<YearT>::toModifiedJulianDay() const
     {
         const MonthDay md(month_, day_of_month_);
@@ -329,7 +332,8 @@ namespace DB
     }
 
     template <typename YearT>
-    OrdinalDate<YearT>::OrdinalDate(is_integer auto mjd)
+    template <typename T, std::enable_if_t<is_integer_v<T>> *>
+    OrdinalDate<YearT>::OrdinalDate(T mjd)
     {
         const auto a         = mjd + 678575;
         const auto quad_cent = gd::div(a, 146097);
@@ -344,7 +348,7 @@ namespace DB
     }
 
     template <typename YearT>
-    template <is_integer T>
+    template <typename T, std::enable_if_t<is_integer_v<T>> *>
     T OrdinalDate<YearT>::toModifiedJulianDay() const noexcept
     {
         const auto y = year_ - 1;

@@ -3,28 +3,30 @@
 #if USE_PROTOBUF
 #   include <Core/Block.h>
 #   include <Formats/FormatFactory.h>
+#   include <Formats/FormatSchemaInfo.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
+#   include <Interpreters/Context.h>
+#   include <common/range.h>
+
 
 namespace DB
 {
-
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
-    const FormatSchemaInfo & schema_info_, bool with_length_delimiter_, bool flatten_google_wrappers_)
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
           missing_column_indices,
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_),
           with_length_delimiter_,
-          /* with_envelope = */ false,
-          flatten_google_wrappers_,
          *reader))
 {
 }
+
+ProtobufRowInputFormat::~ProtobufRowInputFormat() = default;
 
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
@@ -54,53 +56,22 @@ void ProtobufRowInputFormat::syncAfterError()
     reader->endMessage(true);
 }
 
-void registerInputFormatProtobuf(FormatFactory & factory)
+void registerInputFormatProcessorProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
     {
-        factory.registerInputFormat(with_length_delimiter ? "Protobuf" : "ProtobufSingle", [with_length_delimiter](
+        factory.registerInputFormatProcessor(with_length_delimiter ? "Protobuf" : "ProtobufSingle", [with_length_delimiter](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
             return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
-                FormatSchemaInfo(settings, "Protobuf", true),
-                with_length_delimiter,
-                settings.protobuf.input_flatten_google_wrappers);
+                FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
+                                settings.schema.is_server, settings.schema.format_schema_path),
+                with_length_delimiter);
         });
-        factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
     }
-}
-
-ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_settings)
-    : schema_info(
-          format_settings.schema.format_schema,
-          "Protobuf",
-          true,
-          format_settings.schema.is_server, format_settings.schema.format_schema_path)
-    , skip_unsupported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
-{
-}
-
-NamesAndTypesList ProtobufSchemaReader::readSchema()
-{
-    const auto * message_descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::No);
-    return protobufSchemaToCHSchema(message_descriptor, skip_unsupported_fields);
-}
-
-void registerProtobufSchemaReader(FormatFactory & factory)
-{
-    factory.registerExternalSchemaReader("Protobuf", [](const FormatSettings & settings)
-    {
-        return std::make_shared<ProtobufSchemaReader>(settings);
-    });
-    factory.registerFileExtension("pb", "Protobuf");
-
-    factory.registerExternalSchemaReader("ProtobufSingle", [](const FormatSettings & settings)
-    {
-        return std::make_shared<ProtobufSchemaReader>(settings);
-    });
 }
 
 }
@@ -110,8 +81,7 @@ void registerProtobufSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProtobuf(FormatFactory &) {}
-void registerProtobufSchemaReader(FormatFactory &) {}
+void registerInputFormatProcessorProtobuf(FormatFactory &) {}
 }
 
 #endif

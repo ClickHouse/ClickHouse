@@ -17,14 +17,14 @@ RawBLOBRowOutputFormat::RawBLOBRowOutputFormat(
 
 void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerialization &, size_t row_num)
 {
-    std::string_view value = column.getDataAt(row_num).toView();
-    out.write(value.data(), value.size());
+    StringRef value = column.getDataAt(row_num);
+    out.write(value.data, value.size);
 }
 
 
-void registerOutputFormatRawBLOB(FormatFactory & factory)
+void registerOutputFormatProcessorRawBLOB(FormatFactory & factory)
 {
-    factory.registerOutputFormat("RawBLOB", [](
+    factory.registerOutputFormatProcessor("RawBLOB", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

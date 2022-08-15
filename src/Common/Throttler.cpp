@@ -23,7 +23,7 @@ static constexpr auto NS = 1000000000UL;
 
 /// Tracking window. Actually the size is not really important. We just want to avoid
 /// throttles when there are no actions for a long period time.
-static const double window_ns = 1ULL * NS;
+static const double window_ns = 7UL * NS;
 
 void Throttler::add(size_t amount)
 {

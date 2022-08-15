@@ -71,7 +71,6 @@ SELECT bitmapToArray(bitmapAnd(groupBitmapState(uid), bitmapBuild(CAST([1, 2, 3]
 
 -- bitmap state test
 DROP TABLE IF EXISTS bitmap_state_test;
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE bitmap_state_test
 (
 	pickup_date Date,
@@ -286,25 +285,6 @@ select bitmapToArray(bitmapSubsetLimit(bitmapBuild([
 select bitmapToArray(bitmapSubsetLimit(bitmapBuild([
     0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
     100,200,500]), toUInt32(100), toUInt16(200)));
-
--- subBitmap:
----- Empty
-SELECT bitmapToArray(subBitmap(bitmapBuild(emptyArrayUInt32()), toUInt8(0), toUInt32(10)));
-SELECT bitmapToArray(subBitmap(bitmapBuild(emptyArrayUInt16()), toUInt32(0), toUInt64(10)));
----- Small
-select bitmapToArray(subBitmap(bitmapBuild([1,5,7,9]), toUInt8(0), toUInt32(4)));
-select bitmapToArray(subBitmap(bitmapBuild([1,5,7,9]), toUInt32(1), toUInt64(4)));
-select bitmapToArray(subBitmap(bitmapBuild([1,5,7,9]), toUInt16(1), toUInt32(2)));
----- Large
-select bitmapToArray(subBitmap(bitmapBuild([
-    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
-    100,200,500]), toUInt32(0), toUInt32(10)));
-select bitmapToArray(subBitmap(bitmapBuild([
-    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
-    100,200,500]), toUInt32(30), toUInt32(200)));
-select bitmapToArray(subBitmap(bitmapBuild([
-    0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,
-    100,200,500]), toUInt32(34), toUInt16(3)));
 
 -- bitmapMin:
 ---- Empty

@@ -39,7 +39,6 @@ public:
 
         void set(Chunk chunk_)
         {
-            convertToFullIfSparse(chunk_);
             chunk = std::move(chunk_);
             skip_last_row = false;
         }

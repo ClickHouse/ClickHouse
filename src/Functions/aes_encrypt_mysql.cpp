@@ -1,4 +1,6 @@
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 
@@ -19,7 +21,7 @@ struct EncryptMySQLModeImpl
 namespace DB
 {
 
-REGISTER_FUNCTION(AESEncryptMysql)
+void registerFunctionAESEncryptMysql(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionEncrypt<EncryptMySQLModeImpl>>();
 }

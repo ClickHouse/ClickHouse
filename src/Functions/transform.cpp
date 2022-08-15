@@ -1,5 +1,5 @@
 #include <mutex>
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +11,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -67,7 +67,6 @@ public:
     }
 
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
@@ -117,7 +116,7 @@ public:
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
+            return getLeastSupertype({type_x, type_arr_to_nested});
         }
         else
         {
@@ -140,7 +139,7 @@ public:
             if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                return getLeastSupertype(DataTypes{type_arr_to_nested, type_default});
+                return getLeastSupertype({type_arr_to_nested, type_default});
             }
 
             /// TODO More checks.
@@ -1217,7 +1216,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(Transform)
+void registerFunctionTransform(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTransform>();
 }

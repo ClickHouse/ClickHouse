@@ -1,6 +1,6 @@
 ---
-sidebar_position: 41
-sidebar_label: CHECK
+toc_priority: 41
+toc_title: CHECK
 ---
 
 # CHECK TABLE Statement {#check-table}
@@ -31,7 +31,7 @@ CHECK TABLE [db.]name
 
 ## Проверка таблиц семейства MergeTree {#checking-mergetree-tables}
 
-Для таблиц семейства `MergeTree` если [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, запрос `CHECK TABLE` возвращает статус каждого куска данных таблицы на локальном сервере.
+Для таблиц семейства `MergeTree` если [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, запрос `CHECK TABLE` возвращает статус каждого куска данных таблицы на локальном сервере. 
 
 ```sql
 SET check_query_single_value_result = 0;
@@ -45,7 +45,7 @@ CHECK TABLE test_table;
 └───────────┴───────────┴─────────┘
 ```
 
-Если `check_query_single_value_result` = 1, запрос `CHECK TABLE` возвращает статус таблицы в целом.
+Если `check_query_single_value_result` = 0, запрос `CHECK TABLE` возвращает статус таблицы в целом.
 
 ```sql
 SET check_query_single_value_result = 1;

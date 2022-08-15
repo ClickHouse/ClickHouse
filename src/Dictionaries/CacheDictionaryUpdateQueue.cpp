@@ -14,8 +14,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-template class CacheDictionaryUpdateUnit<DictionaryKeyType::Simple>;
-template class CacheDictionaryUpdateUnit<DictionaryKeyType::Complex>;
+template class CacheDictionaryUpdateUnit<DictionaryKeyType::simple>;
+template class CacheDictionaryUpdateUnit<DictionaryKeyType::complex>;
 
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
@@ -35,11 +35,9 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionaryUpdateQueue<dictionary_key_type>::~CacheDictionaryUpdateQueue()
 {
-    if (update_queue.isFinished())
-        return;
-
     try {
-        stopAndWait();
+        if (!finished)
+            stopAndWait();
     }
     catch (...)
     {
@@ -50,7 +48,7 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::~CacheDictionaryUpdateQueue()
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThrow(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr)
 {
-    if (update_queue.isFinished())
+    if (finished)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
 
     if (!update_queue.tryPush(update_unit_ptr, configuration.update_queue_push_timeout_milliseconds))
@@ -65,12 +63,12 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThro
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const
 {
-    if (update_queue.isFinished())
+    if (finished)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
 
-    std::unique_lock<std::mutex> update_lock(update_unit_ptr->update_mutex);
+    std::unique_lock<std::mutex> update_lock(update_mutex);
 
-    bool result = update_unit_ptr->is_update_finished.wait_for(
+    bool result = is_update_finished.wait_for(
         update_lock,
         std::chrono::milliseconds(configuration.query_wait_timeout_milliseconds),
         [&]
@@ -110,10 +108,15 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::stopAndWait()
 {
-    if (update_queue.isFinished())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
+    finished = true;
+    update_queue.clear();
 
-    update_queue.clearAndFinish();
+    for (size_t i = 0; i < configuration.max_threads_for_updates; ++i)
+    {
+        auto empty_finishing_ptr = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>();
+        update_queue.push(empty_finishing_ptr);
+    }
+
     update_pool.wait();
 }
 
@@ -122,10 +125,12 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 {
     setThreadName("UpdQueue");
 
-    while (!update_queue.isFinished())
+    while (!finished)
     {
         CacheDictionaryUpdateUnitPtr<dictionary_key_type> unit_to_update;
-        if (!update_queue.pop(unit_to_update))
+        update_queue.pop(unit_to_update);
+
+        if (finished)
             break;
 
         try
@@ -133,28 +138,24 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
             /// Update
             update_func(unit_to_update);
 
-            {
-                /// Notify thread about finished updating the bunch of ids
-                /// where their own ids were included.
-                std::lock_guard lock(unit_to_update->update_mutex);
-                unit_to_update->is_done = true;
-            }
+            /// Notify thread about finished updating the bunch of ids
+            /// where their own ids were included.
+            std::unique_lock<std::mutex> lock(update_mutex);
 
-            unit_to_update->is_update_finished.notify_all();
+            unit_to_update->is_done = true;
+            is_update_finished.notify_all();
         }
         catch (...)
         {
-            {
-                std::lock_guard lock(unit_to_update->update_mutex);
-                unit_to_update->current_exception = std::current_exception(); // NOLINT(bugprone-throw-keyword-missing)
-            }
+            std::unique_lock<std::mutex> lock(update_mutex);
 
-            unit_to_update->is_update_finished.notify_all();
+            unit_to_update->current_exception = std::current_exception(); // NOLINT(bugprone-throw-keyword-missing)
+            is_update_finished.notify_all();
         }
     }
 }
 
-template class CacheDictionaryUpdateQueue<DictionaryKeyType::Simple>;
-template class CacheDictionaryUpdateQueue<DictionaryKeyType::Complex>;
+template class CacheDictionaryUpdateQueue<DictionaryKeyType::simple>;
+template class CacheDictionaryUpdateQueue<DictionaryKeyType::complex>;
 
 }

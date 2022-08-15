@@ -1,10 +1,7 @@
 # docker build -t clickhouse/integration-tests-runner .
 FROM ubuntu:20.04
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -22,6 +19,7 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
+    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
@@ -41,12 +39,12 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
-ENV TZ=Etc/UTC
+ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV DOCKER_CHANNEL stable
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-RUN add-apt-repository "deb https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
+RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -62,37 +60,30 @@ RUN dockerd --version; docker --version
 RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
-    avro==1.10.2 \
-    asyncio \
+    avro \
     cassandra-driver \
     confluent-kafka==1.5.0 \
     dict2xml \
     dicttoxml \
     docker \
-    docker-compose==1.29.2 \
+    docker-compose==1.28.2 \
     grpcio \
     grpcio-tools \
     kafka-python \
     kazoo \
-    lz4 \
     minio \
-    nats-py \
     protobuf \
     psycopg2-binary==2.8.6 \
     pymongo==3.11.0 \
     pytest \
-    pytest-order==1.0.0 \
     pytest-timeout \
     pytest-xdist \
-    pytest-repeat \
     pytz \
     redis \
     tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
-    pyhdfs \
-    azure-storage-blob \
-    meilisearch==0.18.3 
+    pyhdfs
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

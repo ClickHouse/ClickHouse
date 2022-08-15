@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 CREATE DATABASE database_dictionary_test_key_expression;
 
 CREATE TABLE database_dictionary_test_key_expression.test_for_dictionary (value String) ENGINE=TinyLog;
@@ -17,7 +15,7 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'test_for
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
-SELECT * FROM database_dictionary_test_key_expression.test_query_log_dictionary_simple ORDER BY value_id;
+SELECT * FROM database_dictionary_test_key_expression.test_query_log_dictionary_simple;
 
 DROP DICTIONARY IF EXISTS database_dictionary_test_key_expression.test_query_log_dictionary_simple;
 
@@ -34,7 +32,7 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'test_for
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(COMPLEX_KEY_HASHED());
 
-SELECT * FROM database_dictionary_test_key_expression.test_query_log_dictionary_complex ORDER BY value_id;
+SELECT * FROM database_dictionary_test_key_expression.test_query_log_dictionary_complex;
 
 DROP DICTIONARY IF EXISTS database_dictionary_test_key_expression.test_query_log_dictionary_complex;
 

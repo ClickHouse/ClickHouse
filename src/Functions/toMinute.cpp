@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMinuteImpl>;
 
-REGISTER_FUNCTION(ToMinute)
+void registerFunctionToMinute(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToMinute>();
     /// MysQL compatibility alias.

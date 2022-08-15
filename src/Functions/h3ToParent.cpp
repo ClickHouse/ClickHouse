@@ -1,4 +1,6 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_H3
 
@@ -8,7 +10,7 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -20,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -37,73 +38,43 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         arg = arguments[1].get();
         if (!WhichDataType(arg).isUInt8())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 2, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(2) + " of function " + getName() + ". Must be UInt8",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto non_const_arguments = arguments;
-        for (auto & argument : non_const_arguments)
-            argument.column = argument.column->convertToFullColumnIfConst();
-
-        const auto * col_hindex = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
-        if (!col_hindex)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt64.",
-                arguments[0].type->getName(),
-                1,
-                getName());
-
-        const auto & data_hindex = col_hindex->getData();
-
-        const auto * col_resolution = checkAndGetColumn<ColumnUInt8>(non_const_arguments[1].column.get());
-        if (!col_resolution)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt8.",
-                arguments[1].type->getName(),
-                2,
-                getName());
-
-        const auto & data_resolution = col_resolution->getData();
+        const auto * col_hindex = arguments[0].column.get();
+        const auto * col_resolution = arguments[1].column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (const auto row : collections::range(0, input_rows_count))
         {
-            const UInt64 hindex = data_hindex[row];
-            const UInt8 resolution = data_resolution[row];
+            const UInt64 hindex = col_hindex->getUInt(row);
+            const UInt8 resolution = col_resolution->getUInt(row);
 
             if (resolution > MAX_H3_RES)
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                    toString(resolution),
-                    getName(),
-                    toString(MAX_H3_RES));
+                throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
+                    + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-            UInt64 res = cellToParent(hindex, resolution);
+            UInt64 res = h3ToParent(hindex, resolution);
 
             dst_data[row] = res;
         }
@@ -114,7 +85,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3ToParent)
+void registerFunctionH3ToParent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3ToParent>();
 }

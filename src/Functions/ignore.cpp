@@ -30,13 +30,10 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// We should never return LowCardinality result, cause we declare that result is always constant zero.
     /// (in getResultIfAlwaysReturnsConstantAndHasArguments)
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
-    bool useDefaultImplementationForSparseColumns() const override { return false; }
 
     String getName() const override
     {
@@ -56,7 +53,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Ignore)
+void registerFunctionIgnore(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIgnore>();
 }

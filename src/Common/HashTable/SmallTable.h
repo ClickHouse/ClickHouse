@@ -74,11 +74,12 @@ public:
     using key_type = Key;
     using mapped_type = typename Cell::mapped_type;
     using value_type = typename Cell::value_type;
+    using cell_type = Cell;
 
     class Reader final : private Cell::State
     {
     public:
-        explicit Reader(DB::ReadBuffer & in_)
+        Reader(DB::ReadBuffer & in_)
             : in(in_)
         {
         }
@@ -128,7 +129,7 @@ public:
         bool is_initialized = false;
     };
 
-    class iterator /// NOLINT
+    class iterator
     {
         Self * container = nullptr;
         Cell * ptr = nullptr;
@@ -136,7 +137,7 @@ public:
         friend class SmallTable;
 
     public:
-        iterator() {} /// NOLINT
+        iterator() {}
         iterator(Self * container_, Cell * ptr_) : container(container_), ptr(ptr_) {}
 
         bool operator== (const iterator & rhs) const { return ptr == rhs.ptr; }
@@ -155,7 +156,7 @@ public:
     };
 
 
-    class const_iterator /// NOLINT
+    class const_iterator
     {
         const Self * container = nullptr;
         const Cell * ptr = nullptr;
@@ -163,9 +164,9 @@ public:
         friend class SmallTable;
 
     public:
-        const_iterator() = default;
-        const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {} /// NOLINT
-        const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {} /// NOLINT
+        const_iterator() {}
+        const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {}
+        const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {}
 
         bool operator== (const const_iterator & rhs) const { return ptr == rhs.ptr; }
         bool operator!= (const const_iterator & rhs) const { return ptr != rhs.ptr; }
@@ -245,6 +246,39 @@ public:
             ++m_size;
         }
     }
+
+
+    /// Same, but return false if it's full.
+    bool ALWAYS_INLINE tryEmplace(Key x, iterator & it, bool & inserted)
+    {
+        Cell * res = findCell(x);
+        it = iteratorTo(res);
+        inserted = res == buf + m_size;
+        if (inserted)
+        {
+            if (res == buf + capacity)
+                return false;
+
+            new(res) Cell(x, *this);
+            ++m_size;
+        }
+        return true;
+    }
+
+
+    /// Copy the cell from another hash table. It is assumed that there was no such key in the table yet.
+    void ALWAYS_INLINE insertUnique(const Cell * cell)
+    {
+        memcpy(&buf[m_size], cell, sizeof(*cell));
+        ++m_size;
+    }
+
+    void ALWAYS_INLINE insertUnique(Key x)
+    {
+        new(&buf[m_size]) Cell(x, *this);
+        ++m_size;
+    }
+
 
     iterator ALWAYS_INLINE find(Key x)                 { return iteratorTo(findCell(x)); }
     const_iterator ALWAYS_INLINE find(Key x) const     { return iteratorTo(findCell(x)); }
@@ -347,3 +381,36 @@ template
 >
 using SmallSet = SmallTable<Key, HashTableCell<Key, HashUnused>, capacity>;
 
+
+template
+<
+    typename Key,
+    typename Cell,
+    size_t capacity
+>
+class SmallMapTable : public SmallTable<Key, Cell, capacity>
+{
+public:
+    using key_type = Key;
+    using mapped_type = typename Cell::mapped_type;
+    using value_type = typename Cell::value_type;
+    using cell_type = Cell;
+
+    mapped_type & ALWAYS_INLINE operator[](Key x)
+    {
+        typename SmallMapTable::iterator it;
+        bool inserted;
+        this->emplace(x, it, inserted);
+        new (&it->getMapped()) mapped_type();
+        return it->getMapped();
+    }
+};
+
+
+template
+<
+    typename Key,
+    typename Mapped,
+    size_t capacity
+>
+using SmallMap = SmallMapTable<Key, HashMapCell<Key, Mapped, HashUnused>, capacity>;

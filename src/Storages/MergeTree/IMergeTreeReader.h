@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <sparsehash/dense_hash_map>
 
 namespace DB
 {
@@ -30,43 +30,39 @@ public:
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{});
 
     /// Return the number of rows has been read or zero if there is no columns to read.
-    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
-    /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
-    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                            bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
+    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
+    virtual size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
-    virtual ~IMergeTreeReader() = default;
+    virtual ~IMergeTreeReader();
 
     const ValueSizeMap & getAvgValueSizeHints() const;
 
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows);
     /// Evaluate defaulted columns if necessary.
-    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
+    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns);
 
     /// If part metadata is not equal to storage metadata, than
     /// try to perform conversions of columns.
-    void performRequiredConversions(Columns & res_columns) const;
+    void performRequiredConversions(Columns & res_columns);
 
-    const NamesAndTypesList & getColumns() const { return requested_columns; }
-    size_t numColumnsInResult() const { return requested_columns.size(); }
+    const NamesAndTypesList & getColumns() const { return columns; }
+    size_t numColumnsInResult() const { return columns.size(); }
 
-    size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
+    size_t getFirstMarkToRead() const
+    {
+        return all_mark_ranges.front().begin;
+    }
 
     MergeTreeData::DataPartPtr data_part;
 
 protected:
-    /// Returns actual column name in part, which can differ from table metadata.
-    String getColumnNameInPart(const NameAndTypePair & required_column) const;
-
-    /// Returns actual column name and type in part, which can differ from table metadata.
-    NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
-    /// Returns actual serialization in part, which can differ from table metadata.
-    SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
+    /// Returns actual column type in part, which can differ from table metadata.
+    NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
@@ -75,11 +71,9 @@ protected:
     /// Stores states for IDataType::deserializeBinaryBulk
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
 
-    /// Actual column names and types of columns in part,
-    /// which may differ from table metadata.
-    NamesAndTypes columns_to_read;
-    /// Actual serialization of columns in part.
-    Serializations serializations;
+    /// Columns that are read.
+    NamesAndTypesList columns;
+    NamesAndTypesList part_columns;
 
     UncompressedCache * uncompressed_cache;
     MarkCache * mark_cache;
@@ -93,15 +87,14 @@ protected:
     using ColumnPosition = std::optional<size_t>;
     ColumnPosition findColumnForOffsets(const String & column_name) const;
 
+    friend class MergeTreeRangeReader::DelayedStream;
+
 private:
     /// Alter conversions, which must be applied on fly if required
     MergeTreeData::AlterConversions alter_conversions;
 
-    /// Columns that are requested to read.
-    NamesAndTypesList requested_columns;
-
-    /// Actual columns description in part.
-    ColumnsDescription part_columns;
+    /// Actual data type of columns in part
+    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
 };
 
 }

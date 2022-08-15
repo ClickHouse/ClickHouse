@@ -1,6 +1,4 @@
 SET enable_optimize_predicate_expression = 0;
-SET convert_query_to_cnf = 0;
-SET cross_to_inner_join_rewrite = 1;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -29,7 +27,7 @@ EXPLAIN SYNTAX SELECT t1.a FROM t1, t2, t3, t4;
 EXPLAIN SYNTAX SELECT t1.a FROM t1 CROSS JOIN t2 CROSS JOIN t3 CROSS JOIN t4;
 
 EXPLAIN SYNTAX SELECT t1.a FROM t1, t2 CROSS JOIN t3;
-EXPLAIN SYNTAX SELECT t1.a FROM t1 JOIN t2 USING a CROSS JOIN t3;
+EXPLAIN SYNTAX SELECT t1.a FROM t1 JOIN t2 USING a CROSS JOIN t3; -- { serverError 48 }
 EXPLAIN SYNTAX SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a CROSS JOIN t3;
 
 INSERT INTO t1 values (1,1), (2,2), (3,3), (4,4);

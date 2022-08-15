@@ -2,9 +2,9 @@
 
 #include <city.h>
 #include <Core/Types.h>
-#include <base/types.h>
-#include <base/unaligned.h>
-#include <base/StringRef.h>
+#include <common/types.h>
+#include <common/unaligned.h>
+#include <common/StringRef.h>
 
 #include <type_traits>
 
@@ -13,7 +13,7 @@
   *
   * Example: when we do aggregation by the visitor ID, the performance increase is more than 5 times.
   * This is because of following reasons:
-  * - in Metrica web analytics system, visitor identifier is an integer that has timestamp with seconds resolution in lower bits;
+  * - in Yandex, visitor identifier is an integer that has timestamp with seconds resolution in lower bits;
   * - in typical implementation of standard library, hash function for integers is trivial and just use lower bits;
   * - traffic is non-uniformly distributed across a day;
   * - we are using open-addressing linear probing hash tables that are most critical to hash function quality,
@@ -46,6 +46,7 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 
 #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
 #include <arm_acle.h>
+#include <arm_neon.h>
 #endif
 
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
@@ -73,10 +74,10 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 }
 
 template <typename T>
-requires (sizeof(T) > sizeof(DB::UInt64))
-inline DB::UInt64 intHashCRC32(const T & x, DB::UInt64 updated_value)
+inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)), DB::UInt64>::type
+intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
-    const auto * begin = reinterpret_cast<const char *>(&x);
+    auto * begin = reinterpret_cast<const char *>(&x);
     for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
     {
         updated_value = intHashCRC32(unalignedLoad<DB::UInt64>(begin), updated_value);
@@ -155,8 +156,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 }
 
 template <typename T>
-requires (sizeof(T) <= sizeof(UInt64))
-inline size_t DefaultHash64(T key)
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
 {
     union
     {
@@ -170,8 +170,7 @@ inline size_t DefaultHash64(T key)
 
 
 template <typename T>
-requires (sizeof(T) > sizeof(UInt64))
-inline size_t DefaultHash64(T key)
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
 {
     if constexpr (is_big_int_v<T> && sizeof(T) == 16)
     {
@@ -198,8 +197,12 @@ inline size_t DefaultHash64(T key)
     __builtin_unreachable();
 }
 
+
+template <typename T, typename Enable = void>
+struct DefaultHash;
+
 template <typename T>
-struct DefaultHash
+struct DefaultHash<T, std::enable_if_t<!DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {
@@ -207,8 +210,8 @@ struct DefaultHash
     }
 };
 
-template <DB::is_decimal T>
-struct DefaultHash<T>
+template <typename T>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {
@@ -219,8 +222,7 @@ struct DefaultHash<T>
 template <typename T> struct HashCRC32;
 
 template <typename T>
-requires (sizeof(T) <= sizeof(UInt64))
-inline size_t hashCRC32(T key)
+inline size_t hashCRC32(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> key)
 {
     union
     {
@@ -233,8 +235,7 @@ inline size_t hashCRC32(T key)
 }
 
 template <typename T>
-requires (sizeof(T) > sizeof(UInt64))
-inline size_t hashCRC32(T key)
+inline size_t hashCRC32(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
 {
     return intHashCRC32(key, -1);
 }
@@ -296,19 +297,6 @@ struct UInt128HashCRC32
     }
 };
 
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-
-struct UInt128HashCRC32
-{
-    size_t operator()(UInt128 x) const
-    {
-        UInt64 crc = -1ULL;
-        crc = __crc32cd(crc, x.items[0]);
-        crc = __crc32cd(crc, x.items[1]);
-        return crc;
-    }
-};
-
 #else
 
 /// On other platforms we do not use CRC32. NOTE This can be confusing.
@@ -348,21 +336,6 @@ struct UInt256HashCRC32
         crc = _mm_crc32_u64(crc, x.items[1]);
         crc = _mm_crc32_u64(crc, x.items[2]);
         crc = _mm_crc32_u64(crc, x.items[3]);
-        return crc;
-    }
-};
-
-#elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
-
-struct UInt256HashCRC32
-{
-    size_t operator()(UInt256 x) const
-    {
-        UInt64 crc = -1ULL;
-        crc = __crc32cd(crc, x.items[0]);
-        crc = __crc32cd(crc, x.items[1]);
-        crc = __crc32cd(crc, x.items[2]);
-        crc = __crc32cd(crc, x.items[3]);
         return crc;
     }
 };

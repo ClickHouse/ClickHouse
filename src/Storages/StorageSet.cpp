@@ -1,20 +1,18 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeWriter.h>
-#include <Formats/NativeReader.h>
-#include <QueryPipeline/ProfileInfo.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Set.h>
-#include <Processors/Sinks/SinkToStorage.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -32,17 +30,17 @@ namespace ErrorCodes
 }
 
 
-class SetOrJoinSink : public SinkToStorage, WithContext
+class SetOrJoinBlockOutputStream : public IBlockOutputStream, WithContext
 {
 public:
-    SetOrJoinSink(
+    SetOrJoinBlockOutputStream(
         ContextPtr ctx, StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
 
-    String getName() const override { return "SetOrJoinSink"; }
-    void consume(Chunk chunk) override;
-    void onFinish() override;
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    void write(const Block & block) override;
+    void writeSuffix() override;
 
 private:
     StorageSetOrJoinBase & table;
@@ -52,12 +50,12 @@ private:
     String backup_file_name;
     std::unique_ptr<WriteBufferFromFileBase> backup_buf;
     CompressedWriteBuffer compressed_backup_buf;
-    NativeWriter backup_stream;
+    NativeBlockOutputStream backup_stream;
     bool persistent;
 };
 
 
-SetOrJoinSink::SetOrJoinSink(
+SetOrJoinBlockOutputStream::SetOrJoinBlockOutputStream(
     ContextPtr ctx,
     StorageSetOrJoinBase & table_,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -65,31 +63,30 @@ SetOrJoinSink::SetOrJoinSink(
     const String & backup_tmp_path_,
     const String & backup_file_name_,
     bool persistent_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
-    , WithContext(ctx)
+    : WithContext(ctx)
     , table(table_)
     , metadata_snapshot(metadata_snapshot_)
     , backup_path(backup_path_)
     , backup_tmp_path(backup_tmp_path_)
     , backup_file_name(backup_file_name_)
-    , backup_buf(table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name))
+    , backup_buf(table_.disk->writeFile(backup_tmp_path + backup_file_name))
     , compressed_backup_buf(*backup_buf)
     , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
     , persistent(persistent_)
 {
 }
 
-void SetOrJoinSink::consume(Chunk chunk)
+void SetOrJoinBlockOutputStream::write(const Block & block)
 {
     /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
-    Block sorted_block = getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
+    Block sorted_block = block.sortColumns();
 
     table.insertBlock(sorted_block, getContext());
     if (persistent)
         backup_stream.write(sorted_block);
 }
 
-void SetOrJoinSink::onFinish()
+void SetOrJoinBlockOutputStream::writeSuffix()
 {
     table.finishInsert();
     if (persistent)
@@ -99,16 +96,15 @@ void SetOrJoinSink::onFinish()
         backup_buf->next();
         backup_buf->finalize();
 
-        table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+        table.disk->replaceFile(backup_tmp_path + backup_file_name, backup_path + backup_file_name);
     }
 }
 
 
-SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     UInt64 id = ++increment;
-    return std::make_shared<SetOrJoinSink>(
-        context, *this, metadata_snapshot, path, fs::path(path) / "tmp/", toString(id) + ".bin", persistent);
+    return std::make_shared<SetOrJoinBlockOutputStream>(context, *this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
 }
 
 
@@ -150,13 +146,13 @@ StorageSet::StorageSet(
 
     Block header = getInMemoryMetadataPtr()->getSampleBlock();
     header = header.sortColumns();
-    set->setHeader(header.getColumnsWithTypeAndName());
+    set->setHeader(header);
 
     restore();
 }
 
 
-void StorageSet::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block.getColumnsWithTypeAndName()); }
+void StorageSet::insertBlock(const Block & block, ContextPtr) { set->insertFromBlock(block); }
 void StorageSet::finishInsert() { set->finishInsert(); }
 
 size_t StorageSet::getSize(ContextPtr) const { return set->getTotalRowCount(); }
@@ -167,22 +163,22 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 {
     disk->removeRecursive(path);
     disk->createDirectories(path);
-    disk->createDirectories(fs::path(path) / "tmp/");
+    disk->createDirectories(path + "tmp/");
 
     Block header = metadata_snapshot->getSampleBlock();
     header = header.sortColumns();
 
     increment = 0;
     set = std::make_shared<Set>(SizeLimits(), false, true);
-    set->setHeader(header.getColumnsWithTypeAndName());
+    set->setHeader(header);
 }
 
 
 void StorageSetOrJoinBase::restore()
 {
-    if (!disk->exists(fs::path(path) / "tmp/"))
+    if (!disk->exists(path + "tmp/"))
     {
-        disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(path + "tmp/");
         return;
     }
 
@@ -214,20 +210,19 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     ContextPtr ctx = nullptr;
     auto backup_buf = disk->readFile(file_path);
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
-    NativeReader backup_stream(compressed_backup_buf, 0);
+    NativeBlockInputStream backup_stream(compressed_backup_buf, 0);
 
-    ProfileInfo info;
+    backup_stream.readPrefix();
+
     while (Block block = backup_stream.read())
-    {
-        info.update(block);
         insertBlock(block, ctx);
-    }
 
     finishInsert();
+    backup_stream.readSuffix();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(&Poco::Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
-        file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
+        file_path, backup_stream.getProfileInfo().rows, ReadableSize(backup_stream.getProfileInfo().bytes), getSize(ctx));
 }
 
 
@@ -256,7 +251,7 @@ void registerStorageSet(StorageFactory & factory)
             set_settings.loadFromQuery(*args.storage_def);
 
         DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
-        return std::make_shared<StorageSet>(
+        return StorageSet::create(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }

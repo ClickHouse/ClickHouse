@@ -1,6 +1,6 @@
 ---
-sidebar_position: 47
-sidebar_label: generateRandom
+toc_priority: 47
+toc_title: generateRandom
 ---
 
 # generateRandom {#generaterandom}
@@ -39,4 +39,4 @@ SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(
 └──────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/generate/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/generate/) <!--hide-->

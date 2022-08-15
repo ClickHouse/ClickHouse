@@ -1,43 +1,33 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <Processors/Transforms/PostgreSQLSource.h>
+#include <DataStreams/PostgreSQLBlockInputStream.h>
 
-#include <Common/parseAddress.h>
-#include <Common/assert_cast.h>
-#include <Common/parseRemoteDescription.h>
-#include <Core/Settings.h>
-#include <Common/logger_useful.h>
-
+#include <Storages/StorageFactory.h>
+#include <Storages/transformQueryForExternalDatabase.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
-
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/Settings.h>
+#include <Common/parseAddress.h>
+#include <Common/assert_cast.h>
+#include <Parsers/ASTLiteral.h>
 #include <Columns/ColumnNullable.h>
-
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
-
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Common/parseRemoteDescription.h>
+#include <Processors/Pipe.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
-
-#include <Parsers/getInsertQuery.h>
-#include <Parsers/ASTFunction.h>
-
-#include <Processors/Sinks/SinkToStorage.h>
-
-#include <QueryPipeline/Pipe.h>
-
-#include <Storages/StorageFactory.h>
-#include <Storages/transformQueryForExternalDatabase.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -45,9 +35,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
@@ -57,14 +46,11 @@ StoragePostgreSQL::StoragePostgreSQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    const String & remote_table_schema_,
-    const String & on_conflict_)
+    const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
-    , on_conflict(on_conflict_)
     , pool(std::move(pool_))
-    , log(&Poco::Logger::get("StoragePostgreSQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -76,76 +62,60 @@ StoragePostgreSQL::StoragePostgreSQL(
 
 Pipe StoragePostgreSQL::read(
     const Names & column_names_,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
     unsigned)
 {
-    storage_snapshot->check(column_names_);
+    metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
 
     /// Connection is already made to the needed database, so it should not be present in the query;
     /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
-        query_info_, storage_snapshot->metadata->getColumns().getOrdinary(),
+        query_info_, metadata_snapshot->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
-    LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names_)
     {
-        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
+        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
         WhichDataType which(column_data.type);
         if (which.isEnum())
             column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, sample_block, max_block_size_));
+    return Pipe(std::make_shared<SourceFromInputStream>(
+            std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size_)));
 }
 
 
-class PostgreSQLSink : public SinkToStorage
+class PostgreSQLBlockOutputStream : public IBlockOutputStream
 {
-
-using Row = std::vector<std::optional<std::string>>;
-
 public:
-    explicit PostgreSQLSink(
+    explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
         postgres::ConnectionHolderPtr connection_holder_,
         const String & remote_table_name_,
-        const String & remote_table_schema_,
-        const String & on_conflict_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , metadata_snapshot(metadata_snapshot_)
+        const String & remote_table_schema_)
+        : metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
         , remote_table_schema(remote_table_schema_)
-        , on_conflict(on_conflict_)
     {
     }
 
-    String getName() const override { return "PostgreSQLSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         if (!inserter)
-        {
-            if (on_conflict.empty())
-            {
-                inserter = std::make_unique<StreamTo>(connection_holder->get(),
-                        remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
-                                                    : pqxx::table_path({remote_table_schema, remote_table_name}), block.getNames());
-            }
-            else
-            {
-                inserter = std::make_unique<PreparedInsert>(connection_holder->get(), remote_table_name,
-                                                            remote_table_schema, block.getColumnsWithTypeAndName(), on_conflict);
-            }
-        }
+            inserter = std::make_unique<StreamTo>(connection_holder->get(),
+                                                  remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
+                                                                              : pqxx::table_path({remote_table_schema, remote_table_name}),
+                                                  block.getNames());
 
         const auto columns = block.getColumns();
         const size_t num_rows = block.rows(), num_cols = block.columns();
@@ -179,11 +149,11 @@ public:
                 }
             }
 
-            inserter->insert(row);
+            inserter->stream.write_values(row);
         }
     }
 
-    void onFinish() override
+    void writeSuffix() override
     {
         if (inserter)
             inserter->complete();
@@ -262,10 +232,6 @@ public:
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
-        else if (which.isDateTime64())
-        {
-            nested_column = ColumnDecimal<DateTime64>::create(0, 6);
-        }
         else if (which.isDecimal32())
         {
             const auto & type = typeid_cast<const DataTypeDecimal<Decimal32> *>(nested.get());
@@ -296,149 +262,37 @@ public:
     }
 
 private:
-    struct Inserter
+    struct StreamTo
     {
-        pqxx::connection & connection;
         pqxx::work tx;
-
-        explicit Inserter(pqxx::connection & connection_)
-            : connection(connection_)
-            , tx(connection) {}
-
-        virtual ~Inserter() = default;
-
-        virtual void insert(const Row & row) = 0;
-        virtual void complete() = 0;
-    };
-
-    struct StreamTo : Inserter
-    {
         Names columns;
         pqxx::stream_to stream;
 
-        StreamTo(pqxx::connection & connection_, pqxx::table_path table_, Names columns_)
-            : Inserter(connection_)
+        StreamTo(pqxx::connection & connection, pqxx::table_path table_, Names columns_)
+            : tx(connection)
             , columns(std::move(columns_))
             , stream(pqxx::stream_to::raw_table(tx, connection.quote_table(table_), connection.quote_columns(columns)))
         {
         }
 
-        void complete() override
+        void complete()
         {
             stream.complete();
             tx.commit();
-        }
-
-        void insert(const Row & row) override
-        {
-            stream.write_values(row);
-        }
-    };
-
-    struct PreparedInsert : Inserter
-    {
-        PreparedInsert(pqxx::connection & connection_, const String & table, const String & schema,
-                       const ColumnsWithTypeAndName & columns, const String & on_conflict_)
-            : Inserter(connection_)
-        {
-            WriteBufferFromOwnString buf;
-            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
-            buf << " (";
-            for (size_t i = 1; i <= columns.size(); ++i)
-            {
-                if (i > 1)
-                    buf << ", ";
-                buf << "$" << i;
-            }
-            buf << ") ";
-            buf << on_conflict_;
-            connection.prepare("insert", buf.str());
-        }
-
-        void complete() override
-        {
-            connection.unprepare("insert");
-            tx.commit();
-        }
-
-        void insert(const Row & row) override
-        {
-            pqxx::params params;
-            params.reserve(row.size());
-            params.append_multi(row);
-            tx.exec_prepared("insert", params);
         }
     };
 
     StorageMetadataPtr metadata_snapshot;
     postgres::ConnectionHolderPtr connection_holder;
-    const String remote_db_name, remote_table_name, remote_table_schema, on_conflict;
-
-    std::unique_ptr<Inserter> inserter;
+    const String remote_table_name, remote_table_schema;
+    std::unique_ptr<StreamTo> inserter;
 };
 
 
-SinkToStoragePtr StoragePostgreSQL::write(
+BlockOutputStreamPtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
-    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
-}
-
-
-StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
-{
-    StoragePostgreSQLConfiguration configuration;
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
-    {
-        auto [common_configuration, storage_specific_args, _] = named_collection.value();
-
-        configuration.set(common_configuration);
-        configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "on_conflict")
-                configuration.on_conflict = checkAndGetLiteralArgument<String>(arg_value, "on_conflict");
-            else
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected key-value argument."
-                        "Got: {}, but expected one of:"
-                        "host, port, username, password, database, table, schema, on_conflict.", arg_name);
-        }
-    }
-    else
-    {
-        if (engine_args.size() < 5 || engine_args.size() > 7)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage PostgreSQL requires from 5 to 7 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password' [, 'schema', 'ON CONFLICT ...']. Got: {}",
-                            engine_args.size());
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
-
-        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
-        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-        if (configuration.addresses.size() == 1)
-        {
-            configuration.host = configuration.addresses[0].first;
-            configuration.port = configuration.addresses[0].second;
-        }
-        configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "host:port");
-        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
-        configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
-        configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
-
-        if (engine_args.size() >= 6)
-            configuration.schema = checkAndGetLiteralArgument<String>(engine_args[5], "schema");
-        if (engine_args.size() >= 7)
-            configuration.on_conflict = checkAndGetLiteralArgument<String>(engine_args[6], "on_conflict");
-    }
-    for (const auto & address : configuration.addresses)
-        context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
-
-    return configuration;
+    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema);
 }
 
 
@@ -446,23 +300,46 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
-        const auto & settings = args.getContext()->getSettingsRef();
-        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+        ASTs & engine_args = args.engine_args;
 
-        return std::make_shared<StoragePostgreSQL>(
+        if (engine_args.size() < 5 || engine_args.size() > 6)
+            throw Exception("Storage PostgreSQL requires from 5 to 6 parameters: "
+                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password' [, 'schema']",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
+
+        auto host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        /// Split into replicas if needed.
+        size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
+        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+
+        const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+
+        String remote_table_schema;
+        if (engine_args.size() == 6)
+            remote_table_schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+
+        auto pool = std::make_shared<postgres::PoolWithFailover>(
+            remote_database,
+            addresses,
+            username,
+            password,
+            args.getContext()->getSettingsRef().postgresql_connection_pool_size,
+            args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
+
+        return StoragePostgreSQL::create(
             args.table_id,
             std::move(pool),
-            configuration.table,
+            remote_table,
             args.columns,
             args.constraints,
             args.comment,
-            configuration.schema,
-            configuration.on_conflict);
+            remote_table_schema);
     },
     {
         .source_access_type = AccessType::POSTGRES,

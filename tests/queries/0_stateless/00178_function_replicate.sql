@@ -1,5 +1,3 @@
--- Tags: replica
-
 SELECT
     number,
     range(number) AS arr,

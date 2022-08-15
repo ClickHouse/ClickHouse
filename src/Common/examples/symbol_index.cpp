@@ -2,7 +2,7 @@
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Core/Defines.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 #include <iostream>
 #include <dlfcn.h>
 
@@ -16,7 +16,7 @@ static NO_INLINE const void * getAddress()
 
 int main(int argc, char ** argv)
 {
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
     using namespace DB;
 
     if (argc < 2)

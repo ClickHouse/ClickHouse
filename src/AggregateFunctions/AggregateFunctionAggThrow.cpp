@@ -76,27 +76,27 @@ public:
         data(place).~Data();
     }
 
-    void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override
+    void add(AggregateDataPtr, const IColumn **, size_t, Arena *) const override
     {
     }
 
-    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
+    void merge(AggregateDataPtr, ConstAggregateDataPtr, Arena *) const override
     {
     }
 
-    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr, WriteBuffer & buf) const override
     {
         char c = 0;
         buf.write(c);
     }
 
-    void deserialize(AggregateDataPtr __restrict /* place */, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr, ReadBuffer & buf, Arena *) const override
     {
         char c = 0;
         buf.read(c);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr, IColumn & to, Arena *) const override
     {
         to.insertDefault();
     }
@@ -119,3 +119,4 @@ void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 }
 
 }
+

@@ -1,4 +1,6 @@
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 
@@ -19,7 +21,7 @@ struct DecryptImpl
 namespace DB
 {
 
-REGISTER_FUNCTION(Decrypt)
+void registerFunctionDecrypt(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDecrypt<DecryptImpl>>();
 }

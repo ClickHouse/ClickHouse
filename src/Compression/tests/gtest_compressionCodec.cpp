@@ -2,7 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -22,7 +22,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include <cstring>
+#include <string.h>
 
 /// For the expansion of gtest macros.
 #if defined(__clang__)
@@ -175,7 +175,7 @@ private:
             throw std::runtime_error("No more data to read");
         }
 
-        current_value = unalignedLoadLE<T>(data);
+        current_value = unalignedLoad<T>(data);
         data = reinterpret_cast<const char *>(data) + sizeof(T);
     }
 };
@@ -316,7 +316,7 @@ CodecTestSequence operator+(CodecTestSequence && left, const CodecTestSequence &
 
 std::vector<CodecTestSequence> operator+(const std::vector<CodecTestSequence> & left, const std::vector<CodecTestSequence> & right)
 {
-    std::vector<CodecTestSequence> result(left);
+    std::vector<CodecTestSequence> result(std::move(left));
     std::move(std::begin(right), std::end(right), std::back_inserter(result));
 
     return result;
@@ -371,7 +371,7 @@ CodecTestSequence makeSeq(Args && ... args)
     char * write_pos = data.data();
     for (const auto & v : vals)
     {
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStore<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -393,7 +393,7 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
     {
         const T v = gen(static_cast<T>(i));
 
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStore<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -685,7 +685,7 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
-        typename std::conditional_t<is_integer<T>, std::uniform_int_distribution<T>, void>>;
+        typename std::conditional_t<is_integer_v<T>, std::uniform_int_distribution<T>, void>>;
 
 
 template <typename T = Int32>
@@ -790,7 +790,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     }
 
     return sequences;
-}
+};
 
 // helper macro to produce human-friendly sequence name from generator
 #define G(generator) generator, #generator

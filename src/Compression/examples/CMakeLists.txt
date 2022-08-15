@@ -1,5 +1,10 @@
-clickhouse_add_executable (compressed_buffer compressed_buffer.cpp)
+add_executable (compressed_buffer compressed_buffer.cpp)
 target_link_libraries (compressed_buffer PRIVATE dbms)
 
-clickhouse_add_executable (cached_compressed_read_buffer cached_compressed_read_buffer.cpp)
+add_executable (cached_compressed_read_buffer cached_compressed_read_buffer.cpp)
 target_link_libraries (cached_compressed_read_buffer PRIVATE dbms)
+
+if (ENABLE_FUZZING)
+    add_executable (compressed_buffer_fuzzer compressed_buffer_fuzzer.cpp)
+    target_link_libraries (compressed_buffer_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
+endif ()

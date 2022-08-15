@@ -31,8 +31,3 @@ SELECT 'Formats';
 SELECT parseDateTime64BestEffort('2020-05-14T03:37:03.253184', 3, 'UTC');
 SELECT parseDateTime64BestEffort('2020-05-14T03:37:03', 3, 'UTC');
 SELECT parseDateTime64BestEffort('2020-05-14 03:37:03', 3, 'UTC');
-
-SELECT 'Unix Timestamp with Milliseconds';
-SELECT parseDateTime64BestEffort('1640649600123', 3, 'UTC');
-SELECT parseDateTime64BestEffort('1640649600123', 1, 'UTC');
-SELECT parseDateTime64BestEffort('1640649600123', 6, 'UTC');

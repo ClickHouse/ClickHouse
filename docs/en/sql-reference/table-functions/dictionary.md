@@ -1,9 +1,9 @@
 ---
-sidebar_position: 54
-sidebar_label: dictionary function
+toc_priority: 54
+toc_title: dictionary function
 ---
 
-# dictionary
+# dictionary {#dictionary-function}
 
 Displays the [dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
 
@@ -13,7 +13,7 @@ Displays the [dictionary](../../sql-reference/dictionaries/external-dictionaries
 dictionary('dict')
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
 

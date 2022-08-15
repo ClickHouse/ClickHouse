@@ -1,8 +1,25 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
-            <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
+            <!--stream_poll_timeout_ms>1</stream_poll_timeout_ms>
+            <stream_flush_interval_ms>100</stream_flush_interval_ms-->
         </default>
     </profiles>
-</clickhouse>
+
+    <users>
+        <default>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+
+    <quotas>
+        <default>
+        </default>
+    </quotas>
+</yandex>

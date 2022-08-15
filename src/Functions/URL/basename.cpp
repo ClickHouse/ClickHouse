@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include "FunctionsURL.h"
 
 namespace DB
@@ -34,7 +34,7 @@ struct ExtractBasename
 struct NameBasename { static constexpr auto name = "basename"; };
 using FunctionBasename = FunctionStringToString<ExtractSubstringImpl<ExtractBasename>, NameBasename>;
 
-REGISTER_FUNCTION(Basename)
+void registerFunctionBasename(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBasename>();
 }

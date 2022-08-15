@@ -32,7 +32,6 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -143,7 +142,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { .is_monotonic = true, .is_always_monotonic = true };
+        return { true, true, true };
     }
 
 private:
@@ -153,7 +152,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(DateTrunc)
+void registerFunctionDateTrunc(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDateTrunc>(FunctionFactory::CaseInsensitive);
 

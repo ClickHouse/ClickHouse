@@ -13,8 +13,7 @@ enum class ColumnDefaultKind
 {
     Default,
     Materialized,
-    Alias,
-    Ephemeral
+    Alias
 };
 
 

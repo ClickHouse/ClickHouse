@@ -1,13 +1,13 @@
 #include "convertMySQLDataType.h"
 
 #include <Core/Field.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/MultiEnum.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include "DataTypeDate.h"
-#include "DataTypeDate32.h"
 #include "DataTypeDateTime.h"
 #include "DataTypeDateTime64.h"
 #include "DataTypeEnum.h"
@@ -20,6 +20,15 @@
 
 namespace DB
 {
+ASTPtr dataTypeConvertToQuery(const DataTypePtr & data_type)
+{
+    WhichDataType which(data_type);
+
+    if (!which.isNullable())
+        return std::make_shared<ASTIdentifier>(data_type->getName());
+
+    return makeASTFunction("Nullable", dataTypeConvertToQuery(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
+}
 
 DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
         const std::string & mysql_data_type,
@@ -74,20 +83,9 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     else if (type_name == "double")
         res = std::make_shared<DataTypeFloat64>();
     else if (type_name == "date")
-     {
-        if (type_support.isSet(MySQLDataTypesSupport::DATE2DATE32))
-            res = std::make_shared<DataTypeDate32>();
-        else if (type_support.isSet(MySQLDataTypesSupport::DATE2STRING))
-            res = std::make_shared<DataTypeString>();
-        else
-            res = std::make_shared<DataTypeDate>();
-    }
+        res = std::make_shared<DataTypeDate>();
     else if (type_name == "binary")
-    {
-        //compatible with binary(0) DataType
-        if (length == 0) length = 1;
         res = std::make_shared<DataTypeFixedString>(length);
-    }
     else if (type_name == "datetime" || type_name == "timestamp")
     {
         if (!type_support.isSet(MySQLDataTypesSupport::DATETIME64))
@@ -102,10 +100,6 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
         {
             res = std::make_shared<DataTypeDateTime64>(scale);
         }
-    }
-    else if (type_name == "bit")
-    {
-        res = std::make_shared<DataTypeUInt64>();
     }
     else if (type_support.isSet(MySQLDataTypesSupport::DECIMAL) && (type_name == "numeric" || type_name == "decimal"))
     {

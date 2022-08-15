@@ -49,7 +49,7 @@ private:
     Block * free_lists[16] {};
 
 public:
-    explicit ArenaWithFreeLists(
+    ArenaWithFreeLists(
         const size_t initial_size = 4096, const size_t growth_factor = 2,
         const size_t linear_growth_threshold = 128 * 1024 * 1024)
         : pool{initial_size, growth_factor, linear_growth_threshold}
@@ -74,7 +74,7 @@ public:
             ASAN_UNPOISON_MEMORY_REGION(free_block_ptr,
                                         std::max(size, sizeof(Block)));
 
-            auto * const res = free_block_ptr->data;
+            const auto res = free_block_ptr->data;
             free_block_ptr = free_block_ptr->next;
             return res;
         }
@@ -93,7 +93,7 @@ public:
 
         /// Insert the released block into the head of the list.
         auto & free_block_ptr = free_lists[list_idx];
-        auto * const old_head = free_block_ptr;
+        const auto old_head = free_block_ptr;
         free_block_ptr = reinterpret_cast<Block *>(ptr);
         free_block_ptr->next = old_head;
 
@@ -113,35 +113,5 @@ public:
     }
 };
 
-class SynchronizedArenaWithFreeLists : private ArenaWithFreeLists
-{
-public:
-    explicit SynchronizedArenaWithFreeLists(
-        const size_t initial_size = 4096, const size_t growth_factor = 2,
-        const size_t linear_growth_threshold = 128 * 1024 * 1024)
-        : ArenaWithFreeLists{initial_size, growth_factor, linear_growth_threshold}
-    {}
-
-    char * alloc(const size_t size)
-    {
-        std::lock_guard lock{mutex};
-        return ArenaWithFreeLists::alloc(size);
-    }
-
-    void free(char * ptr, const size_t size)
-    {
-        std::lock_guard lock{mutex};
-        return ArenaWithFreeLists::free(ptr, size);
-    }
-
-    /// Size of the allocated pool in bytes
-    size_t size() const
-    {
-        std::lock_guard lock{mutex};
-        return ArenaWithFreeLists::size();
-    }
-private:
-    mutable std::mutex mutex;
-};
 
 }

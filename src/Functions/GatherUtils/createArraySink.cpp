@@ -1,7 +1,7 @@
 #include "GatherUtils.h"
 #include "Sinks.h"
 #include "Sources.h"
-#include <base/TypeLists.h>
+#include <Core/TypeListNumber.h>
 
 namespace DB::GatherUtils
 {
@@ -18,7 +18,7 @@ struct ArraySinkCreator<Type, Types...>
 {
     static std::unique_ptr<IArraySink> create(IColumn & values, ColumnArray::Offsets & offsets, size_t column_size)
     {
-        using ColVecType = ColumnVectorOrDecimal<Type>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
         IColumn * not_null_values = &values;
         bool is_nullable = false;
@@ -55,7 +55,7 @@ struct ArraySinkCreator<>
 
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size)
 {
-    using Creator = TypeListChangeRoot<ArraySinkCreator, TypeListNumberWithUUID>;
+    using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumbersAndUUID>::Type;
     return Creator::create(col.getData(), col.getOffsets(), column_size);
 }
 }

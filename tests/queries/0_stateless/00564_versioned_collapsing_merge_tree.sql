@@ -1,6 +1,3 @@
--- Tags: no-parallel
-
-set allow_deprecated_syntax_for_merge_tree=1;
 set optimize_on_insert = 0;
 
 drop table if exists mult_tab;

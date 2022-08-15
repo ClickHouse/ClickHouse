@@ -11,7 +11,7 @@ using FunctionCos = FunctionMathUnary<UnaryFunctionVectorized<CosName, cos>>;
 
 }
 
-REGISTER_FUNCTION(Cos)
+void registerFunctionCos(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCos>(FunctionFactory::CaseInsensitive);
 }

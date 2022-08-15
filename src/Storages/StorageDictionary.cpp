@@ -8,11 +8,10 @@
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
@@ -23,7 +22,6 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE;
     extern const int DICTIONARY_ALREADY_EXISTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -114,11 +112,10 @@ StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
     const String & dictionary_name_,
     const DictionaryStructure & dictionary_structure_,
-    const String & comment,
     Location location_,
     ContextPtr context_)
     : StorageDictionary(
-        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, comment, location_, context_)
+        table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, String{}, location_, context_)
 {
 }
 
@@ -130,7 +127,6 @@ StorageDictionary::StorageDictionary(
         table_id,
         table_id.getFullNameNotQuoted(),
         context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration),
-        dictionary_configuration->getString("dictionary.comment", ""),
         Location::SameDatabaseAndNameAsDictionary,
         context_)
 {
@@ -164,16 +160,18 @@ void StorageDictionary::checkTableCanBeDetached() const
 
 Pipe StorageDictionary::read(
     const Names & column_names,
-    const StorageSnapshotPtr & /*storage_snapshot*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned /*threads*/)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    return dictionary->read(column_names, max_block_size, threads);
+    auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
+    /// TODO: update dictionary interface for processors.
+    return Pipe(std::make_shared<SourceFromInputStream>(stream));
 }
 
 void StorageDictionary::shutdown()
@@ -197,6 +195,10 @@ void StorageDictionary::startup()
 
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
+    if (remove_repository_callback_executed)
+        return;
+
+    remove_repository_callback_executed = true;
     remove_repository_callback.reset();
 }
 
@@ -235,7 +237,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
         if (move_to_atomic)
             configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
         else if (move_to_ordinary)
-            configuration->remove("dictionary.uuid");
+                configuration->remove("dictionary.uuid");
     }
 
     /// Dictionary is moving between databases of different engines or is renaming inside Ordinary database
@@ -265,40 +267,6 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     }
 }
 
-void StorageDictionary::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
-{
-    for (const auto & command : commands)
-    {
-        if (location == Location::DictionaryDatabase || command.type != AlterCommand::COMMENT_TABLE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
-    }
-}
-
-void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder)
-{
-    IStorage::alter(params, alter_context, lock_holder);
-
-    if (location == Location::Custom)
-        return;
-
-    auto new_comment = getInMemoryMetadataPtr()->comment;
-
-    auto storage_id = getStorageID();
-    const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
-    auto result = external_dictionaries_loader.getLoadResult(storage_id.getInternalDictionaryName());
-
-    if (result.object)
-    {
-        auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
-        auto * dictionary_non_const = const_cast<IDictionary *>(dictionary.get());
-        dictionary_non_const->setDictionaryComment(new_comment);
-    }
-
-    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
-    configuration->setString("dictionary.comment", new_comment);
-}
-
 void registerStorageDictionary(StorageFactory & factory)
 {
     factory.registerStorage("Dictionary", [](const StorageFactory::Arguments & args)
@@ -319,7 +287,7 @@ void registerStorageDictionary(StorageFactory & factory)
 
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
-            auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
+            auto result_storage = StorageDictionary::create(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
             if (!args.attach && !lazy_load)
@@ -340,7 +308,7 @@ void registerStorageDictionary(StorageFactory & factory)
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String dictionary_name = checkAndGetLiteralArgument<String>(args.engine_args[0], "dictionary_name");
+            String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
             if (!args.attach)
             {
@@ -349,7 +317,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
             }
 
-            return std::make_shared<StorageDictionary>(
+            return StorageDictionary::create(
                 args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
         }
     });

@@ -1,0 +1,20 @@
+{% set collapsed_threshold = 1 %}
+{% if not nav_item.title.startswith("hidden-") %}
+{% if nav_item.title.endswith('|hidden-folder') %}
+<a href="{{ base_url }}/{{ nav_item.children[0].url }}" title="{{ nav_item.title[:-14] }}" class="nav-link{% if nav_item.active%} text-white active{% else %} text-light{% endif %} text-wrap d-inline-block w-100 px-0">{{ nav_item.title[:-14] }}</a>
+{% elif nav_item.children %}
+<a href="#sidebar-{{ path }}" data-toggle="collapse" aria-expanded="{% if level < collapsed_threshold %}true{% else %}false{% endif %}" aria-controls="sidebar-{{ path }}" title="{{ nav_item.title }}" class="nav-link text-light dropdown-toggle px-0">{{ nav_item.title }}</a>
+<div id="sidebar-{{ path }}" class="nav flex-column collapse{% if level < collapsed_threshold %} show{% endif %}">
+    <nav class="nav flex-column pl-2">
+    {% set base = path %}
+    {% for nav_item in nav_item.children %}
+        {% set path = base + "-" + loop.index | string %}
+        {% set level = level + 1 %}
+        {% include "templates/docs/sidebar-item.html"  %}
+    {% endfor %}
+    </nav>
+</div>
+{% else %}
+<a href="{{ base_url }}/{{ nav_item.url }}" title="{{ nav_item.title }}" class="nav-link{% if nav_item.active%} text-white active{% else %} text-light{% endif %} text-wrap d-inline-block w-100 px-0">{{ nav_item.title }}</a>
+{% endif %}
+{% endif %}

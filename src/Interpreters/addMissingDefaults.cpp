@@ -23,7 +23,7 @@ ActionsDAGPtr addMissingDefaults(
     bool null_as_default)
 {
     auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-    auto & index = actions->getOutputs();
+    auto & index = actions->getIndex();
 
     /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
     /// First, remember the offset columns for all arrays in the block.
@@ -58,12 +58,12 @@ ActionsDAGPtr addMissingDefaults(
             continue;
 
         String offsets_name = Nested::extractTableName(column.name);
-        const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
-        if (array_type && nested_groups.contains(offsets_name))
+        if (nested_groups.count(offsets_name))
         {
-            const auto & nested_type = array_type->getNestedType();
+
+            DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column.type).getNestedType();
             ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(0);
-            const auto & constant = actions->addColumn({nested_column, nested_type, column.name});
+            const auto & constant = actions->addColumn({std::move(nested_column), nested_type, column.name});
 
             auto & group = nested_groups[offsets_name];
             group[0] = &constant;
@@ -76,17 +76,17 @@ ActionsDAGPtr addMissingDefaults(
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
         auto new_column = column.type->createColumnConstWithDefaultValue(0);
-        const auto * col = &actions->addColumn({new_column, column.type, column.name});
+        const auto * col = &actions->addColumn({std::move(new_column), column.type, column.name});
         index.push_back(&actions->materializeNode(*col));
     }
 
     /// Computes explicitly specified values by default and materialized columns.
     if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context, true, null_as_default))
         actions = ActionsDAG::merge(std::move(*actions), std::move(*dag));
-
-    /// Removes unused columns and reorders result.
-    actions->removeUnusedActions(required_columns.getNames(), false);
-    actions->addMaterializingOutputActions();
+    else
+        /// Removes unused columns and reorders result.
+        /// The same is done in evaluateMissingDefaults if not empty dag is returned.
+        actions->removeUnusedActions(required_columns.getNames());
 
     return actions;
 }

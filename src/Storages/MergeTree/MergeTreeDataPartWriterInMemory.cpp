@@ -15,7 +15,7 @@ MergeTreeDataPartWriterInMemory::MergeTreeDataPartWriterInMemory(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const MergeTreeWriterSettings & settings_)
-    : IMergeTreeDataPartWriter(part_, nullptr, columns_list_, metadata_snapshot_, settings_)
+    : IMergeTreeDataPartWriter(part_, columns_list_, metadata_snapshot_, settings_)
     , part_in_memory(part_) {}
 
 void MergeTreeDataPartWriterInMemory::write(
@@ -76,7 +76,7 @@ void MergeTreeDataPartWriterInMemory::calculateAndSerializePrimaryIndex(const Bl
     }
 }
 
-void MergeTreeDataPartWriterInMemory::fillChecksums(IMergeTreeDataPart::Checksums & checksums)
+void MergeTreeDataPartWriterInMemory::finish(IMergeTreeDataPart::Checksums & checksums, bool /* sync */)
 {
     /// If part is empty we still need to initialize block by empty columns.
     if (!part_in_memory->block)

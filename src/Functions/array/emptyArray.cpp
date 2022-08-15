@@ -37,8 +37,6 @@ private:
         return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnArray::create(
@@ -55,7 +53,7 @@ void registerFunction(FunctionFactory & factory)
 
 }
 
-REGISTER_FUNCTION(EmptyArray)
+void registerFunctionsEmptyArray(FunctionFactory & factory)
 {
     registerFunction<FunctionEmptyArray<DataTypeUInt8>>(factory);
     registerFunction<FunctionEmptyArray<DataTypeUInt16>>(factory);

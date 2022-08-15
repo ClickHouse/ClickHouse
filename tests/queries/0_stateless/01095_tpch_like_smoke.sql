@@ -7,8 +7,6 @@ DROP TABLE IF EXISTS lineitem;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS region;
 
-SET cross_to_inner_join_rewrite = 1;
-
 CREATE TABLE part
 (
     p_partkey       Int32,  -- PK
@@ -478,7 +476,7 @@ group by
 order by
     l_shipmode;
 
-select 13;
+select 13, 'fail: join predicates'; -- TODO: Invalid expression for JOIN ON
 select
     c_count,
     count(*) as custdist
@@ -486,7 +484,7 @@ from
     (
         select
             c_custkey,
-            count(o_orderkey) as c_count
+            count(o_orderkey)
         from
             customer left outer join orders on
                 c_custkey = o_custkey
@@ -498,7 +496,7 @@ group by
     c_count
 order by
     custdist desc,
-    c_count desc;
+    c_count desc; -- { serverError 403 }
 
 select 14;
 select

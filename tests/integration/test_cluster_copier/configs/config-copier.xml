@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <logger>
         <level>information</level>
         <log>/var/log/clickhouse-server/copier/log.log</log>
@@ -8,4 +8,4 @@
         <stderr>/var/log/clickhouse-server/copier/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/copier/stdout.log</stdout>
     </logger>
-</clickhouse>
+</yandex>

@@ -9,7 +9,7 @@ namespace DB
 {
 
 
-void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
+void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 {
     UInt64 max_rows = format_settings.pretty.max_rows;
 
@@ -23,6 +23,10 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
     size_t num_columns = chunk.getNumColumns();
     const auto & header = getPort(port_kind).getHeader();
     const auto & columns = chunk.getColumns();
+
+    Serializations serializations(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -100,8 +104,6 @@ void PrettySpaceBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port
 
 void PrettySpaceBlockOutputFormat::writeSuffix()
 {
-    writeMonoChunkIfNeeded();
-
     if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("\nShowed first ", out);
@@ -111,9 +113,27 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
 }
 
 
-void registerOutputFormatPrettySpace(FormatFactory & factory)
+void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
 {
-    registerPrettyFormatWithNoEscapesAndMonoBlock<PrettySpaceBlockOutputFormat>(factory, "PrettySpace");
+    factory.registerOutputFormatProcessor("PrettySpace", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const RowOutputFormatParams &,
+        const FormatSettings & format_settings)
+    {
+        return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
+    });
+
+    factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const RowOutputFormatParams &,
+        const FormatSettings & format_settings)
+    {
+        FormatSettings changed_settings = format_settings;
+        changed_settings.pretty.color = false;
+        return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, changed_settings);
+    });
 }
 
 }

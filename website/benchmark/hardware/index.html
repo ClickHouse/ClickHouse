@@ -1,0 +1,83 @@
+{% extends 'templates/base.html' %}
+
+{% set title = 'Performance comparison of ClickHouse on various hardware' %}
+{% set extra_js = [
+    'queries.js?' + rev_short,
+    'results.js?' + rev_short,
+    '../benchmark.js?' + rev_short]
+%}
+{% set url = 'https://clickhouse.tech/benchmark/hardware/' %}
+{% set no_footer = True %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+<div class="row mb-3">
+    <div class="col">
+        <a href="/" title="Main page" class="float-left mr-3">
+            <img src="/images/logo.svg" alt="ClickHouse" />
+        </a>
+        <h1>{{ title }}</h1>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div id="selectors" class="col"></div>
+</div>
+
+<div class="row mb-3">
+    <div class="col">
+        <h3 class="my-3">Relative query processing time <span class="text-muted">(lower is better)</span></h3>
+        <div id="diagram"></div>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col">
+        <h3 class="my-3">Full results</h3>
+        <div id="comparison_table"></div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col">
+        <h3 class="my-3">Comments</h3>
+        <p>Submit your own results: <a href="https://clickhouse.tech/docs/en/operations/performance-test/">https://clickhouse.tech/docs/en/operations/performance-test/</a></p>
+        <p>
+Results for Lenovo B580 Laptop are from <b>Ragıp Ünal</b>. 16GB RAM 1600 GHz, 240GB SSD, Intel(R) Core(TM) i5-3210M CPU @ 2.50GHz (2 Core / 4 HT)<br/>
+Results for Time4vps.eu are from <b>Ragıp Ünal</b>.<br/>
+Results for Dell PowerEdge R640, R641 (in Hetzner) are from <b>Dmirty Titov</b>.<br/>
+Results for Dell PowerEdge R730 are from <b>Amos Bird</b>.<br/>
+Results for Dell R530 are from <b>Yuriy Zolkin</b>.<br/>
+Results for Xeon 2176G are from <b>Sergey Golod</b>.<br/>
+Results for Azure DS3v2 are from <b>Boris Granveaud</b>.<br/>
+Results for AWS are from <b>Wolf Kreuzerkrieg</b>.<br/>
+Results for Huawei Taishan are from <b>Peng Gao</b> in sina.com.<br/>
+Results for Huawei Taishan (2) are from <b>Kurmaev Roman</b> at Huawei.<br/>
+Results for Selectel and AMD EPYC 7402P are from <b>Andrey Dudin</b>.<br/>
+Results for ProLiant are from <b>Denis Ustinov</b>.<br/>
+Results for AMD EPYC 7502P 128GiB are from <b>Kostiantyn Velychkovskyi</b>.<br/>
+Results for AMD EPYC 7502P 512GiB are from <b>Sergey Zakharov</b>.<br/>
+Results for Pinebook Pro are from <b>Aleksey R. @kITerE</b>.<br/>
+Results for AMD Ryzen are from <b>Alexey Milovidov</b>. Firefox was running in background.<br/>
+Results for Azure E32s are from <b>Piotr Maśko</b>.<br/>
+Results for MacBook Pro are from <b>Denis Glazachev</b>. MacOS Catalina Version 10.15.4 (19E266). For "drop caches", the "Free Up RAM" in CleanMyMac is used.<br/>
+Results for AMD EPYC 7702 are from <b>Peng Gao</b> in sina.com.<br/>
+Results for Intel NUC are from <b>Alexander Zaitsev</b>, Altinity.<br/>
+Xeon Gold 6230 server is using 4 x SAMSUNG datacenter class SSD in RAID-10.<br/>
+Results for Yandex Managed ClickHouse for "cold cache" are biased and should not be compared, because cache was not flushed for every next query.<br/>
+Results for AWS Lightsail is from <b>Vamsi Krishna B.</b><br/>
+Results for Dell XPS laptop and Google Pixel phone is from <b>Alexander Kuzmenkov</b>.<br/>
+Results for Android phones for "cold cache" are done without cache flushing, so they are not "cold" and cannot be compared.<br/>
+Results for Digital Ocean are from <b>Zimin Aleksey</b>.<br/>
+Results for 2x EPYC 7642 w/ 512 GB RAM (192 Cores) + 12X 1TB SSD (RAID6) are from <b>Yiğit Konur</b> and <b>Metehan Çetinkaya</b> of seo.do.<br/>
+Results for Raspberry Pi and Digital Ocean CPU-optimized are from <b>Fritz Wijaya</b>.<br/>
+Results for Digitalocean (Storage-intesinve VMs) + (CPU/GP) are from <b>Yiğit Konur</b> and <b>Metehan Çetinkaya</b> of seo.do.<br/>
+Results for 2x AMD EPYC 7F72 3.2 Ghz (Total 96 Cores, IBM Cloud's Bare Metal Service) from <b>Yiğit Konur</b> and <b>Metehan Çetinkaya</b> of seo.do.<br/>
+Results for 2x AMD EPYC 7742 (128 physical cores, 1 TB DDR4-3200 RAM) from <b>Yedige Davletgaliyev</b> and <b>Nikita Zhavoronkov</b> of blockchair.com.<br/>
+Results for ASUS A15 (Ryzen laptop) are from <b>Kimmo Linna</b>.<br/>
+Results for MacBook Air M1 are from <b>Denis Glazachev</b>.<br/>
+</p>
+    </div>
+</div>
+{% endblock %}

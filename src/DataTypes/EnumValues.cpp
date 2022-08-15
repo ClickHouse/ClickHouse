@@ -1,7 +1,4 @@
 #include <DataTypes/EnumValues.h>
-#include <boost/algorithm/string.hpp>
-#include <base/sort.h>
-
 
 namespace DB
 {
@@ -20,7 +17,7 @@ EnumValues<T>::EnumValues(const Values & values_)
     if (values.empty())
         throw Exception{"DataTypeEnum enumeration cannot be empty", ErrorCodes::EMPTY_DATA_PASSED};
 
-    ::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
+    std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
     {
         return left.second < right.second;
     });
@@ -82,24 +79,6 @@ Names EnumValues<T>::getAllRegisteredNames() const
     Names result;
     for (const auto & value : values)
         result.emplace_back(value.first);
-    return result;
-}
-
-template <typename T>
-std::unordered_set<String> EnumValues<T>::getSetOfAllNames(bool to_lower) const
-{
-    std::unordered_set<String> result;
-    for (const auto & value : values)
-        result.insert(to_lower ? boost::algorithm::to_lower_copy(value.first) : value.first);
-    return result;
-}
-
-template <typename T>
-std::unordered_set<T> EnumValues<T>::getSetOfAllValues() const
-{
-    std::unordered_set<T> result;
-    for (const auto & value : values)
-        result.insert(value.second);
     return result;
 }
 

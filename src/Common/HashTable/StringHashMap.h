@@ -12,7 +12,7 @@ struct StringHashMapCell : public HashMapCell<Key, TMapped, StringHashTableHash,
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
     // external
-    StringRef getKey() const { return toStringRef(this->value.first); } /// NOLINT
+    const StringRef getKey() const { return toStringRef(this->value.first); }
     // internal
     static const Key & getKey(const value_type & value_) { return value_.first; }
 };
@@ -32,7 +32,7 @@ struct StringHashMapCell<StringKey16, TMapped> : public HashMapCell<StringKey16,
     void setZero() { this->value.first.items[1] = 0; }
 
     // external
-    StringRef getKey() const { return toStringRef(this->value.first); } /// NOLINT
+    const StringRef getKey() const { return toStringRef(this->value.first); }
     // internal
     static const StringKey16 & getKey(const value_type & value_) { return value_.first; }
 };
@@ -53,7 +53,7 @@ struct StringHashMapCell<StringKey24, TMapped> : public HashMapCell<StringKey24,
     void setZero() { this->value.first.c = 0; }
 
     // external
-    StringRef getKey() const { return toStringRef(this->value.first); } /// NOLINT
+    const StringRef getKey() const { return toStringRef(this->value.first); }
     // internal
     static const StringKey24 & getKey(const value_type & value_) { return value_.first; }
 };

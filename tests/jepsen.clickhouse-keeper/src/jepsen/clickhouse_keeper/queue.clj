@@ -11,7 +11,6 @@
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
-(def root-path "/queue")
 (defn enqueue   [val _ _] {:type :invoke, :f :enqueue :value val})
 (defn dequeue [_ _] {:type :invoke, :f :dequeue})
 
@@ -23,20 +22,18 @@
             :conn (zk-connect node 9181 30000))
      :nodename node))
 
-  (setup! [this test]
-    (exec-with-retries 30 (fn []
-      (zk-create-if-not-exists conn root-path ""))))
+  (setup! [this test])
 
   (invoke! [this test op]
     (case (:f op)
       :enqueue (try
                  (do
-                   (zk-create conn (concat-path root-path (:value op)) "")
+                   (zk-create-if-not-exists conn (str "/" (:value op)) "")
                    (assoc op :type :ok))
                  (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :dequeue
       (try
-        (let [result (zk-multi-delete-first-child conn root-path)]
+        (let [result (zk-multi-delete-first-child conn "/")]
           (if (not (nil? result))
             (assoc op :type :ok :value result)
             (assoc op :type :fail :value result)))
@@ -45,7 +42,7 @@
       ; drain via delete is to long, just list all nodes
       (exec-with-retries 30 (fn []
                               (zk-sync conn)
-                              (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn root-path))))))))
+                              (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn "/"))))))))
 
   (teardown! [_ test])
 
@@ -62,8 +59,7 @@
   {:client    (QueueClient. nil nil)
    :checker   (checker/compose
                {:total-queue (checker/total-queue)
-                :perf        (checker/perf)
-                :timeline    (timeline/html)})
+                :timeline (timeline/html)})
    :generator (->> (sorted-str-range 50000)
                    (map (fn [x]
                           (rand-nth [{:type :invoke, :f :enqueue :value x}
@@ -76,7 +72,6 @@
    :checker   (checker/compose
                {:linear   (checker/linearizable {:model     (model/unordered-queue)
                                                  :algorithm :linear})
-                :perf        (checker/perf)
                 :timeline (timeline/html)})
    :generator (->> (sorted-str-range 10000)
                    (map (fn [x]

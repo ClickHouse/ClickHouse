@@ -1,5 +1,5 @@
--- Tags: no-parallel
-
+DROP TABLE IF EXISTS dictdb.table_for_dict;
+DROP DICTIONARY IF EXISTS dictdb.dict_exists;
 DROP DATABASE IF EXISTS dictdb;
 
 CREATE DATABASE dictdb;
@@ -39,6 +39,6 @@ LAYOUT(FLAT());
 
 SELECT dictGetFloat64('dictdb.dict_exists', 'value', toUInt64(1));
 
-DROP DICTIONARY dictdb.dict_exists;
 DROP TABLE dictdb.table_for_dict;
+DROP DICTIONARY dictdb.dict_exists;
 DROP DATABASE dictdb;

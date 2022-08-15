@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
 

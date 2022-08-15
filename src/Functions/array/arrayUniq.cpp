@@ -39,8 +39,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
@@ -315,7 +313,7 @@ void FunctionArrayUniq::executeHashed(
 }
 
 
-REGISTER_FUNCTION(ArrayUniq)
+void registerFunctionArrayUniq(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayUniq>();
 }

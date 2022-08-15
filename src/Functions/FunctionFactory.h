@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Common/register_objects.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -41,10 +40,8 @@ public:
             registerFunction(name, &Function::create, case_sensitiveness);
     }
 
-    /// This function is used by YQL - innovative transactional DBMS that depends on ClickHouse by source code.
+    /// This function is used by YQL - internal Yandex product that depends on ClickHouse by source code.
     std::vector<std::string> getAllNames() const;
-
-    bool has(const std::string & name) const;
 
     /// Throws an exception if not found.
     FunctionOverloadResolverPtr get(const std::string & name, ContextPtr context) const;

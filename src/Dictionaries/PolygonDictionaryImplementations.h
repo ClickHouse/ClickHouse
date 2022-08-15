@@ -21,7 +21,8 @@ public:
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
-            Configuration configuration_);
+            InputType input_type_,
+            PointType point_type_);
 
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
@@ -43,7 +44,8 @@ public:
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
-            Configuration configuration_,
+            InputType input_type_,
+            PointType point_type_,
             int min_intersections_,
             int max_depth_);
 
@@ -71,7 +73,8 @@ public:
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
-            Configuration configuration_,
+            InputType input_type_,
+            PointType point_type_,
             size_t min_intersections_,
             size_t max_depth_);
 

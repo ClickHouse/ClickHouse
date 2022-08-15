@@ -1,6 +1,6 @@
 ---
-sidebar_position: 46
-sidebar_label: "常见问题"
+toc_priority: 46
+toc_title: "常见问题"
 ---
 
 # 常见问题 {#troubleshooting}
@@ -26,7 +26,7 @@ sidebar_label: "常见问题"
 
 ### 服务器未运行 {#server-is-not-running}
 
-**检查服务器是否正在运行**
+**检查服务器是否运行nnig**
 
 命令:
 

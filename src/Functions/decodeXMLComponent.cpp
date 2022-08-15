@@ -3,7 +3,7 @@
 #include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -231,7 +231,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(DecodeXMLComponent)
+void registerFunctionDecodeXMLComponent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDecodeXMLComponent>();
 }

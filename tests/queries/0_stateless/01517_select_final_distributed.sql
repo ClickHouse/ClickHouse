@@ -1,7 +1,3 @@
--- Tags: distributed
-
-SET allow_experimental_parallel_reading_from_replicas = 0;
-
 DROP TABLE IF EXISTS test5346;
 
 CREATE TABLE test5346 (`Id` String, `Timestamp` DateTime, `updated` DateTime) 

@@ -2,18 +2,13 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/ReadProgressCallback.h>
+#include <Processors/QueryPipeline.h>
+
 #include <Common/setThreadName.h>
+#include <common/scope_guard_safe.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 struct PullingAsyncPipelineExecutor::Data
 {
@@ -36,18 +31,18 @@ struct PullingAsyncPipelineExecutor::Data
         if (has_exception)
         {
             has_exception = false;
-            std::rethrow_exception(exception);
+            std::rethrow_exception(std::move(exception));
         }
     }
 };
 
 PullingAsyncPipelineExecutor::PullingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
-    if (!pipeline.pulling())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PullingAsyncPipelineExecutor must be pulling");
-
-    lazy_format = std::make_shared<LazyOutputFormat>(pipeline.output->getHeader());
-    pipeline.complete(lazy_format);
+    if (!pipeline.isCompleted())
+    {
+        lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
+        pipeline.setOutputFormat(lazy_format);
+    }
 }
 
 PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
@@ -64,17 +59,23 @@ PullingAsyncPipelineExecutor::~PullingAsyncPipelineExecutor()
 
 const Block & PullingAsyncPipelineExecutor::getHeader() const
 {
-    return lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader();
+    return lazy_format ? lazy_format->getPort(IOutputFormat::PortKind::Main).getHeader()
+                       : pipeline.getHeader(); /// Empty.
 }
 
 static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    setThreadName("QueryPullPipeEx");
+    setThreadName("QueryPipelineEx");
 
     try
     {
         if (thread_group)
             CurrentThread::attachTo(thread_group);
+
+        SCOPE_EXIT_SAFE(
+            if (thread_group)
+                CurrentThread::detachQueryIfNotDetached();
+        );
 
         data.executor->execute(num_threads);
     }
@@ -98,8 +99,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (!data)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
-        data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+        data->executor = pipeline.execute();
         data->lazy_format = lazy_format.get();
 
         auto func = [&, thread_group = CurrentThread::getGroup()]()
@@ -112,8 +112,8 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     data->rethrowExceptionIfHas();
 
-    bool is_execution_finished
-        = !data->executor->checkTimeLimitSoft() || lazy_format ? lazy_format->isFinished() : data->is_finished.load();
+    bool is_execution_finished = lazy_format ? lazy_format->isFinished()
+                                             : data->is_finished.load();
 
     if (is_execution_finished)
     {
@@ -174,8 +174,9 @@ void PullingAsyncPipelineExecutor::cancel()
     if (data && !data->is_finished && data->executor)
         data->executor->cancel();
 
-    /// The following code is needed to rethrow exception from PipelineExecutor.
-    /// It could have been thrown from pull(), but we will not likely call it again.
+    /// Finish lazy format. Otherwise thread.join() may hung.
+    if (lazy_format && !lazy_format->isFinished())
+        lazy_format->finish();
 
     /// Join thread here to wait for possible exception.
     if (data && data->thread.joinable())
@@ -220,12 +221,12 @@ Block PullingAsyncPipelineExecutor::getExtremesBlock()
     return header.cloneWithColumns(extremes.detachColumns());
 }
 
-ProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
+BlockStreamProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
 {
     if (lazy_format)
         return lazy_format->getProfileInfo();
 
-    static ProfileInfo profile_info;
+    static BlockStreamProfileInfo profile_info;
     static std::once_flag flag;
     /// Calculate rows before limit here to avoid race.
     std::call_once(flag, []() { profile_info.getRowsBeforeLimit(); });

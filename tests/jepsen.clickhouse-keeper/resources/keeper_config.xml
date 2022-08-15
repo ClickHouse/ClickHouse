@@ -1,11 +1,10 @@
-<clickhouse>
+<yandex>
     <listen_host>::</listen_host>
 
     <logger>
         <level>trace</level>
         <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
         <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
-        <size>never</size>
     </logger>
 
     <keeper_server>
@@ -45,4 +44,4 @@
             </server>
         </raft_configuration>
     </keeper_server>
-</clickhouse>
+</yandex>

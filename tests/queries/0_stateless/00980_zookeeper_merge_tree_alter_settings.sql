@@ -1,6 +1,3 @@
--- Tags: zookeeper, no-replicated-database, no-parallel
--- Tag no-replicated-database: Unsupported type of ALTER query
-
 DROP TABLE IF EXISTS replicated_table_for_alter1;
 DROP TABLE IF EXISTS replicated_table_for_alter2;
 
@@ -108,8 +105,8 @@ ATTACH TABLE replicated_table_for_reset_setting1;
 SHOW CREATE TABLE replicated_table_for_reset_setting1;
 SHOW CREATE TABLE replicated_table_for_reset_setting2;
 
--- don't execute alter with incorrect setting
-ALTER TABLE replicated_table_for_reset_setting1 RESET SETTING check_delay_period, unknown_setting; -- { serverError 36 }
+-- ignore undefined setting
+ALTER TABLE replicated_table_for_reset_setting1 RESET SETTING check_delay_period, unknown_setting;
 ALTER TABLE replicated_table_for_reset_setting1 RESET SETTING merge_with_ttl_timeout;
 ALTER TABLE replicated_table_for_reset_setting2 RESET SETTING merge_with_ttl_timeout;
 

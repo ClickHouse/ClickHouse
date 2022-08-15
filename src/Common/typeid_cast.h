@@ -6,8 +6,9 @@
 #include <memory>
 #include <string>
 
+#include <common/shared_ptr_helper.h>
 #include <Common/Exception.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 
 
 namespace DB
@@ -24,8 +25,7 @@ namespace DB
   * In the rest, behaves like a dynamic_cast.
   */
 template <typename To, typename From>
-requires std::is_reference_v<To>
-To typeid_cast(From & from)
+std::enable_if_t<std::is_reference_v<To>, To> typeid_cast(From & from)
 {
     try
     {
@@ -43,8 +43,7 @@ To typeid_cast(From & from)
 
 
 template <typename To, typename From>
-requires std::is_pointer_v<To>
-To typeid_cast(From * from)
+std::enable_if_t<std::is_pointer_v<To>, To> typeid_cast(From * from)
 {
     try
     {
@@ -59,27 +58,9 @@ To typeid_cast(From * from)
     }
 }
 
-namespace detail
-{
-
-template <typename T>
-struct is_shared_ptr : std::false_type
-{
-};
-
-template <typename T>
-struct is_shared_ptr<std::shared_ptr<T>> : std::true_type
-{
-};
-
-template <typename T>
-inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
-
-}
 
 template <typename To, typename From>
-requires detail::is_shared_ptr_v<To>
-To typeid_cast(const std::shared_ptr<From> & from)
+std::enable_if_t<is_shared_ptr_v<To>, To> typeid_cast(const std::shared_ptr<From> & from)
 {
     try
     {

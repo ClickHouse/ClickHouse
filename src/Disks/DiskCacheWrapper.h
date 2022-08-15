@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include "DiskDecorator.h"
 #include "DiskLocal.h"
 
@@ -36,20 +36,20 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings &) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override;
     void removeSharedFile(const String & path, bool keep_s3) override;
-
-    void removeSharedRecursive(const String & path, bool keep_all, const NameSet & files_to_keep) override;
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all, const NameSet & files_to_keep) override;
+    void removeSharedRecursive(const String & path, bool keep_s3) override;
     void createHardLink(const String & src_path, const String & dst_path) override;
     ReservationPtr reserve(UInt64 bytes) override;
 

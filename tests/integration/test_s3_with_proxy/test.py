@@ -7,13 +7,10 @@ from helpers.cluster import ClickHouseCluster
 
 # Runs simple proxy resolver in python env container.
 def run_resolver(cluster):
-    container_id = cluster.get_container_id("resolver")
+    container_id = cluster.get_container_id('resolver')
     current_dir = os.path.dirname(__file__)
-    cluster.copy_file_to_container(
-        container_id,
-        os.path.join(current_dir, "proxy-resolver", "resolver.py"),
-        "resolver.py",
-    )
+    cluster.copy_file_to_container(container_id, os.path.join(current_dir, "proxy-resolver", "resolver.py"),
+                                   "resolver.py")
     cluster.exec_in_container(container_id, ["python", "resolver.py"], detach=True)
 
 
@@ -21,9 +18,9 @@ def run_resolver(cluster):
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance(
-            "node", main_configs=["configs/config.d/storage_conf.xml"], with_minio=True
-        )
+        cluster.add_instance("node",
+                             main_configs=["configs/config.d/storage_conf.xml"],
+                             with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -48,7 +45,9 @@ def check_proxy_logs(cluster, proxy_instance, http_methods={"POST", "PUT", "GET"
             assert False, "http method not found in logs"
 
 
-@pytest.mark.parametrize("policy", ["s3", "s3_with_resolver"])
+@pytest.mark.parametrize(
+    "policy", ["s3", "s3_with_resolver"]
+)
 def test_s3_with_proxy_list(cluster, policy):
     node = cluster.instances["node"]
 
@@ -60,16 +59,12 @@ def test_s3_with_proxy_list(cluster, policy):
         ) ENGINE=MergeTree()
         ORDER BY id
         SETTINGS storage_policy='{}'
-        """.format(
-            policy
-        )
+        """
+            .format(policy)
     )
 
     node.query("INSERT INTO s3_test VALUES (0,'data'),(1,'data')")
-    assert (
-        node.query("SELECT * FROM s3_test order by id FORMAT Values")
-        == "(0,'data'),(1,'data')"
-    )
+    assert node.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 

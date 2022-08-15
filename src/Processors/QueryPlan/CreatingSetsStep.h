@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <DataStreams/SizeLimits.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/PreparedSets.h>
 
 namespace DB
 {
@@ -21,14 +21,12 @@ public:
 
     String getName() const override { return "CreatingSet"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
 private:
-    void updateOutputStream() override;
-
     String description;
     SubqueryForSet subquery_for_set;
     SizeLimits network_transfer_limits;
@@ -41,7 +39,7 @@ public:
 
     String getName() const override { return "CreatingSets"; }
 
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+    QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -49,6 +47,10 @@ private:
     Processors processors;
 };
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
+void addCreatingSetsStep(
+    QueryPlan & query_plan,
+    SubqueriesForSets subqueries_for_sets,
+    const SizeLimits & limits,
+    ContextPtr context);
 
 }

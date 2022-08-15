@@ -1,5 +1,5 @@
 ---
-sidebar_position: 205
+toc_priority: 205
 ---
 
 # quantileTimingWeighted {#quantiletimingweighted}
@@ -38,18 +38,18 @@ quantileTimingWeighted(level)(expr, weight)
 
 В противном случае, результат вычисления округляется до ближайшего множителя числа 16.
 
-    :::note "Примечание"
+!!! note "Примечание"
     Для указанного типа последовательностей функция производительнее и точнее, чем [quantile](#quantile).
-    :::
+
 **Возвращаемое значение**
 
 -   Квантиль заданного уровня.
 
 Тип: `Float32`.
 
-    :::note "Примечания"
+!!! note "Примечания"
     Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../../sql-reference/statements/select/order-by.md#select-order-by).
-    :::
+
 **Пример**
 
 Входная таблица:

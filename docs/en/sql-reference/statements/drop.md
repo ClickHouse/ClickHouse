@@ -1,13 +1,13 @@
 ---
-sidebar_position: 44
-sidebar_label: DROP
+toc_priority: 44
+toc_title: DROP
 ---
 
-# DROP Statements
+# DROP Statements {#drop}
 
 Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist.
 
-## DROP DATABASE
+## DROP DATABASE {#drop-database}
 
 Deletes all tables inside the `db` database, then deletes the `db` database itself.
 
@@ -17,7 +17,7 @@ Syntax:
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
-## DROP TABLE
+## DROP TABLE {#drop-table}
 
 Deletes the table.
 
@@ -27,7 +27,7 @@ Syntax:
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## DROP DICTIONARY
+## DROP DICTIONARY {#drop-dictionary}
 
 Deletes the dictionary.
 
@@ -37,7 +37,7 @@ Syntax:
 DROP DICTIONARY [IF EXISTS] [db.]name
 ```
 
-## DROP USER
+## DROP USER {#drop-user-statement}
 
 Deletes a user.
 
@@ -47,7 +47,7 @@ Syntax:
 DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
-## DROP ROLE
+## DROP ROLE {#drop-role-statement}
 
 Deletes a role. The deleted role is revoked from all the entities where it was assigned.
 
@@ -57,7 +57,7 @@ Syntax:
 DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
-## DROP ROW POLICY
+## DROP ROW POLICY {#drop-row-policy-statement}
 
 Deletes a row policy. Deleted row policy is revoked from all the entities where it was assigned.
 
@@ -67,7 +67,7 @@ Syntax:
 DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
 ```
 
-## DROP QUOTA
+## DROP QUOTA {#drop-quota-statement}
 
 Deletes a quota. The deleted quota is revoked from all the entities where it was assigned.
 
@@ -77,7 +77,7 @@ Syntax:
 DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
-## DROP SETTINGS PROFILE
+## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
 
 Deletes a settings profile. The deleted settings profile is revoked from all the entities where it was assigned.
 
@@ -87,7 +87,7 @@ Syntax:
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
-## DROP VIEW
+## DROP VIEW {#drop-view}
 
 Deletes a view. Views can be deleted by a `DROP TABLE` command as well but `DROP VIEW` checks that `[db.]name` is a view.
 
@@ -97,20 +97,4 @@ Syntax:
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## DROP FUNCTION
-
-Deletes a user defined function created by [CREATE FUNCTION](./create/function.md).
-System functions can not be dropped.
-
-**Syntax**
-
-``` sql
-DROP FUNCTION [IF EXISTS] function_name [on CLUSTER cluster]
-```
-
-**Example**
-
-``` sql
-CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
-DROP FUNCTION linear_equation;
-```
+[Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/drop/) <!--hide-->

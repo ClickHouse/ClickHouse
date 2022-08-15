@@ -52,8 +52,6 @@ public:
         return return_type;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
@@ -117,7 +115,7 @@ using FunctionBuilderRandConstant = RandomConstantOverloadResolver<UInt32, NameR
 
 }
 
-REGISTER_FUNCTION(RandConstant)
+void registerFunctionRandConstant(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBuilderRandConstant>();
 }

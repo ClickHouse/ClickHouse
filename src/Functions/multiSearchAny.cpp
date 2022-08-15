@@ -14,11 +14,11 @@ struct NameMultiSearchAny
     static constexpr auto name = "multiSearchAny";
 };
 
-using FunctionMultiSearch = FunctionsMultiStringSearch<MultiSearchImpl<NameMultiSearchAny, PositionCaseSensitiveASCII>>;
+using FunctionMultiSearch = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseSensitiveASCII>, NameMultiSearchAny>;
 
 }
 
-REGISTER_FUNCTION(MultiSearchAny)
+void registerFunctionMultiSearchAny(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearch>();
 }

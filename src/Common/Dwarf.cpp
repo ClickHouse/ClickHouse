@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -19,11 +19,12 @@
 /** This file was edited for ClickHouse.
   */
 
-#include <cstring>
+#include <string.h>
 
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/Exception.h>
+
 
 #define DW_CHILDREN_no 0
 #define DW_FORM_addr 1
@@ -102,7 +103,7 @@ Dwarf::Dwarf(const std::shared_ptr<Elf> & elf) : elf_(elf)
     init();
 }
 
-Dwarf::Section::Section(std::string_view d) : is64_bit(false), data(d)
+Dwarf::Section::Section(std::string_view d) : is64Bit_(false), data_(d)
 {
 }
 
@@ -121,10 +122,9 @@ const uint32_t kMaxAbbreviationEntries = 1000;
 
 // Read (bitwise) one object of type T
 template <typename T>
-requires std::is_trivial_v<T> && std::is_standard_layout_v<T>
-T read(std::string_view & sp)
+std::enable_if_t<std::is_trivial_v<T> && std::is_standard_layout_v<T>, T> read(std::string_view & sp)
 {
-    SAFE_CHECK(sp.size() >= sizeof(T), fmt::format("underflow: expected bytes {}, got bytes {}", sizeof(T), sp.size()));
+    SAFE_CHECK(sp.size() >= sizeof(T), "underflow");
     T x;
     memcpy(&x, sp.data(), sizeof(T));
     sp.remove_prefix(sizeof(T));
@@ -343,7 +343,7 @@ void Dwarf::Path::toString(std::string & dest) const
 // Next chunk in section
 bool Dwarf::Section::next(std::string_view & chunk)
 {
-    chunk = data;
+    chunk = data_;
     if (chunk.empty())
         return false;
 
@@ -351,11 +351,11 @@ bool Dwarf::Section::next(std::string_view & chunk)
     // a 96-bit value (0xffffffff followed by the 64-bit length) for a 64-bit
     // section.
     auto initial_length = read<uint32_t>(chunk);
-    is64_bit = (initial_length == uint32_t(-1));
-    auto length = is64_bit ? read<uint64_t>(chunk) : initial_length;
+    is64Bit_ = (initial_length == uint32_t(-1));
+    auto length = is64Bit_ ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(length <= chunk.size(), "invalid DWARF section");
     chunk = std::string_view(chunk.data(), length);
-    data = std::string_view(chunk.end(), data.end() - chunk.end());
+    data_ = std::string_view(chunk.end(), data_.end() - chunk.end());
     return true;
 }
 
@@ -689,7 +689,7 @@ bool Dwarf::findDebugInfoOffset(uintptr_t address, std::string_view aranges, uin
 
 Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const
 {
-    SAFE_CHECK(offset < info_.size(), fmt::format("unexpected offset {}, info size {}", offset, info_.size()));
+    SAFE_CHECK(offset < info_.size(), "unexpected offset");
     Die die;
     std::string_view sp{info_.data() + offset, cu.offset + cu.size - offset};
     die.offset = offset;
@@ -705,6 +705,19 @@ Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) co
                                                                             : getAbbreviation(die.code, cu.abbrev_offset);
 
     return die;
+}
+
+Dwarf::Die Dwarf::findDefinitionDie(const CompilationUnit & cu, const Die & die) const
+{
+    // Find the real definition instead of declaration.
+    // DW_AT_specification: Incomplete, non-defining, or separate declaration
+    // corresponding to a declaration
+    auto offset = getAttribute<uint64_t>(cu, die, DW_AT_specification);
+    if (!offset)
+    {
+        return die;
+    }
+    return getDieAtOffset(cu, cu.offset + offset.value());
 }
 
 /**
@@ -825,7 +838,7 @@ bool Dwarf::findLocation(
 
                 // The next inlined subroutine's call file and call line is the current
                 // caller's location.
-                for (size_t i = 0; i < num_found - 1; ++i)
+                for (size_t i = 0; i < num_found - 1; i++)
                 {
                     call_locations[i].file = call_locations[i + 1].file;
                     call_locations[i].line = call_locations[i + 1].line;
@@ -847,10 +860,7 @@ bool Dwarf::findLocation(
                     SymbolizedFrame inline_frame;
                     inline_frame.found = true;
                     inline_frame.addr = address;
-                    if (!call_location.name.empty())
-                        inline_frame.name = call_location.name.data();
-                    else
-                        inline_frame.name = nullptr;
+                    inline_frame.name = call_location.name.data();
                     inline_frame.location.has_file_and_line = true;
                     inline_frame.location.file = call_location.file;
                     inline_frame.location.line = call_location.line;
@@ -1023,54 +1033,17 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         location.file = line_vm.getFullFileName(*call_file);
         location.line = *call_line;
 
-        /// Something wrong with receiving debug info about inline.
-        /// If set to true we stop parsing DWARF.
-        bool die_for_inline_broken = false;
-
         auto get_function_name = [&](const CompilationUnit & srcu, uint64_t die_offset)
         {
-            Die decl_die = getDieAtOffset(srcu, die_offset);
-            auto & die_to_look_for_name = decl_die;
-
-            Die def_die;
+            auto decl_die = getDieAtOffset(srcu, die_offset);
             // Jump to the actual function definition instead of declaration for name
             // and line info.
-            // DW_AT_specification: Incomplete, non-defining, or separate declaration
-            // corresponding to a declaration
-            auto offset = getAttribute<uint64_t>(srcu, decl_die, DW_AT_specification);
-            if (offset)
-            {
-                /// FIXME: actually it's a bug in our DWARF parser.
-                ///
-                /// Most of the times compilation unit offset (srcu.offset) is some big number inside .debug_info (like 434782255).
-                /// Offset of DIE definition is some small relative number to srcu.offset (like 3518).
-                /// However in some unknown cases offset looks like global, non relative number (like 434672579) and in this
-                /// case we obviously doing something wrong parsing DWARF.
-                ///
-                /// What is important -- this bug? reproduces only with -flto=thin in release mode.
-                /// Also llvm-dwarfdump --verify ./clickhouse says that our DWARF is ok, so it's another prove
-                /// that we just doing something wrong.
-                ///
-                /// FIXME: Currently we just give up parsing DWARF for inlines when we got into this situation.
-                if (srcu.offset + offset.value() >= info_.size())
-                {
-                    die_for_inline_broken = true;
-                }
-                else
-                {
-                    def_die = getDieAtOffset(srcu, srcu.offset + offset.value());
-                    die_to_look_for_name = def_die;
-                }
-            }
+            auto def_die = findDefinitionDie(srcu, decl_die);
 
             std::string_view name;
-
-            if (die_for_inline_broken)
-                return name;
-
             // The file and line will be set in the next inline subroutine based on
             // its DW_AT_call_file and DW_AT_call_line.
-            forEachAttribute(srcu, die_to_look_for_name, [&](const Attribute & attr)
+            forEachAttribute(srcu, def_die, [&](const Attribute & attr)
             {
                 switch (attr.spec.name)
                 {
@@ -1108,10 +1081,6 @@ void Dwarf::findInlinedSubroutineDieForAddress(
         location.name = (*abstract_origin_ref_type != DW_FORM_ref_addr)
             ? get_function_name(cu, cu.offset + *abstract_origin)
             : get_function_name(findCompilationUnit(info_, *abstract_origin), *abstract_origin);
-
-        /// FIXME: see comment above
-        if (die_for_inline_broken)
-            return false;
 
         locations.push_back(location);
 

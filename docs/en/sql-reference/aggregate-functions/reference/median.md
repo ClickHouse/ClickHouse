@@ -1,8 +1,8 @@
 ---
-sidebar_position: 212
+toc_priority: 212
 ---
 
-# median
+# median {#median}
 
 The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
 
@@ -34,7 +34,7 @@ Input table:
 Query:
 
 ``` sql
-SELECT medianDeterministic(val, 1) FROM t;
+SELECT medianDeterministic(val, 1) FROM t
 ```
 
 Result:

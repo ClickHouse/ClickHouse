@@ -11,7 +11,7 @@ using FunctionPow = FunctionMathBinaryFloat64<BinaryFunctionVectorized<PowName, 
 
 }
 
-REGISTER_FUNCTION(Pow)
+void registerFunctionPow(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPow>(FunctionFactory::CaseInsensitive);
     factory.registerAlias("power", "pow", FunctionFactory::CaseInsensitive);

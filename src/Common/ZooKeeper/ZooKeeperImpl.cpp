@@ -1,4 +1,3 @@
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -6,13 +5,13 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/logger_useful.h>
-#include <base/getThreadId.h>
+#include <common/logger_useful.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -33,7 +32,6 @@ namespace ProfileEvents
     extern const Event ZooKeeperSet;
     extern const Event ZooKeeperList;
     extern const Event ZooKeeperCheck;
-    extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
@@ -291,7 +289,7 @@ ZooKeeper::~ZooKeeper()
 {
     try
     {
-        finalize(false, false, "Destructor called");
+        finalize(false, false);
 
         if (send_thread.joinable())
             send_thread.join();
@@ -301,7 +299,7 @@ ZooKeeper::~ZooKeeper()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -313,15 +311,11 @@ ZooKeeper::ZooKeeper(
     const String & auth_data,
     Poco::Timespan session_timeout_,
     Poco::Timespan connection_timeout,
-    Poco::Timespan operation_timeout_,
-    std::shared_ptr<ZooKeeperLog> zk_log_)
+    Poco::Timespan operation_timeout_)
     : root_path(root_path_),
     session_timeout(session_timeout_),
     operation_timeout(std::min(operation_timeout_, session_timeout_))
 {
-    log = &Poco::Logger::get("ZooKeeperClient");
-    std::atomic_store(&zk_log, std::move(zk_log_));
-
     if (!root_path.empty())
     {
         if (root_path.back() == '/')
@@ -352,8 +346,6 @@ ZooKeeper::ZooKeeper(
 
     send_thread = ThreadFromGlobalPool([this] { sendThread(); });
     receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
-
-    initApiVersion();
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
@@ -392,7 +384,6 @@ void ZooKeeper::connect(
                 }
 
                 socket.connect(node.address, connection_timeout);
-                socket_address = socket.peerAddress();
 
                 socket.setReceiveTimeout(operation_timeout);
                 socket.setSendTimeout(operation_timeout);
@@ -455,10 +446,6 @@ void ZooKeeper::connect(
         message << fail_reasons.str() << "\n";
         throw Exception(message.str(), Error::ZCONNECTIONLOSS);
     }
-    else
-    {
-        LOG_TEST(log, "Connected to ZooKeeper at {} with session_id {}{}", socket.peerAddress().toString(), session_id, fail_reasons.str());
-    }
 }
 
 
@@ -495,15 +482,7 @@ void ZooKeeper::receiveHandshake()
 
     read(protocol_version_read);
     if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
-    {
-        /// Special way to tell a client that server is not ready to serve it.
-        /// It's better for faster failover than just connection drop.
-        /// Implemented in clickhouse-keeper.
-        if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
-            throw Exception("Keeper server rejected the connection during the handshake. Possibly it's overloaded, doesn't see leader or stale", Error::ZCONNECTIONLOSS);
-        else
-            throw Exception("Unexpected protocol version: " + DB::toString(protocol_version_read), Error::ZMARSHALLINGERROR);
-    }
+        throw Exception("Unexpected protocol version: " + DB::toString(protocol_version_read), Error::ZMARSHALLINGERROR);
 
     read(timeout);
     if (timeout != session_timeout.totalMilliseconds())
@@ -544,7 +523,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
             Error::ZMARSHALLINGERROR);
 
     if (err != Error::ZOK)
-        throw Exception("Error received in reply to auth request. Code: " + DB::toString(static_cast<int32_t>(err)) + ". Message: " + String(errorMessage(err)),
+        throw Exception("Error received in reply to auth request. Code: " + DB::toString(int32_t(err)) + ". Message: " + String(errorMessage(err)),
             Error::ZMARSHALLINGERROR);
 }
 
@@ -557,7 +536,7 @@ void ZooKeeper::sendThread()
 
     try
     {
-        while (!requests_queue.isFinished())
+        while (!requests_queue.isClosed())
         {
             auto prev_bytes_sent = out->count();
 
@@ -568,8 +547,8 @@ void ZooKeeper::sendThread()
             {
                 /// Wait for the next request in queue. No more than operation timeout. No more than until next heartbeat time.
                 UInt64 max_wait = std::min(
-                    static_cast<UInt64>(std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count()),
-                    static_cast<UInt64>(operation_timeout.totalMilliseconds()));
+                    UInt64(std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count()),
+                    UInt64(operation_timeout.totalMilliseconds()));
 
                 RequestInfo info;
                 if (requests_queue.tryPop(info, max_wait))
@@ -589,7 +568,7 @@ void ZooKeeper::sendThread()
                         info.request->has_watch = true;
                     }
 
-                    if (requests_queue.isFinished())
+                    if (requests_queue.isClosed())
                     {
                         break;
                     }
@@ -598,8 +577,6 @@ void ZooKeeper::sendThread()
 
                     info.request->probably_sent = true;
                     info.request->write(*out);
-
-                    logOperationIfNeeded(info.request);
 
                     /// We sent close request, exit
                     if (info.request->xid == CLOSE_XID)
@@ -621,8 +598,8 @@ void ZooKeeper::sendThread()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
-        finalize(true, false, "Exception in sendThread");
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        finalize(true, false);
     }
 }
 
@@ -634,7 +611,7 @@ void ZooKeeper::receiveThread()
     try
     {
         Int64 waited = 0;
-        while (!requests_queue.isFinished())
+        while (!requests_queue.isClosed())
         {
             auto prev_bytes_received = in->count();
 
@@ -657,7 +634,7 @@ void ZooKeeper::receiveThread()
 
             if (in->poll(max_wait))
             {
-                if (requests_queue.isFinished())
+                if (requests_queue.isClosed())
                     break;
 
                 receiveEvent();
@@ -680,8 +657,8 @@ void ZooKeeper::receiveThread()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
-        finalize(false, true, "Exception in receiveThread");
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        finalize(false, true);
     }
 }
 
@@ -701,7 +678,6 @@ void ZooKeeper::receiveEvent()
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
-    UInt64 elapsed_ms = 0;
 
     if (xid == PING_XID)
     {
@@ -762,17 +738,14 @@ void ZooKeeper::receiveEvent()
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
-        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
+        auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
     try
     {
         if (!response)
             response = request_info.request->makeResponse();
-
-        response->xid = xid;
-        response->zxid = zxid;
 
         if (err != Error::ZOK)
         {
@@ -812,12 +785,10 @@ void ZooKeeper::receiveEvent()
         int32_t actual_length = in->count() - count_before_event;
         if (length != actual_length)
             throw Exception("Response length doesn't match. Expected: " + DB::toString(length) + ", actual: " + DB::toString(actual_length), Error::ZMARSHALLINGERROR);
-
-        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);   //-V614
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
 
         /// Unrecoverable. Don't leave incorrect state in memory.
         if (!response)
@@ -831,13 +802,11 @@ void ZooKeeper::receiveEvent()
         {
             if (request_info.callback)
                 request_info.callback(*response);
-
-            logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
         }
         catch (...)
         {
             /// Throw initial exception, not exception from callback.
-            tryLogCurrentException(log);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
         throw;
@@ -850,22 +819,17 @@ void ZooKeeper::receiveEvent()
 }
 
 
-void ZooKeeper::finalize(bool error_send, bool error_receive, const String & reason)
+void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
     /// If some thread (send/receive) already finalizing session don't try to do it
-    bool already_started = finalization_started.test_and_set();
-
-    LOG_TEST(log, "Finalizing session {}: finalization_started={}, queue_finished={}, reason={}",
-             session_id, already_started, requests_queue.isFinished(), reason);
-
-    if (already_started)
+    if (finalization_started.exchange(true))
         return;
 
     auto expire_session_if_not_expired = [&]
     {
-        /// No new requests will appear in queue after finish()
-        bool was_already_finished = requests_queue.finish();
-        if (!was_already_finished)
+        /// No new requests will appear in queue after close()
+        bool was_already_closed = requests_queue.close();
+        if (!was_already_closed)
             active_session_metric_increment.destroy();
     };
 
@@ -883,7 +847,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
                 /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
                 expire_session_if_not_expired();
-                tryLogCurrentException(log);
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
             /// Send thread will exit after sending close request or on expired flag
@@ -902,7 +866,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         catch (...)
         {
             /// We must continue to execute all callbacks, because the user is waiting for them.
-            tryLogCurrentException(log);
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
         if (!error_receive && receive_thread.joinable())
@@ -914,25 +878,22 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             for (auto & op : operations)
             {
                 RequestInfo & request_info = op.second;
-                ZooKeeperResponsePtr response = request_info.request->makeResponse();
+                ResponsePtr response = request_info.request->makeResponse();
 
                 response->error = request_info.request->probably_sent
                     ? Error::ZCONNECTIONLOSS
                     : Error::ZSESSIONEXPIRED;
-                response->xid = request_info.request->xid;
-                UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
 
                 if (request_info.callback)
                 {
                     try
                     {
                         request_info.callback(*response);
-                        logOperationIfNeeded(request_info.request, response, true, elapsed_ms);
                     }
                     catch (...)
                     {
                         /// We must continue to all other callbacks, because the user is waiting for them.
-                        tryLogCurrentException(log);
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
                     }
                 }
             }
@@ -963,7 +924,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                         }
                         catch (...)
                         {
-                            tryLogCurrentException(log);
+                            tryLogCurrentException(__PRETTY_FUNCTION__);
                         }
                     }
                 }
@@ -979,20 +940,17 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         {
             if (info.callback)
             {
-                ZooKeeperResponsePtr response = info.request->makeResponse();
+                ResponsePtr response = info.request->makeResponse();
                 if (response)
                 {
                     response->error = Error::ZSESSIONEXPIRED;
-                    response->xid = info.request->xid;
                     try
                     {
                         info.callback(*response);
-                        UInt64 elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - info.time).count();
-                        logOperationIfNeeded(info.request, response, true, elapsed_ms);
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log);
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
                     }
                 }
             }
@@ -1008,14 +966,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log);
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             }
         }
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -1025,11 +983,6 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     try
     {
         info.time = clock::now();
-        if (zk_log)
-        {
-            info.request->thread_id = getThreadId();
-            info.request->query_id = String(CurrentThread::getQueryId());
-        }
 
         if (!info.request->xid)
         {
@@ -1038,68 +991,26 @@ void ZooKeeper::pushRequest(RequestInfo && info)
                 throw Exception("xid equal to close_xid", Error::ZSESSIONEXPIRED);
             if (info.request->xid < 0)
                 throw Exception("XID overflow", Error::ZSESSIONEXPIRED);
-
-            if (auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(info.request.get()))
-            {
-                for (auto & request : multi_request->requests)
-                    dynamic_cast<ZooKeeperRequest &>(*request).xid = multi_request->xid;
-            }
         }
+
+        if (requests_queue.isClosed())
+            throw Exception("Session expired", Error::ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
         {
-            if (requests_queue.isFinished())
+            if (requests_queue.isClosed())
                 throw Exception("Session expired", Error::ZSESSIONEXPIRED);
-
             throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
         }
     }
     catch (...)
     {
-        finalize(false, false, getCurrentExceptionMessage(false, false, false));
+        finalize(false, false);
         throw;
     }
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 }
-
-KeeperApiVersion ZooKeeper::getApiVersion()
-{
-    return keeper_api_version;
-}
-
-void ZooKeeper::initApiVersion()
-{
-    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::GetResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    get(keeper_api_version_path, std::move(callback), {});
-    if (future.wait_for(std::chrono::milliseconds(operation_timeout.totalMilliseconds())) != std::future_status::ready)
-    {
-        LOG_TRACE(log, "Failed to get API version: timeout");
-        return;
-    }
-
-    auto response = future.get();
-
-    if (response.error != Coordination::Error::ZOK)
-    {
-        LOG_TRACE(log, "Failed to get API version");
-        return;
-    }
-
-    uint8_t keeper_version{0};
-    DB::ReadBufferFromOwnString buf(response.data);
-    DB::readIntText(keeper_version, buf);
-    keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
-    LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
-}
-
 
 void ZooKeeper::executeGenericRequest(
     const ZooKeeperRequestPtr & request,
@@ -1212,31 +1123,16 @@ void ZooKeeper::set(
 
 void ZooKeeper::list(
     const String & path,
-    ListRequestType list_request_type,
     ListCallback callback,
     WatchCallback watch)
 {
-    std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-    if (keeper_api_version < Coordination::KeeperApiVersion::WITH_FILTERED_LIST)
-    {
-        if (list_request_type != ListRequestType::ALL)
-            throw Exception("Filtered list request type cannot be used because it's not supported by the server", Error::ZBADARGUMENTS);
-
-        request = std::make_shared<ZooKeeperListRequest>();
-    }
-    else
-    {
-        auto filtered_list_request = std::make_shared<ZooKeeperFilteredListRequest>();
-        filtered_list_request->list_request_type = list_request_type;
-        request = std::move(filtered_list_request);
-    }
-
-    request->path = path;
+    ZooKeeperListRequest request;
+    request.path = path;
 
     RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
     request_info.watch = watch;
-    request_info.request = std::move(request);
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperList);
@@ -1258,21 +1154,6 @@ void ZooKeeper::check(
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
-}
-
-void ZooKeeper::sync(
-     const String & path,
-     SyncCallback callback)
-{
-    ZooKeeperSyncRequest request;
-    request.path = path;
-
-    RequestInfo request_info;
-    request_info.request = std::make_shared<ZooKeeperSyncRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SyncResponse &>(response)); };
-
-    pushRequest(std::move(request_info));
-    ProfileEvents::increment(ProfileEvents::ZooKeeperSync);
 }
 
 
@@ -1304,65 +1185,5 @@ void ZooKeeper::close()
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
 }
-
-
-void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-{
-    /// logOperationIfNeeded(...) uses zk_log and can be called from different threads, so we have to use atomic shared_ptr
-    std::atomic_store(&zk_log, std::move(zk_log_));
-}
-
-#ifdef ZOOKEEPER_LOG
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_ms)
-{
-    auto maybe_zk_log = std::atomic_load(&zk_log);
-    if (!maybe_zk_log)
-        return;
-
-    ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
-    LogElements elems;
-    if (request)
-    {
-        request->createLogElements(elems);
-        log_type = ZooKeeperLogElement::REQUEST;
-    }
-    else
-    {
-        assert(response);
-        assert(response->xid == PING_XID || response->xid == WATCH_XID);
-        elems.emplace_back();
-    }
-
-    if (response)
-    {
-        response->fillLogElements(elems, 0);
-        log_type = ZooKeeperLogElement::RESPONSE;
-    }
-
-    if (finalize)
-        log_type = ZooKeeperLogElement::FINALIZE;
-
-    for (auto & elem : elems)
-    {
-        elem.type = log_type;
-        elem.event_time = event_time;
-        elem.address = socket_address;
-        elem.session_id = session_id;
-        elem.duration_ms = elapsed_ms;
-        if (request)
-        {
-            elem.thread_id = request->thread_id;
-            elem.query_id = request->query_id;
-        }
-        maybe_zk_log->add(elem);
-    }
-}
-#else
-void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeeperResponsePtr &, bool, UInt64)
-{}
-#endif
 
 }

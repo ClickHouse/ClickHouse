@@ -1,16 +1,15 @@
 #include "HTTPDictionarySource.h"
-#include <Formats/formatBlock.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Interpreters/Context.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
@@ -32,7 +31,8 @@ HTTPDictionarySource::HTTPDictionarySource(
     const Configuration & configuration_,
     const Poco::Net::HTTPBasicCredentials & credentials_,
     Block & sample_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool created_from_ddl)
     : log(&Poco::Logger::get("HTTPDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)
@@ -41,6 +41,9 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
+    if (created_from_ddl)
+        context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
+
     credentials.setUsername(credentials_.getUsername());
     credentials.setPassword(credentials_.getPassword());
 }
@@ -58,15 +61,14 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     credentials.setPassword(other.credentials.getPassword());
 }
 
-QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
+BlockInputStreamPtr HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
 {
     Poco::URI uri(configuration.url);
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
     auto in_ptr_wrapped
         = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
-    auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
-    source->addBuffer(std::move(in_ptr_wrapped));
-    return QueryPipeline(std::move(source));
+    auto input_stream = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
+    return std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(in_ptr_wrapped));
 }
 
 void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
@@ -86,7 +88,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-QueryPipeline HTTPDictionarySource::loadAll()
+BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
     Poco::URI uri(configuration.url);
@@ -95,18 +97,15 @@ QueryPipeline HTTPDictionarySource::loadAll()
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
         timeouts,
-        credentials,
         0,
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
-        context->getReadSettings(),
-        configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
-        nullptr, false);
+        configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-QueryPipeline HTTPDictionarySource::loadUpdatedAll()
+BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -116,18 +115,15 @@ QueryPipeline HTTPDictionarySource::loadUpdatedAll()
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
         timeouts,
-        credentials,
         0,
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
-        context->getReadSettings(),
-        configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
-        nullptr, false);
+        configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -136,8 +132,8 @@ QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
-        formatBlock(output_format, block);
+        auto output_stream = context->getOutputStreamParallelIfPossible(configuration.format, out_buffer, sample_block);
+        formatBlock(output_stream, block);
     };
 
     Poco::URI uri(configuration.url);
@@ -146,18 +142,15 @@ QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
         Poco::Net::HTTPRequest::HTTP_POST,
         out_stream_callback,
         timeouts,
-        credentials,
         0,
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
-        context->getReadSettings(),
-        configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
-        nullptr, false);
+        configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
 
-QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -166,8 +159,8 @@ QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
-        formatBlock(output_format, block);
+        auto output_stream = context->getOutputStreamParallelIfPossible(configuration.format, out_buffer, sample_block);
+        formatBlock(output_stream, block);
     };
 
     Poco::URI uri(configuration.url);
@@ -176,13 +169,10 @@ QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const 
         Poco::Net::HTTPRequest::HTTP_POST,
         out_stream_callback,
         timeouts,
-        credentials,
         0,
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
-        context->getReadSettings(),
-        configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
-        nullptr, false);
+        configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -204,7 +194,7 @@ bool HTTPDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr HTTPDictionarySource::clone() const
 {
-    return std::make_shared<HTTPDictionarySource>(*this);
+    return std::make_unique<HTTPDictionarySource>(*this);
 }
 
 std::string HTTPDictionarySource::toString() const
@@ -219,90 +209,52 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
-                                   ContextPtr global_context,
+                                   ContextPtr context,
                                    const std::string & /* default_database */,
                                    bool created_from_ddl) -> DictionarySourcePtr {
         if (dict_struct.has_expressions)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `http` does not support attribute expressions");
 
-        auto settings_config_prefix = config_prefix + ".http";
+        auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+
+        const auto & settings_config_prefix = config_prefix + ".http";
+        const auto & credentials_prefix = settings_config_prefix + ".credentials";
+
         Poco::Net::HTTPBasicCredentials credentials;
+
+        if (config.has(credentials_prefix))
+        {
+            credentials.setUsername(config.getString(credentials_prefix + ".user", ""));
+            credentials.setPassword(config.getString(credentials_prefix + ".password", ""));
+        }
+
+        const auto & headers_prefix = settings_config_prefix + ".headers";
         ReadWriteBufferFromHTTP::HTTPHeaderEntries header_entries;
-        String url;
-        String endpoint;
-        String format;
 
-        auto named_collection = created_from_ddl
-                            ? getURLBasedDataSourceConfiguration(config, settings_config_prefix, global_context)
-                            : std::nullopt;
-        if (named_collection)
+        if (config.has(headers_prefix))
         {
-            url = named_collection->configuration.url;
-            endpoint = named_collection->configuration.endpoint;
-            format = named_collection->configuration.format;
+            Poco::Util::AbstractConfiguration::Keys config_keys;
+            config.keys(headers_prefix, config_keys);
 
-            credentials.setUsername(named_collection->configuration.user);
-            credentials.setPassword(named_collection->configuration.password);
-
-            header_entries.reserve(named_collection->configuration.headers.size());
-            for (const auto & header : named_collection->configuration.headers)
-                header_entries.emplace_back(std::make_tuple(header.first, header.second.get<String>()));
-        }
-        else
-        {
-            const auto & credentials_prefix = settings_config_prefix + ".credentials";
-
-            if (config.has(credentials_prefix))
+            header_entries.reserve(config_keys.size());
+            for (const auto & key : config_keys)
             {
-                credentials.setUsername(config.getString(credentials_prefix + ".user", ""));
-                credentials.setPassword(config.getString(credentials_prefix + ".password", ""));
+                const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
+                const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
+                header_entries.emplace_back(std::make_tuple(header_key, header_value));
             }
-
-            const auto & headers_prefix = settings_config_prefix + ".headers";
-
-
-            if (config.has(headers_prefix))
-            {
-                Poco::Util::AbstractConfiguration::Keys config_keys;
-                config.keys(headers_prefix, config_keys);
-
-                header_entries.reserve(config_keys.size());
-                for (const auto & key : config_keys)
-                {
-                    const auto header_key = config.getString(headers_prefix + "." + key + ".name", "");
-                    const auto header_value = config.getString(headers_prefix + "." + key + ".value", "");
-                    header_entries.emplace_back(std::make_tuple(header_key, header_value));
-                }
-            }
-
-            url = config.getString(settings_config_prefix + ".url", "");
-            endpoint = config.getString(settings_config_prefix + ".endpoint", "");
-            format =config.getString(settings_config_prefix + ".format", "");
         }
-
-        if (url.ends_with('/'))
-        {
-            if (endpoint.starts_with('/'))
-                url.pop_back();
-        }
-        else if (!endpoint.empty() && !endpoint.starts_with('/'))
-            url.push_back('/');
 
         auto configuration = HTTPDictionarySource::Configuration
         {
-            .url = url + endpoint,
-            .format = format,
+            .url = config.getString(settings_config_prefix + ".url", ""),
+            .format =config.getString(settings_config_prefix + ".format", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries) //-V1030
+            .header_entries = std::move(header_entries)
         };
 
-        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-
-        if (created_from_ddl)
-            context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
-
-        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
+        return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context_local_copy, created_from_ddl);
     };
     factory.registerSource("http", create_table_source);
 }

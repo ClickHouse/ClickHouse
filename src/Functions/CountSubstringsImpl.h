@@ -19,28 +19,25 @@ namespace ErrorCodes
 /// NOTE: Intersecting substrings in haystack accounted only once, i.e.:
 ///
 ///     countSubstrings('aaaa', 'aa') == 2
-template <typename Name, typename Impl>
+template <typename Impl>
 struct CountSubstringsImpl
 {
     static constexpr bool use_default_implementation_for_constants = false;
     static constexpr bool supports_start_pos = true;
-    static constexpr auto name = Name::name;
-
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {};}
 
     using ResultType = UInt64;
 
     /// Count occurrences of one substring in many strings.
     static void vectorConstant(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
         const std::string & needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res)
     {
-        const UInt8 * const begin = haystack_data.data();
-        const UInt8 * const end = haystack_data.data() + haystack_data.size();
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
 
         /// FIXME: suboptimal
         memset(&res[0], 0, res.size() * sizeof(res[0]));
@@ -54,15 +51,15 @@ struct CountSubstringsImpl
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
             /// Determine which index it refers to.
-            while (begin + haystack_offsets[i] <= pos)
+            while (begin + offsets[i] <= pos)
                 ++i;
 
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() < begin + offsets[i])
             {
-                auto res_pos = needle.size() + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
+                auto res_pos = needle.size() + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos >= start)
                 {
                     ++res[i];
@@ -71,27 +68,27 @@ struct CountSubstringsImpl
                 pos += needle.size();
                 continue;
             }
-            pos = begin + haystack_offsets[i];
+            pos = begin + offsets[i];
             ++i;
         }
     }
 
     /// Count number of occurrences of substring in string.
     static void constantConstantScalar(
-        std::string haystack,
+        std::string data,
         std::string needle,
         UInt64 start_pos,
         UInt64 & res)
     {
         res = 0;
 
-        if (needle.empty())
+        if (needle.size() == 0)
             return;
 
         auto start = std::max(start_pos, UInt64(1));
-        size_t start_byte = Impl::advancePos(haystack.data(), haystack.data() + haystack.size(), start - 1) - haystack.data();
+        size_t start_byte = Impl::advancePos(data.data(), data.data() + data.size(), start - 1) - data.data();
         size_t new_start_byte;
-        while ((new_start_byte = haystack.find(needle, start_byte)) != std::string::npos)
+        while ((new_start_byte = data.find(needle, start_byte)) != std::string::npos)
         {
             ++res;
             /// Intersecting substrings in haystack accounted only once
@@ -101,21 +98,21 @@ struct CountSubstringsImpl
 
     /// Count number of occurrences of substring in string starting from different positions.
     static void constantConstant(
-        std::string haystack,
+        std::string data,
         std::string needle,
         const ColumnPtr & start_pos,
         PaddedPODArray<UInt64> & res)
     {
-        Impl::toLowerIfNeed(haystack);
+        Impl::toLowerIfNeed(data);
         Impl::toLowerIfNeed(needle);
 
         if (start_pos == nullptr)
         {
-            constantConstantScalar(haystack, needle, 0, res[0]);
+            constantConstantScalar(data, needle, 0, res[0]);
             return;
         }
 
-        size_t haystack_size = Impl::countChars(haystack.data(), haystack.data() + haystack.size());
+        size_t haystack_size = Impl::countChars(data.data(), data.data() + data.size());
 
         size_t size = start_pos != nullptr ? start_pos->size() : 0;
         for (size_t i = 0; i < size; ++i)
@@ -127,7 +124,7 @@ struct CountSubstringsImpl
                 res[i] = 0;
                 continue;
             }
-            constantConstantScalar(haystack, needle, start, res[i]);
+            constantConstantScalar(data, needle, start, res[i]);
         }
     }
 
@@ -228,13 +225,7 @@ struct CountSubstringsImpl
     template <typename... Args>
     static void vectorFixedConstant(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
-    }
-
-    template <typename... Args>
-    static void vectorFixedVector(Args &&...)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
+        throw Exception("Functions 'position' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

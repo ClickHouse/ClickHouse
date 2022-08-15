@@ -1,9 +1,8 @@
 DROP TABLE IF EXISTS select_final;
 
 SET do_not_merge_across_partitions_select_final = 1;
-SET max_threads = 0;
 
-CREATE TABLE select_final (t DateTime, x Int32, string String) ENGINE = ReplacingMergeTree() PARTITION BY toYYYYMM(t) ORDER BY (x, t);
+CREATE TABLE select_final (t DateTime, x Int32, string String) ENGINE = ReplacingMergeTree() PARTITION BY toYYYYMM(t) ORDER BY (x, t); 
 
 INSERT INTO select_final SELECT toDate('2000-01-01'), number, '' FROM numbers(2);
 INSERT INTO select_final SELECT toDate('2000-01-01'), number + 1, '' FROM numbers(2);
@@ -11,7 +10,8 @@ INSERT INTO select_final SELECT toDate('2000-01-01'), number + 1, '' FROM number
 INSERT INTO select_final SELECT toDate('2020-01-01'), number, '' FROM numbers(2);
 INSERT INTO select_final SELECT toDate('2020-01-01'), number + 1, '' FROM numbers(2);
 
-SELECT * FROM select_final FINAL ORDER BY x, t;
+
+SELECT * FROM select_final FINAL ORDER BY x;
 
 TRUNCATE TABLE select_final;
 
@@ -30,9 +30,6 @@ TRUNCATE TABLE select_final;
 INSERT INTO select_final SELECT toDate('2000-01-01'), number, '' FROM numbers(500000);
 
 OPTIMIZE TABLE select_final FINAL;
-
-SET remote_filesystem_read_method = 'read';
-SET local_filesystem_read_method = 'pread';
 
 SELECT max(x) FROM select_final FINAL;
 

@@ -1,9 +1,0 @@
-<?xml version="1.0"?>
-<clickhouse>
-    <profiles>
-        <default>
-          <max_replicated_fetches_network_bandwidth_for_server>5242880</max_replicated_fetches_network_bandwidth_for_server>
-          <max_replicated_sends_network_bandwidth_for_server>10485760</max_replicated_sends_network_bandwidth_for_server>
-        </default>
-    </profiles>
-</clickhouse>

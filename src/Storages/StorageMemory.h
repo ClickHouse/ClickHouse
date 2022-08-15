@@ -4,49 +4,35 @@
 #include <optional>
 #include <mutex>
 
+#include <common/shared_ptr_helper.h>
+
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/MultiVersion.h>
 
 namespace DB
 {
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
 
 /** Implements storage in the RAM.
   * Suitable for temporary data.
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public IStorage
+class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class MemorySink;
+friend class MemoryBlockOutputStream;
+friend struct shared_ptr_helper<StorageMemory>;
 
 public:
-    StorageMemory(
-        const StorageID & table_id_,
-        ColumnsDescription columns_description_,
-        ConstraintsDescription constraints_,
-        const String & comment,
-        bool compress_ = false);
-
     String getName() const override { return "Memory"; }
 
     size_t getSize() const { return data.get()->size(); }
 
-    /// Snapshot for StorageMemory contains current set of blocks
-    /// at the moment of the start of query.
-    struct SnapshotData : public StorageSnapshot::Data
-    {
-        std::shared_ptr<const Blocks> blocks;
-    };
-
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
-
     Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
@@ -55,14 +41,13 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void drop() override;
 
@@ -70,9 +55,6 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
-
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -115,9 +97,6 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk);
-
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
     MultiVersion<Blocks> data;
@@ -130,6 +109,14 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     bool compress;
+
+protected:
+    StorageMemory(
+        const StorageID & table_id_,
+        ColumnsDescription columns_description_,
+        ConstraintsDescription constraints_,
+        const String & comment,
+        bool compress_ = false);
 };
 
 }

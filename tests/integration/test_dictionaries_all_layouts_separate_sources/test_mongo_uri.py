@@ -1,4 +1,4 @@
-import os
+import os 
 import math
 import pytest
 
@@ -24,17 +24,9 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    cluster = ClickHouseCluster(__file__)
+    cluster = ClickHouseCluster(__file__, name=test_name)
 
-    SOURCE = SourceMongoURI(
-        "MongoDB",
-        "localhost",
-        cluster.mongo_port,
-        cluster.mongo_host,
-        "27017",
-        "root",
-        "clickhouse",
-    )
+    SOURCE = SourceMongoURI("MongoDB", "localhost", cluster.mongo_port, cluster.mongo_host, "27017", "root", "clickhouse")
 
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
@@ -48,21 +40,15 @@ def setup_module(module):
     # Since that all .xml configs were created
 
     main_configs = []
-    main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))
-
+    main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
+    
     dictionaries = simple_tester.list_dictionaries()
 
-    node = cluster.add_instance(
-        "uri_node",
-        main_configs=main_configs,
-        dictionaries=dictionaries,
-        with_mongo=True,
-    )
+    node = cluster.add_instance('uri_node', main_configs=main_configs, dictionaries=dictionaries, with_mongo=True)
 
-
+    
 def teardown_module(module):
     simple_tester.cleanup()
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -77,7 +63,6 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
-
 
 # See comment in SourceMongoURI
 @pytest.mark.parametrize("layout_name", ["flat"])

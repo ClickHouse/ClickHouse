@@ -6,25 +6,8 @@ import os
 import time
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1",
-    main_configs=[
-        "configs/enable_secure_keeper.xml",
-        "configs/ssl_conf.xml",
-        "configs/dhparam.pem",
-        "configs/server.crt",
-        "configs/server.key",
-    ],
-)
-node2 = cluster.add_instance(
-    "node2",
-    main_configs=[
-        "configs/use_secure_keeper.xml",
-        "configs/ssl_conf.xml",
-        "configs/server.crt",
-        "configs/server.key",
-    ],
-)
+node1 = cluster.add_instance('node1', main_configs=['configs/enable_secure_keeper.xml', 'configs/ssl_conf.xml', "configs/dhparam.pem", "configs/server.crt", "configs/server.key"])
+node2 = cluster.add_instance('node2', main_configs=['configs/use_secure_keeper.xml', 'configs/ssl_conf.xml', "configs/server.crt", "configs/server.key"])
 
 
 @pytest.fixture(scope="module")

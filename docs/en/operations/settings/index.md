@@ -1,10 +1,10 @@
 ---
-sidebar_label: Settings
-sidebar_position: 51
-slug: /en/operations/settings/
+toc_folder_title: Settings
+toc_priority: 55
+toc_title: Introduction
 ---
 
-# Settings Overview
+# Settings {#session-settings-intro}
 
 There are multiple ways to make all the settings described in this section of documentation.
 
@@ -31,7 +31,7 @@ Settings that can only be made in the server config file are not covered in this
 
 ## Custom Settings {#custom_settings}
 
-In addition to the common [settings](../../operations/settings/settings.md), users can define custom settings.
+In addition to the common [settings](../../operations/settings/settings.md), users can define custom settings. 
 
 A custom setting name must begin with one of predefined prefixes. The list of these prefixes must be declared in the [custom_settings_prefixes](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) parameter in the server configuration file.
 
@@ -48,11 +48,11 @@ SET custom_a = 123;
 To get the current value of a custom setting use `getSetting()` function:
 
 ```sql
-SELECT getSetting('custom_a');
+SELECT getSetting('custom_a');    
 ```
 
 **See Also**
 
 -   [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)
 
-[Original article](https://clickhouse.com/docs/en/operations/settings/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->

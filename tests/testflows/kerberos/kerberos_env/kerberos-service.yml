@@ -1,0 +1,27 @@
+version: '2.3'
+
+services:
+    kerberos:
+        image: zvonand/docker-krb5-server:1.0.0
+        restart: always
+        expose:
+            - "88"
+            - "464"
+            - "749"
+        healthcheck:
+            test: echo 1
+            interval: 10s
+            timeout: 10s
+            retries: 3
+            start_period: 300s
+        environment:
+            KRB5_PASS: pwd
+            KRB5_REALM: EXAMPLE.COM
+            KRB5_KDC: localhost
+        volumes:
+            - "${CLICKHOUSE_TESTS_DIR}/configs/kerberos/etc/krb5kdc/kdc.conf:/etc/krb5kdc/kdc.conf"
+            - "${CLICKHOUSE_TESTS_DIR}/_instances/kerberos/krb5kdc/log/kdc.log:/usr/local/var/krb5kdc/kdc.log"
+            - "${CLICKHOUSE_TESTS_DIR}/_instances/kerberos/krb5kdc/log/kadmin.log:/usr/local/var/krb5kdc/kadmin.log"
+            - "${CLICKHOUSE_TESTS_DIR}/_instances/kerberos/var/log:/var/log"
+        security_opt:
+            - label:disable

@@ -10,7 +10,7 @@
 #include <functional>
 #include <tuple>
 #include <vector>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 
 #include <city.h>
 
@@ -333,7 +333,7 @@ struct MinHashImpl
     {
         void update(UInt64 hash, BytesRef ref, size_t limit)
         {
-            if (values.contains(hash))
+            if (values.count(hash))
                 return;
 
             values[hash] = ref;
@@ -373,8 +373,8 @@ struct MinHashImpl
         std::map<UInt64, BytesRef, Comp> values;
     };
 
-    using MaxHeap = Heap<std::less<>>;
-    using MinHeap = Heap<std::greater<>>;
+    using MaxHeap = Heap<std::less<size_t>>;
+    using MinHeap = Heap<std::greater<size_t>>;
 
     static ALWAYS_INLINE inline void ngramHashASCII(
         MinHeap & min_heap,
@@ -743,7 +743,7 @@ using FunctionWordShingleMinHashArgUTF8
 using FunctionWordShingleMinHashArgCaseInsensitiveUTF8
 = FunctionsStringHash<MinHashImpl<true, false, true>, NameWordShingleMinHashArgCaseInsensitiveUTF8, false, true>;
 
-REGISTER_FUNCTION(StringHash)
+void registerFunctionsStringHash(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNgramSimHash>();
     factory.registerFunction<FunctionNgramSimHashCaseInsensitive>();

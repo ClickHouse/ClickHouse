@@ -1,7 +1,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
-#include <Common/isValidUTF8.h>
+
+#include <cstring>
+
+#ifdef __SSE4_1__
+#    include <emmintrin.h>
+#    include <smmintrin.h>
+#    include <tmmintrin.h>
+#endif
 
 namespace DB
 {
@@ -64,8 +71,75 @@ SOFTWARE.
  * +--------------------+------------+-------------+------------+-------------+
  */
 
+    static inline UInt8 isValidUTF8Naive(const UInt8 * data, UInt64 len)
+    {
+        while (len)
+        {
+            int bytes;
+            const UInt8 byte1 = data[0];
+            /* 00..7F */
+            if (byte1 <= 0x7F)
+            {
+                bytes = 1;
+            }
+            /* C2..DF, 80..BF */
+            else if (len >= 2 && byte1 >= 0xC2 && byte1 <= 0xDF && static_cast<Int8>(data[1]) <= static_cast<Int8>(0xBF))
+            {
+                bytes = 2;
+            }
+            else if (len >= 3)
+            {
+                const UInt8 byte2 = data[1];
+                bool byte2_ok = static_cast<Int8>(byte2) <= static_cast<Int8>(0xBF);
+                bool byte3_ok = static_cast<Int8>(data[2]) <= static_cast<Int8>(0xBF);
+
+                if (byte2_ok && byte3_ok &&
+                    /* E0, A0..BF, 80..BF */
+                    ((byte1 == 0xE0 && byte2 >= 0xA0) ||
+                     /* E1..EC, 80..BF, 80..BF */
+                     (byte1 >= 0xE1 && byte1 <= 0xEC) ||
+                     /* ED, 80..9F, 80..BF */
+                     (byte1 == 0xED && byte2 <= 0x9F) ||
+                     /* EE..EF, 80..BF, 80..BF */
+                     (byte1 >= 0xEE && byte1 <= 0xEF)))
+                {
+                    bytes = 3;
+                }
+                else if (len >= 4)
+                {
+                    bool byte4_ok = static_cast<Int8>(data[3]) <= static_cast<Int8>(0xBF);
+                    if (byte2_ok && byte3_ok && byte4_ok &&
+                        /* F0, 90..BF, 80..BF, 80..BF */
+                        ((byte1 == 0xF0 && byte2 >= 0x90) ||
+                         /* F1..F3, 80..BF, 80..BF, 80..BF */
+                         (byte1 >= 0xF1 && byte1 <= 0xF3) ||
+                         /* F4, 80..8F, 80..BF, 80..BF */
+                         (byte1 == 0xF4 && byte2 <= 0x8F)))
+                    {
+                        bytes = 4;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+            len -= bytes;
+            data += bytes;
+        }
+        return true;
+    }
+
 #ifndef __SSE4_1__
-    static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return DB::UTF8::isValidUTF8(data, len); }
+    static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len) { return isValidUTF8Naive(data, len); }
 #else
     static inline UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
     {
@@ -256,7 +330,7 @@ struct NameIsValidUTF8
 };
 using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
 
-REGISTER_FUNCTION(IsValidUTF8)
+void registerFunctionIsValidUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionValidUTF8>();
 }

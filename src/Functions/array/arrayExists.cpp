@@ -1,8 +1,7 @@
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-
+#include <Columns/ColumnsNumber.h>
 #include "FunctionArrayMapped.h"
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -17,9 +16,6 @@ namespace ErrorCodes
   */
 struct ArrayExistsImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return true; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -87,7 +83,7 @@ struct ArrayExistsImpl
 struct NameArrayExists { static constexpr auto name = "arrayExists"; };
 using FunctionArrayExists = FunctionArrayMapped<ArrayExistsImpl, NameArrayExists>;
 
-REGISTER_FUNCTION(ArrayExists)
+void registerFunctionArrayExists(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayExists>();
 }

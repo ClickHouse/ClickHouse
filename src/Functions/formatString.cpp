@@ -5,7 +5,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <memory>
 #include <string>
@@ -37,31 +37,31 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     size_t getNumberOfArguments() const override { return 0; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() < 2)
+        if (arguments.empty())
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
-                getName(),
-                arguments.size());
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be at least 1",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (arguments.size() > FormatImpl::argument_threshold)
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
                 throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}",
-                    arg->getName(),
-                    arg_idx + 1,
-                    getName());
+                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return std::make_shared<DataTypeString>();
@@ -82,7 +82,7 @@ public:
         std::vector<const ColumnString::Chars *> data(arguments.size() - 1);
         std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
         std::vector<size_t> fixed_string_sizes(arguments.size() - 1);
-        std::vector<std::optional<String>> constant_strings(arguments.size() - 1);
+        std::vector<String> constant_strings(arguments.size() - 1);
 
         bool has_column_string = false;
         bool has_column_fixed_string = false;
@@ -135,7 +135,7 @@ using FunctionFormat = FormatFunction<NameFormat>;
 
 }
 
-REGISTER_FUNCTION(Format)
+void registerFunctionFormat(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormat>();
 }
