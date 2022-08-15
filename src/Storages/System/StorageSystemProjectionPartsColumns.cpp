@@ -100,14 +100,15 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         }
     }
 
-    /// Go through the list of parts.
+    /// Go through the list of projection parts.
     MergeTreeData::DataPartStateVector all_parts_state;
-    MergeTreeData::DataPartsVector all_parts;
-    all_parts = info.getParts(all_parts_state, has_state_column, true /* require_projection_parts */);
-    for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
+    for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
-        const auto & part = all_parts[part_number];
+        const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
+        chassert(parent_part);
+
         auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
         auto parent_columns_size = parent_part->getTotalColumnsSize();
@@ -210,9 +211,9 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(info.engine);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->volume->getDisk()->getName());
+                columns[res_index++]->insert(part->data_part_storage->getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getFullPath());
+                columns[res_index++]->insert(part->data_part_storage->getFullPath());
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);

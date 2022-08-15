@@ -9,11 +9,6 @@
 
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
-# Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
-# Intended for exploration of new compiler warnings that may be found useful.
-# Applies to clang only
-option (WEVERYTHING "Enable -Weverything option with some exceptions." ON)
-
 # Control maximum size of stack frames. It can be important if the code is run in fibers with small stack size.
 # Only in release build because debug has too large stack frames.
 if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE) AND (NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang"))
@@ -21,81 +16,34 @@ if ((NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") AND (NOT SANITIZE) AND (NOT CMAKE
 endif ()
 
 if (COMPILER_CLANG)
+    # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
+    # We want to get everything out of the compiler for code quality.
+    add_warning(everything)
     add_warning(pedantic)
-    no_warning(vla-extension)
     no_warning(zero-length-array)
-    no_warning(c11-extensions)
-    no_warning(unused-command-line-argument)
-
-    if (WEVERYTHING)
-        add_warning(everything)
-        no_warning(c++98-compat-pedantic)
-        no_warning(c++98-compat)
-        no_warning(c99-extensions)
-        no_warning(conversion)
-        no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
-        no_warning(deprecated-dynamic-exception-spec)
-        no_warning(disabled-macro-expansion)
-        no_warning(documentation-unknown-command)
-        no_warning(double-promotion)
-        no_warning(exit-time-destructors)
-        no_warning(float-equal)
-        no_warning(global-constructors)
-        no_warning(missing-prototypes)
-        no_warning(missing-variable-declarations)
-        no_warning(nested-anon-types)
-        no_warning(packed)
-        no_warning(padded)
-        no_warning(return-std-move-in-c++11) # clang 7+
-        no_warning(shift-sign-overflow)
-        no_warning(sign-conversion)
-        no_warning(switch-enum)
-        no_warning(undefined-func-template)
-        no_warning(unused-template)
-        no_warning(vla)
-        no_warning(weak-template-vtables)
-        no_warning(weak-vtables)
-
-        # TODO Enable conversion, sign-conversion, double-promotion warnings.
-    else ()
-        add_warning(comma)
-        add_warning(conditional-uninitialized)
-        add_warning(covered-switch-default)
-        add_warning(deprecated)
-        add_warning(embedded-directive)
-        add_warning(empty-init-stmt) # linux-only
-        add_warning(extra-semi-stmt) # linux-only
-        add_warning(extra-semi)
-        add_warning(gnu-case-range)
-        add_warning(inconsistent-missing-destructor-override)
-        add_warning(newline-eof)
-        add_warning(old-style-cast)
-        add_warning(range-loop-analysis)
-        add_warning(redundant-parens)
-        add_warning(reserved-id-macro)
-        add_warning(shadow-field)
-        add_warning(shadow-uncaptured-local)
-        add_warning(shadow)
-        add_warning(string-plus-int)
-        add_warning(undef)
-        add_warning(unreachable-code-return)
-        add_warning(unreachable-code)
-        add_warning(unused-exception-parameter)
-        add_warning(unused-macros)
-        add_warning(unused-member-function)
-        add_warning(unneeded-internal-declaration)
-        add_warning(implicit-int-float-conversion)
-        add_warning(no-delete-null-pointer-checks)
-        add_warning(anon-enum-enum-conversion)
-        add_warning(assign-enum)
-        add_warning(bitwise-op-parentheses)
-        add_warning(int-in-bool-context)
-        add_warning(sometimes-uninitialized)
-        add_warning(tautological-bitwise-compare)
-
-        # XXX: libstdc++ has some of these for 3way compare
-        add_warning(zero-as-null-pointer-constant)
-    endif ()
+    no_warning(c++98-compat-pedantic)
+    no_warning(c++98-compat)
+    no_warning(c++20-compat) # Use constinit in C++20 without warnings
+    no_warning(conversion)
+    no_warning(ctad-maybe-unsupported) # clang 9+, linux-only
+    no_warning(disabled-macro-expansion)
+    no_warning(documentation-unknown-command)
+    no_warning(double-promotion)
+    no_warning(exit-time-destructors)
+    no_warning(float-equal)
+    no_warning(global-constructors)
+    no_warning(missing-prototypes)
+    no_warning(missing-variable-declarations)
+    no_warning(padded)
+    no_warning(switch-enum)
+    no_warning(undefined-func-template)
+    no_warning(unused-template)
+    no_warning(vla)
+    no_warning(weak-template-vtables)
+    no_warning(weak-vtables)
+    no_warning(thread-safety-negative) # experimental flag, too many false positives
+    no_warning(enum-constexpr-conversion) # breaks magic-enum library in clang-16
+    # TODO Enable conversion, sign-conversion, double-promotion warnings.
 elseif (COMPILER_GCC)
     # Add compiler options only to c++ compiler
     function(add_cxx_compile_options option)

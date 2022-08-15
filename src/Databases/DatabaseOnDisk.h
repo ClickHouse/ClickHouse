@@ -43,7 +43,7 @@ public:
     void dropTable(
         ContextPtr context,
         const String & table_name,
-        bool no_delay) override;
+        bool sync) override;
 
     void renameTable(
         ContextPtr context,
@@ -70,7 +70,7 @@ public:
 
     /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
     void checkMetadataFilenameAvailability(const String & to_table_name) const override;
-    void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
+    void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name) const TSA_REQUIRES(mutex);
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
@@ -99,9 +99,6 @@ protected:
 
     const String metadata_path;
     const String data_path;
-
-    /// For alter settings.
-    std::mutex modify_settings_mutex;
 };
 
 }

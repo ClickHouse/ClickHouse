@@ -13,6 +13,7 @@
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
+#include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
@@ -148,6 +149,19 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                     function_builder = function_factory.get(function->name, context);
 
                 if (!function_builder->isInjective({}))
+                {
+                    ++i;
+                    continue;
+                }
+            }
+            /// don't optimise functions that shadow any of it's arguments, e.g.:
+            /// SELECT toString(dummy) as dummy FROM system.one GROUP BY dummy;
+            if (!function->alias.empty())
+            {
+                FunctionMaskingArgumentCheckVisitor::Data data{.alias=function->alias};
+                FunctionMaskingArgumentCheckVisitor(data).visit(function->arguments);
+
+                if (data.is_rejected)
                 {
                     ++i;
                     continue;
@@ -459,11 +473,26 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
     std::unordered_set<String> group_by_hashes;
     if (auto group_by = select_query->groupBy())
     {
-        for (auto & elem : group_by->children)
+        if (select_query->group_by_with_grouping_sets)
         {
-            auto hash = elem->getTreeHash();
-            String key = toString(hash.first) + '_' + toString(hash.second);
-            group_by_hashes.insert(key);
+            for (auto & set : group_by->children)
+            {
+                for (auto & elem : set->children)
+                {
+                    auto hash = elem->getTreeHash();
+                    String key = toString(hash.first) + '_' + toString(hash.second);
+                    group_by_hashes.insert(key);
+                }
+            }
+        }
+        else
+        {
+            for (auto & elem : group_by->children)
+            {
+                auto hash = elem->getTreeHash();
+                String key = toString(hash.first) + '_' + toString(hash.second);
+                group_by_hashes.insert(key);
+            }
         }
     }
 
@@ -659,6 +688,12 @@ void optimizeSumIfFunctions(ASTPtr & query)
     RewriteSumIfFunctionVisitor(data).visit(query);
 }
 
+void optimizeMultiIfToIf(ASTPtr & query)
+{
+    OptimizeMultiIfToIfVisitor::Data data;
+    OptimizeMultiIfToIfVisitor(data).visit(query);
+}
+
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
     RemoveInjectiveFunctionsVisitor::Data data(context);
@@ -801,6 +836,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     if (settings.optimize_normalize_count_variants)
         optimizeCountConstantAndSumOne(query);
+
+    if (settings.optimize_multiif_to_if)
+        optimizeMultiIfToIf(query);
 
     if (settings.optimize_rewrite_sum_if_to_count_if)
         optimizeSumIfFunctions(query);

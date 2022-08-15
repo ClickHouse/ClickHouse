@@ -66,6 +66,8 @@ export CLICKHOUSE_PORT_TCP_WITH_PROXY=${CLICKHOUSE_PORT_TCP_WITH_PROXY:=$(${CLIC
 export CLICKHOUSE_PORT_TCP_WITH_PROXY=${CLICKHOUSE_PORT_TCP_WITH_PROXY:="9010"}
 export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=$(${CLICKHOUSE_EXTRACT_CONFIG} --key=http_port 2>/dev/null)}
 export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:="8123"}
+export CLICKHOUSE_PORT_PROMTHEUS_PORT=${CLICKHOUSE_PORT_PROMTHEUS_PORT:=$(${CLICKHOUSE_EXTRACT_CONFIG} --key=prometheus.port 2>/dev/null)}
+export CLICKHOUSE_PORT_PROMTHEUS_PORT=${CLICKHOUSE_PORT_PROMTHEUS_PORT:="9988"}
 export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=https_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:="8443"}
 export CLICKHOUSE_PORT_HTTP_PROTO=${CLICKHOUSE_PORT_HTTP_PROTO:="http"}
@@ -97,6 +99,8 @@ then
   export CLICKHOUSE_URL="${CLICKHOUSE_URL}?${CLICKHOUSE_URL_PARAMS}"
   export CLICKHOUSE_URL_HTTPS="${CLICKHOUSE_URL_HTTPS}?${CLICKHOUSE_URL_PARAMS}"
 fi
+
+export CLICKHOUSE_URL_PROMETHEUS=${CLICKHOUSE_URL_PROMETHEUS:="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_PROMTHEUS_PORT}/metrics"}
 
 export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=$(${CLICKHOUSE_EXTRACT_CONFIG} --try --key=interserver_http_port 2>/dev/null)} 2>/dev/null
 export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:="9009"}
@@ -130,36 +134,22 @@ function clickhouse_client_removed_host_parameter()
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
-function clickhouse_client_timeout()
+function wait_for_queries_to_finish()
 {
-    local timeout=$1 && shift
-    timeout -s INT "$timeout" "$@"
-}
-# Helper function to stop the clickhouse-client after SIGINT properly.
-function clickhouse_client_loop_timeout()
-{
-    local timeout=$1 && shift
-
-    local cmd
-    cmd="$(printf '%q ' "$@")"
-
-    timeout -s INT "$timeout" bash -c "trap 'STOP_THE_LOOP=1' INT; while true; do [ ! -v STOP_THE_LOOP ] || break; $cmd; done"
-}
-# wait for queries to be finished
-function clickhouse_test_wait_queries()
-{
-    local timeout=${1:-"600"} && shift
-    local query_id="wait-$CLICKHOUSE_TEST_UNIQUE_NAME"
-    local query="SELECT count() FROM system.processes WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id != '$query_id'"
-    local i=0
-    (( timeout*=2 ))
-    while [[ "$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=$query_id" --data-binary "$query")" != "0" ]]; do
-        sleep 0.5
-
-        (( ++i ))
-        if [[ $i -gt $timeout ]]; then
-            echo "clickhouse_test_wait_queries: timeout exceeded"
-            exit 1
+    # Wait for all queries to finish (query may still be running if thread is killed by timeout)
+    num_tries=0
+    while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%'") -ne 0 ]]; do
+        sleep 0.5;
+        num_tries=$((num_tries+1))
+        if [ $num_tries -eq 20 ]; then
+            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query NOT LIKE '%system.processes%' FORMAT Vertical"
+            break
         fi
     done
+}
+
+function random_str()
+{
+    local n=$1 && shift
+    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }

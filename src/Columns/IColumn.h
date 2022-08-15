@@ -35,9 +35,6 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
-class SerializationInfo;
-using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
-
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
  * Used in sorting by tuples.
@@ -90,7 +87,7 @@ public:
     /// Creates column with the same type and specified size.
     /// If size is less current size, then data is cut.
     /// If size is greater, than default values are appended.
-    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName()); }
 
     /// Returns number of values in column.
     [[nodiscard]] virtual size_t size() const = 0;
@@ -444,8 +441,6 @@ public:
     /// @shift means how much rows to skip from the beginning of current column.
     /// Used to create full column from sparse.
     [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
-
-    [[nodiscard]] virtual SerializationInfoPtr getSerializationInfo() const;
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.

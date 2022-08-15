@@ -2,6 +2,7 @@
 
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
+#include <Common/TargetSpecific.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -84,8 +85,9 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    /// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.
-    static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
+        const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
         /** GCC 4.8.2 vectorizes a loop only if it is written in this form.
           * In this case, if you loop through the array index (the code will look simpler),
@@ -105,9 +107,30 @@ struct NumComparisonImpl
             ++b_pos;
             ++c_pos;
         }
+    }))
+
+    static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorVectorImplAVX2(a, b, c);
+            return;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorVectorImplSSE42(a, b, c);
+            return;
+        }
+#endif
+
+        vectorVectorImpl(a, b, c);
     }
 
-    static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+
+    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
+        const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
         size_t size = a.size();
         const A * __restrict a_pos = a.data();
@@ -120,6 +143,24 @@ struct NumComparisonImpl
             ++a_pos;
             ++c_pos;
         }
+    }))
+
+    static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorConstantImplAVX2(a, b, c);
+            return;
+        }
+        else if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorConstantImplSSE42(a, b, c);
+            return;
+        }
+#endif
+
+        vectorConstantImpl(a, b, c);
     }
 
     static void constantVector(A a, const ContainerB & b, PaddedPODArray<UInt8> & c)

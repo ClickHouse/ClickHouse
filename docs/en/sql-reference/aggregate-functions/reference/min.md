@@ -2,7 +2,7 @@
 sidebar_position: 2
 ---
 
-## min {#agg_function-min}
+## min
 
 Aggregate function that calculates the minimum across a group of values.
 

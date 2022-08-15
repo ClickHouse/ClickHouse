@@ -2,7 +2,8 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
-#include <Formats/JSONEachRowUtils.h>
+#include <Formats/JSONUtils.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -62,7 +63,7 @@ const String & JSONEachRowRowInputFormat::columnName(size_t i) const
     return getPort().getHeader().getByPosition(i).name;
 }
 
-inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
+inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
@@ -124,7 +125,7 @@ static inline void skipColonDelimeter(ReadBuffer & istr)
     skipWhitespaceIfAny(istr);
 }
 
-void JSONEachRowRowInputFormat::skipUnknownField(const StringRef & name_ref)
+void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 {
     if (!format_settings.skip_unknown_fields)
         throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
@@ -140,7 +141,7 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     seen_columns[index] = true;
     const auto & type = getPort().getHeader().getByPosition(index).type;
     const auto & serialization = serializations[index];
-    read_columns[index] = readFieldImpl(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
+    read_columns[index] = JSONUtils::readField(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
 }
 
 inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
@@ -306,17 +307,11 @@ void JSONEachRowRowInputFormat::readSuffix()
     assertEOF(*in);
 }
 
-JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings)
-    : IRowWithNamesSchemaReader(in_, format_settings.max_rows_to_read_for_schema_inference)
+JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings_)
+    : IRowWithNamesSchemaReader(in_, format_settings_)
     , json_strings(json_strings_)
 {
-    bool allow_bools_as_numbers = format_settings.json.read_bools_as_numbers;
-    setCommonTypeChecker([allow_bools_as_numbers](const DataTypePtr & first, const DataTypePtr & second)
-    {
-        return getCommonTypeForJSONFormats(first, second, allow_bools_as_numbers);
-    });
 }
-
 
 NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
 {
@@ -350,7 +345,12 @@ NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
         return {};
     }
 
-    return readRowAndGetNamesAndDataTypesForJSONEachRow(in, json_strings);
+    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, json_strings);
+}
+
+void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)
@@ -393,22 +393,27 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     {
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, true);
     });
+
+    factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
+    factory.markFormatSupportsSubsetOfColumns("JSONLines");
+    factory.markFormatSupportsSubsetOfColumns("NDJSON");
+    factory.markFormatSupportsSubsetOfColumns("JSONStringsEachRow");
 }
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("JSONLines", &fileSegmentationEngineJSONEachRow);
-    factory.registerFileSegmentationEngine("NDJSON", &fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONStringsEachRow", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONLines", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("NDJSON", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)
 {
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONLines", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-    factory.registerNonTrivialPrefixAndSuffixChecker("NDJSON", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONEachRow", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONStringsEachRow", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONLines", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("NDJSON", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 void registerJSONEachRowSchemaReader(FormatFactory & factory)

@@ -490,6 +490,47 @@ SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2);
 
 Возвращает сконвертированную из кодировки from в кодировку to строку s.
 
+## Base58Encode(plaintext), Base58Decode(encoded_text) {#base58}
+
+Принимает на вход строку или колонку строк и кодирует/раскодирует их с помощью схемы кодирования [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) с использованием стандартного алфавита Bitcoin.
+
+**Синтаксис**
+
+```sql
+encodeBase58(decoded)
+decodeBase58(encoded)
+```
+
+**Аргументы**
+
+- `decoded` — Колонка или строка типа [String](../../sql-reference/data-types/string.md).
+- `encoded` — Колонка или строка типа [String](../../sql-reference/data-types/string.md). Если входная строка не является корректным кодом для какой-либо другой строки, возникнет исключение `1001`.
+
+**Возвращаемое значение**
+
+-   Строка, содержащая раскодированный/закодированный первый аргумент.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример:**
+
+Запрос:
+
+``` sql
+SELECT encodeBase58('encode');
+SELECT decodeBase58('izCFiDUY');
+```
+
+Результат:
+```text
+┌─encodeBase58('encode', 'flickr')─┐
+│ SvyTHb1D                         │
+└──────────────────────────────────┘
+┌─decodeBase58('izCFiDUY', 'ripple')─┐
+│ decode                             │
+└────────────────────────────────────┘
+```
+
 ## base64Encode(s) {#base64encode}
 
 Производит кодирование строки s в base64-представление.

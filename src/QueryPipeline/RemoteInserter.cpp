@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -47,10 +48,27 @@ RemoteInserter::RemoteInserter(
         }
     }
 
+    Settings settings = settings_;
+    /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
+    ///
+    /// RemoteInserter send Data blocks/packets to the remote shard,
+    /// while remote side can send Log packets to the initiator (this RemoteInserter instance).
+    ///
+    /// But it is not enough to pull Log packets just before writing the next block
+    /// since there is no way to ensure that all Log packets had been consumed.
+    ///
+    /// And if enough Log packets will be queued by the remote side,
+    /// it will wait send_timeout until initiator will consume those packets,
+    /// while initiator already starts writing Data blocks,
+    /// and will not consume Log packets.
+    ///
+    /// So that is why send_logs_level had been disabled here.
+    settings.send_logs_level = "none";
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings_, &modified_client_info, false, {});
+    connection.sendQuery(
+        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, {});
 
     while (true)
     {

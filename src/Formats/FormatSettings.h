@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/Defines.h>
 #include <base/types.h>
 
 
@@ -36,7 +37,10 @@ struct FormatSettings
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
-    String column_names_for_schema_inference = "";
+    String column_names_for_schema_inference;
+    bool try_infer_integers = false;
+    bool try_infer_dates = false;
+    bool try_infer_datetimes = false;
 
     enum class DateTimeInputFormat
     {
@@ -81,6 +85,7 @@ struct FormatSettings
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
+        bool output_string_as_string = false;
     } arrow;
 
     struct
@@ -91,6 +96,7 @@ struct FormatSettings
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
+        bool null_as_default = false;
     } avro;
 
     String bool_true_representation = "true";
@@ -108,6 +114,7 @@ struct FormatSettings
         String null_representation = "\\N";
         char tuple_delimiter = ',';
         bool input_format_use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } csv;
 
     struct HiveText
@@ -138,6 +145,7 @@ struct FormatSettings
         bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
+        bool try_infer_numbers_from_strings = false;
     } json;
 
     struct
@@ -148,6 +156,7 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_row_groups = {};
+        bool output_string_as_string = false;
     } parquet;
 
     struct Pretty
@@ -180,6 +189,7 @@ struct FormatSettings
          * because Protobuf without delimiters is not generally useful.
          */
         bool allow_multiple_rows_without_delimiter = false;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } protobuf;
 
     struct
@@ -217,6 +227,7 @@ struct FormatSettings
         String null_representation = "\\N";
         bool input_format_enum_as_number = false;
         bool input_format_use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
     } tsv;
 
     struct
@@ -234,6 +245,7 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_stripes = {};
+        bool output_string_as_string = false;
     } orc;
 
     /// For capnProto format we should determine how to
@@ -248,6 +260,7 @@ struct FormatSettings
     struct
     {
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 
     enum class MsgPackUUIDRepresentation
@@ -268,6 +281,15 @@ struct FormatSettings
         String table_name;
         bool map_column_names = true;
     } mysql_dump;
+
+    struct
+    {
+        UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
+        String table_name = "table";
+        bool include_column_names = true;
+        bool use_replace = false;
+        bool quote_names = true;
+    } sql_insert;
 };
 
 }

@@ -90,7 +90,7 @@ public:
 
 }
 
-void registerFunctionH3CellAreaRads2(FunctionFactory & factory)
+REGISTER_FUNCTION(H3CellAreaRads2)
 {
     factory.registerFunction<FunctionH3CellAreaRads2>();
 }

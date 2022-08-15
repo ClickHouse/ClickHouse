@@ -190,9 +190,9 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(info.engine);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->volume->getDisk()->getName());
+                columns[res_index++]->insert(part->data_part_storage->getDiskName());
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getFullPath());
+                columns[res_index++]->insert(part->data_part_storage->getFullPath());
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.name);
@@ -227,7 +227,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
 
-            auto serialization = part->getSerialization(column);
+            auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
 

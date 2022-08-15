@@ -397,12 +397,12 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 
 void MySQLDumpRowInputFormat::skipField()
 {
-    String tmp;
-    readQuotedFieldIntoString(tmp, *in);
+    NullOutput out;
+    readQuotedFieldInto(out, *in);
 }
 
 MySQLDumpSchemaReader::MySQLDumpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(in_, format_settings_), format_settings(format_settings_), table_name(format_settings_.mysql_dump.table_name)
+    : IRowSchemaReader(in_, format_settings_), table_name(format_settings_.mysql_dump.table_name)
 {
 }
 
@@ -434,7 +434,7 @@ DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
         if (!data_types.empty())
             skipFieldDelimiter(in);
 
-        readQuotedFieldIntoString(value, in);
+        readQuotedField(value, in);
         auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }

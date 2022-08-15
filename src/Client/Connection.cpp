@@ -64,20 +64,19 @@ Connection::~Connection() = default;
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
+    const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
     const String & client_name_,
     Protocol::Compression compression_,
-    Protocol::Secure secure_,
-    Poco::Timespan sync_request_timeout_)
+    Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
-    , user(user_), password(password_)
+    , user(user_), password(password_), quota_key(quota_key_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
-    , sync_request_timeout(sync_request_timeout_)
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -93,37 +92,58 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 {
     try
     {
-        if (connected)
-            disconnect();
-
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}",
             default_database.empty() ? "(not specified)" : default_database,
             user,
             static_cast<bool>(secure) ? ". Secure" : "",
             static_cast<bool>(compression) ? "" : ". Uncompressed");
 
-        if (static_cast<bool>(secure))
-        {
-#if USE_SSL
-            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
-
-            /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
-            /// work we need to pass host name separately. It will be send into TLS Hello packet to let
-            /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-            static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
-#else
-            throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-        }
-        else
-        {
-            socket = std::make_unique<Poco::Net::StreamSocket>();
-        }
-
-        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
-
+        auto addresses = DNSResolver::instance().resolveAddressList(host, port);
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
-        socket->connect(*current_resolved_address, connection_timeout);
+
+        for (auto it = addresses.begin(); it != addresses.end();)
+        {
+            if (connected)
+                disconnect();
+
+            if (static_cast<bool>(secure))
+            {
+#if USE_SSL
+                socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
+                /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
+                /// work we need to pass host name separately. It will be send into TLS Hello packet to let
+                /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+#else
+                throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+            }
+            else
+            {
+                socket = std::make_unique<Poco::Net::StreamSocket>();
+            }
+
+            try
+            {
+                socket->connect(*it, connection_timeout);
+                current_resolved_address = *it;
+                break;
+            }
+            catch (Poco::Net::NetException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+            catch (Poco::TimeoutException &)
+            {
+                if (++it == addresses.end())
+                    throw;
+                continue;
+            }
+        }
+
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -148,6 +168,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         sendHello();
         receiveHello();
+        if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
+            sendAddendum();
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
@@ -241,6 +263,14 @@ void Connection::sendHello()
         writeStringBinary(password, *out);
     }
 
+    out->next();
+}
+
+
+void Connection::sendAddendum()
+{
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUOTA_KEY)
+        writeStringBinary(quota_key, *out);
     out->next();
 }
 
@@ -354,7 +384,7 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
     {
         connect(timeouts);
     }
-    else if (!ping())
+    else if (!ping(timeouts))
     {
         LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
         connect(timeouts);
@@ -374,13 +404,11 @@ void Connection::sendClusterNameAndSalt()
 }
 #endif
 
-bool Connection::ping()
+bool Connection::ping(const ConnectionTimeouts & timeouts)
 {
-    // LOG_TRACE(log_wrapper.get(), "Ping");
-
     try
     {
-        TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
+        TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
         UInt64 pong = 0;
         writeVarUInt(Protocol::Client::Ping, *out);
@@ -424,7 +452,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (!connected)
         connect(timeouts);
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
+    TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
@@ -447,6 +475,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
+    const NameToNameMap & query_parameters,
     const String & query_id_,
     UInt64 stage,
     const Settings * settings,
@@ -538,6 +567,14 @@ void Connection::sendQuery(
     writeVarUInt(static_cast<bool>(compression), *out);
 
     writeStringBinary(query, *out);
+
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    {
+        Settings params;
+        for (const auto & [name, value] : query_parameters)
+            params.set(name, value);
+        params.write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    }
 
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
@@ -747,8 +784,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         if (!elem->pipe)
             elem->pipe = elem->creating_pipe_callback();
 
-        QueryPipelineBuilder pipeline;
-        pipeline.init(std::move(*elem->pipe));
+        QueryPipelineBuilder pipeline = std::move(*elem->pipe);
         elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
@@ -820,7 +856,6 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
-        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
         UInt64 packet_type;
         readVarUInt(packet_type, *in);
 
@@ -1066,6 +1101,7 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.default_database,
         parameters.user,
         parameters.password,
+        parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */
         "client",

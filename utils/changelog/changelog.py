@@ -3,22 +3,23 @@
 
 import argparse
 import logging
+import os.path as p
+import os
 import re
 from datetime import date, timedelta
-from queue import Empty, Queue
 from subprocess import CalledProcessError, DEVNULL
-from threading import Thread
 from typing import Dict, List, Optional, TextIO
 
 from fuzzywuzzy.fuzz import ratio  # type: ignore
-from github import Github
+from github_helper import GitHub, PullRequest, PullRequests, Repository
+from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
-from github.PullRequest import PullRequest
-from github.Repository import Repository
 from git_helper import is_shallow, git_runner as runner
 
 # This array gives the preferred category order, and is also used to
 # normalize category names.
+# Categories are used in .github/PULL_REQUEST_TEMPLATE.md, keep comments there
+# updated accordingly
 categories_preferred_order = (
     "Backward Incompatible Change",
     "New Feature",
@@ -31,6 +32,9 @@ categories_preferred_order = (
 
 FROM_REF = ""
 TO_REF = ""
+SHA_IN_CHANGELOG = []  # type: List[str]
+gh = GitHub()
+CACHE_PATH = p.join(p.dirname(p.realpath(__file__)), "gh_cache")
 
 
 class Description:
@@ -39,7 +43,7 @@ class Description:
     ):
         self.number = number
         self.html_url = html_url
-        self.user = user
+        self.user = gh.get_user_cached(user._rawData["login"])  # type: ignore
         self.entry = entry
         self.category = category
 
@@ -58,7 +62,17 @@ class Description:
             r"\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)",
             entry,
         )
-        user_name = self.user.name if self.user.name else self.user.login
+        # It's possible that we face a secondary rate limit.
+        # In this case we should sleep until we get it
+        while True:
+            try:
+                user_name = self.user.name if self.user.name else self.user.login
+                break
+            except UnknownObjectException:
+                user_name = self.user.login
+                break
+            except RateLimitExceededException:
+                gh.sleep_on_rate_limit()
         return (
             f"* {entry} [#{self.number}]({self.html_url}) "
             f"([{user_name}]({self.user.html_url}))."
@@ -74,69 +88,34 @@ class Description:
         return self.number < other.number
 
 
-class Worker(Thread):
-    def __init__(self, request_queue: Queue, repo: Repository):
-        Thread.__init__(self)
-        self.queue = request_queue
-        self.repo = repo
-        self.response = []  # type: List[Description]
-
-    def run(self):
-        while not self.queue.empty():
-            try:
-                number = self.queue.get()
-            except Empty:
-                break  # possible race condition, just continue
-            api_pr = self.repo.get_pull(number)
-            in_changelog = False
-            merge_commit = api_pr.merge_commit_sha
-            try:
-                runner.run(f"git rev-parse '{merge_commit}'")
-            except CalledProcessError:
-                # It's possible that commit not in the repo, just continue
-                logging.info("PR %s does not belong to the repo", api_pr.number)
-                continue
-
-            try:
-                runner.run(
-                    f"git merge-base --is-ancestor '{merge_commit}' '{TO_REF}'",
-                    stderr=DEVNULL,
-                )
-                runner.run(
-                    f"git merge-base --is-ancestor '{FROM_REF}' '{merge_commit}'",
-                    stderr=DEVNULL,
-                )
-                in_changelog = True
-            except CalledProcessError:
-                # Commit is not between from and to refs
-                continue
-            if in_changelog:
-                desc = generate_description(api_pr, self.repo)
-                if desc is not None:
-                    self.response.append(desc)
-
-            self.queue.task_done()
-
-
-def get_descriptions(
-    repo: Repository, numbers: List[int], jobs: int
-) -> Dict[str, List[Description]]:
-    workers = []  # type: List[Worker]
-    queue = Queue()  # type: Queue # (!?!?!?!??!)
-    for number in numbers:
-        queue.put(number)
-    for _ in range(jobs):
-        worker = Worker(queue, repo)
-        worker.start()
-        workers.append(worker)
-
+def get_descriptions(prs: PullRequests) -> Dict[str, List[Description]]:
     descriptions = {}  # type: Dict[str, List[Description]]
-    for worker in workers:
-        worker.join()
-        for desc in worker.response:
-            if desc.category not in descriptions:
-                descriptions[desc.category] = []
-            descriptions[desc.category].append(desc)
+    repos = {}  # type: Dict[str, Repository]
+    for pr in prs:
+        # See https://github.com/PyGithub/PyGithub/issues/2202,
+        # obj._rawData doesn't spend additional API requests
+        # We'll save some requests
+        # pylint: disable=protected-access
+        repo_name = pr._rawData["base"]["repo"]["full_name"]  # type: ignore
+        # pylint: enable=protected-access
+        if repo_name not in repos:
+            repos[repo_name] = pr.base.repo
+        in_changelog = False
+        merge_commit = pr.merge_commit_sha
+        try:
+            runner.run(f"git rev-parse '{merge_commit}'")
+        except CalledProcessError:
+            # It's possible that commit not in the repo, just continue
+            logging.info("PR %s does not belong to the repo", pr.number)
+            continue
+
+        in_changelog = merge_commit in SHA_IN_CHANGELOG
+        if in_changelog:
+            desc = generate_description(pr, repos[repo_name])
+            if desc is not None:
+                if desc.category not in descriptions:
+                    descriptions[desc.category] = []
+                descriptions[desc.category].append(desc)
 
     for descs in descriptions.values():
         descs.sort()
@@ -156,6 +135,11 @@ def parse_args() -> argparse.Namespace:
         action="count",
         default=0,
         help="set the script verbosity, could be used multiple",
+    )
+    parser.add_argument(
+        "--debug-helpers",
+        action="store_true",
+        help="add debug logging for git_helper and github_helper",
     )
     parser.add_argument(
         "--output",
@@ -183,6 +167,11 @@ def parse_args() -> argparse.Namespace:
         help="a password that should be used when user is given",
     )
     parser.add_argument(
+        "--with-testing-tags",
+        action="store_true",
+        help="by default '*-testing' tags are ignored, this argument enables them too",
+    )
+    parser.add_argument(
         "--from",
         dest="from_ref",
         help="git ref for a starting point of changelog, by default is calculated "
@@ -204,7 +193,10 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     if item.head.ref.startswith("backport/"):
         branch_parts = item.head.ref.split("/")
         if len(branch_parts) == 3:
-            item = repo.get_pull(int(branch_parts[-1]))
+            try:
+                item = gh.get_pull_cached(repo, int(branch_parts[-1]))
+            except Exception as e:
+                logging.warning("unable to get backpoted PR, exception: %s", e)
         else:
             logging.warning(
                 "The branch %s doesn't match backport template, using PR %s as is",
@@ -258,7 +250,15 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
 
     # Filter out the PR categories that are not for changelog.
     if re.match(
-        r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
+        r"(?i)((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
+        category,
+    ):
+        category = "NOT FOR CHANGELOG / INSIGNIFICANT"
+        return Description(item.number, item.user, item.html_url, item.title, category)
+
+    # Filter out documentations changelog
+    if re.match(
+        r"(?i)doc",
         category,
     ):
         return None
@@ -284,7 +284,15 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
 
 
 def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
-    fd.write(f"### ClickHouse release {TO_REF} FIXME as compared to {FROM_REF}\n\n")
+    year = date.today().year
+    to_commit = runner(f"git rev-parse {TO_REF}^{{}}")[:11]
+    from_commit = runner(f"git rev-parse {FROM_REF}^{{}}")[:11]
+    fd.write(
+        f"---\nsidebar_position: 1\nsidebar_label: {year}\n---\n\n"
+        f"# {year} Changelog\n\n"
+        f"### ClickHouse release {TO_REF} ({to_commit}) FIXME "
+        f"as compared to {FROM_REF} ({from_commit})\n\n"
+    )
 
     seen_categories = []  # type: List[str]
     for category in categories_preferred_order:
@@ -296,7 +304,7 @@ def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
 
             fd.write("\n")
 
-    for category in descriptions:
+    for category in sorted(descriptions):
         if category not in seen_categories:
             fd.write(f"#### {category}\n\n")
             for desc in descriptions[category]:
@@ -305,7 +313,7 @@ def write_changelog(fd: TextIO, descriptions: Dict[str, List[Description]]):
             fd.write("\n")
 
 
-def check_refs(from_ref: Optional[str], to_ref: str):
+def check_refs(from_ref: Optional[str], to_ref: str, with_testing_tags: bool):
     global FROM_REF, TO_REF
     TO_REF = to_ref
 
@@ -314,32 +322,40 @@ def check_refs(from_ref: Optional[str], to_ref: str):
 
     # Check from_ref
     if from_ref is None:
-        FROM_REF = runner.run(f"git describe --abbrev=0 --tags '{TO_REF}~'")
-        # Check if the previsous tag is different for merge commits
-        # I __assume__ we won't have octopus merges, at least for the tagged commits
-        try:
-            alternative_tag = runner.run(
-                f"git describe --abbrev=0 --tags '{TO_REF}^2'", stderr=DEVNULL
-            )
-            if FROM_REF != alternative_tag:
-                raise Exception(
-                    f"Unable to get unified parent tag for {TO_REF}, "
-                    f"define it manually, get {FROM_REF} and {alternative_tag}"
-                )
-        except CalledProcessError:
-            pass
+        # Get all tags pointing to TO_REF
+        tags = runner.run(f"git tag --points-at '{TO_REF}^{{}}'").split("\n")
+        logging.info("All tags pointing to %s:\n%s", TO_REF, tags)
+        if not with_testing_tags:
+            tags.append("*-testing")
+        exclude = " ".join([f"--exclude='{tag}'" for tag in tags])
+        cmd = f"git describe --abbrev=0 --tags {exclude} '{TO_REF}'"
+        FROM_REF = runner.run(cmd)
     else:
         runner.run(f"git rev-parse {FROM_REF}")
         FROM_REF = from_ref
 
 
+def set_sha_in_changelog():
+    global SHA_IN_CHANGELOG
+    SHA_IN_CHANGELOG = runner.run(
+        f"git log --format=format:%H {FROM_REF}..{TO_REF}"
+    ).split("\n")
+
+
 def main():
-    log_levels = [logging.CRITICAL, logging.WARN, logging.INFO, logging.DEBUG]
+    log_levels = [logging.WARN, logging.INFO, logging.DEBUG]
     args = parse_args()
     logging.basicConfig(
         format="%(asctime)s %(levelname)-8s [%(filename)s:%(lineno)d]:\n%(message)s",
-        level=log_levels[min(args.verbose, 3)],
+        level=log_levels[min(args.verbose, 2)],
     )
+    if args.debug_helpers:
+        logging.getLogger("github_helper").setLevel(logging.DEBUG)
+        logging.getLogger("git_helper").setLevel(logging.DEBUG)
+    # Create a cache directory
+    if not p.isdir(CACHE_PATH):
+        os.mkdir(CACHE_PATH, 0o700)
+
     # Get the full repo
     if is_shallow():
         logging.info("Unshallow repository")
@@ -347,30 +363,34 @@ def main():
     logging.info("Fetching all tags")
     runner.run("git fetch --tags", stderr=DEVNULL)
 
-    check_refs(args.from_ref, args.to_ref)
+    check_refs(args.from_ref, args.to_ref, args.with_testing_tags)
+    set_sha_in_changelog()
 
     logging.info("Using %s..%s as changelog interval", FROM_REF, TO_REF)
 
+    # use merge-base commit as a starting point, if used ref in another branch
+    base_commit = runner.run(f"git merge-base '{FROM_REF}^{{}}' '{TO_REF}^{{}}'")
     # Get starting and ending dates for gathering PRs
     # Add one day after and before to mitigate TZ possible issues
     # `tag^{}` format gives commit ref when we have annotated tags
-    from_date = runner.run(f"git log -1 --format=format:%as '{FROM_REF}^{{}}'")
-    from_date = (date.fromisoformat(from_date) - timedelta(1)).isoformat()
-    to_date = runner.run(f"git log -1 --format=format:%as '{TO_REF}^{{}}'")
-    to_date = (date.fromisoformat(to_date) + timedelta(1)).isoformat()
+    # format %cs gives a committer date, works better for cherry-picked commits
+    from_date = runner.run(f"git log -1 --format=format:%cs '{base_commit}'")
+    to_date = runner.run(f"git log -1 --format=format:%cs '{TO_REF}^{{}}'")
+    merged = (
+        date.fromisoformat(from_date) - timedelta(1),
+        date.fromisoformat(to_date) + timedelta(1),
+    )
 
     # Get all PRs for the given time frame
-    gh = Github(
+    global gh
+    gh = GitHub(
         args.gh_user_or_token, args.gh_password, per_page=100, pool_size=args.jobs
     )
-    query = f"type:pr repo:{args.repo} is:merged merged:{from_date}..{to_date}"
-    repo = gh.get_repo(args.repo)
-    api_prs = gh.search_issues(query=query, sort="created")
-    logging.info("Found %s PRs for the query: '%s'", api_prs.totalCount, query)
+    gh.cache_path = CACHE_PATH
+    query = f"type:pr repo:{args.repo} is:merged"
+    prs = gh.get_pulls_from_search(query=query, merged=merged, sort="created")
 
-    pr_numbers = [pr.number for pr in api_prs]
-
-    descriptions = get_descriptions(repo, pr_numbers, args.jobs)
+    descriptions = get_descriptions(prs)
 
     write_changelog(args.output, descriptions)
 

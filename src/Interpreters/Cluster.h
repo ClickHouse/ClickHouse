@@ -93,6 +93,7 @@ public:
         UInt16 port{0};
         String user;
         String password;
+        String quota_key;
 
         /// For inter-server authorization
         String cluster;
@@ -202,6 +203,7 @@ public:
         UInt32 shard_num = 0;
         UInt32 weight = 1;
         Addresses local_addresses;
+        Addresses all_addresses;
         /// nullptr if there are no remote addresses
         ConnectionPoolWithFailoverPtr pool;
         /// Connection pool for each replica, contains nullptr for local replicas
@@ -213,6 +215,11 @@ public:
 
     const ShardsInfo & getShardsInfo() const { return shards_info; }
     const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
+
+    /// Returns addresses of some replicas according to specified `only_shard_num` and `only_replica_num`.
+    /// `only_shard_num` is 1-based index of a shard, 0 means all shards.
+    /// `only_replica_num` is 1-based index of a replica, 0 means all replicas.
+    std::vector<const Address *> filterAddressesByShardOrReplica(size_t only_shard_num, size_t only_replica_num) const;
 
     const ShardInfo & getAnyShardInfo() const
     {

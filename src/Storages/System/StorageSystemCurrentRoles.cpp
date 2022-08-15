@@ -26,8 +26,6 @@ void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, ContextPt
 {
     auto roles_info = context->getRolesInfo();
     auto user = context->getUser();
-    if (!roles_info || !user)
-        return;
 
     size_t column_index = 0;
     auto & column_role_name = assert_cast<ColumnString &>(*res_columns[column_index++]);

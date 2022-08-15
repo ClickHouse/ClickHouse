@@ -291,6 +291,43 @@ private:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
+        QueryFactoriesInfo() = default;
+
+        QueryFactoriesInfo(const QueryFactoriesInfo & rhs)
+        {
+            std::lock_guard<std::mutex> lock(rhs.mutex);
+            aggregate_functions = rhs.aggregate_functions;
+            aggregate_function_combinators = rhs.aggregate_function_combinators;
+            database_engines = rhs.database_engines;
+            data_type_families = rhs.data_type_families;
+            dictionaries = rhs.dictionaries;
+            formats = rhs.formats;
+            functions = rhs.functions;
+            storages = rhs.storages;
+            table_functions = rhs.table_functions;
+        }
+
+        QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
+
+        QueryFactoriesInfo & operator=(QueryFactoriesInfo rhs)
+        {
+            swap(rhs);
+            return *this;
+        }
+
+        void swap(QueryFactoriesInfo & rhs)
+        {
+            std::swap(aggregate_functions, rhs.aggregate_functions);
+            std::swap(aggregate_function_combinators, rhs.aggregate_function_combinators);
+            std::swap(database_engines, rhs.database_engines);
+            std::swap(data_type_families, rhs.data_type_families);
+            std::swap(dictionaries, rhs.dictionaries);
+            std::swap(formats, rhs.formats);
+            std::swap(functions, rhs.functions);
+            std::swap(storages, rhs.storages);
+            std::swap(table_functions, rhs.table_functions);
+        }
+
         std::unordered_set<std::string> aggregate_functions;
         std::unordered_set<std::string> aggregate_function_combinators;
         std::unordered_set<std::string> database_engines;
@@ -300,9 +337,11 @@ private:
         std::unordered_set<std::string> functions;
         std::unordered_set<std::string> storages;
         std::unordered_set<std::string> table_functions;
+
+        mutable std::mutex mutex;
     };
 
-    /// Needs to be chandged while having const context in factories methods
+    /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
     /// TODO: maybe replace with temporary tables?
@@ -320,6 +359,9 @@ private:
     bool is_internal_query = false;
 
     inline static ContextPtr global_context_instance;
+
+    /// A flag, used to mark if reader needs to apply deleted rows mask.
+    bool apply_deleted_mask = true;
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
@@ -385,7 +427,7 @@ public:
     void setUserScriptsPath(const String & path);
     void setUserDefinedPath(const String & path);
 
-    void addWarningMessage(const String & msg);
+    void addWarningMessage(const String & msg) const;
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -435,13 +477,13 @@ public:
     /// Checks access rights.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id) const;
-    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const;
     void checkAccess(const AccessRightsElement & element) const;
@@ -568,8 +610,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(const StringRef & name, const String & value);
-    void setSetting(const StringRef & name, const Field & value);
+    void setSetting(std::string_view name, const String & value);
+    void setSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -718,6 +760,7 @@ public:
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -737,12 +780,12 @@ public:
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes);
+    void setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void dropUncompressedCache() const;
 
     /// Create a cache of marks of specified size. This can be done only once.
-    void setMarkCache(size_t cache_size_in_bytes);
+    void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
 
@@ -780,6 +823,8 @@ public:
 
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
+    ThrottlerPtr getRemoteReadThrottler() const;
+    ThrottlerPtr getRemoteWriteThrottler() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -870,6 +915,9 @@ public:
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
 
+    bool applyDeletedMask() const { return apply_deleted_mask; }
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
+
     ActionLocksManagerPtr getActionLocksManager();
 
     enum class ApplicationType
@@ -878,6 +926,7 @@ public:
         CLIENT,         /// clickhouse-client
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
+        DISKS,          /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;
@@ -897,8 +946,13 @@ public:
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
+
+    /// Throws if parameter with the given name already set.
     void setQueryParameter(const String & name, const String & value);
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
+
+    /// Overrides values of existing parameters.
+    void addQueryParameters(const NameToNameMap & parameters);
 
     /// Add started bridge command. It will be killed after context destruction
     void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
