@@ -257,9 +257,6 @@ void WriteBufferFromS3::writePart()
     {
         UploadPartTask * task = nullptr;
 
-        /// Notify waiting thread when task finished
-        std::shared_ptr<scope_guard> task_finish_notify = std::make_shared<scope_guard>();
-
         int part_number;
         {
             std::lock_guard lock(bg_tasks_mutex);
@@ -268,7 +265,8 @@ void WriteBufferFromS3::writePart()
             part_number = num_added_bg_tasks;
         }
 
-        *task_finish_notify = [&]()
+        /// Notify waiting thread when task finished
+        auto task_finish_notify = [&, task]()
         {
             std::lock_guard lock(bg_tasks_mutex);
             task->is_finised = true;
@@ -280,34 +278,44 @@ void WriteBufferFromS3::writePart()
             bg_tasks_condvar.notify_one();
         };
 
-        fillUploadRequest(task->req, part_number);
-
-        if (file_segments_holder)
+        try
         {
-            task->cache_files.emplace(std::move(*file_segments_holder));
-            file_segments_holder.reset();
+            fillUploadRequest(task->req, part_number);
+
+            if (file_segments_holder)
+            {
+                task->cache_files.emplace(std::move(*file_segments_holder));
+                file_segments_holder.reset();
+            }
+
+            schedule([this, task, task_finish_notify]()
+            {
+                try
+                {
+                    processUploadRequest(*task);
+                }
+                catch (...)
+                {
+                    task->exception = std::current_exception();
+                }
+
+                try
+                {
+                    finalizeCacheIfNeeded(task->cache_files);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+
+                task_finish_notify();
+            });
         }
-
-        schedule([this, task, task_finish_notify]()
+        catch (...)
         {
-            try
-            {
-                processUploadRequest(*task);
-            }
-            catch (...)
-            {
-                task->exception = std::current_exception();
-            }
-
-            try
-            {
-                finalizeCacheIfNeeded(task->cache_files);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        });
+            task_finish_notify();
+            throw;
+        }
     }
     else
     {
@@ -400,11 +408,10 @@ void WriteBufferFromS3::makeSinglepartUpload()
 
     if (schedule)
     {
-        /// Notify waiting thread when put object task finished
-        std::shared_ptr<scope_guard> put_object_task_notify_finish = std::make_shared<scope_guard>();
         put_object_task = std::make_unique<PutObjectTask>();
 
-        *put_object_task_notify_finish = [&]()
+        /// Notify waiting thread when put object task finished
+        auto task_notify_finish = [&]()
         {
             std::lock_guard lock(bg_tasks_mutex);
             put_object_task->is_finised = true;
@@ -415,33 +422,44 @@ void WriteBufferFromS3::makeSinglepartUpload()
             bg_tasks_condvar.notify_one();
         };
 
-        fillPutRequest(put_object_task->req);
-        if (file_segments_holder)
+        try
         {
-            put_object_task->cache_files.emplace(std::move(*file_segments_holder));
-            file_segments_holder.reset();
+            fillPutRequest(put_object_task->req);
+
+            if (file_segments_holder)
+            {
+                put_object_task->cache_files.emplace(std::move(*file_segments_holder));
+                file_segments_holder.reset();
+            }
+
+            schedule([this, task_notify_finish]()
+            {
+                try
+                {
+                    processPutRequest(*put_object_task);
+                }
+                catch (...)
+                {
+                    put_object_task->exception = std::current_exception();
+                }
+
+                try
+                {
+                    finalizeCacheIfNeeded(put_object_task->cache_files);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+
+                task_notify_finish();
+            });
         }
-
-        schedule([this, put_object_task_notify_finish]()
+        catch (...)
         {
-            try
-            {
-                processPutRequest(*put_object_task);
-            }
-            catch (...)
-            {
-                put_object_task->exception = std::current_exception();
-            }
-
-            try
-            {
-                finalizeCacheIfNeeded(put_object_task->cache_files);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        });
+            task_notify_finish();
+            throw;
+        }
     }
     else
     {
