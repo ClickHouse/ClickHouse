@@ -15,6 +15,7 @@ set(uv_sources
     src/inet.c
     src/random.c
     src/strscpy.c
+    src/strtok.c
     src/threadpool.c
     src/timer.c
     src/uv-common.c
@@ -75,8 +76,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_defines _GNU_SOURCE _POSIX_C_SOURCE=200112)
   list(APPEND uv_libraries rt)
   list(APPEND uv_sources
-       src/unix/linux-core.c
        src/unix/epoll.c
+       src/unix/linux-core.c
        src/unix/linux-inotify.c
        src/unix/linux-syscalls.c
        src/unix/procfs-exepath.c
@@ -112,8 +113,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "OS/390")
        src/unix/pthread-fixes.c
        src/unix/pthread-barrier.c
        src/unix/os390.c
-       src/unix/os390-syscalls.c
-       src/unix/os390-proctitle.c)
+       src/unix/os390-proctitle.c
+       src/unix/os390-syscalls.c)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "SunOS")
