@@ -205,9 +205,6 @@ void WriteBufferFromS3::writePart()
     {
         UploadPartTask * task = nullptr;
 
-        /// Notify waiting thread when task finished
-        std::shared_ptr<scope_guard> task_finish_notify = std::make_shared<scope_guard>();
-
         int part_number;
         {
             std::lock_guard lock(bg_tasks_mutex);
@@ -216,7 +213,8 @@ void WriteBufferFromS3::writePart()
             part_number = num_added_bg_tasks;
         }
 
-        *task_finish_notify = [&]()
+        /// Notify waiting thread when task finished
+        auto task_finish_notify = [&, task]()
         {
             std::lock_guard lock(bg_tasks_mutex);
             task->is_finised = true;
@@ -228,18 +226,28 @@ void WriteBufferFromS3::writePart()
             bg_tasks_condvar.notify_one();
         };
 
-        fillUploadRequest(task->req, part_number);
-
-        schedule([this, task, task_finish_notify]()
+        try
         {
-            try
+            fillUploadRequest(task->req, part_number);
+
+            schedule([this, task, task_finish_notify]()
             {
-                processUploadRequest(*task);
-            }
-            catch (...)
-            {
-                task->exception = std::current_exception();
-            }
+                try
+                {
+                    processUploadRequest(*task);
+                }
+                catch (...)
+                {
+                    task->exception = std::current_exception();
+                }
+
+                task_finish_notify();
+            });
+        }
+        catch (...)
+        {
+            task_finish_notify();
+            throw;
         }
     }
     else
@@ -333,11 +341,10 @@ void WriteBufferFromS3::makeSinglepartUpload()
 
     if (schedule)
     {
-        /// Notify waiting thread when put object task finished
-        std::shared_ptr<scope_guard> put_object_task_notify_finish = std::make_shared<scope_guard>();
         put_object_task = std::make_unique<PutObjectTask>();
 
-        *put_object_task_notify_finish = [&]()
+        /// Notify waiting thread when put object task finished
+        auto task_notify_finish = [&]()
         {
             std::lock_guard lock(bg_tasks_mutex);
             put_object_task->is_finised = true;
@@ -348,19 +355,29 @@ void WriteBufferFromS3::makeSinglepartUpload()
             bg_tasks_condvar.notify_one();
         };
 
-        fillPutRequest(put_object_task->req);
-
-        schedule([this, put_object_task_notify_finish]()
+        try
         {
-            try
+            fillPutRequest(put_object_task->req);
+
+            schedule([this, task_notify_finish]()
             {
-                processPutRequest(*put_object_task);
-            }
-            catch (...)
-            {
-                put_object_task->exception = std::current_exception();
-            }
-        });
+                try
+                {
+                    processPutRequest(*put_object_task);
+                }
+                catch (...)
+                {
+                    put_object_task->exception = std::current_exception();
+                }
+
+                task_notify_finish();
+            });
+        }
+        catch (...)
+        {
+            task_notify_finish();
+            throw;
+        }
     }
     else
     {
