@@ -4,6 +4,7 @@ import tempfile
 import logging
 from threading import Timer
 
+DEFAULT_QUERY_TIMEOUT=600
 
 class Client:
     def __init__(self, host, port=9000, command="/usr/bin/clickhouse-client"):
@@ -16,6 +17,23 @@ class Client:
 
         self.command += ["--host", self.host, "--port", str(self.port), "--stacktrace"]
 
+    @staticmethod
+    def stacktraces_on_timeout_decorator(func):
+        def wrap(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except sp.TimeoutExpired:
+                # I failed to make pytest print stacktraces using print(...) or logging.debug(...), so...
+                self.get_query_request(
+                    "INSERT INTO TABLE FUNCTION file('stacktraces_on_timeout.txt', 'TSVRaw', 'tn String, tid UInt64, qid String, st String') "
+                    "SELECT thread_name, thread_id, query_id, arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS res FROM system.stack_trace "
+                    "SETTINGS allow_introspection_functions=1",
+                    timeout=60,
+                ).get_answer_and_error()
+                raise
+        return wrap
+
+    @stacktraces_on_timeout_decorator
     def query(
         self,
         sql,
@@ -80,6 +98,7 @@ class Client:
 
         return CommandRequest(command, stdin, timeout, ignore_error)
 
+    @stacktraces_on_timeout_decorator
     def query_and_get_error(
         self,
         sql,
@@ -100,6 +119,7 @@ class Client:
             database=database,
         ).get_error()
 
+    @stacktraces_on_timeout_decorator
     def query_and_get_answer_with_error(
         self,
         sql,
@@ -170,7 +190,7 @@ class CommandRequest:
             self.timer.start()
 
     def get_answer(self):
-        self.process.wait()
+        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
@@ -197,7 +217,7 @@ class CommandRequest:
         return stdout
 
     def get_error(self):
-        self.process.wait()
+        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
@@ -221,7 +241,7 @@ class CommandRequest:
         return stderr
 
     def get_answer_and_error(self):
-        self.process.wait()
+        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
