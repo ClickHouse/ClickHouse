@@ -175,7 +175,7 @@ struct QueryPlanSettings
             {"indexes", query_plan_options.indexes},
             {"optimize", optimize},
             {"json", json},
-            {"sortmode", query_plan_options.sort_mode},
+            {"sorting", query_plan_options.sorting},
     };
 };
 
