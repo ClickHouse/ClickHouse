@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Common/LRUCache.h>
 #include <Storages/QueryCache.h>
 
 

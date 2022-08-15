@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <condition_variable>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Core/Settings.h>
@@ -186,7 +186,7 @@ private:
 class CachePutHolder
 {
 private:
-    using Cache = LRUCache<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
+    using Cache = CacheBase<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
 public:
     CachePutHolder(CacheRemovalScheduler * removal_scheduler_, CacheKey cache_key_, Cache * cache_)
         : removal_scheduler(removal_scheduler_)
@@ -242,7 +242,7 @@ private:
 class CacheReadHolder
 {
 private:
-    using Cache = LRUCache<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
+    using Cache = CacheBase<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
 public:
     explicit CacheReadHolder(Cache * cache, CacheKey cacheKey)
     {
@@ -293,10 +293,10 @@ private:
 class QueryCache
 {
 private:
-    using Cache = LRUCache<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
+    using Cache = CacheBase<CacheKey, CacheEntry, CacheKeyHasher, QueryWeightFunction>;
 public:
     explicit QueryCache(size_t cache_size_in_bytes_)
-        : cache(std::make_unique<Cache>(cache_size_in_bytes_))
+        : cache(std::make_unique<Cache>(cache_size_in_bytes_, 0, "LRU"))
         , removal_scheduler()
         , cache_removing_thread(&CacheRemovalScheduler::processRemovalQueue<Cache>, &removal_scheduler, cache.get())
     {
