@@ -443,7 +443,8 @@ NameSet collectFilesToSkip(
     }
     for (const auto & index : indices_to_recalc)
     {
-        files_to_skip.insert(index->getFileName() + ".idx");
+        /// Since MinMax index has .idx2 extension, we need to add correct extension.
+        files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
     }
     for (const auto & projection : projections_to_recalc)
