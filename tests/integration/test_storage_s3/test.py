@@ -9,18 +9,13 @@ import time
 
 import helpers.client
 import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_instances_dir
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.network import PartitionManager
 from helpers.test_tools import exec_query_with_retry
 
 MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-CONFIG_PATH = os.path.join(
-    SCRIPT_DIR, "./{}/dummy/configs/config.d/defaultS3.xml".format(get_instances_dir())
-)
-
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(started_cluster):
@@ -724,17 +719,24 @@ def run_s3_mocks(started_cluster):
     logging.info("S3 mocks started")
 
 
-def replace_config(old, new):
-    config = open(CONFIG_PATH, "r")
+def replace_config(path, old, new):
+    config = open(path, "r")
     config_lines = config.readlines()
     config.close()
     config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(CONFIG_PATH, "w")
+    config = open(path, "w")
     config.writelines(config_lines)
     config.close()
 
 
 def test_custom_auth_headers(started_cluster):
+    config_path = os.path.join(
+        SCRIPT_DIR,
+        "./{}/dummy/configs/config.d/defaultS3.xml".format(
+            started_cluster.instances_dir_name
+        ),
+    )
+
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
@@ -758,6 +760,7 @@ def test_custom_auth_headers(started_cluster):
     assert run_query(instance, "SELECT * FROM test") == "1\t2\t3\n"
 
     replace_config(
+        config_path,
         "<header>Authorization: Bearer TOKEN",
         "<header>Authorization: Bearer INVALID_TOKEN",
     )
@@ -765,6 +768,7 @@ def test_custom_auth_headers(started_cluster):
     ret, err = instance.query_and_get_answer_with_error("SELECT * FROM test")
     assert ret == "" and err != ""
     replace_config(
+        config_path,
         "<header>Authorization: Bearer INVALID_TOKEN",
         "<header>Authorization: Bearer TOKEN",
     )
@@ -805,10 +809,7 @@ def test_infinite_redirect(started_cluster):
 
 @pytest.mark.parametrize(
     "extension,method",
-    [
-        pytest.param("bin", "gzip", id="bin"),
-        pytest.param("gz", "auto", id="gz"),
-    ],
+    [pytest.param("bin", "gzip", id="bin"), pytest.param("gz", "auto", id="gz")],
 )
 def test_storage_s3_get_gzip(started_cluster, extension, method):
     bucket = started_cluster.minio_bucket
@@ -1306,7 +1307,7 @@ def test_schema_inference_from_globs(started_cluster):
     result = instance.query(
         f"desc url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
     )
-    assert result.strip() == "c1\tNullable(Float64)"
+    assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
         f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{url_filename}')"
@@ -1316,7 +1317,7 @@ def test_schema_inference_from_globs(started_cluster):
     result = instance.query(
         f"desc s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"
     )
-    assert result.strip() == "c1\tNullable(Float64)"
+    assert result.strip() == "c1\tNullable(Int64)"
 
     result = instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test*.jsoncompacteachrow')"

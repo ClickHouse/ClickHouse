@@ -15,20 +15,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+constexpr size_t StringHashTablePadRequirement = 8;
+
 /// TLDList
 TLDList::TLDList(size_t size)
     : tld_container(size)
-    , pool(std::make_unique<Arena>(10 << 20))
-{}
-bool TLDList::insert(const StringRef & host)
+    , memory_pool(std::make_unique<Arena>())
 {
-    bool inserted;
-    tld_container.emplace(DB::ArenaKeyHolder{host, *pool}, inserted);
-    return inserted;
+    /// StringHashTable requires padded to 8 bytes key,
+    /// and Arena (memory_pool here) does satisfies this,
+    /// since it has padding with 15 bytes at the right.
+    ///
+    /// However, StringHashTable may reference -1 byte of the key,
+    /// so left padding is also required:
+    memory_pool->alignedAlloc(StringHashTablePadRequirement, StringHashTablePadRequirement);
 }
-bool TLDList::has(const StringRef & host) const
+void TLDList::insert(const String & host, TLDType type)
 {
-    return tld_container.has(host);
+    StringRef owned_host{memory_pool->insert(host.data(), host.size()), host.size()};
+    tld_container[owned_host] = type;
+}
+TLDType TLDList::lookup(StringRef host) const
+{
+    if (auto it = tld_container.find(host); it != nullptr)
+        return it->getMapped();
+    return TLDType::TLD_NONE;
 }
 
 /// TLDListsHolder
@@ -57,32 +68,44 @@ void TLDListsHolder::parseConfig(const std::string & top_level_domains_path, con
 
 size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::string & path)
 {
-    std::unordered_set<std::string> tld_list_tmp;
+    std::unordered_map<std::string, TLDType> tld_list_tmp;
 
     ReadBufferFromFile in(path);
-    String line;
+    String buffer;
     while (!in.eof())
     {
-        readEscapedStringUntilEOL(line, in);
+        readEscapedStringUntilEOL(buffer, in);
         if (!in.eof())
             ++in.position();
+        std::string_view line(buffer);
         /// Skip comments
-        if (line.size() > 2 && line[0] == '/' && line[1] == '/')
+        if (line.starts_with("//"))
             continue;
-        line = trim(line, [](char c) { return std::isspace(c); });
+        line = line.substr(0, line.rend() - std::find_if_not(line.rbegin(), line.rend(), ::isspace));
         /// Skip empty line
         if (line.empty())
             continue;
-        tld_list_tmp.emplace(line);
+        /// Validate special symbols.
+        if (line.starts_with("*."))
+        {
+            line = line.substr(2);
+            tld_list_tmp.emplace(line, TLDType::TLD_ANY);
+        }
+        else if (line[0] == '!')
+        {
+            line = line.substr(1);
+            tld_list_tmp.emplace(line, TLDType::TLD_EXCLUDE);
+        }
+        else
+            tld_list_tmp.emplace(line, TLDType::TLD_REGULAR);
     }
     if (!in.eof())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not all list had been read", name);
 
     TLDList tld_list(tld_list_tmp.size());
-    for (const auto & host : tld_list_tmp)
+    for (const auto & [host, type] : tld_list_tmp)
     {
-        StringRef host_ref{host.data(), host.size()};
-        tld_list.insert(host_ref);
+        tld_list.insert(host, type);
     }
 
     size_t tld_list_size = tld_list.size();

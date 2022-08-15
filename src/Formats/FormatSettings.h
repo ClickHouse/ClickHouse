@@ -38,6 +38,9 @@ struct FormatSettings
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
     String column_names_for_schema_inference;
+    bool try_infer_integers = false;
+    bool try_infer_dates = false;
+    bool try_infer_datetimes = false;
 
     enum class DateTimeInputFormat
     {
@@ -142,6 +145,7 @@ struct FormatSettings
         bool named_tuples_as_objects = false;
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
+        bool try_infer_numbers_from_strings = false;
     } json;
 
     struct
@@ -185,6 +189,7 @@ struct FormatSettings
          * because Protobuf without delimiters is not generally useful.
          */
         bool allow_multiple_rows_without_delimiter = false;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } protobuf;
 
     struct
@@ -255,6 +260,7 @@ struct FormatSettings
     struct
     {
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 
     enum class MsgPackUUIDRepresentation

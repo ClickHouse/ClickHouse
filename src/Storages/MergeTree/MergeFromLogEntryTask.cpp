@@ -19,6 +19,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+MergeFromLogEntryTask::MergeFromLogEntryTask(
+    ReplicatedMergeTreeQueue::SelectedEntryPtr selected_entry_,
+    StorageReplicatedMergeTree & storage_,
+    IExecutableTask::TaskResultCallback & task_result_callback_)
+    : ReplicatedMergeMutateTaskBase(
+        &Poco::Logger::get(
+            storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MergeFromLogEntryTask)"),
+        storage_,
+        selected_entry_,
+        task_result_callback_)
+{
+}
+
 
 ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 {

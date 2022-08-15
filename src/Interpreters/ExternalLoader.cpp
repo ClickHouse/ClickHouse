@@ -1299,6 +1299,7 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
     return [this, ptr, name]()
     {
         config_files_reader->removeConfigRepository(ptr);
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, name);
         reloadConfig(name);
     };
 }

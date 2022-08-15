@@ -20,7 +20,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -218,7 +217,10 @@ public:
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
                         auto buf = std::make_unique<ReadBufferFromHDFS>(
-                            hdfs_namenode_url, current_path, getContext()->getGlobalContext()->getConfigRef());
+                            hdfs_namenode_url,
+                            current_path,
+                            getContext()->getGlobalContext()->getConfigRef(),
+                            getContext()->getReadSettings());
 
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)

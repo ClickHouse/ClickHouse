@@ -61,7 +61,7 @@ public:
     Benchmark(unsigned concurrency_, double delay_,
             Strings && hosts_, Ports && ports_, bool round_robin_,
             bool cumulative_, bool secure_, const String & default_database_,
-            const String & user_, const String & password_, const String & stage,
+            const String & user_, const String & password_, const String & quota_key_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, size_t confidence_,
             const String & query_id_, const String & query_to_execute_, bool continue_on_errors_,
@@ -90,7 +90,7 @@ public:
             connections.emplace_back(std::make_unique<ConnectionPool>(
                 concurrency,
                 cur_host, cur_port,
-                default_database_, user_, password_,
+                default_database_, user_, password_, quota_key_,
                 /* cluster_= */ "",
                 /* cluster_secret_= */ "",
                 /* client_name_= */ "benchmark",
@@ -607,6 +607,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         /// So we copy the results to std::string.
         std::optional<std::string> env_user_str;
         std::optional<std::string> env_password_str;
+        std::optional<std::string> env_quota_key_str;
 
         const char * env_user = getenv("CLICKHOUSE_USER");
         if (env_user != nullptr)
@@ -615,6 +616,10 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         const char * env_password = getenv("CLICKHOUSE_PASSWORD");
         if (env_password != nullptr)
             env_password_str.emplace(std::string(env_password));
+
+        const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY");
+        if (env_quota_key != nullptr)
+            env_quota_key_str.emplace(std::string(env_quota_key));
 
         boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
         desc.add_options()
@@ -634,6 +639,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("secure,s",                                                        "Use TLS connection")
             ("user,u",        value<std::string>()->default_value(env_user_str.value_or("default")), "")
             ("password",      value<std::string>()->default_value(env_password_str.value_or("")), "")
+            ("quota_key",      value<std::string>()->default_value(env_quota_key_str.value_or("")), "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
             ("confidence",    value<size_t>()->default_value(5), "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
@@ -682,6 +688,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
+            options["quota_key"].as<std::string>(),
             options["stage"].as<std::string>(),
             options["randomize"].as<bool>(),
             options["iterations"].as<size_t>(),
