@@ -27,9 +27,6 @@ export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
 export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
 export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
 
-export EXPORT_S3_STORAGE_POLICIES=1
-export USE_S3_STORAGE_FOR_MERGE_TREE=1
-
 
 function install_packages()
 {
@@ -43,6 +40,7 @@ function configure()
 {
     # install test configs
     export USE_DATABASE_ORDINARY=1
+    export EXPORT_S3_STORAGE_POLICIES=1
     /usr/share/clickhouse-test/config/install.sh
 
     # we mount tests folder from repo to /usr/share
@@ -185,24 +183,52 @@ configure
 
 start
 
-# shellcheck disable=SC2086 # No quotes because I want to split it into words.
-#/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS ||:
+shellcheck disable=SC2086 # No quotes because I want to split it into words.
+/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
-#clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary" ||:
-#clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test" ||:
+clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
+clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
 start
 
-#clickhouse-client --query "SHOW TABLES FROM datasets" ||:
-#clickhouse-client --query "SHOW TABLES FROM test" ||:
-#clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits" ||:
-#clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits" ||:
-#clickhouse-client --query "CREATE TABLE test.hits_s3  (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, ClientIP6 FixedString(16), RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, URLDomain String, RefererDomain String, Refresh UInt8, IsRobot UInt8, RefererCategories Array(UInt16), URLCategories Array(UInt16), URLRegions Array(UInt32), RefererRegions Array(UInt32), ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), UTCEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32, RemoteIP6 FixedString(16), WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming Int32, DNSTiming Int32, ConnectTiming Int32, ResponseStartTiming Int32, ResponseEndTiming Int32, FetchTiming Int32, RedirectTiming Int32, DOMInteractiveTiming Int32, DOMContentLoadedTiming Int32, DOMCompleteTiming Int32, LoadEventStartTiming Int32, LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32, FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, GoalsReached Array(UInt32), OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32, YCLID UInt64, ShareService String, ShareURL String, ShareTitle String, ParsedParams Nested(Key1 String, Key2 String, Key3 String, Key4 String, Key5 String, ValueDouble Float64), IslandID FixedString(16), RequestNum UInt32, RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='s3_cache'" ||:
-#clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM test.hits" ||:
-#clickhouse-client --query "SHOW TABLES FROM test" ||:
+clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM test"
+
+clickhouse-client --query "CREATE TABLE test.hits_s3 as datasets.hits_v1"
+clickhouse-client --query "ALTER TABLE test.hits_s3 MODIFY SETTING storage_policy='s3_cache'"
+
+clickhouse-client --query "CREATE TABLE test.hits as datasets.hits_v1"
+clickhouse-client --query "ALTER TABLE test.hits MODIFY SETTING storage_policy='s3_cache'"
+
+clickhouse-client --query "CREATE TABLE test.visits as datasets.visits_v1"
+clickhouse-client --query "ALTER TABLE test.visits MODIFY SETTING storage_policy='s3_cache'"
+
+clickhouse-client --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1"
+
+clickhouse-client --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1"
+clickhouse-client --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1"
+
+clickhouse-client --query "DROP TABLE datasets.visits_v1"
+clickhouse-client --query "DROP TABLE datasets.hits_v1"
+
+clickhouse-client --query "SHOW TABLES FROM test"
+
+stop
+
+# Let's enable S3 storage by default
+export USE_S3_STORAGE_FOR_MERGE_TREE=1
+configure
+
+# But we still need default disk because some tables loaded only into it
+sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml | sed "s|<disk>s3</disk>|<disk>s3</disk><disk>default</disk>|" > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp
+mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+
+start
 
 ./stress --hung-check --drop-databases --output-folder test_output --skip-func-tests "$SKIP_TESTS_OPTION" \
     && echo -e 'Test script exit code\tOK' >> /test_output/test_results.tsv \
