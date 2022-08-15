@@ -86,7 +86,7 @@ struct MultiMatchAllIndicesImpl
             return;
         }
 
-        const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
+        const auto * hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
         hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
@@ -197,7 +197,7 @@ struct MultiMatchAllIndicesImpl
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 
-            const auto & hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
+            const auto * hyperscan_regex = MultiRegexps::get</*SaveIndices=*/true, WithEditDistance>(needles, edit_distance);
             hs_scratch_t * scratch = nullptr;
             hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
