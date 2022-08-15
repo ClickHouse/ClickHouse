@@ -1,7 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
-#include <Common/typeid_cast.h>
-#include <Columns/ColumnArray.h>
+
 
 /// Available events. Add something here as you wish.
 #define APPLY_FOR_EVENTS(M) \
@@ -363,7 +362,10 @@
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying")\
     M(KeeperReadSnapshot, "Number of snapshot read(serialization)")\
     M(KeeperSaveSnapshot, "Number of snapshot save")\
-
+    \
+    M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
+    M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
+    M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
 
 namespace ProfileEvents
 {
@@ -452,7 +454,7 @@ void increment(Event event, Count amount)
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
 {
     init();
-    std::memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
+    memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)

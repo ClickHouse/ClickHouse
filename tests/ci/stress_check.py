@@ -8,7 +8,7 @@ import sys
 
 from github import Github
 
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH, S3_URL
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -31,7 +31,10 @@ def get_run_command(
 ):
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
-        f"-e S3_URL='{S3_URL}/clickhouse-datasets' "
+        # a static link, don't use S3_URL or S3_DOWNLOAD
+        "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
+        # For dmesg
+        "--cap-add syslog "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_folder}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
@@ -148,7 +151,7 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path
     )

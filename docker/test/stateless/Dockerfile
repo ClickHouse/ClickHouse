@@ -37,6 +37,7 @@ RUN apt-get update -y \
             wget \
             zstd \
             file \
+            pv \
     && apt-get clean
 
 

@@ -84,7 +84,7 @@ struct ArrayDifferenceImpl
                 }
                 else
                 {
-                    dst[pos] = curr - prev;
+                    dst[pos] = static_cast<Result>(curr) - static_cast<Result>(prev);
                 }
 
                 prev = curr;

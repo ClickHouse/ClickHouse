@@ -7,7 +7,7 @@ import logging
 
 from github import Github
 
-from env_helper import IMAGES_PATH, REPO_COPY, S3_TEST_REPORTS_BUCKET, S3_URL
+from env_helper import IMAGES_PATH, REPO_COPY, S3_TEST_REPORTS_BUCKET, S3_DOWNLOAD
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 from s3_helper import S3Helper
@@ -23,7 +23,7 @@ def get_run_command(repo_path, output_path, image):
     cmd = (
         "docker run " + f"--volume={repo_path}:/repo_folder "
         f"--volume={output_path}:/test_output "
-        f"-e 'DATA={S3_URL}/{S3_TEST_REPORTS_BUCKET}/codebrowser/data' {image}"
+        f"-e 'DATA={S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/data' {image}"
     )
     return cmd
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         os.makedirs(temp_path)
 
     docker_image = get_image_with_version(IMAGES_PATH, "clickhouse/codebrowser")
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
 
     result_path = os.path.join(temp_path, "result_path")
     if not os.path.exists(result_path):
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     )
 
     index_html = (
-        '<a href="{S3_URL}/{S3_TEST_REPORTS_BUCKET}/codebrowser/index.html">'
+        '<a href="{S3_DOWNLOAD}/{S3_TEST_REPORTS_BUCKET}/codebrowser/index.html">'
         "HTML report</a>"
     )
 

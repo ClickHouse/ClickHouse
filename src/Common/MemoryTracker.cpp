@@ -84,7 +84,6 @@ static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
-std::atomic<Int64> MemoryTracker::rss;
 
 MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
@@ -129,17 +128,6 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
 
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
-        if (level == VariableContext::Global)
-        {
-            /// For global memory tracker always update memory usage.
-            amount.fetch_add(size, std::memory_order_relaxed);
-            rss.fetch_add(size, std::memory_order_relaxed);
-
-            auto metric_loaded = metric.load(std::memory_order_relaxed);
-            if (metric_loaded != CurrentMetrics::end())
-                CurrentMetrics::add(metric_loaded, size);
-        }
-
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
             loaded_next->allocImpl(size, throw_if_memory_exceeded,
@@ -159,6 +147,24 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
+
+    /// Cap the limit to the total_memory_tracker, since it may include some drift
+    /// for user-level memory tracker.
+    ///
+    /// And since total_memory_tracker is reset to the process resident
+    /// memory peridically (in AsynchronousMetrics::update()), any limit can be
+    /// capped to it, to avoid possible drift.
+    if (unlikely(current_hard_limit
+        && will_be > current_hard_limit
+        && level == VariableContext::User))
+    {
+        Int64 total_amount = total_memory_tracker.get();
+        if (amount > total_amount)
+        {
+            set(total_amount);
+            will_be = size + total_amount;
+        }
+    }
 
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
@@ -197,21 +203,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         allocation_traced = true;
     }
 
-    Int64 amount_to_check = will_be;
-    bool used_rss_counter = false;
-    /// For Global memory tracker, additionally check RSS.
-    /// It is needed to avoid possible OOM.
-    /// We can't track all memory allocations from external libraries (yet).
-    if (level == VariableContext::Global)
-    {
-        if (Int64 current_rss = size + rss.fetch_add(size, std::memory_order_relaxed); current_rss > will_be)
-        {
-            used_rss_counter = true;
-            amount_to_check = current_rss;
-        }
-    }
-
-    if (unlikely(current_hard_limit && amount_to_check > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
+    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
         OvercommitResult overcommit_result = OvercommitResult::NONE;
         if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr != nullptr && query_tracker != nullptr)
@@ -225,11 +217,10 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
             const auto * description = description_ptr.load(std::memory_order_relaxed);
             throw DB::Exception(
                 DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                "Memory limit{}{} {}exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}. OvercommitTracker decision: {}.",
+                "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}. OvercommitTracker decision: {}.",
                 description ? " " : "",
                 description ? description : "",
-                used_rss_counter ? "(RSS) " : "",
-                formatReadableSizeWithBinarySuffix(amount_to_check),
+                formatReadableSizeWithBinarySuffix(will_be),
                 size,
                 formatReadableSizeWithBinarySuffix(current_hard_limit),
                 toDescription(overcommit_result));
@@ -295,20 +286,8 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 
 void MemoryTracker::free(Int64 size)
 {
-    if (level == VariableContext::Global)
-        rss.fetch_sub(size, std::memory_order_relaxed);
-
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {
-        if (level == VariableContext::Global)
-        {
-            /// For global memory tracker always update memory usage.
-            amount.fetch_sub(size, std::memory_order_relaxed);
-            auto metric_loaded = metric.load(std::memory_order_relaxed);
-            if (metric_loaded != CurrentMetrics::end())
-                CurrentMetrics::sub(metric_loaded, size);
-        }
-
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
             loaded_next->free(size);
@@ -323,7 +302,7 @@ void MemoryTracker::free(Int64 size)
     }
 
     Int64 accounted_size = size;
-    if (level == VariableContext::Thread || level == VariableContext::Global)
+    if (level == VariableContext::Thread)
     {
         /// Could become negative if memory allocated in this thread is freed in another one
         amount.fetch_sub(accounted_size, std::memory_order_relaxed);
@@ -394,9 +373,12 @@ void MemoryTracker::reset()
 }
 
 
-void MemoryTracker::setRSS(Int64 to)
+void MemoryTracker::set(Int64 to)
 {
-    rss.store(to, std::memory_order_relaxed);
+    amount.store(to, std::memory_order_relaxed);
+
+    bool log_memory_usage = true;
+    updatePeak(to, log_memory_usage);
 }
 
 
