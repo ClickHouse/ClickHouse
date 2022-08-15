@@ -130,8 +130,8 @@ x	Nullable(Int32)
 x	Nullable(Int32)					
 1
 dump7
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -139,8 +139,8 @@ c2	Nullable(Float64)
 4	\N
 5	\N
 6	7
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -148,15 +148,15 @@ c2	Nullable(Float64)
 4	\N
 5	\N
 6	7
-c1	Nullable(Float64)					
+c1	Nullable(Int64)					
 1
 2
 3
-c1	Nullable(Float64)					
+c1	Nullable(Int64)					
 1
 dump8
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -164,8 +164,8 @@ c2	Nullable(Float64)
 4	\N
 5	\N
 6	7
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -174,8 +174,8 @@ c2	Nullable(Float64)
 5	\N
 6	7
 dump9
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -183,8 +183,8 @@ c2	Nullable(Float64)
 4	\N
 5	\N
 6	7
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -193,8 +193,8 @@ c2	Nullable(Float64)
 5	\N
 6	7
 dump10
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -202,8 +202,8 @@ c2	Nullable(Float64)
 4	\N
 5	\N
 6	7
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -212,8 +212,8 @@ c2	Nullable(Float64)
 5	\N
 6	7
 dump11
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -221,8 +221,8 @@ c2	Nullable(Float64)
 4	\N
 5	\N
 6	7
-c1	Nullable(Float64)					
-c2	Nullable(Float64)					
+c1	Nullable(Int64)					
+c2	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -265,8 +265,8 @@ color	Nullable(String)
 price	Nullable(Int32)					
 apple	red	42
 dump14
-x	Nullable(Float64)					
-y	Nullable(Float64)					
+x	Nullable(Int64)					
+y	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -274,8 +274,8 @@ y	Nullable(Float64)
 4	\N
 5	\N
 6	7
-x	Nullable(Float64)					
-y	Nullable(Float64)					
+x	Nullable(Int64)					
+y	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -283,15 +283,15 @@ y	Nullable(Float64)
 4	\N
 5	\N
 6	7
-x	Nullable(Float64)					
+x	Nullable(Int64)					
 1
 2
 3
-x	Nullable(Float64)					
+x	Nullable(Int64)					
 1
 dump15
-x	Nullable(Float64)					
-y	Nullable(Float64)					
+x	Nullable(Int64)					
+y	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -299,8 +299,8 @@ y	Nullable(Float64)
 4	\N
 5	\N
 6	7
-x	Nullable(Float64)					
-y	Nullable(Float64)					
+x	Nullable(Int64)					
+y	Nullable(Int64)					
 1	\N
 2	\N
 3	\N
@@ -308,10 +308,10 @@ y	Nullable(Float64)
 4	\N
 5	\N
 6	7
-x	Nullable(Float64)					
+x	Nullable(Int64)					
 1
 2
 3
-x	Nullable(Float64)					
-y	Nullable(Float64)					
+x	Nullable(Int64)					
+y	Nullable(Int64)					
 1	2

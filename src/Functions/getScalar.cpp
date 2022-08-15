@@ -42,6 +42,11 @@ public:
         return 1;
     }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return false;
+    }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -143,7 +148,7 @@ struct GetShardCount
 
 }
 
-void registerFunctionGetScalar(FunctionFactory & factory)
+REGISTER_FUNCTION(GetScalar)
 {
     factory.registerFunction<FunctionGetScalar>();
     factory.registerFunction<FunctionGetSpecialScalar<GetShardNum>>();

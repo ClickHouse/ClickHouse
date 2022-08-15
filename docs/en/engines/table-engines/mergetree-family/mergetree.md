@@ -482,9 +482,11 @@ For example:
 
 ## Projections {#projections}
 Projections are like [materialized views](../../../sql-reference/statements/create/view.md#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
-::: note
+
+:::note
 When you are implementing projections you should also consider the [force_optimize_projection](../../../operations/settings/settings.md#force-optimize-projection) setting.
 :::
+
 Projections are not supported in the `SELECT` statements with the [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 ### Projection Query {#projection-query}
@@ -877,8 +879,6 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 ## Using S3 for Data Storage {#table_engine-mergetree-s3}
 
 `MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
-
-This feature is under development and not ready for production. There are known drawbacks such as very low performance.
 
 Configuration markup:
 ``` xml
