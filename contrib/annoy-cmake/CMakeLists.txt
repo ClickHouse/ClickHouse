@@ -13,3 +13,4 @@ target_include_directories(_annoy SYSTEM INTERFACE ${ANNOY_SOURCE_DIR})
 
 add_library(ch_contrib::annoy ALIAS _annoy)
 target_compile_definitions(_annoy INTERFACE ENABLE_ANNOY)
+target_compile_definitions(_annoy INTERFACE ANNOYLIB_MULTITHREADED_BUILD)
