@@ -4,7 +4,6 @@
 
 #include <Storages/MergeTree/CommonANNIndexes.h>
 
-#define ANNOYLIB_MULTITHREADED_BUILD
 #include <annoylib.h>
 #include <kissrandom.h>
 
