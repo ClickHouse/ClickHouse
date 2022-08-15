@@ -44,6 +44,15 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN apt-get install binutils-riscv64-linux-gnu
 
+# Build LLVM from trunk, because only that version can build the RISC-V binaries successfully.
+# It can be also used to check it for regular builds.
+RUN git clone git@github.com:llvm/llvm-project.git \
+    && mkdir llvm-build \
+    && cd llvm-build \
+    && cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm \
+    && ninja \
+    && ninja install
+
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
 ARG NFPM_VERSION=2.16.0
