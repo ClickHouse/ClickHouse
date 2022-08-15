@@ -593,15 +593,16 @@ def test_jbod_overflow(start_cluster, name, engine):
         node1.query(f"SYSTEM STOP MERGES {name}")
 
         # small jbod size is 40MB, so lets insert 35MB
-        node1.query_with_retry(
-            """
-            INSERT INTO {} SELECT
-                randomPrintableASCII(1024 * 1024)
-            FROM numbers(35)
-        """.format(
-                name
+        for _ in range(7):
+            node1.query_with_retry(
+                """
+                INSERT INTO {} SELECT
+                    randomPrintableASCII(1024 * 1024)
+                FROM numbers(5)
+            """.format(
+                    name
+                )
             )
-        )
 
         used_disks = get_used_disks_for_table(node1, name)
         assert used_disks == tuple("jbod1" for _ in used_disks)
@@ -671,16 +672,17 @@ def test_background_move(start_cluster, name, engine):
 
         node1.query(f"SYSTEM STOP MERGES {name}")
 
-        # 25MB
-        node1.query_with_retry(
-            """
-            INSERT INTO {} SELECT
-                randomPrintableASCII(1024 * 1024)
-            FROM numbers(25)
-        """.format(
-                name
+        for _ in range(5):
+            # 5MB
+            node1.query_with_retry(
+                """
+                INSERT INTO {} SELECT
+                    randomPrintableASCII(1024 * 1024)
+                FROM numbers(5)
+            """.format(
+                    name
+                )
             )
-        )
 
         used_disks = get_used_disks_for_table(node1, name)
 
@@ -783,16 +785,17 @@ def test_start_stop_moves(start_cluster, name, engine):
         node1.query("SYSTEM STOP MOVES {}".format(name))
         node1.query("SYSTEM STOP MERGES {}".format(name))
 
-        # 25MB
-        node1.query_with_retry(
-            """
-            INSERT INTO {} SELECT
-                randomPrintableASCII(1024 * 1024)
-            FROM numbers(25)
-        """.format(
-                name
+        for _ in range(5):
+            # 5MB
+            node1.query_with_retry(
+                """
+                INSERT INTO {} SELECT
+                    randomPrintableASCII(1024 * 1024)
+                FROM numbers(5)
+            """.format(
+                    name
+                )
             )
-        )
 
         used_disks = get_used_disks_for_table(node1, name)
 
@@ -1346,16 +1349,17 @@ def test_mutate_to_another_disk(start_cluster, name, engine):
             )
         )
 
-        # 25MB
-        node1.query_with_retry(
-            """
-            INSERT INTO {} SELECT
-                randomPrintableASCII(1024 * 1024)
-            FROM numbers(25)
-        """.format(
-                name
+        for _ in range(5):
+            # 5MB
+            node1.query_with_retry(
+                """
+                INSERT INTO {} SELECT
+                    randomPrintableASCII(1024 * 1024)
+                FROM numbers(5)
+            """.format(
+                    name
+                )
             )
-        )
 
         node1.query("ALTER TABLE {} UPDATE s1 = concat(s1, 'x') WHERE 1".format(name))
 
@@ -1616,14 +1620,15 @@ def test_rename(start_cluster):
         """
         )
 
-        # 50MB
-        node1.query(
+        for _ in range(5):
+            # 10MB
+            node1.query(
+                """
+                INSERT INTO renaming_table SELECT
+                    randomPrintableASCII(1024 * 1024)
+                FROM numbers(10)
             """
-            INSERT INTO renaming_table SELECT
-                randomPrintableASCII(1024 * 1024)
-            FROM numbers(50)
-        """
-        )
+            )
 
         disks = get_used_disks_for_table(node1, "renaming_table")
         assert len(disks) > 1
@@ -1662,15 +1667,16 @@ def test_freeze(start_cluster):
         """
         )
 
-        # 50MB
-        node1.query(
+        for _ in range(5):
+            # 10MB
+            node1.query(
+                """
+                INSERT INTO freezing_table SELECT
+                    toDate('2019-03-05'),
+                    randomPrintableASCII(1024 * 1024)
+                FROM numbers(10)
             """
-            INSERT INTO freezing_table SELECT
-                toDate('2019-03-05'),
-                randomPrintableASCII(1024 * 1024)
-            FROM numbers(50)
-        """
-        )
+            )
 
         disks = get_used_disks_for_table(node1, "freezing_table")
         assert len(disks) > 1
