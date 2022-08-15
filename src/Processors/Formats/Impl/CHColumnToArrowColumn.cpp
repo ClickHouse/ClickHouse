@@ -294,7 +294,7 @@ namespace DB
 
             auto dict_column = column_lc->getDictionary().getNestedNotNullableColumn();
             const auto & dict_type = removeNullable(assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType());
-            fillArrowArray(column_name, dict_column, dict_type, nullptr, values_builder.get(), format_name, is_nullable ? 1 : 0, dict_column->size(), output_string_as_string, dictionary_values);
+            fillArrowArray(column_name, dict_column, dict_type, nullptr, values_builder.get(), format_name, is_nullable, dict_column->size(), output_string_as_string, dictionary_values);
             status = values_builder->Finish(&dict_values);
             checkStatus(status, column->getName(), format_name);
         }
