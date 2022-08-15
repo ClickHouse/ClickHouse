@@ -29,6 +29,7 @@ INSERT INTO test_table VALUES (0, 'Value');
 SELECT 'Table access without table name qualification';
 
 SELECT test_id FROM test_table; -- { serverError 47 }
+SELECT test_id FROM test_unknown_table; -- { serverError 60 }
 
 DESCRIBE (SELECT id FROM test_table);
 SELECT id FROM test_table;

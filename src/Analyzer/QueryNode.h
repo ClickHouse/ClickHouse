@@ -107,6 +107,11 @@ public:
         return children[prewhere_child_index];
     }
 
+    bool hasWhere() const
+    {
+        return children[where_child_index] != nullptr;
+    }
+
     const QueryTreeNodePtr & getWhere() const
     {
         return children[where_child_index];
@@ -116,6 +121,9 @@ public:
     {
         return children[where_child_index];
     }
+
+    /// Compute query node columns using projection section
+    NamesAndTypesList computeProjectionColumns() const;
 
     QueryTreeNodeType getNodeType() const override
     {

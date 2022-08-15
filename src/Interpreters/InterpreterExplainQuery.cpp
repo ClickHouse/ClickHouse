@@ -7,6 +7,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
@@ -417,8 +418,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
-            interpreter.buildQueryPlan(plan);
+            if (getContext()->getSettingsRef().use_analyzer)
+            {
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
+                interpreter.initializeQueryPlanIfNeeded();
+                plan = std::move(interpreter).extractQueryPlan();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+                interpreter.buildQueryPlan(plan);
+            }
 
             if (settings.optimize)
                 plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
@@ -452,8 +462,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
                 QueryPlan plan;
 
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
-                interpreter.buildQueryPlan(plan);
+                if (getContext()->getSettingsRef().use_analyzer)
+                {
+                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), options, getContext());
+                    interpreter.initializeQueryPlanIfNeeded();
+                    plan = std::move(interpreter).extractQueryPlan();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+                    interpreter.buildQueryPlan(plan);
+                }
+
                 auto pipeline = plan.buildQueryPipeline(
                     QueryPlanOptimizationSettings::fromContext(getContext()),
                     BuildQueryPipelineSettings::fromContext(getContext()));

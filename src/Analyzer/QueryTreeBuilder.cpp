@@ -31,6 +31,8 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
 #include <Databases/IDatabase.h>
@@ -360,8 +362,8 @@ QueryTreeNodePtr QueryTreeBuilder::getFromNode(const ASTPtr & tables_in_select_q
     }
 
     auto & tables = tables_in_select_query->as<ASTTablesInSelectQuery &>();
-    if (tables.children.size() > 1)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Multiple tables are not supported");
+
+    QueryTreeNodes table_expressions;
 
     for (const auto & table_element_untyped : tables.children)
     {
@@ -380,7 +382,7 @@ QueryTreeNodePtr QueryTreeBuilder::getFromNode(const ASTPtr & tables_in_select_q
                 node->setAlias(table_identifier_typed.tryGetAlias());
                 node->setOriginalAST(table_element.table_expression);
 
-                return node;
+                table_expressions.push_back(std::move(node));
             }
             else if (table_expression.subquery)
             {
@@ -392,7 +394,7 @@ QueryTreeNodePtr QueryTreeBuilder::getFromNode(const ASTPtr & tables_in_select_q
                 node->setAlias(subquery_expression.tryGetAlias());
                 node->setOriginalAST(select_with_union_query);
 
-                return node;
+                table_expressions.push_back(std::move(node));
             }
             else if (table_expression.table_function)
             {
@@ -410,59 +412,68 @@ QueryTreeNodePtr QueryTreeBuilder::getFromNode(const ASTPtr & tables_in_select_q
                 node->setAlias(table_function_expression.tryGetAlias());
                 node->setOriginalAST(table_expression.table_function);
 
-                return node;
+                table_expressions.push_back(std::move(node));
             }
-
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}", table_element.table_expression->formatForErrorMessage());
+            else
+            {
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}", table_element.table_expression->formatForErrorMessage());
+            }
         }
 
-        // if (table_element.table_join)
-        // {
-        //     const auto & table_join = table_element.table_join->as<ASTTableJoin>();
+        if (table_element.table_join)
+        {
+            const auto & table_join = table_element.table_join->as<ASTTableJoin &>();
 
-        //     auto right_table_expression = std::move(table_expressions.back());
-        //     table_expressions.pop_back();
+            auto right_table_expression = std::move(table_expressions.back());
+            table_expressions.pop_back();
 
-        //     auto left_table_expression = std::move(table_expressions.back());
-        //     table_expressions.pop_back();
+            auto left_table_expression = std::move(table_expressions.back());
+            table_expressions.pop_back();
 
-        //     auto join_expression = JoinExpression::create();
-        //     join_expression->getLeftTableExpression() = left_table_expression;
-        //     join_expression->getRightTableExpression() = right_table_expression;
+            QueryTreeNodePtr join_expression;
 
-        //     if (table_join->using_expression_list)
-        //         join_expression->getUsingExpressions() = getExpressionElements(table_join->using_expression_list, scope);
+            if (table_join.using_expression_list)
+                join_expression = getExpressionList(table_join.using_expression_list);
+            else if (table_join.on_expression)
+                join_expression = getExpression(table_join.on_expression);
 
-        //     if (table_join->on_expression)
-        //     {
-        //         join_expression->getOnExpression() = getExpressionElement(table_join->on_expression, scope);
-        //     }
+            auto join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
+                std::move(right_table_expression),
+                std::move(join_expression),
+                table_join.locality,
+                table_join.strictness,
+                table_join.kind);
 
-        //     table_expressions.emplace_back(std::move(join_expression));
-        // }
+            /** Original AST is not set because it will contain only join part and does
+              * not include left table expression.
+              */
+            table_expressions.emplace_back(std::move(join_node));
+        }
 
-        // if (table_element.array_join)
-        // {
-        //     auto array_join_array_expression = table_element.array_join->children[0]->children[0];
-        //     auto expression_element = getExpressionElement(array_join_array_expression, scope);
-        //     expression_element->setAlias(array_join_array_expression->tryGetAlias());
+        if (table_element.array_join)
+        {
+            auto & array_join_expression = table_element.array_join->as<ASTArrayJoin &>();
+            bool is_left_array_join = array_join_expression.kind == ASTArrayJoin::Kind::Left;
 
-        //     auto last_table_expression = std::move(table_expressions.back());
-        //     table_expressions.pop_back();
+            auto last_table_expression = std::move(table_expressions.back());
+            table_expressions.pop_back();
 
-        //     auto array_join_expression = ArrayJoinExpression::create();
-        //     array_join_expression->getLeftTableExpression() = std::move(last_table_expression);
-        //     array_join_expression->getArrayExpression() = std::move(expression_element);
+            auto array_join_expressions_list = getExpressionList(array_join_expression.expression_list);
 
-        //     table_expressions.push_back(array_join_expression);
-        // }
+            auto array_join_node = std::make_shared<ArrayJoinNode>(std::move(last_table_expression), std::move(array_join_expressions_list), is_left_array_join);
+            array_join_node->setOriginalAST(table_element.array_join);
+
+            table_expressions.push_back(std::move(array_join_node));
+        }
     }
 
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "From section is unsupported");
-    // if (table_expressions.empty())
-    //     throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryAnalyzer from cannot be empty");
+    if (table_expressions.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query FROM section cannot be empty");
 
-    // return table_expressions.back();
+    if (table_expressions.size() > 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query FROM section cannot have more than 1 root table expression");
+
+    return table_expressions.back();
 }
 
 

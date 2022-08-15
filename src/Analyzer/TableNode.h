@@ -26,8 +26,8 @@ using TableNodePtr = std::shared_ptr<TableNode>;
 class TableNode : public IQueryTreeNode
 {
 public:
-    /// Construct table node with storage and context
-    explicit TableNode(StoragePtr storage_, ContextPtr context);
+    /// Construct table node with storage, storage lock, storage snapshot
+    explicit TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_);
 
     /// Get storage
     const StoragePtr & getStorage() const
@@ -47,18 +47,18 @@ public:
         return storage_snapshot;
     }
 
-    /// Get table lock
-    const TableLockHolder & getTableLock() const
+    /// Get storage lock
+    const TableLockHolder & getStorageLock() const
     {
-        return table_lock;
+        return storage_lock;
     }
 
     /** Move table lock out of table node.
       * After using this method table node state becomes invalid.
       */
-    TableLockHolder && moveTableLock()
+    TableLockHolder && moveStorageLock()
     {
-        return std::move(table_lock);
+        return std::move(storage_lock);
     }
 
     QueryTreeNodeType getNodeType() const override
@@ -84,7 +84,7 @@ private:
 
     StoragePtr storage;
     StorageID storage_id;
-    TableLockHolder table_lock;
+    TableLockHolder storage_lock;
     StorageSnapshotPtr storage_snapshot;
 };
 

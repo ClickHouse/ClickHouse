@@ -11,6 +11,11 @@
 namespace DB
 {
 
+ListNode::ListNode(QueryTreeNodes nodes)
+{
+    children = std::move(nodes);
+}
+
 void ListNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "LIST id: " << format_state.getNodeId(this);

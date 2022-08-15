@@ -46,51 +46,49 @@ namespace
 std::string formatTypeMap(const TableJoin::NameToTypeMap & target, const TableJoin::NameToTypeMap & source)
 {
     std::vector<std::string> text;
-    for (const auto & [k, v] : target)
+    for (const auto & [key, value] : target)
     {
-        auto src_type_it = source.find(k);
+        auto src_type_it = source.find(key);
         std::string src_type_name = src_type_it != source.end() ? src_type_it->second->getName() : "";
-        text.push_back(fmt::format("{} : {} -> {}", k, src_type_name, v->getName()));
+        text.push_back(fmt::format("{} : {} -> {}", key, src_type_name, value->getName()));
     }
+
     return fmt::format("{}", fmt::join(text, ", "));
 }
-
-}
-
-namespace
-{
 
 struct BothSidesTag {};
 struct LeftSideTag {};
 struct RightSideTag {};
 
-template <typename SideTag = BothSidesTag, typename OnExpr, typename Func>
-bool forAllKeys(OnExpr & expressions, Func callback)
+template <typename SideTag, typename JoinClauses, typename Func>
+bool forKeyNamesInJoinClauses(JoinClauses & join_clauses, Func callback)
 {
     static_assert(std::is_same_v<SideTag, BothSidesTag> ||
                   std::is_same_v<SideTag, LeftSideTag> ||
                   std::is_same_v<SideTag, RightSideTag>);
 
-    for (auto & expr : expressions)
+    for (auto & join_clause : join_clauses)
     {
         if constexpr (std::is_same_v<SideTag, BothSidesTag>)
-            assert(expr.key_names_left.size() == expr.key_names_right.size());
+            assert(join_clause.key_names_left.size() == join_clause.key_names_right.size());
 
-        size_t sz = !std::is_same_v<SideTag, RightSideTag> ? expr.key_names_left.size() : expr.key_names_right.size();
-        for (size_t i = 0; i < sz; ++i)
+        size_t key_names_size = !std::is_same_v<SideTag, RightSideTag> ? join_clause.key_names_left.size() : join_clause.key_names_right.size();
+
+        for (size_t i = 0; i < key_names_size; ++i)
         {
-            bool cont;
+            bool should_continue;
             if constexpr (std::is_same_v<SideTag, BothSidesTag>)
-                cont = callback(expr.key_names_left[i], expr.key_names_right[i]);
-            if constexpr (std::is_same_v<SideTag, LeftSideTag>)
-                cont = callback(expr.key_names_left[i]);
+                should_continue = callback(join_clause.key_names_left[i], join_clause.key_names_right[i]);
+            else if constexpr (std::is_same_v<SideTag, LeftSideTag>)
+                should_continue = callback(join_clause.key_names_left[i]);
             if constexpr (std::is_same_v<SideTag, RightSideTag>)
-                cont = callback(expr.key_names_right[i]);
+                should_continue = callback(join_clause.key_names_right[i]);
 
-            if (!cont)
+            if (!should_continue)
                 return false;
         }
     }
+
     return true;
 }
 
@@ -133,6 +131,7 @@ void TableJoin::resetCollected()
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
 {
+    // std::cout << "TableJoin::addUsingKey " << ast->formatForErrorMessage() << std::endl;
     addKey(ast->getColumnName(), renamedRightColumnName(ast->getAliasOrColumnName()), ast);
 }
 
@@ -237,6 +236,12 @@ ASTPtr TableJoin::rightKeysList() const
     return keys_list;
 }
 
+void TableJoin::setColumnsFromJoinedTable(NamesAndTypesList columns_from_joined_table_value, const NameSet & left_table_columns, const String & right_table_prefix)
+{
+    columns_from_joined_table = std::move(columns_from_joined_table_value);
+    deduplicateAndQualifyColumnNames(left_table_columns, right_table_prefix);
+}
+
 Names TableJoin::requiredJoinedNames() const
 {
     Names key_names_right = getAllNames(JoinTableSide::Right);
@@ -256,16 +261,19 @@ Names TableJoin::requiredJoinedNames() const
 
 NameSet TableJoin::requiredRightKeys() const
 {
-    NameSet required;
-    forAllKeys<RightSideTag>(clauses, [this, &required](const auto & name)
+    NameSet required_right_column_names;
+    forKeyNamesInJoinClauses<RightSideTag>(clauses, [&](const auto & right_column_name)
     {
-        auto rename = renamedRightColumnName(name);
+        auto renamed_right_column = renamedRightColumnName(right_column_name);
+
         for (const auto & column : columns_added_by_join)
-            if (rename == column.name)
-                required.insert(name);
+            if (renamed_right_column == column.name)
+                required_right_column_names.insert(renamed_right_column);
+
         return true;
     });
-    return required;
+
+    return required_right_column_names;
 }
 
 NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names & action_required_columns) const
@@ -286,7 +294,7 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
     if (required_keys.empty())
         return required_right_keys;
 
-    forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
+    forKeyNamesInJoinClauses<BothSidesTag>(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
         if (required_keys.contains(right_key_name) && !required_right_keys.has(right_key_name))
         {
@@ -294,8 +302,10 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
             required_right_keys.insert(right_key);
             keys_sources.push_back(left_key_name);
         }
+
         return true;
     });
+
     return required_right_keys;
 }
 
@@ -311,7 +321,13 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
+    // std::cout << "TableJoin::addJoinedColumn " << joined_column.dump() << std::endl;
     columns_added_by_join.emplace_back(joined_column);
+}
+
+void TableJoin::setColumnsAddedByJoin(const NamesAndTypesList & columns_added_by_join_value)
+{
+    columns_added_by_join = columns_added_by_join_value;
 }
 
 NamesAndTypesList TableJoin::correctedColumnsAddedByJoin() const
@@ -416,6 +432,75 @@ bool TableJoin::needStreamWithNonJoinedRows() const
     return isRightOrFull(kind());
 }
 
+static std::optional<String> getDictKeyName(const String & dict_name , ContextPtr context)
+{
+    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
+    if (!dictionary)
+        return {};
+
+    if (const auto & structure = dictionary->getStructure(); structure.id)
+        return structure.id->name;
+    return {};
+}
+
+bool TableJoin::tryInitDictJoin(const Block & sample_block, ContextPtr context)
+{
+    bool allowed_inner = isInner(kind()) && strictness() == JoinStrictness::All;
+    bool allowed_left = isLeft(kind()) && (strictness() == JoinStrictness::Any ||
+                                           strictness() == JoinStrictness::All ||
+                                           strictness() == JoinStrictness::Semi ||
+                                           strictness() == JoinStrictness::Anti);
+
+    /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
+    if (!allowed_inner && !allowed_left)
+        return false;
+
+    if (clauses.size() != 1 || clauses[0].key_names_right.size() != 1)
+        return false;
+
+    const auto & right_key = getOnlyClause().key_names_right[0];
+
+    /// TODO: support 'JOIN ... ON expr(dict_key) = table_key'
+    auto it_key = original_names.find(right_key);
+    if (it_key == original_names.end())
+        return false;
+
+    if (!right_storage_dictionary)
+        return false;
+
+    auto dict_name = right_storage_dictionary->getDictionaryName();
+
+    auto dict_key = getDictKeyName(dict_name, context);
+    if (!dict_key.has_value() || *dict_key != it_key->second)
+        return false; /// JOIN key != Dictionary key
+
+    Names src_names;
+    NamesAndTypesList dst_columns;
+    for (const auto & col : sample_block)
+    {
+        if (col.name == right_key)
+            continue; /// do not extract key column
+
+        auto it = original_names.find(col.name);
+        if (it != original_names.end())
+        {
+            String original = it->second;
+            src_names.push_back(original);
+            dst_columns.push_back({col.name, col.type});
+        }
+        else
+        {
+            /// Can't extract column from dictionary table
+            /// TODO: Sometimes it should be possible to reconstruct required column,
+            /// e.g. if it's an expression depending on dictionary attributes
+            return false;
+        }
+    }
+    dictionary_reader = std::make_shared<DictionaryReader>(dict_name, src_names, dst_columns, context);
+
+    return true;
+}
+
 static void renameIfNeeded(String & name, const NameToNameMap & renames)
 {
     if (const auto it = renames.find(name); it != renames.end())
@@ -473,7 +558,7 @@ TableJoin::createConvertingActions(
         log_actions("Right", right_converting_actions);
     }
 
-    forAllKeys(clauses, [&](auto & left_key, auto & right_key)
+    forKeyNamesInJoinClauses<BothSidesTag>(clauses, [&](auto & left_key, auto & right_key)
     {
         renameIfNeeded(left_key, left_key_column_rename);
         renameIfNeeded(right_key, right_key_column_rename);
@@ -507,7 +592,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
             throw DB::Exception("ASOF join over right table Nullable column is not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
+    forKeyNamesInJoinClauses<BothSidesTag>(clauses, [&](const auto & left_key_name, const auto & right_key_name)
     {
         auto ltypeit = left_types.find(left_key_name);
         auto rtypeit = right_types.find(right_key_name);
@@ -708,7 +793,7 @@ std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const
     if (hasUsing())
     {
         const auto & required_right_keys = requiredRightKeys();
-        forAllKeys(clauses, [&](const auto & left_key_name, const auto & right_key_name)
+        forKeyNamesInJoinClauses<BothSidesTag>(clauses, [&](const auto & left_key_name, const auto & right_key_name)
         {
             if (!required_right_keys.contains(right_key_name))
                 left_to_right_key_remap[left_key_name] = right_key_name;
@@ -722,14 +807,16 @@ Names TableJoin::getAllNames(JoinTableSide side) const
 {
     Names res;
     auto func = [&res](const auto & name) { res.emplace_back(name); return true; };
+
     if (side == JoinTableSide::Left)
-        forAllKeys<LeftSideTag>(clauses, func);
+        forKeyNamesInJoinClauses<LeftSideTag>(clauses, func);
     else
-        forAllKeys<RightSideTag>(clauses, func);
+        forKeyNamesInJoinClauses<RightSideTag>(clauses, func);
+
     return res;
 }
 
-void TableJoin::assertHasOneOnExpr() const
+void TableJoin::assertHasSingleClause() const
 {
     if (!oneDisjunct())
     {
