@@ -35,7 +35,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Databases/IDatabase.h>
 #include <base/range.h>
-#include <fmt/core.h>
 #include <algorithm>
 
 
