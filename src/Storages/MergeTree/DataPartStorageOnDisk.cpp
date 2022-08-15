@@ -334,21 +334,12 @@ void DataPartStorageOnDisk::clearDirectory(
     /// It does not make sense to try fast path for incomplete temporary parts, because some files are probably absent.
     /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
     /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
-    bool looks_like_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
-    bool incomplete_temporary_part = looks_like_temporary_part && (!disk->exists(fs::path(dir) / "checksums.txt") || !disk->exists(fs::path(dir) / "columns.txt"));
+    bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
+    bool incomplete_temporary_part = is_temporary_part && (!disk->exists(fs::path(dir) / "checksums.txt") || !disk->exists(fs::path(dir) / "columns.txt"));
     if (checksums.empty() || incomplete_temporary_part)
     {
-        if (is_projection)
-        {
-            LOG_ERROR(
-                log,
-                "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
-                fullPath(disk, dir));
-        }
-
         /// If the part is not completely written, we cannot use fast path by listing files.
         disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
-
         return;
     }
 
