@@ -9,6 +9,8 @@ namespace DB
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_)
     : disk(disk_)
 {
+    /// Do not use default temporaty root path `/tmp`.
+    /// The `dummy_prefix` is used to know what to replace with the real prefix.
     String dummy_prefix = "a/";
     filepath = Poco::TemporaryFile::tempName(dummy_prefix);
     dummy_prefix += "tmp";
