@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing'
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing|benchmark'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -201,7 +201,7 @@ done
 tests_with_replicated_merge_tree=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         grep -vP $EXCLUDE_DIRS |
-        xargs grep --with-filename -e ReplicatedMergeTree | cut -d: -f1 | sort -u
+        xargs grep --with-filename -e "Replicated.*MergeTree[ ]*(.*" | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     case "$test_case" in
@@ -209,11 +209,11 @@ for test_case in "${tests_with_replicated_merge_tree[@]}"; do
             ;;
         *.sh)
             test_case_zk_prefix="\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
-            grep -q -e "ReplicatedMergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
+            grep -q -e "Replicated.*MergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "Replicated.*MergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.sql|*.sql.j2)
-            test_case_zk_prefix="\({database}\|currentDatabase()\)"
-            grep -q -e "ReplicatedMergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
+            test_case_zk_prefix="\({database}\|currentDatabase()\|{uuid}\|{default_path_test}\)"
+            grep -q -e "Replicated.*MergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "Replicated.*MergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
         *.py)
             # Right now there is not such tests anyway
@@ -314,6 +314,12 @@ for test_case in "${tests_with_event_time_date[@]}"; do
     }
 done
 
+expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
+for test_case in "${expect_tests[@]}"; do
+    pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
+    grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+done
+
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
@@ -341,5 +347,7 @@ fi
 # Forbid files that differ only by character case
 find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
 
-# Forbid recursive submodules
-find $ROOT_PATH/contrib -name '.gitmodules' -size +0 | xargs cat | grep -P '.' && echo "Recursive submodules are forbidden."
+# Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -P '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"

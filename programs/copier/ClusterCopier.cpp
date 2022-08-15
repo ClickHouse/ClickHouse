@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -15,6 +16,9 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -1451,7 +1455,14 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             local_context->setSettings(task_cluster->settings_pull);
             local_context->setSetting("skip_unavailable_shards", true);
 
-            Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().pipeline);
+            InterpreterSelectWithUnionQuery select(query_select_ast, local_context, SelectQueryOptions{});
+            QueryPlan plan;
+            select.buildQueryPlan(plan);
+            auto builder = std::move(*plan.buildQueryPipeline(
+                QueryPlanOptimizationSettings::fromContext(local_context),
+                BuildQueryPipelineSettings::fromContext(local_context)));
+
+            Block block = getBlockWithAllStreamData(std::move(builder));
             count = (block) ? block.safeGetByPosition(0).column->getUInt(0) : 0;
         }
 
@@ -1532,22 +1543,27 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             QueryPipeline input;
             QueryPipeline output;
             {
-                BlockIO io_select = InterpreterFactory::get(query_select_ast, context_select)->execute();
                 BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
+
+                InterpreterSelectWithUnionQuery select(query_select_ast, context_select, SelectQueryOptions{});
+                QueryPlan plan;
+                select.buildQueryPlan(plan);
+                auto builder = std::move(*plan.buildQueryPipeline(
+                    QueryPlanOptimizationSettings::fromContext(context_select),
+                    BuildQueryPipelineSettings::fromContext(context_select)));
 
                 output = std::move(io_insert.pipeline);
 
                 /// Add converting actions to make it possible to copy blocks with slightly different schema
-                const auto & select_block = io_select.pipeline.getHeader();
+                const auto & select_block = builder.getHeader();
                 const auto & insert_block = output.getHeader();
                 auto actions_dag = ActionsDAG::makeConvertingActions(
                         select_block.getColumnsWithTypeAndName(),
                         insert_block.getColumnsWithTypeAndName(),
                         ActionsDAG::MatchColumnsMode::Position);
+
                 auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext()));
 
-                QueryPipelineBuilder builder;
-                builder.init(std::move(io_select.pipeline));
                 builder.addSimpleTransform([&](const Block & header)
                 {
                     return std::make_shared<ExpressionTransform>(header, actions);
@@ -1743,10 +1759,11 @@ String ClusterCopier::getRemoteCreateTable(
     remote_context->setSettings(settings);
 
     String query = "SHOW CREATE TABLE " + getQuotedTable(table);
-    Block block = getBlockWithAllStreamData(
-        QueryPipeline(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context), false, false)));
 
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(std::make_shared<RemoteSource>(
+            std::make_shared<RemoteQueryExecutor>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context), false, false)));
+    Block block = getBlockWithAllStreamData(std::move(builder));
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }
 
@@ -1858,7 +1875,14 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
-    Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_ast, local_context)->execute().pipeline);
+    InterpreterSelectWithUnionQuery select(query_ast, local_context, SelectQueryOptions{});
+    QueryPlan plan;
+    select.buildQueryPlan(plan);
+    auto builder = std::move(*plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(local_context),
+        BuildQueryPipelineSettings::fromContext(local_context)));
+
+    Block block = getBlockWithAllStreamData(std::move(builder));
 
     if (block)
     {
@@ -1986,7 +2010,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             {
                 connections.emplace_back(std::make_shared<Connection>(
                     node.host_name, node.port, node.default_database,
-                    node.user, node.password, node.cluster, node.cluster_secret,
+                    node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
                     "ClusterCopier", node.compression, node.secure
                 ));
 

@@ -4,8 +4,11 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageExecutable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -43,27 +46,39 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
     for (size_t i = 0; i <= 2; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    auto scipt_name_with_arguments_value = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
 
     std::vector<String> script_name_with_arguments;
-    boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c){ return c == ' '; });
+    boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c){ return c == ' '; });
 
-    script_name = script_name_with_arguments[0];
+    script_name = std::move(script_name_with_arguments[0]);
     script_name_with_arguments.erase(script_name_with_arguments.begin());
     arguments = std::move(script_name_with_arguments);
-    format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-    structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    format = checkAndGetLiteralArgument<String>(args[1], "format");
+    structure = checkAndGetLiteralArgument<String>(args[2], "structure");
 
     for (size_t i = 3; i < args.size(); ++i)
     {
-        ASTPtr query = args[i]->children.at(0);
-        if (!query->as<ASTSelectWithUnionQuery>())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Table function '{}' argument is invalid input query {}",
-                getName(),
-                query->formatForErrorMessage());
-
-        input_queries.emplace_back(std::move(query));
+        if (args[i]->as<ASTSetQuery>())
+        {
+            settings_query = std::move(args[i]);
+        }
+        else
+        {
+            ASTPtr query = args[i]->children.at(0);
+            if (query->as<ASTSelectWithUnionQuery>())
+            {
+                input_queries.emplace_back(std::move(query));
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Table function '{}' argument is invalid {}",
+                    getName(),
+                    args[i]->formatForErrorMessage());
+            }
+        }
     }
 }
 
@@ -79,6 +94,8 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     ExecutableSettings settings;
     settings.script_name = script_name;
     settings.script_arguments = arguments;
+    if (settings_query != nullptr)
+        settings.applyChanges(settings_query->as<ASTSetQuery>()->changes);
 
     auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context), ConstraintsDescription{});
     storage->startup();

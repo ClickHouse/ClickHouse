@@ -189,7 +189,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (...)
         {
-            std::unique_lock lock(storage.last_queue_update_exception_lock);
+            std::lock_guard lock(storage.last_queue_update_exception_lock);
             storage.last_queue_update_exception = getCurrentExceptionMessage(false);
             throw;
         }
@@ -303,25 +303,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
     String is_active_path = fs::path(storage.replica_path) / "is_active";
-
-    /** If the node is marked as active, but the mark is made in the same instance, delete it.
-      * This is possible only when session in ZooKeeper expires.
-      */
-    String data;
-    Coordination::Stat stat;
-    bool has_is_active = zookeeper->tryGet(is_active_path, data, &stat);
-    if (has_is_active && data == active_node_identifier)
-    {
-        auto code = zookeeper->tryRemove(is_active_path, stat.version);
-
-        if (code == Coordination::Error::ZBADVERSION)
-            throw Exception("Another instance of replica " + storage.replica_path + " was created just now."
-                " You shouldn't run multiple instances of same replica. You need to check configuration files.",
-                ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
-
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-            throw Coordination::Exception(code, is_active_path);
-    }
+    zookeeper->waitForEphemeralToDisappearIfAny(is_active_path);
 
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;

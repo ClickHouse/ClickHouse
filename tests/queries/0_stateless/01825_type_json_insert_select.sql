@@ -38,18 +38,29 @@ DROP TABLE type_json_dst;
 CREATE TABLE type_json_dst (data JSON) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE type_json_src (data String) ENGINE = MergeTree ORDER BY tuple();
 
+SYSTEM STOP MERGES type_json_src;
+
+SET max_threads = 1;
+SET max_insert_threads = 1;
+SET output_format_json_named_tuples_as_objects = 1;
+
 INSERT INTO type_json_src FORMAT JSONAsString {"k1": 1, "k10": [{"a": "1", "b": "2"}, {"a": "2", "b": "3"}]};
 INSERT INTO type_json_src FORMAT JSONAsString  {"k1": 2, "k10": [{"a": "1", "b": "2", "c": {"k11": "haha"}}]};
 
--- Temporarily fix test by optimizing data to one part.
--- If order of insertion of above two lines will be changed,
--- which can happen during insertion with multiple threads,
--- this test will fail. TODO: fix this.
-OPTIMIZE TABLE type_json_src FINAL;
+INSERT INTO type_json_dst SELECT data FROM type_json_src;
+
+SELECT * FROM type_json_dst ORDER BY data.k1 FORMAT JSONEachRow;
+SELECT toTypeName(data) FROM type_json_dst LIMIT 1;
+
+TRUNCATE TABLE type_json_src;
+TRUNCATE TABLE type_json_dst;
+
+-- Insert in another order. Order is important, because a way how defaults are filled differs.
+INSERT INTO type_json_src FORMAT JSONAsString  {"k1": 2, "k10": [{"a": "1", "b": "2", "c": {"k11": "haha"}}]};
+INSERT INTO type_json_src FORMAT JSONAsString {"k1": 1, "k10": [{"a": "1", "b": "2"}, {"a": "2", "b": "3"}]};
 
 INSERT INTO type_json_dst SELECT data FROM type_json_src;
 
-SET output_format_json_named_tuples_as_objects = 1;
 SELECT * FROM type_json_dst ORDER BY data.k1 FORMAT JSONEachRow;
 SELECT toTypeName(data) FROM type_json_dst LIMIT 1;
 

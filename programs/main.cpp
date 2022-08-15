@@ -2,7 +2,7 @@
 #include <csetjmp>
 #include <unistd.h>
 
-#ifdef __linux__
+#ifdef OS_LINUX
 #include <sys/mman.h>
 #endif
 
@@ -75,11 +75,14 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_DISKS
+int mainEntryClickHouseDisks(int argc, char ** argv);
+#endif
 
 int mainEntryClickHouseHashBinary(int, char **)
 {
     /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .note.ClickHouse.hash=<(./clickhouse hash-binary) clickhouse
+    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
@@ -144,6 +147,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"su", mainEntryClickHouseSU},
 #endif
     {"hash-binary", mainEntryClickHouseHashBinary},
+#if ENABLE_CLICKHOUSE_DISKS
+    {"disks", mainEntryClickHouseDisks},
+#endif
 };
 
 int printHelp(int, char **)
@@ -333,12 +339,13 @@ struct Checker
         checkRequiredInstructions();
     }
 } checker
-#ifndef __APPLE__
+#ifndef OS_DARWIN
     __attribute__((init_priority(101)))    /// Run before other static initializers.
 #endif
 ;
 
 
+#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -390,6 +397,7 @@ void checkHarmfulEnvironmentVariables(char ** argv)
         _exit(error);
     }
 }
+#endif
 
 }
 
@@ -416,7 +424,9 @@ int main(int argc_, char ** argv_)
     ///  will work only after additional call of this function.
     updatePHDRCache();
 
+#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
     checkHarmfulEnvironmentVariables(argv_);
+#endif
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

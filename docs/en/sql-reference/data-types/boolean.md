@@ -3,7 +3,7 @@ sidebar_position: 43
 sidebar_label: Boolean
 ---
 
-# Boolean Values bool (boolean) {#boolean-values}
+# Boolean Values bool (boolean)
 
 Type `bool` is stored as UInt8. Possible values `true` (1), `false` (0).
 

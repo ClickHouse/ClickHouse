@@ -7,6 +7,8 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -547,15 +549,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         {
             /// Connection has been lost and now we are retrying,
             /// but our previous ephemeral node still exists.
-            zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
-            String dummy;
-            if (zookeeper->tryGet(active_node_path, dummy, nullptr, eph_node_disappeared))
-            {
-                constexpr int timeout_ms = 60 * 1000;
-                if (!eph_node_disappeared->tryWait(timeout_ms))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Ephemeral node {} still exists, "
-                                    "probably it's owned by someone else", active_node_path);
-            }
+            zookeeper->waitForEphemeralToDisappearIfAny(active_node_path);
         }
 
         zookeeper->create(active_node_path, {}, zkutil::CreateMode::Ephemeral);
@@ -660,7 +654,11 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
     if (auto * query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
         return false;
 
-    if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
+    if (!ast_ddl->as<ASTAlterQuery>() &&
+        !ast_ddl->as<ASTOptimizeQuery>() &&
+        !ast_ddl->as<ASTDropQuery>() &&
+        !ast_ddl->as<ASTCreateIndexQuery>() &&
+        !ast_ddl->as<ASTDropIndexQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())

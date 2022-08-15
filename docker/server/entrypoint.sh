@@ -36,6 +36,10 @@ ERROR_LOG_DIR=""
 if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
+# There could be many disks declared in config
+readarray -t FILESYSTEM_CACHE_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.data_cache_path' || true)
+readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.path' || true)
+
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
@@ -46,12 +50,22 @@ for dir in "$DATA_DIR" \
   "$LOG_DIR" \
   "$TMP_DIR" \
   "$USER_PATH" \
-  "$FORMAT_SCHEMA_PATH"
+  "$FORMAT_SCHEMA_PATH" \
+  "${FILESYSTEM_CACHE_PATHS[@]}" \
+  "${DISKS_PATHS[@]}"
 do
     # check if variable not empty
     [ -z "$dir" ] && continue
     # ensure directories exist
-    if ! mkdir -p "$dir"; then
+    if [ "$DO_CHOWN" = "1" ]; then
+        mkdir="mkdir"
+    else
+        # if DO_CHOWN=0 it means that the system does not map root user to "admin" permissions
+        # it mainly happens on NFS mounts where root==nobody for security reasons
+        # thus mkdir MUST run with user id/gid and not from nobody that has zero permissions
+        mkdir="/usr/bin/clickhouse su "${USER}:${GROUP}" mkdir"
+    fi
+    if ! $mkdir -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"
         exit 1
     fi
@@ -151,7 +165,7 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
-    /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
+    exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

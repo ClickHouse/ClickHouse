@@ -9,6 +9,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -269,8 +271,24 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         }
     };
 
+    std::exception_ptr error;
     for (int column_idx = 0; column_idx < num_columns; ++column_idx)
-        proccess_column_value(readInt8(message, pos, size), column_idx);
+    {
+        try
+        {
+            proccess_column_value(readInt8(message, pos, size), column_idx);
+        }
+        catch (...)
+        {
+            insertDefaultValue(buffer, column_idx);
+            /// Let's collect only the first exception.
+            /// This delaying of error throw is needed because
+            /// some errors can be ignored and just logged,
+            /// but in this case we need to finish insertion to all columns.
+            if (!error)
+                error = std::current_exception();
+        }
+    }
 
     switch (type)
     {
@@ -301,6 +319,9 @@ void MaterializedPostgreSQLConsumer::readTupleData(
             break;
         }
     }
+
+    if (error)
+        std::rethrow_exception(error);
 }
 
 

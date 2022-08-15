@@ -5,16 +5,19 @@
 
 #include <Core/Names.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/JoinUtils.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
 
-
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -52,7 +55,7 @@ enum class DictionarySpecialKeyType
 /**
  * Base class for Dictionaries implementation.
  */
-class IDictionary : public IExternalLoadable
+class IDictionary : public IExternalLoadable, public IKeyValueEntity
 {
 public:
     explicit IDictionary(const StorageID & dictionary_id_)
@@ -62,26 +65,26 @@ public:
 
     std::string getFullName() const
     {
-        std::lock_guard lock{name_mutex};
-        return dictionary_id.getInternalDictionaryName();
+        std::lock_guard lock{mutex};
+        return dictionary_id.getNameForLogs();
     }
 
     StorageID getDictionaryID() const
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         return dictionary_id;
     }
 
     void updateDictionaryName(const StorageID & new_name) const
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         assert(new_name.uuid == dictionary_id.uuid && dictionary_id.uuid != UUIDHelpers::Nil);
         dictionary_id = new_name;
     }
 
-    std::string getLoadableName() const override final
+    std::string getLoadableName() const final
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         return dictionary_id.getInternalDictionaryName();
     }
 
@@ -92,6 +95,8 @@ public:
 
     std::string getDatabaseOrNoDatabaseTag() const
     {
+        std::lock_guard lock{mutex};
+
         if (!dictionary_id.database_name.empty())
             return dictionary_id.database_name;
 
@@ -278,22 +283,121 @@ public:
 
     void setDictionaryComment(String new_comment)
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         dictionary_comment = std::move(new_comment);
     }
 
     String getDictionaryComment() const
     {
-        std::lock_guard lock{name_mutex};
+        std::lock_guard lock{mutex};
         return dictionary_comment;
     }
 
-private:
-    mutable std::mutex name_mutex;
-    mutable StorageID dictionary_id;
+    /// IKeyValueEntity implementation
+    Names getPrimaryKey() const  override { return getStructure().getKeysNames(); }
 
-protected:
-    String dictionary_comment;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & out_null_map, const Names & result_names) const override
+    {
+        if (keys.empty())
+            return Chunk(getSampleBlock(result_names).cloneEmpty().getColumns(), 0);
+
+        const auto & dictionary_structure = getStructure();
+
+        /// Split column keys and types into separate vectors, to use in `IDictionary::getColumns`
+        Columns key_columns;
+        DataTypes key_types;
+        for (const auto & key : keys)
+        {
+            key_columns.emplace_back(key.column);
+            key_types.emplace_back(key.type);
+        }
+
+        /// Fill null map
+        {
+            out_null_map.clear();
+
+            auto mask = hasKeys(key_columns, key_types);
+            const auto & mask_data = mask->getData();
+
+            out_null_map.resize(mask_data.size(), 0);
+            std::copy(mask_data.begin(), mask_data.end(), out_null_map.begin());
+        }
+
+        Names attribute_names;
+        DataTypes result_types;
+        if (!result_names.empty())
+        {
+            for (const auto & attr_name : result_names)
+            {
+                if (!dictionary_structure.hasAttribute(attr_name))
+                    continue; /// skip keys
+                const auto & attr = dictionary_structure.getAttribute(attr_name);
+                attribute_names.emplace_back(attr.name);
+                result_types.emplace_back(attr.type);
+            }
+        }
+        else
+        {
+            /// If result_names is empty, then use all attributes from dictionary_structure
+            for (const auto & attr : dictionary_structure.attributes)
+            {
+                attribute_names.emplace_back(attr.name);
+                result_types.emplace_back(attr.type);
+            }
+        }
+
+        Columns default_cols(result_types.size());
+        for (size_t i = 0; i < result_types.size(); ++i)
+            /// Dictinonary may have non-standart default values specified
+            default_cols[i] = result_types[i]->createColumnConstWithDefaultValue(out_null_map.size());
+
+        Columns result_columns = getColumns(attribute_names, result_types, key_columns, key_types, default_cols);
+
+        /// Result block should consist of key columns and then attributes
+        for (const auto & key_col : key_columns)
+        {
+            /// Insert default values for keys that were not found
+            ColumnPtr filtered_key_col = JoinCommon::filterWithBlanks(key_col, out_null_map);
+            result_columns.insert(result_columns.begin(), filtered_key_col);
+        }
+
+        size_t num_rows = result_columns[0]->size();
+        return Chunk(std::move(result_columns), num_rows);
+    }
+
+    Block getSampleBlock(const Names & result_names) const override
+    {
+        const auto & dictionary_structure = getStructure();
+        const auto & key_types = dictionary_structure.getKeyTypes();
+        const auto & key_names = dictionary_structure.getKeysNames();
+
+        Block sample_block;
+
+        for (size_t i = 0; i < key_types.size(); ++i)
+            sample_block.insert(ColumnWithTypeAndName(nullptr, key_types.at(i), key_names.at(i)));
+
+        if (result_names.empty())
+        {
+            for (const auto & attr : dictionary_structure.attributes)
+                sample_block.insert(ColumnWithTypeAndName(nullptr, attr.type, attr.name));
+        }
+        else
+        {
+            for (const auto & attr_name : result_names)
+            {
+                if (!dictionary_structure.hasAttribute(attr_name))
+                    continue; /// skip keys
+                const auto & attr = dictionary_structure.getAttribute(attr_name);
+                sample_block.insert(ColumnWithTypeAndName(nullptr, attr.type, attr_name));
+            }
+        }
+        return sample_block;
+    }
+
+private:
+    mutable std::mutex mutex;
+    mutable StorageID dictionary_id TSA_GUARDED_BY(mutex);
+    String dictionary_comment TSA_GUARDED_BY(mutex);
 };
 
 }

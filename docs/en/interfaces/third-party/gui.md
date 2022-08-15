@@ -3,7 +3,7 @@ sidebar_position: 28
 sidebar_label: Visual Interfaces
 ---
 
-# Visual Interfaces from Third-party Developers {#visual-interfaces-from-third-party-developers}
+# Visual Interfaces from Third-party Developers
 
 ## Open-Source {#open-source}
 
@@ -67,11 +67,23 @@ Features:
 
 ### Grafana {#grafana}
 
-[Grafana](https://grafana.com/grafana/plugins/vertamedia-clickhouse-datasource) is a platform for monitoring and visualization.
+[Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) is a platform for monitoring and visualization.
 
 "Grafana allows you to query, visualize, alert on and understand your metrics no matter where they are stored. Create, explore, and share dashboards with your team and foster a data driven culture. Trusted and loved by the community" &mdash; grafana.com.
 
 ClickHouse datasource plugin provides a support for ClickHouse as a backend database.
+
+### qryn (#qryn)
+
+[qryn](https://metrico.in) is a polyglot, high-performance observability stack for ClickHouse _(formerly cLoki)_ with native Grafana integrations allowing users to ingest and analyze logs, metrics and telemetry traces from any agent supporting Loki/LogQL, Prometheus/PromQL, OTLP/Tempo, Elastic, InfluxDB and many more.
+
+Features:
+
+- Built in Explore UI and LogQL CLI for querying, extracting and visualizing data
+- Native Grafana APIs support for querying, processing, ingesting, tracing and alerting without plugins
+- Powerful pipeline to dynamically search, filter and extract data from logs, events, traces and beyond
+- Ingestion and PUSH APIs transparently compatible with LogQL, PromQL, InfluxDB, Elastic and many more
+- Ready to use with Agents such as Promtail, Grafana-Agent, Vector, Logstash, Telegraf and many others
 
 ### DBeaver {#dbeaver}
 
@@ -149,13 +161,41 @@ Features:
 
 ### ClickCat {#clickcat}
 
-[ClickCat](https://github.com/open-botech/ClickCat) is a firendly user interface that lets you search, explore and visualize your ClickHouse Data.
+[ClickCat](https://github.com/clickcat-project/ClickCat) is a friendly user interface that lets you search, explore and visualize your ClickHouse Data.
 
 Features:
 
 -   An online SQL editor which can run your SQL code without any installing.
 -   You can observe all processes and mutations. For those unfinished processes, you can kill them in ui.
 -   The Metrics contains Cluster Analysis,Data Analysis,Query Analysis.
+
+### ClickVisual {#clickvisual}
+
+[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual is a lightweight open source log query, analysis and alarm visualization platform.
+
+Features:
+
+- Supports one-click creation of analysis log libraries
+- Supports log collection configuration management
+- Supports user-defined index configuration
+- Supports alarm configuration
+- Support permission granularity to library and table permission configuration
+
+### ClickHouse-Mate {#clickmate}
+
+[ClickHouse-Mate](https://github.com/metrico/clickhouse-mate) is an angular web client + user interface to search and explore data in ClickHouse.
+
+Features:
+
+- ClickHouse SQL Query autocompletion
+- Fast Database and Table tree navigation
+- Advanced result Filtering and Sorting
+- Inline ClickHouse SQL documentation
+- Query Presets and History
+- 100% browser based, no server/backend
+
+The client is available for instant usage through github pages: https://metrico.github.io/clickhouse-mate/
+
 
 ## Commercial {#commercial}
 
@@ -249,7 +289,7 @@ Features:
 - Web-based interface.
 
 TABLUM.IO can be run as a self-hosted solution (as a docker image) or in the cloud.
-License: [commercial](https://tablum.io/pricing) product with 3-month free period. 
+License: [commercial](https://tablum.io/pricing) product with 3-month free period.
 
 Try it out for free [in the cloud](https://tablum.io/try).
 Learn more about the product at [TABLUM.IO](https://tablum.io/)

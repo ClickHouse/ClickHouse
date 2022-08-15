@@ -20,7 +20,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         Block & sample_block,
         ContextPtr context,
         const std::string & /* default_database */,
-        bool /* created_from_ddl */)
+        bool created_from_ddl)
     {
         const auto config_prefix = root_config_prefix + ".mongodb";
         ExternalDataSourceConfiguration configuration;
@@ -38,6 +38,9 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
             configuration.password = config.getString(config_prefix + ".password", "");
             configuration.database = config.getString(config_prefix + ".db", "");
         }
+
+        if (created_from_ddl)
+            context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
 
         return std::make_unique<MongoDBDictionarySource>(dict_struct,
             config.getString(config_prefix + ".uri", ""),
@@ -163,12 +166,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
 
 MongoDBDictionarySource::~MongoDBDictionarySource() = default;
 
-Pipe MongoDBDictionarySource::loadAll()
+QueryPipeline MongoDBDictionarySource::loadAll()
 {
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, createCursor(db, collection, sample_block), sample_block, max_block_size));
 }
 
-Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -185,11 +188,11 @@ Pipe MongoDBDictionarySource::loadIds(const std::vector<UInt64> & ids)
 
     cursor->query().selector().addNewDocument(dict_struct.id->name).add("$in", ids_array);
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
 }
 
 
-Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is required for selective loading");
@@ -251,7 +254,7 @@ Pipe MongoDBDictionarySource::loadKeys(const Columns & key_columns, const std::v
     /// If more than one key we should use $or
     cursor->query().selector().add("$or", keys_array);
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
+    return QueryPipeline(std::make_shared<MongoDBSource>(connection, std::move(cursor), sample_block, max_block_size));
 }
 
 std::string MongoDBDictionarySource::toString() const

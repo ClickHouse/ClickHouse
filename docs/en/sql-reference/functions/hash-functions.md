@@ -3,13 +3,13 @@ sidebar_position: 50
 sidebar_label: Hash
 ---
 
-# Hash Functions {#hash-functions}
+# Hash Functions
 
 Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 
 Simhash is a hash function, which returns close hash values for close (similar) arguments.
 
-## halfMD5 {#hash-functions-halfmd5}
+## halfMD5
 
 [Interprets](../../sql-reference/functions/type-conversion-functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
 
@@ -22,7 +22,7 @@ Consider using the [sipHash64](#hash_functions-siphash64) function instead.
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
@@ -40,17 +40,17 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
-## MD4 {#hash_functions-md4}
+## MD4
 
 Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
 
-## MD5 {#hash_functions-md5}
+## MD5
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64 {#hash_functions-siphash64}
+## sipHash64
 
 Produces a 64-bit [SipHash](https://131002.net/siphash/) hash value.
 
@@ -69,7 +69,7 @@ Function [interprets](../../sql-reference/functions/type-conversion-functions.md
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
@@ -87,7 +87,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 └──────────────────────┴────────┘
 ```
 
-## sipHash128 {#hash_functions-siphash128}
+## sipHash128
 
 Produces a 128-bit [SipHash](https://131002.net/siphash/) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that the final xor-folding state is done up to 128 bits.
 
@@ -99,7 +99,7 @@ sipHash128(par1,...)
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned value**
 
@@ -123,7 +123,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## cityHash64 {#cityhash64}
+## cityHash64
 
 Produces a 64-bit [CityHash](https://github.com/google/cityhash) hash value.
 
@@ -135,7 +135,7 @@ This is a fast non-cryptographic hash function. It uses the CityHash algorithm f
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
@@ -161,17 +161,17 @@ The following example shows how to compute the checksum of the entire table with
 SELECT groupBitXor(cityHash64(*)) FROM table
 ```
 
-## intHash32 {#inthash32}
+## intHash32
 
 Calculates a 32-bit hash code from any type of integer.
 This is a relatively fast non-cryptographic hash function of average quality for numbers.
 
-## intHash64 {#inthash64}
+## intHash64
 
 Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
-## SHA1, SHA224, SHA256, SHA512 {#sha}
+## SHA1, SHA224, SHA256, SHA512
 
 Calculates SHA-1, SHA-224, SHA-256, SHA-512 hash from a string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
@@ -215,7 +215,7 @@ Result:
 └──────────────────────────────────────────┘
 ```
 
-## BLAKE3 {#blake3}
+## BLAKE3
 
 Calculates BLAKE3 hash string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
@@ -253,16 +253,16 @@ Result:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## URLHash(url\[, N\]) {#urlhashurl-n}
+## URLHash(url\[, N\])
 
 A fast, decent-quality non-cryptographic hash function for a string obtained from a URL using some type of normalization.
 `URLHash(s)` – Calculates a hash from a string without one of the trailing symbols `/`,`?` or `#` at the end, if present.
 `URLHash(s, N)` – Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols `/`,`?` or `#` at the end, if present.
 Levels are the same as in URLHierarchy.
 
-## farmFingerprint64 {#farmfingerprint64}
+## farmFingerprint64
 
-## farmHash64 {#farmhash64}
+## farmHash64
 
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) or Fingerprint value. `farmFingerprint64` is preferred for a stable and portable value.
 
@@ -275,7 +275,7 @@ These functions use the `Fingerprint64` and `Hash64` methods respectively from a
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data)..
 
 **Returned Value**
 
@@ -293,7 +293,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 └──────────────────────┴────────┘
 ```
 
-## javaHash {#hash_functions-javahash}
+## javaHash
 
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
@@ -323,7 +323,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## javaHashUTF16LE {#javahashutf16le}
+## javaHashUTF16LE
 
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string, assuming it contains bytes representing a string in UTF-16LE encoding.
 
@@ -359,7 +359,7 @@ Result:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## hiveHash {#hash-functions-hivehash}
+## hiveHash
 
 Calculates `HiveHash` from a string.
 
@@ -391,7 +391,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## metroHash64 {#metrohash64}
+## metroHash64
 
 Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) hash value.
 
@@ -401,7 +401,7 @@ metroHash64(par1, ...)
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
@@ -419,13 +419,13 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 └──────────────────────┴────────┘
 ```
 
-## jumpConsistentHash {#jumpconsistenthash}
+## jumpConsistentHash
 
 Calculates JumpConsistentHash form a UInt64.
 Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2_32, murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2_32, murmurHash2_64
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.
 
@@ -436,7 +436,7 @@ murmurHash2_64(par1, ...)
 
 **Arguments**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
@@ -455,7 +455,7 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └──────────────────────┴────────┘
 ```
 
-## gccMurmurHash {#gccmurmurhash}
+## gccMurmurHash
 
 Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between CLang and GCC builds.
 
@@ -493,7 +493,7 @@ Result:
 └──────────────────────┴─────────────────────┘
 ```
 
-## murmurHash3_32, murmurHash3_64 {#murmurhash3-32-murmurhash3-64}
+## murmurHash3_32, murmurHash3_64
 
 Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
@@ -504,7 +504,7 @@ murmurHash3_64(par1, ...)
 
 **Arguments**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
 
 **Returned Value**
 
@@ -523,7 +523,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## murmurHash3_128 {#murmurhash3-128}
+## murmurHash3_128
 
 Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
@@ -559,7 +559,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## xxHash32, xxHash64 {#hash-functions-xxhash32}
+## xxHash32, xxHash64
 
 Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
 
@@ -597,7 +597,7 @@ Result:
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-## ngramSimHash {#ngramsimhash}
+## ngramSimHash
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
@@ -636,7 +636,7 @@ Result:
 └────────────┘
 ```
 
-## ngramSimHashCaseInsensitive {#ngramsimhashcaseinsensitive}
+## ngramSimHashCaseInsensitive
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
@@ -675,7 +675,7 @@ Result:
 └───────────┘
 ```
 
-## ngramSimHashUTF8 {#ngramsimhashutf8}
+## ngramSimHashUTF8
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
@@ -714,7 +714,7 @@ Result:
 └────────────┘
 ```
 
-## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
+## ngramSimHashCaseInsensitiveUTF8
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
@@ -753,7 +753,7 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHash {#wordshinglesimhash}
+## wordShingleSimHash
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
@@ -792,7 +792,7 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseinsensitive}
+## wordShingleSimHashCaseInsensitive
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
@@ -831,7 +831,7 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashUTF8 {#wordshinglesimhashutf8}
+## wordShingleSimHashUTF8
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
@@ -870,7 +870,7 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
+## wordShingleSimHashCaseInsensitiveUTF8
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
@@ -909,7 +909,7 @@ Result:
 └────────────┘
 ```
 
-## ngramMinHash {#ngramminhash}
+## ngramMinHash
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
@@ -949,7 +949,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashCaseInsensitive {#ngramminhashcaseinsensitive}
+## ngramMinHashCaseInsensitive
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
@@ -989,7 +989,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashUTF8 {#ngramminhashutf8}
+## ngramMinHashUTF8
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
@@ -1029,7 +1029,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashCaseInsensitiveUTF8 {#ngramminhashcaseinsensitiveutf8}
+## ngramMinHashCaseInsensitiveUTF8
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
@@ -1069,7 +1069,7 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArg {#ngramminhasharg}
+## ngramMinHashArg
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHash](#ngramminhash) function with the same input. Is case sensitive.
 
@@ -1107,7 +1107,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgCaseInsensitive {#ngramminhashargcaseinsensitive}
+## ngramMinHashArgCaseInsensitive
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) function with the same input. Is case insensitive.
 
@@ -1145,7 +1145,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgUTF8 {#ngramminhashargutf8}
+## ngramMinHashArgUTF8
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashUTF8](#ngramminhashutf8) function with the same input. Is case sensitive.
 
@@ -1183,7 +1183,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
+## ngramMinHashArgCaseInsensitiveUTF8
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
@@ -1221,7 +1221,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHash {#wordshingleminhash}
+## wordShingleMinHash
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
@@ -1261,7 +1261,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashCaseInsensitive {#wordshingleminhashcaseinsensitive}
+## wordShingleMinHashCaseInsensitive
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
@@ -1301,7 +1301,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashUTF8 {#wordshingleminhashutf8}
+## wordShingleMinHashUTF8
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
@@ -1341,7 +1341,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashCaseInsensitiveUTF8 {#wordshingleminhashcaseinsensitiveutf8}
+## wordShingleMinHashCaseInsensitiveUTF8
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
@@ -1381,7 +1381,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArg {#wordshingleminhasharg}
+## wordShingleMinHashArg
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordshingleMinHash](#wordshingleminhash) function with the same input. Is case sensitive.
 
@@ -1419,7 +1419,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgCaseInsensitive {#wordshingleminhashargcaseinsensitive}
+## wordShingleMinHashArgCaseInsensitive
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) function with the same input. Is case insensitive.
 
@@ -1457,7 +1457,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgUTF8 {#wordshingleminhashargutf8}
+## wordShingleMinHashArgUTF8
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashUTF8](#wordshingleminhashutf8) function with the same input. Is case sensitive.
 
@@ -1495,7 +1495,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgCaseInsensitiveUTF8 {#wordshingleminhashargcaseinsensitiveutf8}
+## wordShingleMinHashArgCaseInsensitiveUTF8
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 

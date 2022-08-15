@@ -9,6 +9,7 @@
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/indexHint.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -388,7 +389,7 @@ SetPtr makeExplicitSet(
     const ASTPtr & right_arg = args.children.at(1);
 
     auto column_name = left_arg->getColumnName();
-    const auto & dag_node = actions.findInIndex(column_name);
+    const auto & dag_node = actions.findInOutputs(column_name);
     const DataTypePtr & left_arg_type = dag_node.result_type;
 
     DataTypes set_element_types = {left_arg_type};
@@ -401,8 +402,8 @@ SetPtr makeExplicitSet(
             element_type = low_cardinality_type->getDictionaryType();
 
     auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
-    if (auto it = prepared_sets.find(set_key); it != prepared_sets.end())
-        return it->second; /// Already prepared.
+    if (auto set = prepared_sets.get(set_key))
+        return set; /// Already prepared.
 
     Block block;
     const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
@@ -417,7 +418,7 @@ SetPtr makeExplicitSet(
     set->insertFromBlock(block.getColumnsWithTypeAndName());
     set->finishInsert();
 
-    prepared_sets.emplace(set_key, set);
+    prepared_sets.set(set_key, set);
     return set;
 }
 
@@ -467,6 +468,15 @@ public:
     }
 
     bool contains(const std::string & name) const { return map.contains(name); }
+
+    std::vector<std::string_view> getAllNames() const
+    {
+        std::vector<std::string_view> result;
+        result.reserve(map.size());
+        for (auto const & e : map)
+            result.emplace_back(e.first);
+        return result;
+    }
 };
 
 ActionsMatcher::Data::Data(
@@ -475,19 +485,18 @@ ActionsMatcher::Data::Data(
     size_t subquery_depth_,
     std::reference_wrapper<const NamesAndTypesList> source_columns_,
     ActionsDAGPtr actions_dag,
-    PreparedSets & prepared_sets_,
-    SubqueriesForSets & subqueries_for_sets_,
+    PreparedSetsPtr prepared_sets_,
     bool no_subqueries_,
     bool no_makeset_,
     bool only_consts_,
     bool create_source_for_in_,
-    AggregationKeysInfo aggregation_keys_info_)
+    AggregationKeysInfo aggregation_keys_info_,
+    bool build_expression_with_window_functions_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
     , source_columns(source_columns_)
     , prepared_sets(prepared_sets_)
-    , subqueries_for_sets(subqueries_for_sets_)
     , no_subqueries(no_subqueries_)
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
@@ -495,7 +504,8 @@ ActionsMatcher::Data::Data(
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
-    , next_unique_suffix(actions_stack.getLastActions().getIndex().size() + 1)
+    , build_expression_with_window_functions(build_expression_with_window_functions_)
+    , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
 
@@ -504,13 +514,19 @@ bool ActionsMatcher::Data::hasColumn(const String & column_name) const
     return actions_stack.getLastActionsIndex().contains(column_name);
 }
 
+std::vector<std::string_view> ActionsMatcher::Data::getAllColumnNames() const
+{
+    const auto & index = actions_stack.getLastActionsIndex();
+    return index.getAllNames();
+}
+
 ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, ContextPtr context_) : WithContext(context_)
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::move(actions_dag);
-    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getIndex());
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getOutputs());
 
-    for (const auto & node : level.actions_dag->getIndex())
+    for (const auto & node : level.actions_dag->getOutputs())
         if (node->type == ActionsDAG::ActionType::INPUT)
             level.inputs.emplace(node->result_name);
 }
@@ -519,7 +535,7 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::make_shared<ActionsDAG>();
-    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getIndex());
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getOutputs());
     const auto & prev = stack[stack.size() - 2];
 
     for (const auto & input_column : input_columns)
@@ -529,7 +545,7 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
         level.inputs.emplace(input_column.name);
     }
 
-    for (const auto & node : prev.actions_dag->getIndex())
+    for (const auto & node : prev.actions_dag->getOutputs())
     {
         if (!level.index->contains(node->result_name))
         {
@@ -803,8 +819,9 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
         {
             if (column_name_type.name == column_name)
             {
-                throw Exception("Column " + backQuote(column_name) + " is not under aggregate function and not in GROUP BY",
-                                ErrorCodes::NOT_AN_AGGREGATE);
+                throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                    "Column {} is not under aggregate function and not in GROUP BY. Have columns: {}",
+                    backQuote(column_name), toString(data.getAllColumnNames()));
             }
         }
 
@@ -916,11 +933,47 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     /// A special function `indexHint`. Everything that is inside it is not calculated
     if (node.name == "indexHint")
     {
+        if (data.only_consts)
+            return;
+
+        /// Here we create a separate DAG for indexHint condition.
+        /// It will be used only for index analysis.
+        Data index_hint_data(
+            data.getContext(),
+            data.set_size_limit,
+            data.subquery_depth,
+            data.source_columns,
+            std::make_shared<ActionsDAG>(data.source_columns),
+            data.prepared_sets,
+            data.no_subqueries,
+            data.no_makeset,
+            data.only_consts,
+            /*create_source_for_in*/ false,
+            data.aggregation_keys_info);
+
+        NamesWithAliases args;
+
+        if (node.arguments)
+        {
+            for (const auto & arg : node.arguments->children)
+            {
+                visit(arg, index_hint_data);
+                args.push_back({arg->getColumnNameWithoutAlias(), {}});
+            }
+        }
+
+        auto dag = index_hint_data.getActions();
+        dag->project(args);
+
+        auto index_hint = std::make_shared<FunctionIndexHint>();
+        index_hint->setActions(std::move(dag));
+
         // Arguments are removed. We add function instead of constant column to avoid constant folding.
-        data.addFunction(FunctionFactory::instance().get("indexHint", data.getContext()), {}, column_name);
+        data.addFunction(std::make_unique<FunctionToOverloadResolverAdaptor>(index_hint), {}, column_name);
         return;
     }
 
+    // Now we need to correctly process window functions and any expression which depend on them.
     if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
@@ -928,7 +981,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             visit(node.window_definition, data);
         }
-
         // Also manually add columns for arguments of the window function itself.
         // ActionVisitor is written in such a way that this method must itself
         // descend into all needed function children. Window functions can't have
@@ -947,19 +999,57 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // aggregate functions.
         return;
     }
+    else if (node.compute_after_window_functions)
+    {
+        if (!data.build_expression_with_window_functions)
+        {
+            for (const auto & arg : node.arguments->children)
+            {
+                if (auto const * function = arg->as<ASTFunction>();
+                    function && function->name == "lambda")
+                {
+                    // Lambda function is a special case. It shouldn't be visited here.
+                    continue;
+                }
+                visit(arg, data);
+            }
+            return;
+        }
+    }
 
     // An aggregate function can also be calculated as a window function, but we
     // checked for it above, so no need to do anything more.
-    if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
+    if (AggregateUtils::isAggregateFunction(node))
         return;
 
-    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
+    FunctionOverloadResolverPtr function_builder;
+
+    auto current_context = data.getContext();
+
+    if (UserDefinedExecutableFunctionFactory::instance().has(node.name, current_context))
+    {
+        Array parameters;
+        if (node.parameters)
+        {
+            auto & node_parameters = node.parameters->children;
+            size_t parameters_size = node_parameters.size();
+            parameters.resize(parameters_size);
+
+            for (size_t i = 0; i < parameters_size; ++i)
+            {
+                ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
+                parameters[i] = literal->as<ASTLiteral>()->value;
+            }
+        }
+
+        function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters);
+    }
 
     if (!function_builder)
     {
         try
         {
-            function_builder = FunctionFactory::instance().get(node.name, data.getContext());
+            function_builder = FunctionFactory::instance().get(node.name, current_context);
         }
         catch (Exception & e)
         {
@@ -1216,6 +1306,9 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
 
 SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
+    if (!data.prepared_sets)
+        return nullptr;
+
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
       * The enumeration of values is parsed as a function `tuple`.
@@ -1231,8 +1324,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (no_subqueries)
             return {};
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
-        if (auto it = data.prepared_sets.find(set_key); it != data.prepared_sets.end())
-            return it->second;
+        if (SetPtr set = data.prepared_sets->get(set_key))
+            return set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1246,25 +1339,17 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
                 StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
                 if (storage_set)
                 {
-                    data.prepared_sets.emplace(set_key, storage_set->getSet());
-                    return storage_set->getSet();
+                    SetPtr set = storage_set->getSet();
+                    data.prepared_sets->set(set_key, set);
+                    return set;
                 }
             }
         }
 
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
         String set_id = right_in_operand->getColumnName();
-
-        SubqueryForSet & subquery_for_set = data.subqueries_for_sets[set_id];
-
-        /// If you already created a Set with the same subquery / table.
-        if (subquery_for_set.set)
-        {
-            data.prepared_sets.emplace(set_key, subquery_for_set.set);
-            return subquery_for_set.set;
-        }
-
-        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.getContext()->getSettingsRef().transform_null_in);
+        bool transform_null_in =  data.getContext()->getSettingsRef().transform_null_in;
+        SubqueryForSet & subquery_for_set = data.prepared_sets->createOrGetSubquery(set_id, set_key, data.set_size_limit, transform_null_in);
 
         /** The following happens for GLOBAL INs or INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1274,24 +1359,21 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
           * In case that we have HAVING with IN subquery, we have to force creating set for it.
           * Also it doesn't make sense if it is GLOBAL IN or ordinary IN.
           */
-        if (!subquery_for_set.source && data.create_source_for_in)
+        if (data.create_source_for_in && !subquery_for_set.hasSource())
         {
             auto interpreter = interpretSubquery(right_in_operand, data.getContext(), data.subquery_depth, {});
-            subquery_for_set.source = std::make_unique<QueryPlan>();
-            interpreter->buildQueryPlan(*subquery_for_set.source);
+            subquery_for_set.createSource(*interpreter);
         }
 
-        subquery_for_set.set = set;
-        data.prepared_sets.emplace(set_key, set);
-        return set;
+        return subquery_for_set.set;
     }
     else
     {
         const auto & last_actions = data.actions_stack.getLastActions();
         const auto & index = data.actions_stack.getLastActionsIndex();
-        if (index.contains(left_in_operand->getColumnName()))
+        if (data.prepared_sets && index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
-            return makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, data.prepared_sets);
+            return makeExplicitSet(&node, last_actions, false, data.getContext(), data.set_size_limit, *data.prepared_sets);
         else
             return {};
     }

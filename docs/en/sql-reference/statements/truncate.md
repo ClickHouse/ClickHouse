@@ -3,7 +3,7 @@ sidebar_position: 52
 sidebar_label: TRUNCATE
 ---
 
-# TRUNCATE Statement {#truncate-statement}
+# TRUNCATE Statement
 
 ``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]

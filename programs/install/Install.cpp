@@ -1,11 +1,12 @@
 #include <iostream>
 #include <filesystem>
 #include <boost/program_options.hpp>
+#include <Common/filesystemHelpers.h>
 
 #include <sys/stat.h>
 #include <pwd.h>
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     #include <syscall.h>
     #include <linux/capability.h>
 #endif
@@ -368,6 +369,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-extract-from-config",
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
+            "clickhouse-disks",
         };
 
         for (const auto & tool : tools)
@@ -377,10 +379,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (fs::exists(symlink_path))
             {
-                bool is_symlink = fs::is_symlink(symlink_path);
+                bool is_symlink = FS::isSymlink(symlink_path);
                 fs::path points_to;
                 if (is_symlink)
-                    points_to = fs::weakly_canonical(fs::read_symlink(symlink_path));
+                    points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
 
                 if (is_symlink && points_to == main_bin_path)
                 {
@@ -789,7 +791,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
           *  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
           */
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
         std::string command = fmt::format("command -v setcap >/dev/null"
             " && command -v capsh >/dev/null"
