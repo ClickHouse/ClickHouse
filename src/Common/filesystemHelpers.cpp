@@ -354,7 +354,7 @@ void setModificationTime(const std::string & path, time_t time)
 
 bool isSymlink(const fs::path & path)
 {
-    /// Remove trailing stash before checking if file is symlink.
+    /// Remove trailing slash before checking if file is symlink.
     /// Let /path/to/link is a symlink to /path/to/target/dir/ directory.
     /// In this case is_symlink("/path/to/link") is true,
     /// but is_symlink("/path/to/link/") is false (it's a directory)
