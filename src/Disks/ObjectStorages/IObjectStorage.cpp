@@ -1,9 +1,18 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 AsynchronousReaderPtr IObjectStorage::getThreadPoolReader()
 {
     constexpr size_t pool_size = 50;
@@ -20,21 +29,11 @@ ThreadPool & IObjectStorage::getThreadPoolWriter()
     return writer;
 }
 
-std::string IObjectStorage::getCacheBasePath() const
-{
-    return cache ? cache->getBasePath() : "";
-}
-
-void IObjectStorage::removeFromCache(const std::string & path)
-{
-    if (cache)
-    {
-        auto key = cache->hash(path);
-        cache->remove(key);
-    }
-}
-
-void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object_from, const std::string & object_to, IObjectStorage & object_storage_to, std::optional<ObjectAttributes> object_to_attributes) // NOLINT
+void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    IObjectStorage & object_storage_to,
+    std::optional<ObjectAttributes> object_to_attributes)
 {
     if (&object_storage_to == this)
         copyObject(object_from, object_to, object_to_attributes);
@@ -43,6 +42,34 @@ void IObjectStorage::copyObjectToAnotherObjectStorage(const std::string & object
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite);
     copyData(*in, *out);
     out->finalize();
+}
+
+std::string IObjectStorage::getCacheBasePath() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheBasePath() is not implemented for {}", getName());
+}
+
+void IObjectStorage::applyRemoteThrottlingSettings(ContextPtr context)
+{
+    std::unique_lock lock{throttlers_mutex};
+    remote_read_throttler = context->getRemoteReadThrottler();
+    remote_write_throttler = context->getRemoteWriteThrottler();
+}
+
+ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
+{
+    std::unique_lock lock{throttlers_mutex};
+    ReadSettings settings{read_settings};
+    settings.remote_throttler = remote_read_throttler;
+    return settings;
+}
+
+WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
+{
+    std::unique_lock lock{throttlers_mutex};
+    WriteSettings settings{write_settings};
+    settings.remote_throttler = remote_write_throttler;
+    return settings;
 }
 
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Common/RWLock.h>
 #include <Common/ThreadPool.h>
 #include <Core/Settings.h>
 #include <Poco/Logger.h>

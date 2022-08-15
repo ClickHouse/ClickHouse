@@ -2,8 +2,8 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/ReadSettings.h>
 
 
@@ -67,7 +67,7 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getInfoForLog()
     return impl->getInfoForLog();
 }
 
-std::optional<size_t> AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
+size_t AsynchronousReadIndirectBufferFromRemoteFS::getFileSize()
 {
     return impl->getFileSize();
 }
@@ -97,10 +97,10 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readInto(char * data, size_t size)
+std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::asyncReadInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
-    request.descriptor = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>(impl);
+    request.descriptor = std::make_shared<RemoteFSFileDescriptor>(impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
@@ -125,7 +125,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
         return;
 
     /// Prefetch even in case hasPendingData() == true.
-    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -168,6 +168,8 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
     size_t size = 0;
+    size_t bytes_read = 0;
+
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
@@ -181,28 +183,37 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 
             /// If prefetch_future is valid, size should always be greater than zero.
             assert(offset <= size);
+            bytes_read = size - offset;
+
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
         prefetch_buffer.swap(memory);
+
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        setWithBytesToIgnore(memory.data(), size, offset);
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+        working_buffer = Buffer(memory.data() + offset, memory.data() + size);
+        pos = working_buffer.begin();
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
 
-        auto result = readInto(memory.data(), memory.size()).get();
+        auto result = asyncReadInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
 
         LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-        assert(offset <= size);
 
-        if (size)
+        assert(offset <= size);
+        bytes_read = size - offset;
+
+        if (bytes_read)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            setWithBytesToIgnore(memory.data(), size, offset);
+            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
+            pos = working_buffer.begin();
         }
     }
 
@@ -210,10 +221,14 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
-    assert(file_offset_of_buffer_end == impl->getImplementationBufferOffset());
+    /// In case of multiple files for the same file in clickhouse (i.e. log family)
+    /// file_offset_of_buffer_end will not match getImplementationBufferOffset()
+    /// so we use [impl->getImplementationBufferOffset(), impl->getFileSize()]
+    assert(file_offset_of_buffer_end >= impl->getImplementationBufferOffset());
+    assert(file_offset_of_buffer_end <= impl->getFileSize());
 
     prefetch_future = {};
-    return size;
+    return bytes_read;
 }
 
 

@@ -45,14 +45,16 @@ std::string replxx_now_ms_str()
     time_t t = ms.count() / 1000;
     tm broken;
     if (!localtime_r(&t, &broken))
-    {
-        return std::string();
-    }
+        return {};
 
     static int const BUFF_SIZE(32);
     char str[BUFF_SIZE];
-    strftime(str, BUFF_SIZE, "%Y-%m-%d %H:%M:%S.", &broken);
-    snprintf(str + sizeof("YYYY-mm-dd HH:MM:SS"), 5, "%03d", static_cast<int>(ms.count() % 1000));
+    if (strftime(str, BUFF_SIZE, "%Y-%m-%d %H:%M:%S.", &broken) <= 0)
+        return {};
+
+    if (snprintf(str + sizeof("YYYY-mm-dd HH:MM:SS"), 5, "%03d", static_cast<int>(ms.count() % 1000)) <= 0)
+        return {};
+
     return str;
 }
 

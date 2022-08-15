@@ -10,7 +10,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <Processors/ISimpleTransform.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>

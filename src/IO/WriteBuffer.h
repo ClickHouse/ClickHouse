@@ -1,11 +1,10 @@
 #pragma once
 
 #include <algorithm>
-#include <cstring>
 #include <memory>
 #include <iostream>
 #include <cassert>
-#include <string.h>
+#include <cstring>
 
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>

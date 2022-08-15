@@ -58,11 +58,82 @@ using SettingFieldInt64 = SettingFieldNumber<Int64>;
 using SettingFieldFloat = SettingFieldNumber<float>;
 using SettingFieldBool = SettingFieldNumber<bool>;
 
-
-/** Unlike SettingFieldUInt64, supports the value of 'auto' - the number of processor cores without taking into account SMT.
-  * A value of 0 is also treated as auto.
-  * When serializing, `auto` is written in the same way as 0.
+/** Wraps any SettingField to support special value 'auto' that can be checked with `is_auto` flag.
+  * Note about serialization:
+  * The new versions with `SettingsWriteFormat::STRINGS_WITH_FLAGS` serialize values as a string.
+  * In legacy SettingsWriteFormat mode, functions `read/writeBinary` would serialize values as a binary, and 'is_auto' would be ignored.
+  * It's possible to upgrade settings from regular type to wrapped ones and keep compatibility with old versions,
+  * but when serializing 'auto' old version will see binary representation of the default value.
   */
+template <typename Base>
+struct SettingAutoWrapper
+{
+    constexpr static auto keyword = "auto";
+    static bool isAuto(const Field & f) { return f.getType() == Field::Types::String && f.safeGet<const String &>() == keyword; }
+    static bool isAuto(const String & str) { return str == keyword; }
+
+    using Type = typename Base::Type;
+
+    Base base;
+    bool is_auto = false;
+    bool changed = false;
+
+    explicit SettingAutoWrapper() : is_auto(true) {}
+    explicit SettingAutoWrapper(Type val) : is_auto(false) { base = Base(val); }
+
+    explicit SettingAutoWrapper(const Field & f)
+        : is_auto(isAuto(f))
+    {
+        if (!is_auto)
+            base = Base(f);
+    }
+
+    SettingAutoWrapper & operator=(const Field & f)
+    {
+        changed = true;
+        if (is_auto = isAuto(f); !is_auto)
+            base = f;
+        return *this;
+    }
+
+    explicit operator Field() const { return is_auto ? Field(keyword) : Field(base); }
+
+    String toString() const { return is_auto ? keyword : base.toString(); }
+
+    void parseFromString(const String & str)
+    {
+        changed = true;
+        if (is_auto = isAuto(str); !is_auto)
+            base.parseFromString(str);
+    }
+
+    void writeBinary(WriteBuffer & out) const
+    {
+        if (is_auto)
+            Base().writeBinary(out); /// serialize default value
+        else
+            base.writeBinary(out);
+    }
+
+    /*
+     * That it is fine to reset `is_auto` here and to use default value in case `is_auto`
+     * because settings will be serialized only if changed.
+     * If they were changed they were requested to use explicit value instead of `auto`.
+     * And so interactions between client-server, and server-server (distributed queries), should be OK.
+     */
+    void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
+
+    Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
+};
+
+using SettingFieldUInt64Auto = SettingAutoWrapper<SettingFieldUInt64>;
+using SettingFieldInt64Auto = SettingAutoWrapper<SettingFieldInt64>;
+using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;
+
+/* Similar to SettingFieldUInt64Auto with small differences to behave like regular UInt64, supported to compatibility.
+ * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
+ * A value of 0 is also treated as 'auto', so 'auto' is parsed and serialized in the same way as 0.
+ */
 struct SettingFieldMaxThreads
 {
     bool is_auto;
@@ -146,13 +217,13 @@ struct SettingFieldString
     String value;
     bool changed = false;
 
-    explicit SettingFieldString(const std::string_view & str = {}) : value(str) {}
+    explicit SettingFieldString(std::string_view str = {}) : value(str) {}
     explicit SettingFieldString(const String & str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(String && str) : value(std::move(str)) {}
     explicit SettingFieldString(const char * str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(const Field & f) : SettingFieldString(f.safeGet<const String &>()) {}
 
-    SettingFieldString & operator =(const std::string_view & str) { value = str; changed = true; return *this; }
+    SettingFieldString & operator =(std::string_view str) { value = str; changed = true; return *this; }
     SettingFieldString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
     SettingFieldString & operator =(String && str) { value = std::move(str); changed = true; return *this; }
     SettingFieldString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
@@ -168,6 +239,32 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
+#ifndef KEEPER_STANDALONE_BUILD
+
+struct SettingFieldMap
+{
+public:
+    Map value;
+    bool changed = false;
+
+    explicit SettingFieldMap(const Map & map = {}) : value(map) {}
+    explicit SettingFieldMap(Map && map) : value(std::move(map)) {}
+    explicit SettingFieldMap(const Field & f);
+
+    SettingFieldMap & operator =(const Map & map) { value = map; changed = true; return *this; }
+    SettingFieldMap & operator =(const Field & f);
+
+    operator const Map &() const { return value; } /// NOLINT
+    explicit operator Field() const { return value; }
+
+    String toString() const;
+    void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+};
+
+#endif
 
 struct SettingFieldChar
 {
@@ -256,7 +353,7 @@ struct SettingFieldEnum
 
 struct SettingFieldEnumHelpers
 {
-    static void writeBinary(const std::string_view & str, WriteBuffer & out);
+    static void writeBinary(std::string_view str, WriteBuffer & out);
     static String readBinary(ReadBuffer & in);
 };
 
@@ -286,7 +383,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     { \
         using EnumType = ENUM_TYPE; \
         static const String & toString(EnumType value); \
-        static EnumType fromString(const std::string_view & str); \
+        static EnumType fromString(std::string_view str); \
     }; \
     \
     using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
@@ -310,7 +407,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
             ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
     \
-    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(const std::string_view & str) \
+    typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
     { \
         static const std::unordered_map<std::string_view, EnumType> map = [] { \
             std::unordered_map<std::string_view, EnumType> res; \
@@ -430,7 +527,7 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         using EnumType = ENUM_TYPE; \
         static size_t getEnumSize(); \
         static const String & toString(EnumType value); \
-        static EnumType fromString(const std::string_view & str); \
+        static EnumType fromString(std::string_view str); \
     }; \
     \
     using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;

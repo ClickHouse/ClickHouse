@@ -111,7 +111,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = unalignedLoad<UInt64>(data);
+            current_word = unalignedLoadLE<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -147,13 +147,18 @@ public:
         update(x.data(), x.length());
     }
 
+    ALWAYS_INLINE void update(const std::string_view x)
+    {
+        update(x.data(), x.size());
+    }
+
     /// Get the result in some form. This can only be done once!
 
     void get128(char * out)
     {
         finalize();
-        unalignedStore<UInt64>(out, v0 ^ v1);
-        unalignedStore<UInt64>(out + 8, v2 ^ v3);
+        unalignedStoreLE<UInt64>(out, v0 ^ v1);
+        unalignedStoreLE<UInt64>(out + 8, v2 ^ v3);
     }
 
     template <typename T>

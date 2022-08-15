@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "table",
+    "host", "port", "user", "password", "quota_key", "db", "database", "table",
     "update_field", "update_lag", "invalidate_query", "query", "where", "name", "secure"};
 
 namespace
@@ -54,6 +54,7 @@ namespace
             configuration.db,
             configuration.user,
             configuration.password,
+            configuration.quota_key,
             "", /* cluster */
             "", /* cluster_secret */
             "ClickHouseDictionarySource",
@@ -110,29 +111,29 @@ std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-Pipe ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
+QueryPipeline ClickHouseDictionarySource::loadAllWithSizeHint(std::atomic<size_t> * result_size_hint)
 {
     return createStreamForQuery(load_all_query, result_size_hint);
 }
 
-Pipe ClickHouseDictionarySource::loadAll()
+QueryPipeline ClickHouseDictionarySource::loadAll()
 {
     return createStreamForQuery(load_all_query);
 }
 
-Pipe ClickHouseDictionarySource::loadUpdatedAll()
+QueryPipeline ClickHouseDictionarySource::loadUpdatedAll()
 {
     String load_update_query = getUpdateFieldAndDate();
     return createStreamForQuery(load_update_query);
 }
 
-Pipe ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     return createStreamForQuery(query_builder.composeLoadIdsQuery(ids));
 }
 
 
-Pipe ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     String query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);
@@ -162,9 +163,9 @@ std::string ClickHouseDictionarySource::toString() const
     return "ClickHouse: " + configuration.db + '.' + configuration.table + (where.empty() ? "" : ", where: " + where);
 }
 
-Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
+QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint)
 {
-    QueryPipelineBuilder builder;
+    QueryPipeline pipeline;
 
     /// Sample block should not contain first row default values
     auto empty_sample_block = sample_block.cloneEmpty();
@@ -175,32 +176,25 @@ Pipe ClickHouseDictionarySource::createStreamForQuery(const String & query, std:
 
     if (configuration.is_local)
     {
-        builder.init(executeQuery(query, context_copy, true).pipeline);
-        auto converting = ActionsDAG::makeConvertingActions(
-            builder.getHeader().getColumnsWithTypeAndName(),
-            empty_sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+        pipeline = executeQuery(query, context_copy, true).pipeline;
 
-        builder.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<ExpressionTransform>(header, std::make_shared<ExpressionActions>(converting));
-        });
+        pipeline.convertStructureTo(empty_sample_block.getColumnsWithTypeAndName());
     }
     else
     {
-        builder.init(Pipe(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false)));
+        pipeline = QueryPipeline(std::make_shared<RemoteSource>(
+            std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false));
     }
 
     if (result_size_hint)
     {
-        builder.setProgressCallback([result_size_hint](const Progress & progress)
+        pipeline.setProgressCallback([result_size_hint](const Progress & progress)
         {
             *result_size_hint += progress.total_rows_to_read;
         });
     }
 
-    return QueryPipelineBuilder::getPipe(std::move(builder));
+    return pipeline;
 }
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
@@ -244,6 +238,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         std::string host = config.getString(settings_config_prefix + ".host", "localhost");
         std::string user = config.getString(settings_config_prefix + ".user", "default");
         std::string password =  config.getString(settings_config_prefix + ".password", "");
+        std::string quota_key =  config.getString(settings_config_prefix + ".quota_key", "");
         std::string db = config.getString(settings_config_prefix + ".db", default_database);
         std::string table = config.getString(settings_config_prefix + ".table", "");
         UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
@@ -259,6 +254,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             host = configuration.host;
             user = configuration.username;
             password = configuration.password;
+            quota_key = configuration.quota_key;
             db = configuration.database;
             table = configuration.table;
             port = configuration.port;
@@ -268,6 +264,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .host = host,
             .user = user,
             .password = password,
+            .quota_key = quota_key,
             .db = db,
             .table = table,
             .query = config.getString(settings_config_prefix + ".query", ""),
@@ -291,6 +288,9 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         else
         {
             context = Context::createCopy(global_context);
+
+            if (created_from_ddl)
+                context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
         }
 
         context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));

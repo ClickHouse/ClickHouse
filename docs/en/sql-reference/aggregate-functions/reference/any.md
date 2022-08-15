@@ -2,9 +2,9 @@
 sidebar_position: 6
 ---
 
-# any {#agg_function-any}
+# any
 
-Selects the first encountered value.
+Selects the first encountered (non-NULL) value, unless all rows have NULL values in that column.
 The query can be executed in any order and even in a different order each time, so the result of this function is indeterminate.
 To get a determinate result, you can use the ‘min’ or ‘max’ function instead of ‘any’.
 

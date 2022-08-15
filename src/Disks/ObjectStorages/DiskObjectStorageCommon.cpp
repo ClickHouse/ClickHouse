@@ -3,6 +3,7 @@
 #include <Common/FileCacheFactory.h>
 #include <Common/FileCache.h>
 #include <Common/FileCacheSettings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -73,7 +74,7 @@ FileCachePtr getCachePtrForDisk(
     FileCacheSettings file_cache_settings;
     file_cache_settings.loadFromConfig(config, config_prefix);
 
-    auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings);
+    auto cache = FileCacheFactory::instance().getOrCreate(cache_base_path, file_cache_settings, name);
     cache->initialize();
 
     auto * log = &Poco::Logger::get("Disk(" + name + ")");

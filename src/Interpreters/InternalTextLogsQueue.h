@@ -2,7 +2,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/OvercommitTracker.h>
 #include <Core/Block.h>
-
+#include <re2/re2.h>
 
 namespace DB
 {
@@ -15,70 +15,21 @@ public:
 
     InternalTextLogsQueue();
 
+    bool isNeeded(int priority, const String & source) const;
+
     static Block getSampleBlock();
     static MutableColumns getSampleColumns();
-
-    template <typename... Args>
-    bool push(Args &&... args)
-    {
-        OvercommitTrackerBlockerInThread blocker;
-        return ConcurrentBoundedQueue::push(std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    bool emplace(Args &&... args)
-    {
-        OvercommitTrackerBlockerInThread blocker;
-        return ConcurrentBoundedQueue::emplace(std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    bool pop(Args &&... args)
-    {
-        OvercommitTrackerBlockerInThread blocker;
-        return ConcurrentBoundedQueue::pop(std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    bool tryPush(Args &&... args)
-    {
-        OvercommitTrackerBlockerInThread blocker;
-        return ConcurrentBoundedQueue::tryPush(std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    bool tryEmplace(Args &&... args)
-    {
-        OvercommitTrackerBlockerInThread blocker;
-        return ConcurrentBoundedQueue::tryEmplace(std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    bool tryPop(Args &&... args)
-    {
-        OvercommitTrackerBlockerInThread blocker;
-        return ConcurrentBoundedQueue::tryPop(std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    void clear(Args &&... args)
-    {
-        OvercommitTrackerBlockerInThread blocker;
-        return ConcurrentBoundedQueue::clear(std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    void clearAndFinish(Args &&... args)
-    {
-        OvercommitTrackerBlockerInThread blocker;
-        return ConcurrentBoundedQueue::clearAndFinish(std::forward<Args>(args)...);
-    }
 
     /// Is used to pass block from remote server to the client
     void pushBlock(Block && log_block);
 
     /// Converts priority from Poco::Message::Priority to a string
     static const char * getPriorityName(int priority);
+
+    void setSourceRegexp(const String & regexp);
+private:
+    /// If not null, you should only push logs which are matched with this regexp
+    std::unique_ptr<re2::RE2> source_regexp;
 };
 
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;

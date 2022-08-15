@@ -5,6 +5,8 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -49,6 +51,11 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
 }
 
+void CreatingSetStep::updateOutputStream()
+{
+    output_stream = createOutputStream(input_streams.front(), Block{}, getDataStreamTraits());
+}
+
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
@@ -56,8 +63,6 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << prefix;
     if (subquery_for_set.set)
         settings.out << "Set: ";
-    // else if (subquery_for_set.join)
-    //     settings.out << "Join: ";
 
     settings.out << description << '\n';
 }
@@ -66,8 +71,6 @@ void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (subquery_for_set.set)
         map.add("Set", description);
-    // else if (subquery_for_set.join)
-    //     map.add("Join", description);
 }
 
 
@@ -119,9 +122,11 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(
-    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
 {
+    if (!prepared_sets || prepared_sets->empty())
+        return;
+
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
 
@@ -129,18 +134,19 @@ void addCreatingSetsStep(
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & [description, set] : subqueries_for_sets)
+    for (auto & [description, subquery_for_set] : prepared_sets->detachSubqueries())
     {
-        if (!set.source)
+        if (!subquery_for_set.hasSource())
             continue;
 
-        auto plan = std::move(set.source);
+        auto plan = subquery_for_set.detachSource();
 
+        const Settings & settings = context->getSettingsRef();
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
                 description,
-                std::move(set),
-                limits,
+                std::move(subquery_for_set),
+                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
                 context);
         creating_set->setStepDescription("Create set for subquery");
         plan->addStep(std::move(creating_set));
