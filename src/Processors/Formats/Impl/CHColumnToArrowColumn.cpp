@@ -47,7 +47,8 @@
         M(INT64, arrow::Int64Type) \
         M(FLOAT, arrow::FloatType) \
         M(DOUBLE, arrow::DoubleType) \
-        M(BINARY, arrow::BinaryType)
+        M(BINARY, arrow::BinaryType) \
+        M(STRING, arrow::StringType)
 
 namespace DB
 {
@@ -365,8 +366,8 @@ namespace DB
             }
             else
             {
-                StringRef string_ref = internal_column.getDataAt(string_i);
-                status = builder.Append(string_ref.data, string_ref.size);
+                std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                status = builder.Append(string_ref.data(), string_ref.size());
             }
             checkStatus(status, write_column->getName(), format_name);
         }

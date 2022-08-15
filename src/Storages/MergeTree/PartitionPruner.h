@@ -27,7 +27,8 @@ public:
     PartitionPruner(const StorageMetadataPtr & metadata, const SelectQueryInfo & query_info, ContextPtr context, bool strict)
         : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
         , partition_condition(
-              query_info, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict)
+              query_info.query, query_info.syntax_analyzer_result, query_info.prepared_sets,
+              context, partition_key.column_names, partition_key.expression, true /* single_point */, strict)
         , useless(strict ? partition_condition.anyUnknownOrAlwaysTrue() : partition_condition.alwaysUnknownOrTrue())
     {
     }

@@ -108,6 +108,11 @@ PrettyCompactNoEscapes
 PrettyNoEscapes
 PrettySpace
 PrettySpaceNoEscapes
+PrettyCompactNoEscapesMonoBlock
+PrettyMonoBlock
+PrettyNoEscapesMonoBlock
+PrettySpaceMonoBlock
+PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
@@ -374,6 +379,11 @@ prettycompactnoescapes
 prettynoescapes
 prettyspace
 prettyspacenoescapes
+prettycompactnoescapesmonoblock
+prettymonoblock
+prettynoescapesmonoblock
+prettyspacemonoblock
+prettyspacenoescapesmonoblock
 prlimit
 prometheus
 proto

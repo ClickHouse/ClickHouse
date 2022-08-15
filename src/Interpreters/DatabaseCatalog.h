@@ -31,10 +31,12 @@ class IDatabase;
 class Exception;
 class ColumnsDescription;
 struct ConstraintsDescription;
+class IDisk;
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 using Databases = std::map<String, std::shared_ptr<IDatabase>>;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 /// Table -> set of table-views that make SELECT from it.
 using ViewDependencies = std::map<StorageID, std::set<StorageID>>;
@@ -131,7 +133,7 @@ public:
     static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
 
     /// Returns true if a passed name is one of the predefined databases' names.
-    static bool isPredefinedDatabase(const std::string_view & database_name);
+    static bool isPredefinedDatabase(std::string_view database_name);
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -271,7 +273,7 @@ private:
     void dropTableFinally(const TableMarkedAsDropped & table);
 
     void cleanupStoreDirectoryTask();
-    bool maybeRemoveDirectory(const fs::path & unused_dir);
+    bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     static constexpr size_t reschedule_time_ms = 100;
     static constexpr time_t drop_error_cooldown_sec = 5;
