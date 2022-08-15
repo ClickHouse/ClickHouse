@@ -119,6 +119,9 @@
     \
     M(ExecuteShellCommand, "Number of shell command executions.") \
     \
+    M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggragating/joining)") \
+    M(ExternalProcessingUncompressedBytesTotal, "Number of uncompressed bytes written by external processing (sorting/aggragating/joining)") \
+    M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggragating/joining)") \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
     M(ExternalSortCompressedBytes, "Number of compressed bytes written by external sort") \
@@ -127,6 +130,10 @@
     M(ExternalAggregationMerge, "") \
     M(ExternalAggregationCompressedBytes, "Number of compressed bytes written by external aggregation") \
     M(ExternalAggregationUncompressedBytes, "Number of uncompressed bytes written by external aggregation") \
+    M(ExternalJoinWritePart, "") \
+    M(ExternalJoinMerge, "") \
+    M(ExternalJoinCompressedBytes, "Number of compressed bytes written by external join") \
+    M(ExternalJoinUncompressedBytes, "Number of uncompressed bytes written by external join") \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.") \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \

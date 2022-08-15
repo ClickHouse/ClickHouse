@@ -18,7 +18,8 @@ using TemporaryFile = TemporaryFileOnDisk;
 
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
-std::unique_ptr<TemporaryFile> createTemporaryFile(const DiskPtr & disk);
+std::unique_ptr<TemporaryFile> createTemporaryFile(const DiskPtr & disk, std::unique_ptr<CurrentMetrics::Increment> metric_increment = nullptr);
+
 
 // Determine what block device is responsible for specified path
 #if !defined(OS_LINUX)

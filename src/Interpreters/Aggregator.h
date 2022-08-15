@@ -1058,8 +1058,9 @@ public:
     std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, std::unique_ptr<TemporaryFile> file) const;
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants) const;
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
+
+    std::unique_ptr<TemporaryFile> createTempFile(size_t max_temp_file_size) const;
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 

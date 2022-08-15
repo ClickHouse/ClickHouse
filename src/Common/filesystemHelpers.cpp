@@ -58,15 +58,14 @@ bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t da
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 {
     fs::create_directories(path);
-
-    /// NOTE: std::make_shared cannot use protected constructors
     return std::make_unique<TemporaryFile>(path);
 }
 
-std::unique_ptr<TemporaryFile> createTemporaryFile(const DiskPtr & disk)
+std::unique_ptr<TemporaryFile> createTemporaryFile(const DiskPtr & disk, std::unique_ptr<CurrentMetrics::Increment> metric_increment)
 {
+    /// is is possible to use with disk other than DickLocal ?
     disk->createDirectories(disk->getPath());
-    return std::make_unique<TemporaryFile>(disk);
+    return std::make_unique<TemporaryFile>(disk, disk->getPath(), std::move(metric_increment));
 }
 
 #if !defined(OS_LINUX)
