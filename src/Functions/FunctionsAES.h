@@ -443,7 +443,7 @@ private:
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", isStringOrFixedString, isColumnConst, "decryption mode string"},
-                {"input", nullptr, nullptr, "ciphertext"},
+                {"input", isStringOrFixedString, nullptr, "ciphertext"},
                 {"key", isStringOrFixedString, nullptr, "decryption key binary string"},
             },
             optional_args
