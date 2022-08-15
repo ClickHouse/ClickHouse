@@ -104,11 +104,11 @@ ARM="aarch64"
 OS="$(uname -m)"
 if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
     echo "$OS"
-    if [[ "$OS" != "$ARM" ]]; then
+    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]] || [[ "$OS" == "$ARM" ]]; then
+        echo "Azure configuration will not be added"
+    else
         echo "Adding azure configuration"
         ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
-    else
-        echo "Azure configuration will not be added"
     fi
 
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
