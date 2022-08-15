@@ -4,7 +4,8 @@ import tempfile
 import logging
 from threading import Timer
 
-DEFAULT_QUERY_TIMEOUT=600
+DEFAULT_QUERY_TIMEOUT = 600
+
 
 class Client:
     def __init__(self, host, port=9000, command="/usr/bin/clickhouse-client"):
@@ -31,6 +32,7 @@ class Client:
                     timeout=60,
                 ).get_answer_and_error()
                 raise
+
         return wrap
 
     @stacktraces_on_timeout_decorator
