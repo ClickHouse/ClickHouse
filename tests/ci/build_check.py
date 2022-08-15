@@ -15,6 +15,7 @@ from env_helper import (
     IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
+    S3_DOWNLOAD,
     TEMP_PATH,
 )
 from s3_helper import S3Helper
@@ -39,7 +40,7 @@ def _can_export_binaries(build_config: BuildConfig) -> bool:
         return False
     if build_config["bundled"] != "bundled":
         return False
-    if build_config["splitted"] == "splitted":
+    if build_config["libraries"] == "shared":
         return False
     if build_config["sanitizer"] != "":
         return True
@@ -68,8 +69,8 @@ def get_packager_cmd(
         cmd += f" --build-type={build_config['build_type']}"
     if build_config["sanitizer"]:
         cmd += f" --sanitizer={build_config['sanitizer']}"
-    if build_config["splitted"] == "splitted":
-        cmd += " --split-binary"
+    if build_config["libraries"] == "shared":
+        cmd += " --shared-libraries"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
@@ -142,11 +143,9 @@ def check_for_success_run(
     for url in build_results:
         url_escaped = url.replace("+", "%2B").replace(" ", "%20")
         if BUILD_LOG_NAME in url:
-            log_url = f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
+            log_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}"
         else:
-            build_urls.append(
-                f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
-            )
+            build_urls.append(f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}")
     if not log_url:
         # log is uploaded the last, so if there's no log we need to rerun the build
         return
@@ -250,7 +249,7 @@ def main():
 
     logging.info("Repo copy path %s", REPO_COPY)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     version = get_version_from_repo(git=Git(True))
     release_or_pr, performance_pr = get_release_or_pr(pr_info, version)

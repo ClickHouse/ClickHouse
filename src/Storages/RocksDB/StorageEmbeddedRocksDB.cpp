@@ -26,6 +26,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -76,7 +77,7 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
 
 // returns keys may be filter by condition
 static bool traverseASTFilter(
-    const String & primary_key, const DataTypePtr & primary_key_type, const ASTPtr & elem, const PreparedSets & sets, FieldVectorPtr & res)
+    const String & primary_key, const DataTypePtr & primary_key_type, const ASTPtr & elem, const PreparedSetsPtr & prepared_sets, const ContextPtr & context, FieldVectorPtr & res)
 {
     const auto * function = elem->as<ASTFunction>();
     if (!function)
@@ -86,7 +87,7 @@ static bool traverseASTFilter(
     {
         // one child has the key filter condition is ok
         for (const auto & child : function->arguments->children)
-            if (traverseASTFilter(primary_key, primary_key_type, child, sets, res))
+            if (traverseASTFilter(primary_key, primary_key_type, child, prepared_sets, context, res))
                 return true;
         return false;
     }
@@ -94,7 +95,7 @@ static bool traverseASTFilter(
     {
         // make sure every child has the key filter condition
         for (const auto & child : function->arguments->children)
-            if (!traverseASTFilter(primary_key, primary_key_type, child, sets, res))
+            if (!traverseASTFilter(primary_key, primary_key_type, child, prepared_sets, context, res))
                 return false;
         return true;
     }
@@ -102,20 +103,23 @@ static bool traverseASTFilter(
     {
         const auto & args = function->arguments->as<ASTExpressionList &>();
         const ASTIdentifier * ident;
-        const IAST * value;
+        std::shared_ptr<IAST> value;
 
         if (args.children.size() != 2)
             return false;
 
         if (function->name == "in")
         {
+            if (!prepared_sets)
+                return false;
+
             ident = args.children.at(0)->as<ASTIdentifier>();
             if (!ident)
                 return false;
 
             if (ident->name() != primary_key)
                 return false;
-            value = args.children.at(1).get();
+            value = args.children.at(1);
 
             PreparedSetKey set_key;
             if ((value->as<ASTSubquery>() || value->as<ASTIdentifier>()))
@@ -123,16 +127,15 @@ static bool traverseASTFilter(
             else
                 set_key = PreparedSetKey::forLiteral(*value, {primary_key_type});
 
-            auto set_it = sets.find(set_key);
-            if (set_it == sets.end())
-                return false;
-            SetPtr prepared_set = set_it->second;
-
-            if (!prepared_set->hasExplicitSetElements())
+            SetPtr set = prepared_sets->get(set_key);
+            if (!set)
                 return false;
 
-            prepared_set->checkColumnsNumber(1);
-            const auto & set_column = *prepared_set->getSetElements()[0];
+            if (!set->hasExplicitSetElements())
+                return false;
+
+            set->checkColumnsNumber(1);
+            const auto & set_column = *set->getSetElements()[0];
             for (size_t row = 0; row < set_column.size(); ++row)
                 res->push_back(set_column[row]);
             return true;
@@ -140,17 +143,18 @@ static bool traverseASTFilter(
         else
         {
             if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-                value = args.children.at(1).get();
+                value = args.children.at(1);
             else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-                value = args.children.at(0).get();
+                value = args.children.at(0);
             else
                 return false;
 
             if (ident->name() != primary_key)
                 return false;
 
+            const auto node = evaluateConstantExpressionAsLiteral(value, context);
             /// function->name == "equals"
-            if (const auto * literal = value->as<ASTLiteral>())
+            if (const auto * literal = node->as<ASTLiteral>())
             {
                 auto converted_field = convertFieldToType(literal->value, *primary_key_type);
                 if (!converted_field.isNull())
@@ -166,14 +170,14 @@ static bool traverseASTFilter(
   * TODO support key like search
   */
 static std::pair<FieldVectorPtr, bool> getFilterKeys(
-    const String & primary_key, const DataTypePtr & primary_key_type, const SelectQueryInfo & query_info)
+    const String & primary_key, const DataTypePtr & primary_key_type, const SelectQueryInfo & query_info, const ContextPtr & context)
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.where())
         return {{}, true};
 
     FieldVectorPtr res = std::make_shared<FieldVector>();
-    auto matched_keys = traverseASTFilter(primary_key, primary_key_type, select.where(), query_info.sets, res);
+    auto matched_keys = traverseASTFilter(primary_key, primary_key_type, select.where(), query_info.prepared_sets, context, res);
     return std::make_pair(res, !matched_keys);
 }
 
@@ -347,7 +351,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         bool attach,
         ContextPtr context_,
         const String & primary_key_)
-    : IKeyValueStorage(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
 {
@@ -461,7 +465,7 @@ Pipe StorageEmbeddedRocksDB::read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr /*context*/,
+        ContextPtr context_,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams)
@@ -473,7 +477,7 @@ Pipe StorageEmbeddedRocksDB::read(
 
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
     auto primary_key_data_type = sample_block.getByName(primary_key).type;
-    std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info);
+    std::tie(keys, all_scan) = getFilterKeys(primary_key, primary_key_data_type, query_info, context_);
     if (all_scan)
     {
         auto iterator = std::unique_ptr<rocksdb::Iterator>(rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
@@ -556,7 +560,8 @@ std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<
 
 Chunk StorageEmbeddedRocksDB::getByKeys(
     const ColumnsWithTypeAndName & keys,
-    PaddedPODArray<UInt8> & null_map) const
+    PaddedPODArray<UInt8> & null_map,
+    const Names &) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageEmbeddedRocksDB supports only one key, got: {}", keys.size());
@@ -567,6 +572,12 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
 
     return getBySerializedKeys(raw_keys, &null_map);
+}
+
+Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
+{
+    auto metadata = getInMemoryMetadataPtr();
+    return metadata ? metadata->getSampleBlock() : Block();
 }
 
 Chunk StorageEmbeddedRocksDB::getBySerializedKeys(

@@ -27,9 +27,9 @@ private:
     bool getNewTaskImpl() override;
     void finalizeNewTask() override {}
 
-    Chunk readFromPart() override;
+    BlockAndRowCount readFromPart() override;
 
-    Chunks chunks;
+    std::vector<BlockAndRowCount> chunks;
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
 };
 

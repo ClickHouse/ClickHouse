@@ -15,6 +15,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/PartMetadataManagerWithCache.h>
+#include <Core/NamesAndTypes.h>
+#include <Storages/ColumnsDescription.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
@@ -62,6 +64,7 @@ namespace ErrorCodes
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int BAD_TTL_FILE;
     extern const int NOT_IMPLEMENTED;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
@@ -294,7 +297,6 @@ static void decrementTypeMetric(MergeTreeDataPartType type)
     }
 }
 
-
 IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreeData & storage_,
     const String & name_,
@@ -435,29 +437,60 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos)
 {
     columns = new_columns;
+    serialization_infos = new_infos;
 
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
-
     for (const auto & column : columns)
         column_name_to_position.emplace(column.name, pos++);
+
+    for (const auto & column : columns)
+    {
+        auto it = serialization_infos.find(column.name);
+        auto serialization = it == serialization_infos.end()
+            ? IDataType::getSerialization(column)
+            : IDataType::getSerialization(column, *it->second);
+
+        serializations.emplace(column.name, serialization);
+
+        IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
+        {
+            auto full_name = Nested::concatenateName(column.name, subname);
+            serializations.emplace(full_name, subdata.serialization);
+        }, {serialization, nullptr, nullptr, nullptr});
+    }
+
+    columns_description = ColumnsDescription(columns);
 }
 
-void IMergeTreeDataPart::setSerializationInfos(const SerializationInfoByName & new_infos)
+NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
 {
-    serialization_infos = new_infos;
+    return columns_description.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
-SerializationPtr IMergeTreeDataPart::getSerialization(const NameAndTypePair & column) const
+std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & column_name) const
 {
-    auto it = serialization_infos.find(column.getNameInStorage());
-    return it == serialization_infos.end()
-        ? IDataType::getSerialization(column)
-        : IDataType::getSerialization(column, *it->second);
+    return columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+}
+
+SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
+{
+    auto serialization = tryGetSerialization(column_name);
+    if (!serialization)
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "There is no column or subcolumn {} in part {}", column_name, name);
+
+    return serialization;
+}
+
+SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_name) const
+{
+    auto it = serializations.find(column_name);
+    return it == serializations.end() ? nullptr : it->second;
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -564,36 +597,24 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
-String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(
-    const StorageSnapshotPtr & storage_snapshot, bool with_subcolumns) const
+String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const
 {
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
-    if (with_subcolumns)
-        options.withSubcolumns();
-
-    auto storage_columns = storage_snapshot->getColumns(options);
-    MergeTreeData::AlterConversions alter_conversions;
-    if (!parent_part)
-        alter_conversions = storage.getAlterConversionsForPart(shared_from_this());
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(with_subcolumns);
+    auto columns_list = columns_description.get(options);
 
     std::optional<std::string> minimum_size_column;
     UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
-    for (const auto & column : storage_columns)
+    for (const auto & column : columns_list)
     {
-        auto column_name = column.name;
-        auto column_type = column.type;
-        if (alter_conversions.isColumnRenamed(column.name))
-            column_name = alter_conversions.getColumnOldName(column.name);
-
         if (!hasColumnFiles(column))
             continue;
 
-        const auto size = getColumnSize(column_name).data_compressed;
+        const auto size = getColumnSize(column.name).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
-            minimum_size_column = column_name;
+            minimum_size_column = column.name;
         }
     }
 
@@ -610,7 +631,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     try
     {
@@ -848,7 +869,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
             String path_to_data_file;
-            getSerialization(part_column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 if (path_to_data_file.empty())
                 {
@@ -930,7 +951,6 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
-    //const String path = fs::path(getRelativePath()) / "checksums.txt";
     bool exists = metadata_manager->exists("checksums.txt");
     if (exists)
     {
@@ -941,7 +961,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
             bytes_on_disk = checksums.getTotalSizeOnDisk();
         }
         else
-            bytes_on_disk = data_part_storage->calculateTotalSizeOnDisk(); //calculateTotalSizeOnDisk(volume->getDisk(), getRelativePath());
+            bytes_on_disk = data_part_storage->calculateTotalSizeOnDisk();
     }
     else
     {
@@ -994,7 +1014,7 @@ void IMergeTreeDataPart::loadRowsCount()
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber()
                 && !column.type->haveSubtypes()
-                && getSerialization(column)->getKind() == ISerialization::Kind::DEFAULT)
+                && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
             {
                 auto size = getColumnSize(column.name);
 
@@ -1046,7 +1066,7 @@ void IMergeTreeDataPart::loadRowsCount()
 
         for (const NameAndTypePair & column : columns)
         {
-            ColumnPtr column_col = column.type->createColumn(*getSerialization(column));
+            ColumnPtr column_col = column.type->createColumn(*getSerialization(column.name));
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
@@ -1188,8 +1208,14 @@ void IMergeTreeDataPart::loadColumns(bool require)
         infos.readJSON(*in);
     }
 
-    setColumns(loaded_columns);
-    setSerializationInfos(infos);
+    setColumns(loaded_columns, infos);
+}
+
+/// Project part / part with project parts / compact part doesn't support LWD.
+bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
+{
+    return (part_type == MergeTreeDataPartType::Wide || part_type == MergeTreeDataPartType::Compact) &&
+        parent_part == nullptr && projection_parts.empty();
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
