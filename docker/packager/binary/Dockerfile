@@ -46,7 +46,7 @@ RUN apt-get install binutils-riscv64-linux-gnu
 
 # Build LLVM from trunk, because only that version can build the RISC-V binaries successfully.
 # It can be also used to check it for regular builds.
-RUN git clone git@github.com:llvm/llvm-project.git \
+RUN git clone https://github.com/llvm/llvm-project.git \
     && mkdir llvm-build \
     && cd llvm-build \
     && cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm \
