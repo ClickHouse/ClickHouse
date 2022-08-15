@@ -1,0 +1,61 @@
+<test>
+  <create_query>create table t_lz4(a UInt64) engine=MergeTree order by tuple()</create_query>
+  <create_query>create table t_lz4_norm(a UInt64) engine=MergeTree order by tuple()</create_query>
+  <create_query>create table t_lz4_uncomp(a UInt32) engine=MergeTree order by a</create_query>
+
+  <fill_query>insert into t_lz4 select number % 100 from numbers_mt(5e7) order by rand()</fill_query>
+  <fill_query>optimize table t_lz4 final</fill_query>
+
+  <fill_query>insert into t_lz4_norm select number from numbers_mt(5e7) order by rand()</fill_query>
+  <fill_query>optimize table t_lz4_norm final</fill_query>
+
+  <fill_query>insert into t_lz4_uncomp select number from numbers_mt(5e7)</fill_query>
+  <fill_query>optimize table t_lz4_uncomp final</fill_query>
+
+  <query>select a from t_lz4 format Null</query>
+  <query>select a from t_lz4_norm format Null</query>
+  <query>select a from t_lz4_uncomp format Null</query>
+
+  <drop_query>drop table t_lz4</drop_query>
+  <drop_query>drop table t_lz4_norm</drop_query>
+  <drop_query>drop table t_lz4_uncomp</drop_query>
+
+  <substitutions>
+    <substitution>
+      <name>column</name>
+      <values>
+        <value>ClientIP</value>
+        <value>ClientTimeZone</value>
+        <value>CookieEnable</value>
+        <value>CounterClass</value>
+        <value>CounterID</value>
+        <value>EventDate</value>
+        <value>EventTime</value>
+        <value>GoodEvent</value>
+        <value>HitColor</value>
+        <value>JavaEnable</value>
+        <value>OpenerName</value>
+        <value>PageCharset</value>
+        <value>ParamCurrency</value>
+        <value>ParamPrice</value>
+        <value>Referer</value>
+        <value>RefererCategoryID</value>
+        <value>RefererHash</value>
+        <value>RegionID</value>
+        <value>SearchPhrase</value>
+        <value>SilverlightVersion4</value>
+        <value>Title</value>
+        <value>TraficSourceID</value>
+        <value>URLCategoryID</value>
+        <value>UserAgent</value>
+        <value>UserAgentMinor</value>
+        <value>UserID</value>
+        <value>WatchID</value>
+        <value>WindowName</value>
+      </values>
+    </substitution>
+  </substitutions>
+
+  <query>select {column} from hits_100m_single format Null</query>
+
+</test>
