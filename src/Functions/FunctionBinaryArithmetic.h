@@ -1184,9 +1184,13 @@ public:
                         {
                             if (context->getSettingsRef().decimal_check_overflow)
                             {
-                                /// relay on "knowledge" of current decimal division implementation to avoid overflow upfront based on operand's scale
-                                /// for more detains see issue #30341
-                                /// TODO: comment with more detailed explanation
+                                /// Check overflow by using operands scale (based on big decimal division implementation details):
+                                /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
+                                /// i.e. int_operand = decimal_operand*10^scale
+                                /// For division, left operand will be scaled by right operand scale also to do big integer division,
+                                /// BigInt result = left*10^(left_scale + right_scale) / right * 10^right_scale
+                                /// So, we can check upfront possible overflow just by checking max scale used for left operand
+                                /// Note: it doesn't detect all possible overflow during big decimal division
                                 if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
                                     throw Exception("Overflow during decimal division", ErrorCodes::DECIMAL_OVERFLOW);
                             }
