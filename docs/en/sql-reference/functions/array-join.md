@@ -36,9 +36,9 @@ Example:
 SELECT sum(1) AS impressions
 FROM
 (
-    SELECT ['Istambul', 'Berlin', 'Bobruisk'] AS cities
+    SELECT ['Istanbul', 'Berlin', 'Bobruisk'] AS cities
 )
-WHERE arrayJoin(cities) IN ['Istambul', 'Berlin'];
+WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 ```
 
 ``` text
