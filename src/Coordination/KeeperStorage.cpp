@@ -14,7 +14,7 @@
 #include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Coordination/pathUtils.h>
 #include <Coordination/KeeperConstants.h>
 #include <sstream>
@@ -2127,7 +2127,7 @@ void KeeperStorage::rollbackRequest(int64_t rollback_zxid, bool allow_missing)
 
     // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
     // we block memory tracking so we can avoid terminating if we're rollbacking because of memory limit
-    MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits;
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
     try
     {
         uncommitted_transactions.pop_back();
