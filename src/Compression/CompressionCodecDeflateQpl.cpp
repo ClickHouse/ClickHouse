@@ -28,8 +28,8 @@ DeflateQplJobHWPool & DeflateQplJobHWPool::instance()
 }
 
 DeflateQplJobHWPool::DeflateQplJobHWPool()
-    :random_engine(std::random_device()())
-    ,distribution(0, MAX_HW_JOB_NUMBER-1)
+    : random_engine(std::random_device()())
+    , distribution(0, MAX_HW_JOB_NUMBER - 1)
 {
     Poco::Logger * log = &Poco::Logger::get("DeflateQplJobHWPool");
     UInt32 job_size = 0;
@@ -73,7 +73,7 @@ DeflateQplJobHWPool::~DeflateQplJobHWPool()
     job_pool_ready = false;
 }
 
-qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 &job_id)
+qpl_job * DeflateQplJobHWPool::acquireJob(UInt32 & job_id)
 {
     if (isJobPoolReady())
     {
@@ -141,7 +141,7 @@ HardwareCodecDeflateQpl::~HardwareCodecDeflateQpl()
 Int32 HardwareCodecDeflateQpl::doCompressData(const char * source, UInt32 source_size, char * dest, UInt32 dest_size) const
 {
     UInt32 job_id = 0;
-    qpl_job* job_ptr = nullptr;
+    qpl_job * job_ptr = nullptr;
     UInt32 compressed_size = 0;
     if (!(job_ptr = DeflateQplJobHWPool::instance().acquireJob(job_id)))
     {
@@ -330,10 +330,9 @@ void SoftwareCodecDeflateQpl::doDecompressData(const char * source, UInt32 sourc
             "Execution of DeflateQpl software fallback codec failed. (Details: qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", status);
 }
 
-//CompressionCodecDeflateQpl
 CompressionCodecDeflateQpl::CompressionCodecDeflateQpl()
-    :hw_codec(std::make_unique<HardwareCodecDeflateQpl>())
-    ,sw_codec(std::make_unique<SoftwareCodecDeflateQpl>())
+    : hw_codec(std::make_unique<HardwareCodecDeflateQpl>())
+    , sw_codec(std::make_unique<SoftwareCodecDeflateQpl>())
 {
     setCodecDescription("DEFLATE_QPL");
 }

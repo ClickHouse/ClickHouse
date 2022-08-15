@@ -101,8 +101,8 @@ public:
 
     Names getSubcolumnNames() const;
 
-    virtual MutableSerializationInfoPtr createSerializationInfo(
-        const SerializationInfo::Settings & settings) const;
+    virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const;
+    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
@@ -599,3 +599,26 @@ template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = tr
     M(Float32) \
     M(Float64)
 }
+
+/// See https://fmt.dev/latest/api.html#formatting-user-defined-types
+template <>
+struct fmt::formatter<DB::DataTypePtr>
+{
+    constexpr static auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::DataTypePtr & type, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{}", type->getName());
+    }
+};

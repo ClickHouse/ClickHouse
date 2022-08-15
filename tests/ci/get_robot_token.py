@@ -15,7 +15,7 @@ def get_best_robot_token(token_prefix_env_name="github_robot_token_", total_toke
     for i in range(1, total_tokens + 1):
         token_name = token_prefix_env_name + str(i)
         token = get_parameter_from_ssm(token_name, True, client)
-        gh = Github(token)
+        gh = Github(token, per_page=100)
         rest, _ = gh.rate_limiting
         tokens[token] = rest
 

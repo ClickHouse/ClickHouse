@@ -12,6 +12,9 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/MultiVersion.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/storage/blobs.hpp>
+#endif
 
 namespace DB
 {
