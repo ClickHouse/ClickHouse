@@ -1,12 +1,22 @@
 set optimize_sorting_for_input_stream=1;
+
+DROP TABLE IF EXISTS optimize_sorting;
+CREATE TABLE optimize_sorting (a UInt64, b UInt64) ENGINE MergeTree() ORDER BY tuple();
+INSERT INTO optimize_sorting VALUES(0, 0);
+INSERT INTO optimize_sorting VALUES(0xFFFFffffFFFFffff, 0xFFFFffffFFFFffff);
+-- { echoOn }
+-- order by for MergeTree w/o sorting key
+SELECT a, b from optimize_sorting order by a, b;
+-- { echoOff }
+
 DROP TABLE IF EXISTS optimize_sorting;
 CREATE TABLE optimize_sorting (a UInt64, b UInt64, c UInt64) ENGINE MergeTree() ORDER BY (a, b);
 INSERT INTO optimize_sorting SELECT number, number%5, number%2 from numbers(0, 5);
 INSERT INTO optimize_sorting SELECT number, number%5, number%2 from numbers(5, 5);
--- TODO: uncomment line below when we'll correctly do minus from max UInt64
--- INSERT INTO optimize_sorting SELECT 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF;
+
 -- { echoOn }
 SELECT a from optimize_sorting order by a;
+SELECT c from optimize_sorting order by c;
 -- queries with unary function in order by
 SELECT a from optimize_sorting order by -a;
 SELECT a from optimize_sorting order by toFloat64(a);

@@ -23,6 +23,13 @@ function explain_sortmode {
 }
 
 $CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"
+$CLICKHOUSE_CLIENT -q "create table optimize_sorting (a UInt64, b UInt64, c UInt64) engine=MergeTree() order by tuple()"
+$CLICKHOUSE_CLIENT -q "insert into optimize_sorting values (0, 0, 0) (1, 1, 1)"
+echo "-- EXPLAIN PLAN sorting for MergeTree w/o sorting key"
+explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a"
+$CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"
+
+$CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"
 $CLICKHOUSE_CLIENT -q "create table optimize_sorting (a UInt64, b UInt64, c UInt64) engine=MergeTree() order by (a, b)"
 $CLICKHOUSE_CLIENT -q "insert into optimize_sorting select number, number % 5, number % 2 from numbers(0,10)"
 $CLICKHOUSE_CLIENT -q "insert into optimize_sorting select number, number % 5, number % 2 from numbers(10,10)"
@@ -31,8 +38,10 @@ $CLICKHOUSE_CLIENT -q "insert into optimize_sorting SELECT number, number % 5, n
 echo "-- disable optimization -> sorting order is NOT propagated from subquery -> full sort"
 explain_sorting "$DISABLE_OPTIMIZATION;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a"
 
-echo "-- enable_optimization -> sorting order is propagated from subquery -> merge sort"
+echo "-- enable optimization -> sorting order is propagated from subquery -> merge sort"
 explain_sorting "$ENABLE_OPTIMIZATION;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a"
+echo "-- enable optimization -> there is no sorting order to propagate from subquery -> full sort"
+explain_sorting "$ENABLE_OPTIMIZATION;EXPLAIN PIPELINE SELECT c FROM (SELECT c FROM optimize_sorting) ORDER BY c"
 
 echo "-- ExpressionStep preserves sort mode"
 explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a"
@@ -62,3 +71,5 @@ explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=
 
 echo "-- actions chain breaks sorting order: input(column a)->sipHash64(column a)->alias(sipHash64(column a), a)->plus(alias a, 1)"
 explain_sortmode "$MAKE_OUTPUT_STABLE;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a, z FROM (SELECT sipHash64(a) AS a, a + 1 AS z FROM (SELECT a FROM optimize_sorting ORDER BY a + 1)) ORDER BY a + 1"
+
+$CLICKHOUSE_CLIENT -q "drop table if exists optimize_sorting sync"

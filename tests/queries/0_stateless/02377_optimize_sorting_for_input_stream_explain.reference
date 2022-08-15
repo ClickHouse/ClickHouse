@@ -1,11 +1,23 @@
+-- EXPLAIN PLAN sorting for MergeTree w/o sorting key
+-- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
+Sorting (Stream): a ASC
+Sorting (Sorting for ORDER BY)
+Sorting (Stream): a ASC
+Sorting (None)
+Sorting (None)
 -- disable optimization -> sorting order is NOT propagated from subquery -> full sort
 -- QUERY: set optimize_sorting_for_input_stream=0;set max_threads=1;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
 MergeSortingTransform
 LimitsCheckingTransform
 PartialSortingTransform
--- enable_optimization -> sorting order is propagated from subquery -> merge sort
+-- enable optimization -> sorting order is propagated from subquery -> merge sort
 -- QUERY: set optimize_sorting_for_input_stream=1;set max_threads=1;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
 MergeSortingTransform
+-- enable optimization -> there is no sorting order to propagate from subquery -> full sort
+-- QUERY: set optimize_sorting_for_input_stream=1;set max_threads=1;EXPLAIN PIPELINE SELECT c FROM (SELECT c FROM optimize_sorting) ORDER BY c
+MergeSortingTransform
+LimitsCheckingTransform
+PartialSortingTransform
 -- ExpressionStep preserves sort mode
 -- QUERY: set optimize_read_in_order=1;EXPLAIN PLAN actions=1, header=1, sorting=1 SELECT a FROM optimize_sorting ORDER BY a
 Sorting (Stream): a ASC
