@@ -2,6 +2,7 @@
 
 
 #include <Poco/PatternFormatter.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include "ExtendedLogChannel.h"
 #include "OwnPatternFormatter.h"
 
