@@ -1,4 +1,4 @@
-set optimize_sorting_for_input_stream=1;
+set optimize_sorting_by_input_stream_properties=1;
 
 DROP TABLE IF EXISTS optimize_sorting;
 CREATE TABLE optimize_sorting (a UInt64, b UInt64) ENGINE MergeTree() ORDER BY tuple();

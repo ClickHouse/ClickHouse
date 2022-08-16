@@ -457,7 +457,7 @@ class SettingsRandomizer:
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
-        "optimize_sorting_for_input_stream": lambda: random.randint(0, 1),
+        "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
     }
 
     @staticmethod
