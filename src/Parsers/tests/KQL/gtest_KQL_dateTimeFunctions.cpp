@@ -178,7 +178,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserDateTimeFuncTest,
         },
         {
             "print make_datetime(2017,10,01,12,11,0.1234567)",
-            "SELECT makeDateTime64(2017, 10, 1, 12, 11, 0, 1234567, 7, 'UTC')"
+            "SELECT makeDateTime64(2017, 10, 1, 12, 11, 0.1234567, 0, 7, 'UTC')"
         },
         {
             "print unixtime_microseconds_todatetime(1546300800000000)",
@@ -194,11 +194,11 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserDateTimeFuncTest,
         },
         {
             "print datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31))",
-            "SELECT ABS(dateDiff('year', toDateTime64('2017-01-01', 9, 'UTC'), toDateTime64('2000-12-31', 9, 'UTC')))"
+            "SELECT dateDiff('year', toDateTime64('2017-01-01', 9, 'UTC'), toDateTime64('2000-12-31', 9, 'UTC')) * -1"
         },
         {
             "print datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59))",
-            "SELECT ABS(dateDiff('minute', toDateTime64('2017-10-30 23:05:01', 9, 'UTC'), toDateTime64('2017-10-30 23:00:59', 9, 'UTC')))"
+            "SELECT dateDiff('minute', toDateTime64('2017-10-30 23:05:01', 9, 'UTC'), toDateTime64('2017-10-30 23:00:59', 9, 'UTC')) * -1"
         }
 
 })));   
