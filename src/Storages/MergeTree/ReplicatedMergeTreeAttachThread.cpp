@@ -15,6 +15,8 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
     , log(&Poco::Logger::get(log_name))
 {
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
+    const auto storage_settings = storage.getSettings();
+    retry_period = storage_settings->initialization_retry_period.totalSeconds();
 }
 
 void ReplicatedMergeTreeAttachThread::shutdown()
@@ -166,17 +168,18 @@ void ReplicatedMergeTreeAttachThread::tryReconnect()
     {
         try
         {
+            const auto context = storage.getContext();
             if (storage.zookeeper_name == storage.default_zookeeper_name)
-                zookeeper = storage.getContext()->getZooKeeper();
+                zookeeper = std::make_shared<zkutil::ZooKeeper>(context->getConfigRef(), "zookeeper", context->getZooKeeperLog());
             else
-                zookeeper = storage.getContext()->getAuxiliaryZooKeeper(storage.zookeeper_name);
+                zookeeper = context->getAuxiliaryZooKeeperConnection(storage.zookeeper_name);
             return;
         }
         catch (...)
         {
             notifyIfFirstTry();
-            LOG_WARNING(log, "Will try to reconnect to ZooKeeper in 10 seconds");
-            std::this_thread::sleep_for(std::chrono::seconds(10));
+            LOG_WARNING(log, "Will try to reconnect to ZooKeeper in {} seconds", retry_period);
+            std::this_thread::sleep_for(std::chrono::seconds(retry_period));
         }
     }
 }
