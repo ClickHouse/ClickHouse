@@ -23,7 +23,7 @@ public:
         size_t max_bytes_before_external_sort_,
         VolumePtr tmp_volume_,
         size_t min_free_disk_space_,
-        bool optimize_sorting_for_input_stream_);
+        bool optimize_sorting_by_input_stream_properties_);
 
     /// FinishSorting
     SortingStep(
@@ -87,7 +87,7 @@ private:
     size_t max_bytes_before_external_sort = 0;
     VolumePtr tmp_volume;
     size_t min_free_disk_space = 0;
-    const bool optimize_sorting_for_input_stream = false;
+    const bool optimize_sorting_by_input_stream_properties = false;
 };
 
 }

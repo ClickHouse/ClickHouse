@@ -39,7 +39,7 @@ SortingStep::SortingStep(
     size_t max_bytes_before_external_sort_,
     VolumePtr tmp_volume_,
     size_t min_free_disk_space_,
-    bool optimize_sorting_for_input_stream_)
+    bool optimize_sorting_by_input_stream_properties_)
     : ITransformingStep(input_stream, input_stream.header, getTraits(limit_))
     , type(Type::Full)
     , result_description(std::move(description_))
@@ -51,7 +51,7 @@ SortingStep::SortingStep(
     , max_bytes_before_external_sort(max_bytes_before_external_sort_)
     , tmp_volume(tmp_volume_)
     , min_free_disk_space(min_free_disk_space_)
-    , optimize_sorting_for_input_stream(optimize_sorting_for_input_stream_)
+    , optimize_sorting_by_input_stream_properties(optimize_sorting_by_input_stream_properties_)
 {
     /// TODO: check input_stream is partially sorted by the same description.
     output_stream->sort_description = result_description;
@@ -258,7 +258,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     const auto input_sort_mode = input_streams.front().sort_mode;
     const SortDescription & input_sort_desc = input_streams.front().sort_description;
-    if (optimize_sorting_for_input_stream)
+    if (optimize_sorting_by_input_stream_properties)
     {
         /// skip sorting if stream is already sorted
         if (input_sort_mode == DataStream::SortMode::Stream && input_sort_desc.hasPrefix(result_description))

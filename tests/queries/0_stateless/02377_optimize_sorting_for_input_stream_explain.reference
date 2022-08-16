@@ -6,15 +6,15 @@ Sorting (Stream): a ASC
 Sorting (None)
 Sorting (None)
 -- disable optimization -> sorting order is NOT propagated from subquery -> full sort
--- QUERY: set optimize_sorting_for_input_stream=0;set max_threads=1;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
+-- QUERY: set optimize_sorting_by_input_stream_properties=0;set max_threads=1;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
 MergeSortingTransform
 LimitsCheckingTransform
 PartialSortingTransform
 -- enable optimization -> sorting order is propagated from subquery -> merge sort
--- QUERY: set optimize_sorting_for_input_stream=1;set max_threads=1;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
+-- QUERY: set optimize_sorting_by_input_stream_properties=1;set max_threads=1;EXPLAIN PIPELINE SELECT a FROM (SELECT a FROM optimize_sorting) ORDER BY a
 MergeSortingTransform
 -- enable optimization -> there is no sorting order to propagate from subquery -> full sort
--- QUERY: set optimize_sorting_for_input_stream=1;set max_threads=1;EXPLAIN PIPELINE SELECT c FROM (SELECT c FROM optimize_sorting) ORDER BY c
+-- QUERY: set optimize_sorting_by_input_stream_properties=1;set max_threads=1;EXPLAIN PIPELINE SELECT c FROM (SELECT c FROM optimize_sorting) ORDER BY c
 MergeSortingTransform
 LimitsCheckingTransform
 PartialSortingTransform
