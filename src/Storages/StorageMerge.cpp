@@ -532,15 +532,16 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         QueryPlan plan;
         if (StorageView * view = dynamic_cast<StorageView *>(storage.get()))
         {
-            /// For view storage, we need to rewrite the modified_query_info.view_query to optimize read. The
-            /// most intuitive way is to use InterpreterSelectQuery.
-            modified_select.replaceDatabaseAndTable(database_name, table_name);
+            /// For view storage, we need to rewrite the `modified_query_info.view_query` to optimize read.
+            /// The most intuitive way is to use InterpreterSelectQuery.
+
+            /// Intercept the settings
+            modified_context->setSetting("max_threads", streams_num);
+            modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
+            modified_context->setSetting("max_block_size", max_block_size);
+
             InterpreterSelectQuery(
-                modified_query_info.query,
-                modified_context,
-                storage,
-                view->getInMemoryMetadataPtr(),
-                SelectQueryOptions(QueryProcessingStage::FetchColumns))
+                modified_query_info.query, modified_context, storage, view->getInMemoryMetadataPtr(), SelectQueryOptions(processed_stage))
                 .buildQueryPlan(plan);
         }
         else
