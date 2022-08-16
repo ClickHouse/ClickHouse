@@ -8,37 +8,37 @@
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
 
-OwnJSONPatternFormatter::OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config_) : OwnPatternFormatter(), config(config_)
+OwnJSONPatternFormatter::OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config) : OwnPatternFormatter()
 {
     if (config.has("logger.formatting.names.date_time"))
-        this->date_time = config.getString("logger.formatting.names.date_time", "");
+        date_time = config.getString("logger.formatting.names.date_time", "");
 
     if (config.has("logger.formatting.names.thread_name"))
-        this->thread_name = config.getString("logger.formatting.names.thread_name", "");
+        thread_name = config.getString("logger.formatting.names.thread_name", "");
 
     if (config.has("logger.formatting.names.thread_id"))
-        this->thread_id = config.getString("logger.formatting.names.thread_id", "");
+        thread_id = config.getString("logger.formatting.names.thread_id", "");
 
     if (config.has("logger.formatting.names.level"))
-        this->level = config.getString("logger.formatting.names.level", "");
+        level = config.getString("logger.formatting.names.level", "");
 
     if (config.has("logger.formatting.names.query_id"))
-        this->query_id = config.getString("logger.formatting.names.query_id", "");
+        query_id = config.getString("logger.formatting.names.query_id", "");
 
     if (config.has("logger.formatting.names.logger_name"))
-        this->logger_name = config.getString("logger.formatting.names.logger_name", "");
+        logger_name = config.getString("logger.formatting.names.logger_name", "");
 
     if (config.has("logger.formatting.names.message"))
-        this->message = config.getString("logger.formatting.names.message", "");
+        message = config.getString("logger.formatting.names.message", "");
 
     if (config.has("logger.formatting.names.source_file"))
-        this->source_file_ = config.getString("logger.formatting.names.source_file", "");
+        source_file_ = config.getString("logger.formatting.names.source_file", "");
 
     if (config.has("logger.formatting.names.source_line"))
-        this->source_line = config.getString("logger.formatting.names.source_line", "");
+        source_line = config.getString("logger.formatting.names.source_line", "");
 
-    if (this->date_time.empty() && this->thread_name.empty() && this->thread_id.empty() && this->level.empty() && this->query_id.empty()
-        && this->logger_name.empty() && this->message.empty() && this->source_file_.empty() && this->source_line.empty())
+    if (date_time.empty() && thread_name.empty() && thread_id.empty() && level.empty() && query_id.empty()
+        && logger_name.empty() && message.empty() && source_file_.empty() && source_line.empty())
     {
         date_time = "date_time";
         thread_name = "thread_name";
@@ -62,9 +62,9 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
     const Poco::Message & msg = msg_ext.base;
     DB::writeChar('{', wb);
 
-    if (!this->date_time.empty())
+    if (!date_time.empty())
     {
-        writeJSONString(this->date_time, wb, settings);
+        writeJSONString(date_time, wb, settings);
         DB::writeChar(':', wb);
 
         DB::writeChar('\"', wb);
@@ -81,47 +81,47 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
         print_comma = true;
     }
 
-    if (!this->thread_name.empty())
+    if (!thread_name.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
         else
             print_comma = true;
 
-        writeJSONString(this->thread_name, wb, settings);
+        writeJSONString(thread_name, wb, settings);
         DB::writeChar(':', wb);
 
         writeJSONString(msg.getThread(), wb, settings);
     }
 
-    if (!this->thread_id.empty())
+    if (!thread_id.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
         else
             print_comma = true;
 
-        writeJSONString(this->thread_id, wb, settings);
+        writeJSONString(thread_id, wb, settings);
         DB::writeChar(':', wb);
         DB::writeChar('\"', wb);
         DB::writeIntText(msg_ext.thread_id, wb);
         DB::writeChar('\"', wb);
     }
 
-    if (!this->level.empty())
+    if (!level.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
         else
             print_comma = true;
 
-        writeJSONString(this->level, wb, settings);
+        writeJSONString(level, wb, settings);
         DB::writeChar(':', wb);
         int priority = static_cast<int>(msg.getPriority());
         writeJSONString(std::to_string(priority), wb, settings);
     }
 
-    if (!this->query_id.empty())
+    if (!query_id.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
@@ -131,44 +131,44 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
         /// We write query_id even in case when it is empty (no query context)
         /// just to be convenient for various log parsers.
 
-        writeJSONString(this->query_id, wb, settings);
+        writeJSONString(query_id, wb, settings);
         DB::writeChar(':', wb);
         writeJSONString(msg_ext.query_id, wb, settings);
     }
 
-    if (!this->logger_name.empty())
+    if (!logger_name.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
         else
             print_comma = true;
 
-        writeJSONString(this->logger_name, wb, settings);
+        writeJSONString(logger_name, wb, settings);
         DB::writeChar(':', wb);
 
         writeJSONString(msg.getSource(), wb, settings);
     }
 
-    if (!this->message.empty())
+    if (!message.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
         else
             print_comma = true;
 
-        writeJSONString(this->message, wb, settings);
+        writeJSONString(message, wb, settings);
         DB::writeChar(':', wb);
         writeJSONString(msg.getText(), wb, settings);
     }
 
-    if (!this->source_file_.empty())
+    if (!source_file_.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
         else
             print_comma = true;
 
-        writeJSONString(this->source_file_, wb, settings);
+        writeJSONString(source_file_, wb, settings);
         DB::writeChar(':', wb);
         const char * source_file = msg.getSourceFile();
         if (source_file != nullptr)
@@ -177,12 +177,12 @@ void OwnJSONPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_
             writeJSONString("", wb, settings);
     }
 
-    if (!this->source_line.empty())
+    if (!source_line.empty())
     {
         if (print_comma)
             DB::writeChar(',', wb);
 
-        writeJSONString(this->source_line, wb, settings);
+        writeJSONString(source_line, wb, settings);
         DB::writeChar(':', wb);
         DB::writeChar('\"', wb);
         DB::writeIntText(msg.getSourceLine(), wb);
