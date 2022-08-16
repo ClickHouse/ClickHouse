@@ -345,3 +345,18 @@ CI_CONFIG = {
         },
     },
 }  # type: dict
+
+# checks required by Mergeable Check
+REQUIRED_CHECKS = [
+    "Fast test",
+    "Style Check",
+    "ClickHouse build check",
+    "ClickHouse special build check",
+    "Stateful tests (release)",
+    "Stateless tests (release)",
+    "Unit tests (release-clang)",
+    "Unit tests (asan)",
+    "Unit tests (msan)",
+    "Unit tests (tsan)",
+    "Unit tests (ubsan)",
+]

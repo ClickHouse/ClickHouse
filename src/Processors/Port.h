@@ -254,6 +254,10 @@ protected:
         if (likely(update_info))
             update_info->update();
     }
+
+    /// For processors_profile_log
+    size_t rows = 0;
+    size_t bytes = 0;
 };
 
 /// Invariants:
@@ -299,6 +303,9 @@ public:
                 header.dumpStructure(),
                 chunk.dumpStructure());
         }
+
+        rows += data->chunk.getNumRows();
+        bytes += data->chunk.bytes();
 
         return std::move(*data);
     }
@@ -422,6 +429,10 @@ public:
 
         std::uintptr_t flags = 0;
         *data = std::move(data_);
+
+        rows += data->chunk.getNumRows();
+        bytes += data->chunk.bytes();
+
         state->push(data, flags);
     }
 

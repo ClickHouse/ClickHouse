@@ -1,4 +1,4 @@
-SET send_logs_level = 'fatal';
+DROP TABLE IF EXISTS t1;
 
 DROP DICTIONARY IF EXISTS dict_flat;
 DROP DICTIONARY IF EXISTS dict_hashed;
@@ -27,14 +27,15 @@ LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1));
 
 SET join_use_nulls = 0;
 
+SET join_algorithm = 'direct';
+
 SELECT 'flat: left on';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 LEFT JOIN dict_flat d ON s1.key = d.key ORDER BY s1.key;
 SELECT 'flat: left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 LEFT JOIN dict_flat d USING(key) ORDER BY key;
 SELECT 'flat: any left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key;
-SELECT 'flat: any left + any_join_distinct_right_table_keys'; -- falls back to regular join
-SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key SETTINGS any_join_distinct_right_table_keys = '1';
+
 SELECT 'flat: semi left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 SEMI JOIN dict_flat d USING(key) ORDER BY key;
 SELECT 'flat: anti left';
@@ -43,8 +44,6 @@ SELECT 'flat: inner';
 SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 JOIN dict_flat d USING(key);
 SELECT 'flat: inner on';
 SELECT * FROM (SELECT number AS k FROM numbers(100)) s1 JOIN dict_flat d ON k = key ORDER BY k;
-SELECT 'flat: inner or'; -- it's not a join over dictionary, because it doen't suppoert multiple keys, but of falls back to regular join
-SELECT * FROM (SELECT if(number % 2 = 0, number, number * 1000) AS k FROM numbers(100)) s1 JOIN dict_flat d ON k = key OR k == 1000 * key ORDER BY key;
 
 SET join_use_nulls = 1;
 
@@ -62,6 +61,20 @@ SELECT 'hashed: inner';
 SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 JOIN dict_hashed d USING(key);
 SELECT 'hashed: inner on';
 SELECT * FROM (SELECT number AS k FROM numbers(100)) s1 JOIN dict_hashed d ON k = key ORDER BY k;
+
+SET join_use_nulls = 0;
+
+-- unsupported cases for dictionary join, falls back to regular join
+
+SET join_algorithm = 'default';
+
+SELECT 'flat: inner or';
+SELECT * FROM (SELECT if(number % 2 = 0, number, number * 1000) AS k FROM numbers(100)) s1 JOIN dict_flat d ON k = key OR k == 1000 * key ORDER BY key;
+
+SELECT 'flat: any left + any_join_distinct_right_table_keys';
+SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key SETTINGS any_join_distinct_right_table_keys = '1';
+
+SET join_use_nulls = 1;
 
 SELECT 'complex_cache (smoke)';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 LEFT JOIN dict_complex_cache d ON s1.key = d.key ORDER BY s1.key;
