@@ -185,6 +185,6 @@ This feature can be used to generate URLs to facilitate profiling of queries.
 
 If the configuration above is applied, the ID of a query is shown in the following format:
 
-``` text
+```response
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
