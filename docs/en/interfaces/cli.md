@@ -22,7 +22,9 @@ Connected to ClickHouse server version 20.13.1 revision 54442.
 
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version of the client as the server app. When you try to use a client of the older version, then the server, `clickhouse-client` displays the message:
 
-      ClickHouse client version is older than ClickHouse server. It may lack support for new features.
+```response
+ClickHouse client version is older than ClickHouse server. It may lack support for new features.
+```
 
 ## Usage {#cli_usage}
 
