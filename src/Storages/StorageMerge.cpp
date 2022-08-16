@@ -24,6 +24,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include "Core/QueryProcessingStage.h"
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -534,7 +535,13 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             /// For view storage, we need to rewrite the modified_query_info.view_query to optimize read. The
             /// most intuitive way is to use InterpreterSelectQuery.
             modified_select.replaceDatabaseAndTable(database_name, table_name);
-            InterpreterSelectQuery(modified_query_info.query, modified_context, storage).buildQueryPlan(plan);
+            InterpreterSelectQuery(
+                modified_query_info.query,
+                modified_context,
+                storage,
+                view->getInMemoryMetadataPtr(),
+                SelectQueryOptions(QueryProcessingStage::FetchColumns))
+                .buildQueryPlan(plan);
         }
         else
         {
@@ -548,12 +555,13 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
                 max_block_size,
                 UInt32(streams_num));
 
-            if (!plan.isInitialized())
-                return {};
-
-            if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-                read_from_merge_tree->addFilterNodes(added_filter_nodes);
         }
+
+        if (!plan.isInitialized())
+            return {};
+
+        if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
+            read_from_merge_tree->addFilterNodes(added_filter_nodes);
 
         builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),
