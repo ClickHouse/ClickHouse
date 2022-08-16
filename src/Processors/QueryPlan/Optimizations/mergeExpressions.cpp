@@ -31,7 +31,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
             return 0;
 
-        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
+        auto merged = ActionsDAG::merge(std::move(*child_actions->clone()), std::move(*parent_actions->clone()));
 
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputStreams().front(), merged);
         expr->setStepDescription("(" + parent_expr->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
@@ -48,7 +48,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
         if (child_actions->hasArrayJoin() && parent_actions->hasStatefulFunctions())
             return 0;
 
-        auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
+        auto merged = ActionsDAG::merge(std::move(*child_actions->clone()), std::move(*parent_actions->clone()));
 
         auto filter = std::make_unique<FilterStep>(child_expr->getInputStreams().front(),
                                                    merged,

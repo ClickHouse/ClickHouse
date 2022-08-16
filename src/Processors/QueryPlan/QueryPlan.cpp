@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_COLUMN;
 }
 
 QueryPlan::QueryPlan() = default;
@@ -433,7 +434,21 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
+    try
+    {
+        QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::ILLEGAL_COLUMN)
+        {
+            tryLogCurrentException("QueryPlan");
+            WriteBufferFromOwnString buf;
+            explainPlan(buf, {.header=true, .actions=true});
+            LOG_TRACE(&Poco::Logger::get("QueryPlan"), "{}", buf.str());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, e.message());
+        }
+    }
     QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
 }
 

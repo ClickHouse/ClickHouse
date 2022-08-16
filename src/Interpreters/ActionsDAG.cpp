@@ -1193,7 +1193,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             if (it == first_result.end() || it->second.empty())
             {
                 if (first.project_input)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                                     "Cannot find column {} in ActionsDAG result", input_node->result_name);
 
                 first.inputs.push_back(input_node);
