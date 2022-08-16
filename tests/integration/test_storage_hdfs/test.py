@@ -768,20 +768,7 @@ def test_schema_inference_cache(started_cluster):
 
     files = "test_cache{0,1,2,3}.jsonl"
     run_describe_query(node1, files)
-    check_cache(node1, ["test_cache2.jsonl", "test_cache3.jsonl"])
     check_cache_hits(node1, files)
-
-    run_describe_query(node1, "test_cache2.jsonl")
-    check_cache_hits(node1, "test_cache2.jsonl")
-
-    run_describe_query(node1, "test_cache3.jsonl")
-    check_cache_hits(node1, "test_cache3.jsonl")
-
-    run_describe_query(node1, "test_cache0.jsonl")
-    check_cache_misses(node1, "test_cache0.jsonl")
-
-    run_describe_query(node1, "test_cache1.jsonl")
-    check_cache_misses(node1, "test_cache1.jsonl")
 
     node1.query(f"system drop schema cache for hdfs")
     check_cache(node1, [])
