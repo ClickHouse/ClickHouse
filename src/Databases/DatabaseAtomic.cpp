@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Parsers/formatAST.h>
 #include <Common/atomicRename.h>
+#include <Common/filesystemHelpers.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -430,7 +431,7 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
     for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
     {
-        if (!fs::is_symlink(table_path))
+        if (!FS::isSymlink(table_path))
         {
             throw Exception(ErrorCodes::ABORTED,
                 "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
@@ -501,7 +502,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     fs::path metadata_symlink(path_to_metadata_symlink);
     if (fs::exists(metadata_symlink))
     {
-        if (!fs::is_symlink(metadata_symlink))
+        if (!FS::isSymlink(metadata_symlink))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} exists", path_to_metadata_symlink);
     }
     else
