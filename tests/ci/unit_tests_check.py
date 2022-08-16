@@ -116,7 +116,7 @@ if __name__ == "__main__":
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
-    
+
     atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
