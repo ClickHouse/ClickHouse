@@ -37,14 +37,11 @@ private:
 class LRUFileCachePriority::LRUFileCacheIterator : public IFileCachePriority::IIterator
 {
 public:
-    LRUFileCacheIterator(LRUFileCachePriority * file_cache_, LRUFileCachePriority::LRUQueueIterator queue_iter_)
-        : file_cache(file_cache_), queue_iter(queue_iter_)
-    {
-    }
+    LRUFileCacheIterator(LRUFileCachePriority * cache_priority_, LRUFileCachePriority::LRUQueueIterator queue_iter_);
 
     void next() const override { queue_iter++; }
 
-    bool valid() const override { return queue_iter != file_cache->queue.end(); }
+    bool valid() const override { return queue_iter != cache_priority->queue.end(); }
 
     const Key & key() const override { return queue_iter->key; }
 
@@ -54,26 +51,14 @@ public:
 
     size_t hits() const override { return queue_iter->hits; }
 
-    void removeAndGetNext(std::lock_guard<std::mutex> &) override
-    {
-        file_cache->cache_size -= queue_iter->size;
-        queue_iter = file_cache->queue.erase(queue_iter);
-    }
+    void removeAndGetNext(std::lock_guard<std::mutex> &) override;
 
-    void incrementSize(size_t size_increment, std::lock_guard<std::mutex> &) override
-    {
-        file_cache->cache_size += size_increment;
-        queue_iter->size += size_increment;
-    }
+    void incrementSize(size_t size_increment, std::lock_guard<std::mutex> &) override;
 
-    void use(std::lock_guard<std::mutex> &) override
-    {
-        queue_iter->hits++;
-        file_cache->queue.splice(file_cache->queue.end(), file_cache->queue, queue_iter);
-    }
+    void use(std::lock_guard<std::mutex> &) override;
 
 private:
-    LRUFileCachePriority * file_cache;
+    LRUFileCachePriority * cache_priority;
     mutable LRUFileCachePriority::LRUQueueIterator queue_iter;
 };
 
