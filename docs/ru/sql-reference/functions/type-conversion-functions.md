@@ -209,7 +209,7 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
+┌──────value─┬─toTypeName(toDate32('1955-01-01'))─┐
 │ 1955-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
 ```
@@ -217,23 +217,23 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 2. Значение выходит за границы диапазона:
 
 ``` sql
-SELECT toDate32('1924-01-01') AS value, toTypeName(value);
+SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
-│ 1925-01-01 │ Date32                             │
+┌──────value─┬─toTypeName(toDate32('1899-01-01'))─┐
+│ 1900-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
 ```
 
 3. С аргументом типа `Date`:
 
 ``` sql
-SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
+SELECT toDate32(toDate('1899-01-01')) AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
+┌──────value─┬─toTypeName(toDate32(toDate('1899-01-01')))─┐
 │ 1970-01-01 │ Date32                                     │
 └────────────┴────────────────────────────────────────────┘
 ```
@@ -247,14 +247,14 @@ SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
 Запрос:
 
 ``` sql
-SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
+SELECT toDate32OrZero('1899-01-01'), toDate32OrZero('');
 ```
 
 Результат:
 
 ``` text
-┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
-│                   1925-01-01 │         1925-01-01 │
+┌─toDate32OrZero('1899-01-01')─┬─toDate32OrZero('')─┐
+│                   1900-01-01 │         1900-01-01 │
 └──────────────────────────────┴────────────────────┘
 ```
 
@@ -994,7 +994,7 @@ parseDateTimeBestEffort(time_string[, time_zone])
 Запрос:
 
 ``` sql
-SELECT parseDateTimeBestEffort('12/12/2020 12:12:57')
+SELECT parseDateTimeBestEffort('23/10/2020 12:12:57')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1002,7 +1002,7 @@ AS parseDateTimeBestEffort;
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2020-12-12 12:12:57 │
+│     2020-10-23 12:12:57 │
 └─────────────────────────┘
 ```
 
@@ -1039,7 +1039,7 @@ AS parseDateTimeBestEffort;
 Запрос:
 
 ``` sql
-SELECT parseDateTimeBestEffort('2018-12-12 10:12:12')
+SELECT parseDateTimeBestEffort('2018-10-23 10:12:12')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1047,7 +1047,7 @@ AS parseDateTimeBestEffort;
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2018-12-12 10:12:12 │
+│     2018-10-23 10:12:12 │
 └─────────────────────────┘
 ```
 
@@ -1074,77 +1074,7 @@ SELECT parseDateTimeBestEffort('10 20:19');
 
 ## parseDateTimeBestEffortUS {#parsedatetimebesteffortUS}
 
-Эта функция похожа на [‘parseDateTimeBestEffort’](#parsedatetimebesteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности.
-
-**Синтаксис**
-
-``` sql
-parseDateTimeBestEffortUS(time_string [, time_zone])
-```
-
-**Аргументы**
-
--   `time_string` — строка, содержащая дату и время для преобразования. [String](../../sql-reference/data-types/string.md).
--   `time_zone` — часовой пояс. Функция анализирует `time_string` в соответствии с часовым поясом. [String](../../sql-reference/data-types/string.md).
-
-**Поддерживаемые нестандартные форматы**
-
--   Строка, содержащая 9-10 цифр [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
--   Строка, содержащая дату и время: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
--   Строка с датой, но без времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
--   Строка, содержащая день и время: `DD`, `DD hh`, `DD hh:mm`. В этом случае `YYYY-MM` заменяется на `2000-01`.
--   Строка, содержащая дату и время, а также информацию о часовом поясе: `YYYY-MM-DD hh:mm:ss ±h:mm` и т.д. Например, `2020-12-12 17:36:00 -5:00`.
-
-**Возвращаемое значение**
-
--   `time_string` преобразован в тип данных `DateTime`.
-
-**Примеры**
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUS('09/12/2020 12:12:57')
-AS parseDateTimeBestEffortUS;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUS─┐
-│     2020-09-12 12:12:57   │
-└─────────────────────────——┘
-```
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUS('09-12-2020 12:12:57')
-AS parseDateTimeBestEffortUS;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUS─┐
-│     2020-09-12 12:12:57   │
-└─────────────────────────——┘
-```
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUS('09.12.2020 12:12:57')
-AS parseDateTimeBestEffortUS;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUS─┐
-│     2020-09-12 12:12:57   │
-└─────────────────────────——┘
-```
+Эта функция ведет себя как [parseDateTimeBestEffort](#parsedatetimebesteffort) для форматов даты ISO, например, `YYYY-MM-DD hh:mm:ss`, и других форматов даты, где компоненты месяца и дня могут быть однозначно выделены, например, `YYYYMMDDhhmmss`, `YYYY-MM`, `DD hh`, или `YYYY-MM-DD hh:mm:ss ±h:mm`. Если месяц и день не могут быть однозначно выделены, например, `MM/DD/YYY`, `MM-DD-YYYY` или `MM-DD-YY`, то вместо `DD/MM/YYY`, `DD-MM-YYYY` или `DD-MM-YY` предпочитается формат даты США. Впрочем, если номер месяца был бы больше 12 и меньше или равен 31, эта функция возвращается к поведению [parseDateTimeBestEffort](#parsedatetimebesteffort), т.е. `15/08/2020` будет разобрано как `2020-08-15`.
 
 ## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
 ## parseDateTime32BestEffortOrNull {#parsedatetime32besteffortornull}
@@ -1160,173 +1090,9 @@ AS parseDateTimeBestEffortUS;
 
 Работает аналогично функции [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS), но в отличие от нее возвращает `NULL`, если входная строка не может быть преобразована в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
 
-**Синтаксис**
-
-``` sql
-parseDateTimeBestEffortUSOrNull(time_string[, time_zone])
-```
-
-**Аргументы**
-
--   `time_string` — строка, содержащая дату или дату со временем для преобразования. Дата должна быть в американском формате (`MM/DD/YYYY` и т.д.). [String](../../sql-reference/data-types/string.md).
--   `time_zone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция анализирует `time_string` в соответствии с заданным часовым поясом. Опциональный параметр. [String](../../sql-reference/data-types/string.md).
-
-**Поддерживаемые нестандартные форматы**
-
--   Строка в формате [unix timestamp](https://en.wikipedia.org/wiki/Unix_time), содержащая 9-10 цифр.
--   Строка, содержащая дату и время: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss` и т.д.
--   Строка, содержащая дату без времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` и т.д.
--   Строка, содержащая день и время: `DD`, `DD hh`, `DD hh:mm`. В этом случае `YYYY-MM` заменяется на `2000-01`.
--   Строка, содержащая дату и время, а также информацию о часовом поясе: `YYYY-MM-DD hh:mm:ss ±h:mm` и т.д. Например, `2020-12-12 17:36:00 -5:00`.
-
-**Возвращаемые значения**
-
--   `time_string`, преобразованная в тип данных `DateTime`.
--   `NULL`, если входная строка не может быть преобразована в тип данных `DateTime`.
-
-**Примеры**
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02/10/2021 21:12:57') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│             2021-02-10 21:12:57 │
-└─────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02-10-2021 21:12:57 GMT', 'Europe/Moscow') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│             2021-02-11 00:12:57 │
-└─────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02.10.2021') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│             2021-02-10 00:00:00 │
-└─────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('10.2021') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│                            ᴺᵁᴸᴸ │
-└─────────────────────────────────┘
-```
-
 ## parseDateTimeBestEffortUSOrZero {#parsedatetimebesteffortusorzero}
 
 Работает аналогично функции [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS), но в отличие от нее возвращает нулевую дату (`1970-01-01`) или нулевую дату со временем (`1970-01-01 00:00:00`), если входная строка не может быть преобразована в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Синтаксис**
-
-``` sql
-parseDateTimeBestEffortUSOrZero(time_string[, time_zone])
-```
-
-**Аргументы**
-
--   `time_string` — строка, содержащая дату или дату со временем для преобразования. Дата должна быть в американском формате (`MM/DD/YYYY` и т.д.). [String](../../sql-reference/data-types/string.md).
--   `time_zone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция анализирует `time_string` в соответствии с заданным часовым поясом. Опциональный параметр. [String](../../sql-reference/data-types/string.md).
-
-**Поддерживаемые нестандартные форматы**
-
--   Строка в формате [unix timestamp](https://en.wikipedia.org/wiki/Unix_time), содержащая 9-10 цифр.
--   Строка, содержащая дату и время: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss` и т.д.
--   Строка, содержащая дату без времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` и т.д.
--   Строка, содержащая день и время: `DD`, `DD hh`, `DD hh:mm`. В этом случае `YYYY-MM` заменяется на `2000-01`.
--   Строка, содержащая дату и время, а также информацию о часовом поясе: `YYYY-MM-DD hh:mm:ss ±h:mm` и т.д. Например, `2020-12-12 17:36:00 -5:00`.
-
-**Возвращаемые значения**
-
--   `time_string`, преобразованная в тип данных `DateTime`.
--   Нулевая дата или нулевая дата со временем, если входная строка не может быть преобразована в тип данных `DateTime`.
-
-**Примеры**
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02/10/2021 21:12:57') AS parseDateTimeBestEffortUSOrZero;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUSOrZero─┐
-│             2021-02-10 21:12:57 │
-└─────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02-10-2021 21:12:57 GMT', 'Europe/Moscow') AS parseDateTimeBestEffortUSOrZero;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUSOrZero─┐
-│             2021-02-11 00:12:57 │
-└─────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02.10.2021') AS parseDateTimeBestEffortUSOrZero;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUSOrZero─┐
-│             2021-02-10 00:00:00 │
-└─────────────────────────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOrZero;
-```
-
-Результат:
-
-``` text
-┌─parseDateTimeBestEffortUSOrZero─┐
-│             1970-01-01 00:00:00 │
-└─────────────────────────────────┘
-```
 
 ## parseDateTime64BestEffort {#parsedatetime64besteffort}
 
@@ -1374,17 +1140,29 @@ FORMAT PrettyCompactMonoBlock;
 └────────────────────────────┴────────────────────────────────┘
 ```
 
-## parseDateTime64BestEffortOrNull {#parsedatetime32besteffortornull}
+## parseDateTime64BestEffortUS {#parsedatetime64besteffortus}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности.
+
+## parseDateTime64BestEffortOrNull {#parsedatetime64besteffortornull}
 
 Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает `NULL`, если формат даты не может быть обработан.
 
 ## parseDateTime64BestEffortOrZero {#parsedatetime64besteffortorzero}
 
-Работает аналогично функции [parseDateTime64BestEffort](#parsedatetimebesteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но возвращает нулевую дату и время, если формат даты не может быть обработан.
+
+## parseDateTime64BestEffortUSOrNull {#parsedatetime64besteffortusornull}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности и возвращает `NULL`, если формат даты не может быть обработан.
+
+## parseDateTime64BestEffortUSOrZero {#parsedatetime64besteffortusorzero}
+
+Работает аналогично функции [parseDateTime64BestEffort](#parsedatetime64besteffort), но разница состоит в том, что в она предполагает американский формат даты (`MM/DD/YYYY` etc.) в случае неоднозначности и возвращает нулевую дату и время, если формат даты не может быть обработан.
 
 ## toLowCardinality {#tolowcardinality}
 
-Преобразует входные данные в версию [LowCardianlity](../data-types/lowcardinality.md) того же типа данных.
+Преобразует входные данные в версию [LowCardinality](../data-types/lowcardinality.md) того же типа данных.
 
 Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
 
@@ -1431,6 +1209,7 @@ SELECT toLowCardinality('1');
 
 :::info "Примечание"
     Возвращаемое значение — это временная метка в UTC, а не в часовом поясе `DateTime64`.
+:::
 
 **Синтаксис**
 
