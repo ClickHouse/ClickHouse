@@ -31,9 +31,10 @@ std::pair<String, DiskPtr> prepareForLocalMetadata(
 
 bool isFileWithPersistentCache(const String & path)
 {
-    return path.ends_with("idx") // index files.
-            || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") /// mark files.
-            || path.ends_with("txt") || path.ends_with("dat");
+    auto path_extension = std::filesystem::path(path).extension();
+    return path_extension == ".idx" // index files.
+            || path_extension == ".mrk" || path_extension == ".mrk2" || path_extension == ".mrk3" /// mark files.
+            || path_extension == ".txt" || path_extension == ".dat";
 }
 
 }

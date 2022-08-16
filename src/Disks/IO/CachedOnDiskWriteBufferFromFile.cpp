@@ -16,17 +16,19 @@ namespace ProfileEvents
 namespace DB
 {
 
-class SwapHelper
+namespace
 {
-public:
-    SwapHelper(WriteBuffer & b1_, WriteBuffer & b2_) : b1(b1_), b2(b2_) { b1.swap(b2); }
-    ~SwapHelper() { b1.swap(b2); }
+    class SwapHelper
+    {
+    public:
+        SwapHelper(WriteBuffer & b1_, WriteBuffer & b2_) : b1(b1_), b2(b2_) { b1.swap(b2); }
+        ~SwapHelper() { b1.swap(b2); }
 
-private:
-    WriteBuffer & b1;
-    WriteBuffer & b2;
-};
-
+    private:
+        WriteBuffer & b1;
+        WriteBuffer & b2;
+    };
+}
 
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     std::unique_ptr<WriteBuffer> impl_,
@@ -89,7 +91,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size)
     {
         if (!cache_writer->write(data, size, current_download_offset, is_persistent_cache_file))
         {
-            LOG_INFO(log, "Write-throw cache is stopped as cache limit is reached and nothing can be evicted");
+            LOG_INFO(log, "Write-through cache is stopped as cache limit is reached and nothing can be evicted");
 
             /// No space left, disable caching.
             stop_caching = true;
@@ -152,12 +154,17 @@ void CachedOnDiskWriteBufferFromFile::finalizeImpl()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
         if (cache_writer)
         {
-            cache_writer->finalize();
-            cache_writer.reset();
+            try
+            {
+                cache_writer->finalize();
+                cache_writer.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
         throw;

@@ -17,7 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_USE_CACHE;
+    extern const int LOGICAL_ERROR;
 }
 
 CachedObjectStorage::CachedObjectStorage(
@@ -77,8 +77,12 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    if (objects.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Received empty list of objects to read");
+
     assert(!objects[0].getPathKeyForCache().empty());
 
+    /// Add cache relating settings to ReadSettings.
     auto modified_read_settings = patchSettings(read_settings);
     auto implementation_buffer = object_storage->readObjects(objects, modified_read_settings, read_hint, file_size);
 
@@ -99,9 +103,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObjects( /// NO
                 object_storage->readObjects(objects, modified_read_settings, read_hint, file_size));
         };
 
-        if (objects.size() != 1)
-            throw Exception(ErrorCodes::CANNOT_USE_CACHE, "Unable to read multiple objects, support not added");
-
+        /// TODO: A test is needed for the case of non-s3 storage and *Log family engines.
         std::string path = objects[0].absolute_path;
         FileCache::Key key = getCacheKey(objects[0].getPathKeyForCache());
 
@@ -124,6 +126,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
+    /// Add cache relating settings to ReadSettings.
     auto modified_read_settings = patchSettings(read_settings);
     auto implementation_buffer = object_storage->readObject(object, read_settings, read_hint, file_size);
 
@@ -167,12 +170,13 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    /// Add cache relating settings to WriteSettings.
     auto modified_write_settings = IObjectStorage::patchSettings(write_settings);
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, std::move(finalize_callback), buf_size, modified_write_settings);
 
-    bool cache_on_write = fs::path(object.absolute_path).extension() != ".tmp"
-        && modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getSettings(cache->getBasePath()).cache_on_write_operations;
+    bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
+        && FileCacheFactory::instance().getSettings(cache->getBasePath()).cache_on_write_operations
+        && fs::path(object.absolute_path).extension() != ".tmp";
 
     auto path_key_for_cache = object.getPathKeyForCache();
     /// Need to remove even if cache_on_write == false.
