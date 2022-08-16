@@ -354,4 +354,9 @@ REQUIRED_CHECKS = [
     "ClickHouse special build check",
     "Stateful tests (release)",
     "Stateless tests (release)",
+    "Unit tests (release-clang)",
+    "Unit tests (asan)",
+    "Unit tests (msan)",
+    "Unit tests (tsan)",
+    "Unit tests (ubsan)",
 ]
