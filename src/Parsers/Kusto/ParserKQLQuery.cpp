@@ -12,6 +12,9 @@
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLOperators.h>
 #include <Parsers/Kusto/ParserKQLPrint.h>
+#include <Parsers/Kusto/ParserKQLMakeSeries.h>
+#include <Parsers/CommonParsers.h>
+
 namespace DB
 {
 
@@ -94,6 +97,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKQLSort kql_sort_p;
     ParserKQLSummarize kql_summarize_p;
     ParserKQLTable kql_table_p;
+    ParserKQLMakeSeries kql_make_series_p;
 
     ASTPtr select_expression_list;
     ASTPtr tables;
@@ -111,7 +115,8 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         { "sort",&kql_sort_p},
         { "order",&kql_sort_p},
         { "summarize",&kql_summarize_p},
-        { "table",&kql_table_p}
+        { "table",&kql_table_p},
+        { "make-series",&kql_make_series_p}
     };
 
     std::vector<std::pair<String, Pos>> operation_pos;
@@ -137,6 +142,20 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             ++pos;
             String kql_operator(pos->begin,pos->end);
+            if (kql_operator == "make")
+            {
+                ++pos;
+                ParserKeyword s_series("series");
+                ParserToken s_dash(TokenType::Minus);
+                if (s_dash.ignore(pos,expected))
+                {
+                    if (s_series.ignore(pos,expected))
+                    {
+                        kql_operator = "make-series";
+                        --pos;
+                    }
+                }
+            }
             if (pos->type != TokenType::BareWord || kql_parser.find(kql_operator) == kql_parser.end())
                 return false;
             ++pos;
@@ -185,6 +204,19 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (kql_summarize_p.where_expression)
             where_expression = kql_summarize_p.where_expression;
+    }
+
+    kql_make_series_p.setTableName(table_name);
+    if (!kql_make_series_p.parse(pos, select_expression_list, expected))
+         return false;
+    else
+    {
+        if (kql_make_series_p.group_expression_list)
+            group_expression_list = kql_make_series_p.group_expression_list;
+
+        if (kql_make_series_p.tables)
+            tables = kql_make_series_p.tables;
+
     }
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
