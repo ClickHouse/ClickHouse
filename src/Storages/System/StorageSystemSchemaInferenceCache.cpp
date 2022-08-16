@@ -40,19 +40,8 @@ NamesAndTypesList StorageSystemSchemaInferenceCache::getNamesAndTypes()
     };
 }
 
-void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
-{
-    fillDataImpl(res_columns, StorageFile::getSchemaCache(context), "File");
-#if USE_AWS_S3
-    fillDataImpl(res_columns, StorageS3::getSchemaCache(context), "S3");
-#endif
-#if USE_HDFS
-    fillDataImpl(res_columns, StorageHDFS::getSchemaCache(context), "HDFS");
-#endif
-    fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
-}
 
-void StorageSystemSchemaInferenceCache::fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cache, const String & storage_name) const
+static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cache, const String & storage_name) const
 {
     auto s3_schema_cache_data = schema_cache.getAll();
     String source;
@@ -68,6 +57,18 @@ void StorageSystemSchemaInferenceCache::fillDataImpl(MutableColumns & res_column
         res_columns[4]->insert(schema_info.registration_time);
         res_columns[5]->insert(getSchemaString(schema_info.columns));
     }
+}
+
+void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+{
+    fillDataImpl(res_columns, StorageFile::getSchemaCache(context), "File");
+#if USE_AWS_S3
+    fillDataImpl(res_columns, StorageS3::getSchemaCache(context), "S3");
+#endif
+#if USE_HDFS
+    fillDataImpl(res_columns, StorageHDFS::getSchemaCache(context), "HDFS");
+#endif
+    fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
 }
 
 }
