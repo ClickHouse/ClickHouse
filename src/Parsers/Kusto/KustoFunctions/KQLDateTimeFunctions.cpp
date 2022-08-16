@@ -56,14 +56,77 @@ bool Ago::convertImpl(String & out, IParser::Pos & pos)
 
 bool DatetimeAdd::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "date_add");
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String period = getConvertedArgument(fn_name, pos);
+    //remove quotes from period.
+    if ( period.front() == '\"' || period.front() == '\'' )
+    {
+        //period.remove
+        period.erase( 0, 1 ); // erase the first quote
+        period.erase( period.size() - 2 ); // erase the last quuote(Since token includes trailing space alwayas as per implememtation) 
+    }
+    ++pos;
+    const String offset = getConvertedArgument(fn_name, pos);
+    ++pos;
+    const String datetime = getConvertedArgument(fn_name, pos);
+    
+    out = std::format("date_add({}, {}, {} )",period,offset,datetime);
+
+    return true;
+   
 };
 
 bool DatetimePart::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin, pos->end);
-    out = res;
-    return false;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String part = Poco::toUpper(getConvertedArgument(fn_name, pos));
+    if ( part.front() == '\"' || part.front() == '\'' )
+    {
+        //period.remove
+        part.erase( 0, 1 ); // erase the first quote
+        part.erase( part.size() - 2 ); // erase the last quuote
+    }
+    String date;
+    if (pos->type == TokenType::Comma)
+    {
+         ++pos;
+         date = getConvertedArgument(fn_name, pos);
+    }
+    
+    String format;
+    
+    if(part == "YEAR" )
+        format = "%G";
+    else if (part == "QUARTER" ) 
+            format = "%Q";
+    else if (part == "MONTH")
+        format = "%m";
+    else if (part == "WEEK_OF_YEAR")
+        format = "%V";
+    else if (part == "DAY")
+        format = "%e";
+    else if (part == "DAYOFYEAR")
+        format = "%j";
+    else if (part == "HOUR")
+        format = "%I";
+    else if (part  == "MINUTE")
+        format = "%M";
+    else if (part == "SECOND")
+        format = "%S";
+    else 
+        return false;
+    
+    out = std::format("formatDateTime(toDateTime64({}, 9, 'UTC'), '{}' )", date, format);
+
+    return true;
 }
 
 bool DatetimeDiff::convertImpl(String & out, IParser::Pos & pos)
