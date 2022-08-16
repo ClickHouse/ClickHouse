@@ -1367,6 +1367,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         /// DROP_RANGE and REPLACE_RANGE entries remove other entries, which produce parts in the range.
         /// If such part producing operations are currently executing, then DROP/REPLACE RANGE wait them to finish.
         /// Deadlock is possible if multiple DROP/REPLACE RANGE entries are executing in parallel and wait each other.
+        /// But it should not happen if ranges are disjoint.
         /// See also removePartProducingOpsInRange(...) and ReplicatedMergeTreeQueue::CurrentlyExecuting.
 
         if (auto drop_range = entry.getDropRange(format_version))
