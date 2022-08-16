@@ -7,6 +7,7 @@ function(build_cargo target_name project_dir)
         set(compile_message "${compile_message} in release mode")
     endif()
 
+    execute_process(COMMAND rustup target add x86_64-unknown-linux-musl)
     set(TARGET_SPEC "x86_64-unknown-linux-musl")
     message("Initializing Rust toolchain, default is ${TARGET_SPEC}")
 
@@ -67,7 +68,7 @@ function(build_cargo target_name project_dir)
     add_custom_command(
         COMMENT ${compile_message}
         COMMAND export BUILD_FOR_OSX=${OSX_RUST_ROOT}
-        COMMAND env CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} cargo build ${CARGO_RELEASE_FLAG} ${TARGET_SPEC}
+        COMMAND env CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} cargo rustc ${CARGO_RELEASE_FLAG} ${TARGET_SPEC} -l dylib=../sysroot/linux-x86_64/x86_64-linux-gnu/libc/usr/lib64/libc.so
         COMMAND cp ${output_library} ${CMAKE_CURRENT_BINARY_DIR}
         COMMAND cat ./include/blake3.h
         OUTPUT ${output_library}
