@@ -116,6 +116,8 @@ public:
 
     RemoteFileReaderPtr getRemoteFileReader();
 
+    RemoteFileReaderPtr extractRemoteFileReader();
+
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
     void resetRemoteFileReader();
@@ -277,14 +279,14 @@ struct FileSegmentsHolder : private boost::noncopyable
 class FileSegmentRangeWriter
 {
 public:
-    using onCompleteFileSegmentCallback = std::function<void(const FileSegment & file_segment)>;
+    using OnCompleteFileSegmentCallback = std::function<void(const FileSegment & file_segment)>;
 
     FileSegmentRangeWriter(
         FileCache * cache_,
         const FileSegment::Key & key_,
         /// A callback which is called right after each file segment is completed.
         /// It is used to write into filesystem cache log.
-        onCompleteFileSegmentCallback && on_complete_file_segment_func_);
+        OnCompleteFileSegmentCallback && on_complete_file_segment_func_);
 
     ~FileSegmentRangeWriter();
 
@@ -306,7 +308,7 @@ private:
 
     bool finalized = false;
 
-    onCompleteFileSegmentCallback on_complete_file_segment_func;
+    OnCompleteFileSegmentCallback on_complete_file_segment_func;
 };
 
 }

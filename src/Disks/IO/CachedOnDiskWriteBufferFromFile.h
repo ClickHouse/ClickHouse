@@ -13,6 +13,9 @@ class Logger;
 namespace DB
 {
 
+/**
+ *  Write buffer for filesystem caching on write operations.
+ */
 class FileSegmentRangeWriter;
 
 class CachedOnDiskWriteBufferFromFile final : public WriteBufferFromFileDecorator

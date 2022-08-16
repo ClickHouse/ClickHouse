@@ -44,7 +44,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     const ReadSettings & settings_,
     const String & query_id_,
     size_t file_size_,
-    bool allow_seeks_,
+    bool allow_seeks_after_first_read_,
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
@@ -62,7 +62,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , query_id(query_id_)
     , enable_logging(!query_id.empty() && settings_.enable_filesystem_cache_log)
     , current_buffer_id(getRandomASCIIString(8))
-    , allow_seeks(allow_seeks_)
+    , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
     , is_persistent(settings_.is_file_cache_persistent)
@@ -180,17 +180,17 @@ CachedOnDiskReadBufferFromFile::getRemoteFSReadBuffer(FileSegmentPtr & file_segm
 
             auto remote_fs_segment_reader = file_segment->getRemoteFileReader();
 
-            if (remote_fs_segment_reader)
-                return remote_fs_segment_reader;
+            if (!remote_fs_segment_reader)
+            {
+                remote_fs_segment_reader = implementation_buffer_creator();
 
-            remote_fs_segment_reader = implementation_buffer_creator();
+                if (!remote_fs_segment_reader->supportsRightBoundedReads())
+                    throw Exception(
+                        ErrorCodes::CANNOT_USE_CACHE,
+                        "Cache cannot be used with a ReadBuffer which does not support right bounded reads");
 
-            if (!remote_fs_segment_reader->supportsRightBoundedReads())
-                throw Exception(
-                    ErrorCodes::CANNOT_USE_CACHE,
-                    "Cache cannot be used with a ReadBuffer which does not support right bounded reads");
-
-            file_segment->setRemoteFileReader(remote_fs_segment_reader);
+                file_segment->setRemoteFileReader(remote_fs_segment_reader);
+            }
 
             return remote_fs_segment_reader;
         }
@@ -201,7 +201,12 @@ CachedOnDiskReadBufferFromFile::getRemoteFSReadBuffer(FileSegmentPtr & file_segm
             if (remote_file_reader && remote_file_reader->getFileOffsetOfBufferEnd() == file_offset_of_buffer_end)
                 return remote_file_reader;
 
-            remote_file_reader = implementation_buffer_creator();
+            auto remote_fs_segment_reader = file_segment->extractRemoteFileReader();
+            if (remote_fs_segment_reader)
+                remote_file_reader = remote_fs_segment_reader;
+            else
+                remote_file_reader = implementation_buffer_creator();
+
             return remote_file_reader;
         }
         default:
@@ -1069,7 +1074,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
 off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 {
-    if (initialized && !allow_seeks)
+    if (initialized && !allow_seeks_after_first_read)
     {
         throw Exception(
             ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
@@ -1078,7 +1083,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 
     size_t new_pos = offset;
 
-    if (allow_seeks)
+    if (allow_seeks_after_first_read)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
         {
@@ -1109,45 +1114,44 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     first_offset = file_offset_of_buffer_end = new_pos;
     resetWorkingBuffer();
 
-    if (file_segments_holder && current_file_segment_it != file_segments_holder->file_segments.end())
-    {
-        // auto & file_segments = file_segments_holder->file_segments;
-        // LOG_TRACE(
-        //     log,
-        //     "Having {} file segments to read: {}, current offset: {}",
-        //     file_segments_holder->file_segments.size(), file_segments_holder->toString(), file_offset_of_buffer_end);
+    // if (file_segments_holder && current_file_segment_it != file_segments_holder->file_segments.end())
+    // {
+    //      auto & file_segments = file_segments_holder->file_segments;
+    //      LOG_TRACE(
+    //          log,
+    //          "Having {} file segments to read: {}, current offset: {}",
+    //          file_segments_holder->file_segments.size(), file_segments_holder->toString(), file_offset_of_buffer_end);
 
-        // auto it = std::upper_bound(
-        //     file_segments.begin(),
-        //     file_segments.end(),
-        //     new_pos,
-        //     [](size_t pos, const FileSegmentPtr & file_segment) { return pos < file_segment->range().right; });
+    //      auto it = std::upper_bound(
+    //          file_segments.begin(),
+    //          file_segments.end(),
+    //          new_pos,
+    //          [](size_t pos, const FileSegmentPtr & file_segment) { return pos < file_segment->range().right; });
 
-        // if (it != file_segments.end())
-        // {
-        //     if (it != file_segments.begin() && (*std::prev(it))->range().right == new_pos)
-        //         current_file_segment_it = std::prev(it);
-        //     else
-        //         current_file_segment_it = it;
+    //      if (it != file_segments.end())
+    //      {
+    //          if (it != file_segments.begin() && (*std::prev(it))->range().right == new_pos)
+    //              current_file_segment_it = std::prev(it);
+    //          else
+    //              current_file_segment_it = it;
 
-        //     [[maybe_unused]] const auto & file_segment = *current_file_segment_it;
-        //     assert(file_offset_of_buffer_end <= file_segment->range().right);
-        //     assert(file_offset_of_buffer_end >= file_segment->range().left);
+    //          [[maybe_unused]] const auto & file_segment = *current_file_segment_it;
+    //          assert(file_offset_of_buffer_end <= file_segment->range().right);
+    //          assert(file_offset_of_buffer_end >= file_segment->range().left);
 
-        //     resetWorkingBuffer();
-        //     swap(*implementation_buffer);
-        //     implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
-        //     swap(*implementation_buffer);
+    //          resetWorkingBuffer();
+    //          swap(*implementation_buffer);
+    //          implementation_buffer->seek(file_offset_of_buffer_end, SEEK_SET);
+    //          swap(*implementation_buffer);
 
-        //     LOG_TRACE(log, "Found suitable file segment: {}", file_segment->range().toString());
+    //          LOG_TRACE(log, "Found suitable file segment: {}", file_segment->range().toString());
 
-        //     LOG_TRACE(log, "seek2 Internal buffer size: {}", internal_buffer.size());
-        //     return new_pos;
-        // }
+    //          LOG_TRACE(log, "seek2 Internal buffer size: {}", internal_buffer.size());
+    //          return new_pos;
+    //      }
+    // }
 
-        file_segments_holder.reset();
-    }
-
+    file_segments_holder.reset();
     implementation_buffer.reset();
     initialized = false;
 
@@ -1172,7 +1176,7 @@ size_t CachedOnDiskReadBufferFromFile::getTotalSizeToRead()
 
 void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 {
-    if (!allow_seeks)
+    if (!allow_seeks_after_first_read)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method `setReadUntilPosition()` not allowed");
 
     read_until_position = position;

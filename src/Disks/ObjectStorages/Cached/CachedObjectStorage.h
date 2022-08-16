@@ -12,6 +12,9 @@ class Logger;
 namespace DB
 {
 
+/**
+ * Wraps another object storage and add a caching layer for it.
+ */
 class CachedObjectStorage final : public IObjectStorage
 {
 public:
