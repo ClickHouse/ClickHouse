@@ -196,9 +196,12 @@ FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
     std::lock_guard cache_lock(cache->mutex);
     std::lock_guard segment_lock(mutex);
 
-    bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
-    if (!downloader_id.empty() || !is_last_holder)
-        return nullptr;
+    if (!is_detached)
+    {
+        bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
+        if (!downloader_id.empty() || !is_last_holder)
+            return nullptr;
+    }
 
     LOG_TRACE(log, "Extracted reader from file segment");
     return std::move(remote_file_reader);
