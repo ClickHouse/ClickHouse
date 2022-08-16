@@ -136,20 +136,7 @@ def test(start_cluster):
     time.sleep(1)
 
     node.query("desc file('data*.jsonl')")
-    check_cache(node, ["data.jsonl", "data1.jsonl"])
     check_cache_hits(node, "data*.jsonl")
-
-    node.query("desc file('data.jsonl')")
-    check_cache_hits(node, "data.jsonl")
-
-    node.query("desc file('data1.jsonl')")
-    check_cache_hits(node, "data1.jsonl")
-
-    node.query("desc file('data2.jsonl')")
-    check_cache_misses(node, "data2.jsonl")
-
-    node.query("desc file('data3.jsonl')")
-    check_cache_misses(node, "data3.jsonl")
 
     node.query("system drop schema cache for file")
     check_cache(node, [])
