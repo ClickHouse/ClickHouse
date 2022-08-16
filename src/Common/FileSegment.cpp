@@ -94,24 +94,24 @@ String FileSegment::getPathInLocalCache() const
     return cache->getPathInLocalCache(key(), offset(), isPersistent());
 }
 
-size_t FileSegment::getDownloadOffset() const
+size_t FileSegment::getCurrentWriteOffset() const
 {
     std::lock_guard segment_lock(mutex);
-    return getDownloadOffsetUnlocked(segment_lock);
+    return getCurrentWriteOffsetUnlocked(segment_lock);
 }
 
-size_t FileSegment::getDownloadedOffset() const
+size_t FileSegment::getFirstNonDownloadedOffset() const
 {
     std::lock_guard segment_lock(mutex);
-    return getDownloadedOffsetUnlocked(segment_lock);
+    return getFirstNonDownloadedOffsetUnlocked(segment_lock);
 }
 
-size_t FileSegment::getDownloadedOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const
+size_t FileSegment::getFirstNonDownloadedOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const
 {
     return range().left + getDownloadedSizeUnlocked(segment_lock);
 }
 
-size_t FileSegment::getDownloadOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const
+size_t FileSegment::getCurrentWriteOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const
 {
     if (is_async_download)
     {
@@ -121,7 +121,7 @@ size_t FileSegment::getDownloadOffsetUnlocked(std::lock_guard<std::mutex> & segm
             return range().left + async_write_state->getFutureDownloadedSize();
     }
 
-    return getDownloadedOffsetUnlocked(segment_lock);
+    return getFirstNonDownloadedOffsetUnlocked(segment_lock);
 }
 
 size_t FileSegment::getDownloadedSize() const
@@ -170,7 +170,6 @@ String FileSegment::getOrSetDownloader()
     assertNotDetachedUnlocked(segment_lock);
 
     auto current_downloader = getDownloaderUnlocked(false, segment_lock);
-    auto caller_id = getCallerId();
 
     if (current_downloader.empty())
     {
@@ -180,7 +179,7 @@ String FileSegment::getOrSetDownloader()
 
         assert(download_state != State::DOWNLOADING);
 
-        current_downloader = downloader_id = caller_id;
+        current_downloader = downloader_id = getCallerId();
         download_state = State::DOWNLOADING;
     }
 
@@ -475,7 +474,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         ///                      segment{k}
         /// cache:           [______|___________
         ///                         ^
-        ///                         download_offset
+        ///                         current_write_offset
         /// requested_range:    [__________]
         ///                     ^
         ///                     wait_offset
@@ -506,12 +505,12 @@ void FileSegment::synchronousWrite(const char * from, size_t size, size_t offset
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
-        size_t download_offset = getDownloadOffsetUnlocked(segment_lock);
-        if (offset != download_offset)
+        size_t current_write_offset = getCurrentWriteOffsetUnlocked(segment_lock);
+        if (offset != current_write_offset)
             throw Exception(
                 ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Attempt to write {} bytes to offset: {}, but current download offset is {}",
-                size, offset, download_offset);
+                "Attempt to write {} bytes to offset: {}, but current write offset is {}",
+                size, offset, current_write_offset);
 
         size_t available_size = availableSizeUnlocked(segment_lock);
         if (available_size < size)
@@ -555,7 +554,10 @@ void FileSegment::synchronousWrite(const char * from, size_t size, size_t offset
         throw;
     }
 
-    /// assert(getDownloadOffset() == offset + size);
+#ifndef NDEBUG
+    std::lock_guard segment_lock(mutex);
+    assert(getFirstNonDownloadedOffsetUnlocked(segment_lock) == offset + size);
+#endif
 }
 
 void FileSegment::writeInMemory(const char * from, size_t size)

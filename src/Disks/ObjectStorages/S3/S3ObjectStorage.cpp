@@ -158,7 +158,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
             /* use_external_buffer */true,
             /* offset */0,
             read_until_position,
-            /* restricted_seek */true);
+            /* restricted_seek */true); /// Do not set it to `false`, it is a trap.
     };
 
     auto s3_impl = std::make_unique<ReadBufferFromRemoteFSGather>(

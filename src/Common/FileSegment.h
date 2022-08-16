@@ -153,9 +153,9 @@ public:
 
     void incrementHitsCount() { ++hits_count; }
 
-    size_t getDownloadOffset() const;
+    size_t getCurrentWriteOffset() const;
 
-    size_t getDownloadedOffset() const;
+    size_t getFirstNonDownloadedOffset() const;
 
     size_t getDownloadedSize() const;
 
@@ -230,8 +230,8 @@ private:
     size_t getDownloadedSizeUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
     bool isDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock) const;
     String getDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock) const;
-    size_t getDownloadOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
-    size_t getDownloadedOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    size_t getCurrentWriteOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    size_t getFirstNonDownloadedOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
 
     /// complete() without any completion state is called from destructor of
     /// FileSegmentsHolder. complete() might check if the caller of the method
