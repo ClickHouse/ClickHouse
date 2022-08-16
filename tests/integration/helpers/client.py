@@ -18,7 +18,6 @@ class Client:
 
         self.command += ["--host", self.host, "--port", str(self.port), "--stacktrace"]
 
-    @staticmethod
     def stacktraces_on_timeout_decorator(func):
         def wrap(self, *args, **kwargs):
             try:
