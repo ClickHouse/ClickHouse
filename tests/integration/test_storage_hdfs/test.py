@@ -696,6 +696,7 @@ def run_describe_query(node, file):
 
 
 def test_schema_inference_cache(started_cluster):
+    node1.query("system drop schema cache")
     node1.query(
         f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
     )
