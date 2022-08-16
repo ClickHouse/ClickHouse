@@ -360,7 +360,12 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         else if (default_value_index == -1)
         {
             for (int64_t i = 0; i != chunk->length(); ++i)
-                column_data.push_back(data[i] + shift);
+            {
+                if (chunk->IsNull(i))
+                    column_data.push_back(0);
+                else
+                    column_data.push_back(data[i] + shift);
+            }
         }
         /// If dictionary contains default value, we change all indexes of it to
         /// 0 or 1 (if dictionary type is Nullable) and move all indexes
@@ -384,14 +389,19 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
             NumericType default_index = NumericType(default_value_index);
             for (int64_t i = 0; i != chunk->length(); ++i)
             {
-                NumericType value = data[i];
-                if (value == default_index)
-                    value = new_default_index;
-                else if (value < default_index)
-                    value += shift;
+                if (chunk->IsNull(i))
+                    column_data.push_back(0);
                 else
-                    value += shift - 1;
-                column_data.push_back(value);
+                {
+                    NumericType value = data[i];
+                    if (value == default_index)
+                        value = new_default_index;
+                    else if (value < default_index)
+                        value += shift;
+                    else
+                        value += shift - 1;
+                    column_data.push_back(value);
+                }
             }
         }
     }
@@ -472,14 +482,14 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::UINT16:
         {
             auto column = readColumnWithNumericData<UInt16>(arrow_column, column_name);
-            if (type_hint && isDate(type_hint))
+            if (type_hint && (isDateOrDate32(type_hint) || isDateTime(type_hint) || isDateTime64(type_hint)))
                 column.type = std::make_shared<DataTypeDate>();
             return column;
         }
         case arrow::Type::UINT32:
         {
             auto column = readColumnWithNumericData<UInt32>(arrow_column, column_name);
-            if (type_hint && isDateTime(type_hint))
+            if (type_hint && (isDateOrDate32(type_hint) || isDateTime(type_hint) || isDateTime64(type_hint)))
                 column.type = std::make_shared<DataTypeDateTime>();
             return column;
         }
@@ -542,7 +552,18 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
             {
                 auto field_name = arrow_struct_type->field(i)->name();
-                DataTypePtr nested_type_hint = tuple_type_hint ? tuple_type_hint->getElement(tuple_type_hint->getPositionByName(field_name)) : nullptr;
+                DataTypePtr nested_type_hint;
+                if (tuple_type_hint)
+                {
+                    if (tuple_type_hint->haveExplicitNames())
+                    {
+                        auto pos = tuple_type_hint->tryGetPositionByName(field_name);
+                        if (pos)
+                            nested_type_hint = tuple_type_hint->getElement(*pos);
+                    }
+                    else if (size_t(i) < tuple_type_hint->getElements().size())
+                        nested_type_hint = tuple_type_hint->getElement(i);
+                }
                 auto nested_arrow_column = std::make_shared<arrow::ChunkedArray>(nested_arrow_columns[i]);
                 auto element = readColumnFromArrowColumn(nested_arrow_column, field_name, format_name, false, dictionary_infos, allow_null_type, skip_columns_with_unsupported_types, skipped, nested_type_hint);
                 if (skipped)
@@ -753,9 +774,17 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
                 {
                     if (!nested_tables.contains(search_nested_table_name))
                     {
+                        NamesAndTypesList nested_columns;
+                        for (const auto & name_and_type : header.getNamesAndTypesList())
+                        {
+                            if (name_and_type.name.starts_with(nested_table_name + "."))
+                                nested_columns.push_back(name_and_type);
+                        }
+                        auto nested_table_type = Nested::collect(nested_columns).front().type;
+
                         std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[search_nested_table_name];
                         ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(
-                            arrow_column, nested_table_name, format_name, false, dictionary_infos, true, false, skipped, header_column.type)};
+                            arrow_column, nested_table_name, format_name, false, dictionary_infos, true, false, skipped, nested_table_type)};
                         BlockPtr block_ptr = std::make_shared<Block>(cols);
                         auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
                         nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
