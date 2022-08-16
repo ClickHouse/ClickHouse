@@ -38,6 +38,8 @@ void ReplicatedMergeTreeAttachThread::run()
         {
             LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode.", zookeeper_path);
             storage.has_metadata_in_zookeeper = false;
+            finalizeInitialization();
+
             notifyIfFirstTry();
             return;
         }
@@ -54,6 +56,8 @@ void ReplicatedMergeTreeAttachThread::run()
         {
             LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode", replica_path);
             storage.has_metadata_in_zookeeper = false;
+            finalizeInitialization();
+
             notifyIfFirstTry();
             return;
         }
@@ -109,22 +113,8 @@ void ReplicatedMergeTreeAttachThread::run()
 
         withRetries([&] { storage.createTableSharedID(zookeeper); });
 
+        finalizeInitialization();
         notifyIfFirstTry();
-
-        LOG_INFO(log, "Table is initialized");
-        using enum StorageReplicatedMergeTree::InitializationPhase;
-        {
-            std::lock_guard lock(storage.initialization_mutex);
-            if (!storage.startup_called)
-            {
-                storage.init_phase = INITIALIZATION_DONE;
-                return;
-            }
-
-            storage.init_phase = STARTUP_IN_PROGRESS;
-        }
-
-        storage.startupImpl(std::move(zookeeper));
     }
     catch (const Exception & e)
     {
@@ -138,6 +128,25 @@ void ReplicatedMergeTreeAttachThread::run()
         notifyIfFirstTry();
     }
 };
+
+void ReplicatedMergeTreeAttachThread::finalizeInitialization()
+{
+
+    LOG_INFO(log, "Table is initialized");
+    using enum StorageReplicatedMergeTree::InitializationPhase;
+    {
+        std::lock_guard lock(storage.initialization_mutex);
+        if (!storage.startup_called)
+        {
+            storage.init_phase = INITIALIZATION_DONE;
+            return;
+        }
+
+        storage.init_phase = STARTUP_IN_PROGRESS;
+    }
+
+    storage.startupImpl(std::move(zookeeper));
+}
 
 void ReplicatedMergeTreeAttachThread::notifyIfFirstTry()
 {

@@ -48,6 +48,8 @@ private:
 
     void resetCurrentZooKeeper();
 
+    void finalizeInitialization();
+
     template <typename Function>
     decltype(auto) withRetries(Function && fn)
     {
