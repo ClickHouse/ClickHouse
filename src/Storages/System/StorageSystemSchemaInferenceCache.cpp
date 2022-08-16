@@ -41,7 +41,7 @@ NamesAndTypesList StorageSystemSchemaInferenceCache::getNamesAndTypes()
 }
 
 
-static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cache, const String & storage_name) const
+static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cache, const String & storage_name)
 {
     auto s3_schema_cache_data = schema_cache.getAll();
     String source;
