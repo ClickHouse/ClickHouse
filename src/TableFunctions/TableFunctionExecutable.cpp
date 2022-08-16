@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>

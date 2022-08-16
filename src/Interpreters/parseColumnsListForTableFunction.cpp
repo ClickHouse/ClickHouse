@@ -44,8 +44,15 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     if (!columns_list)
         return false;
 
-    columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
-    return true;
+    try
+    {
+        columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 }

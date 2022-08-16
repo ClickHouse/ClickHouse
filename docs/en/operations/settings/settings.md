@@ -3470,6 +3470,24 @@ Default value: `25'000`.
 
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
 
+## schema_inference_hints {#schema_inference_hints}
+
+The list of column names and types to use as hints in schema inference for formats without schema.
+
+Example:
+
+Query:
+```sql
+desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings schema_inference_hints='x UInt8, z IPv4';
+```
+
+Result:
+```sql
+x	UInt8					
+y	Nullable(String)					
+z	IPv4
+```
+
 ## date_time_input_format {#date_time_input_format}
 
 Allows choosing a parser of the text representation of date and time.
