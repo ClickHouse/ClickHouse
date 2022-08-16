@@ -20,6 +20,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 
@@ -172,6 +173,17 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void forceReconfigure(const nuraft::ptr<nuraft::cluster_config> & new_config)
     {
         reconfigure(new_config);
+    }
+
+    void commit_in_bg() override
+    {
+        // For NuRaft, if any commit fails (uncaught exception) the whole server aborts as a safety
+        // This includes failed allocation which can produce an unknown state for the storage,
+        // making it impossible to handle correctly.
+        // We block the memory tracker for all the commit operations (including KeeperStateMachine::commit)
+        // assuming that the allocations are small
+        LockMemoryExceptionInThread blocker{VariableContext::Global};
+        nuraft::raft_server::commit_in_bg();
     }
 
     using nuraft::raft_server::raft_server;
