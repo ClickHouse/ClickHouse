@@ -88,6 +88,7 @@
 
 #include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
+#include "Storages/MergeTree/ReplicatedMergeTreeAttachThread.h"
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -4182,6 +4183,12 @@ void StorageReplicatedMergeTree::startupImpl(zkutil::ZooKeeperPtr zookeeper)
 {
     auto has_metadata_in_zk = hasMetadataInZooKeeper();
 
+    SCOPE_EXIT({
+        std::lock_guard lock(initialization_mutex);
+        init_phase = InitializationPhase::STARTUP_DONE;
+        LOG_INFO(log, "Startup is done");
+    });
+
     /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
     if (!has_metadata_in_zk.has_value() || !*has_metadata_in_zk)
         return;
@@ -4207,10 +4214,6 @@ void StorageReplicatedMergeTree::startupImpl(zkutil::ZooKeeperPtr zookeeper)
         startBackgroundMovesIfNeeded();
 
         part_moves_between_shards_orchestrator.start();
-
-        std::lock_guard lock(initialization_mutex);
-        init_phase = InitializationPhase::STARTUP_DONE;
-        LOG_INFO(log, "Startup is done");
     }
     catch (...)
     {
@@ -5066,8 +5069,17 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 {
     LOG_INFO(log, "Restoring replica metadata");
+
+    using enum InitializationPhase;
+    {
+        std::lock_guard lock(initialization_mutex);
+        if (init_phase == INITIALIZING || init_phase == STARTUP_IN_PROGRESS)
+            throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
+    }
+
     if (!is_readonly)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");
+
 
     if (getZooKeeper()->exists(replica_path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -5121,7 +5133,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 
     LOG_INFO(log, "Attached all partitions, starting table");
 
-    startup();
+    startupImpl(getZooKeeper());
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
