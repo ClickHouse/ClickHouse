@@ -1720,6 +1720,7 @@ def test_schema_inference_cache(started_cluster):
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
 
+    instance.query("system drop schema cache")
     test("s3")
     instance.query("system drop schema cache")
     test("url")
