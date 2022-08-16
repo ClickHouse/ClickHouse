@@ -179,6 +179,8 @@ private:
     const String version_id;
 
     FileCachePtr cache;
+
+    Poco::Logger * log = &Poco::Logger::get("S3ObjectStorage");
 };
 
 }
