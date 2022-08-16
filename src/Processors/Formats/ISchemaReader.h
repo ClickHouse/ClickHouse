@@ -51,7 +51,6 @@ protected:
 
     size_t max_rows_to_read;
     size_t rows_read = 0;
-    CommonDataTypeChecker common_type_checker;
     DataTypePtr default_type;
     String hints_str;
     FormatSettings format_settings;
