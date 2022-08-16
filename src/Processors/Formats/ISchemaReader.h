@@ -37,6 +37,27 @@ protected:
 
 using CommonDataTypeChecker = std::function<DataTypePtr(const DataTypePtr &, const DataTypePtr &)>;
 
+class IIRowSchemaReader : public ISchemaReader
+{
+public:
+    IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
+
+    bool needContext() const override { return !hints_str.empty(); }
+    void setContext(ContextPtr & context) override;
+
+protected:
+    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
+    size_t getNumRowsRead() const override { return rows_read; }
+
+    size_t max_rows_to_read;
+    size_t rows_read = 0;
+    CommonDataTypeChecker common_type_checker;
+    DataTypePtr default_type;
+    String hints_str;
+    FormatSettings format_settings;
+    std::unordered_map<String, DataTypePtr> hints;
+};
+
 /// Base class for schema inference for formats that read data row by row.
 /// It reads data row by row (up to max_rows_to_read), determines types of columns
 /// for each row and compare them with types from the previous rows. If some column
@@ -44,12 +65,12 @@ using CommonDataTypeChecker = std::function<DataTypePtr(const DataTypePtr &, con
 /// (from argument default_type_) will be used for this column or the exception
 /// will be thrown (if default type is not set). If different columns have different
 /// default types, you can provide them by default_types_ argument.
-class IRowSchemaReader : public ISchemaReader
+class IRowSchemaReader : public IIRowSchemaReader
 {
 public:
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, DataTypePtr default_type_);
-    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, const DataTypes & default_types_);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_);
+    IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, const DataTypes & default_types_);
 
     NamesAndTypesList readSchema() override;
 
@@ -62,19 +83,12 @@ protected:
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
 
-    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
-    size_t getNumRowsRead() const override { return rows_read; }
-
-    FormatSettings format_settings;
-
-    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t column_idx);
+    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t index);
 
 private:
-
     DataTypePtr getDefaultType(size_t column) const;
-    size_t max_rows_to_read;
-    size_t rows_read = 0;
-    DataTypePtr default_type;
+    void initColumnNames(const String & column_names_str);
+
     DataTypes default_types;
     std::vector<String> column_names;
 };
@@ -84,7 +98,7 @@ private:
 /// Differ from IRowSchemaReader in that after reading a row we get
 /// a map {column_name : type} and some columns may be missed in a single row
 /// (in this case we will use types from the previous rows for missed columns).
-class IRowWithNamesSchemaReader : public ISchemaReader
+class IRowWithNamesSchemaReader : public IIRowSchemaReader
 {
 public:
     IRowWithNamesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_ = nullptr);
@@ -98,17 +112,7 @@ protected:
     /// Set eof = true if can't read more data.
     virtual NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) = 0;
 
-    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
-    size_t getNumRowsRead() const override { return rows_read; }
-
     virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
-
-    FormatSettings format_settings;
-
-private:
-    size_t max_rows_to_read;
-    size_t rows_read = 0;
-    DataTypePtr default_type;
 };
 
 /// Base class for schema inference for formats that don't need any data to

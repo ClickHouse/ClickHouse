@@ -9,7 +9,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/StorageExternalDistributed.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Formats/FormatFactory.h>
 
 
