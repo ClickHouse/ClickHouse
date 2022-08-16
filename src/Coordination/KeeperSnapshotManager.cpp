@@ -708,7 +708,8 @@ std::pair<std::string, std::error_code> KeeperSnapshotManager::serializeSnapshot
     KeeperStorageSnapshot::serialize(snapshot, *compressed_writer, keeper_context);
     compressed_writer->finalize();
     compressed_writer->sync();
-    writer->finalize();
+    if (writer)
+        writer->finalize();
 
     std::error_code ec;
     std::filesystem::rename(tmp_snapshot_path, new_snapshot_path, ec);

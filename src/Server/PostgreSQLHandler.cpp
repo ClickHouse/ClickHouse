@@ -43,6 +43,19 @@ PostgreSQLHandler::PostgreSQLHandler(
     changeIO(socket());
 }
 
+PostgreSQLHandler::~PostgreSQLHandler()
+{
+    try
+    {
+        if (out)
+            out->finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
     in = std::make_shared<ReadBufferFromPocoSocket>(socket);
