@@ -1942,10 +1942,36 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     return actions;
 }
 
-static bool chainPreservesSorting(const ActionsDAG::Node* chain)
+static bool isColumnSortingPreserved(const ActionsDAG::Node * start_node, const String & sorted_column)
 {
+    /// only function node can several children
+    /// but we support monotonicity check only for functions with one argument
+    /// so, currently we consider just first child - it covers majority of cases
+    /// TODO: if one parameter is variable and other are constant then we can try to check monotonicity as well
+
+    /// first find the column
+    const ActionsDAG::Node * node = start_node;
+    bool found = false;
+    while (node)
+    {
+        /// if column found
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_name == sorted_column)
+        {
+            found = true;
+            break;
+        }
+
+        if (node->children.empty())
+            break; /// column not found
+
+        node = node->children.front();
+    }
+    if (!found)
+        return false;
+
+    /// if column found, check if sorting is preserved
     const Field field{};
-    const ActionsDAG::Node* node = chain;
+    node = start_node;
     while (node)
     {
         if (node->type == ActionsDAG::ActionType::FUNCTION)
@@ -1960,8 +1986,6 @@ static bool chainPreservesSorting(const ActionsDAG::Node* chain)
                 if (types.empty())
                     return false;
 
-                /// TODO: we support monotonicity check only for functions with one parameter but ...
-                ///       if one parameter is variable and other are constant then we can try to check monotonicity as well
                 const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
                 if (!monotonicity.is_always_monotonic)
                     return false;
@@ -1974,23 +1998,6 @@ static bool chainPreservesSorting(const ActionsDAG::Node* chain)
         node = node->children.front();
     }
     return true;
-}
-
-static const ActionsDAG::Node* findColumn(const ActionsDAG::Node * start_node, const String & sorted_column)
-{
-    const ActionsDAG::Node * current = start_node;
-    while (current)
-    {
-        /// if column found
-        if (current->type == ActionsDAG::ActionType::INPUT && current->result_name == sorted_column)
-            return current;
-
-        if (current->children.empty())
-            break;  /// column not found
-
-        current = current->children.front();
-    }
-    return nullptr;
 }
 
 bool ActionsDAG::isSortingPreserved(
@@ -2024,13 +2031,10 @@ bool ActionsDAG::isSortingPreserved(
             if (output_node->result_name == ignore_output_column)
                 continue;
 
-            if (findColumn(output_node, desc.column_name))
+            if (isColumnSortingPreserved(output_node, desc.column_name))
             {
-                if (chainPreservesSorting(output_node))
-                {
-                    preserved = true;
-                    break;
-                }
+                preserved = true;
+                break;
             }
         }
         if (!preserved)
