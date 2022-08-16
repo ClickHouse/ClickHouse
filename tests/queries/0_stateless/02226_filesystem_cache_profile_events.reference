@@ -1,18 +1,17 @@
 Using storage policy: s3_cache
-SELECT 1, * FROM test LIMIT 10 FORMAT Null;	1	0	1
-SELECT 2, * FROM test LIMIT 10 FORMAT Null;	0	1	0
+1	0	1
+0	1	0
 0
-SELECT 3, * FROM test LIMIT 10 FORMAT Null;	0	1	0
+0	1	0
 
 Using storage policy: local_cache
-SELECT 1, * FROM test LIMIT 10 FORMAT Null;	1	0	1
-SELECT 2, * FROM test LIMIT 10 FORMAT Null;	0	1	0
+1	0	1
+0	1	0
 0
-SELECT 3, * FROM test LIMIT 10 FORMAT Null;	0	1	0
+0	1	0
 
 Using storage policy: azure_cache
-SELECT 1, * FROM test LIMIT 10 FORMAT Null;	1	0	1
-SELECT 2, * FROM test LIMIT 10 FORMAT Null;	0	1	0
+1	0	1
+0	1	0
 0
-SELECT 3, * FROM test LIMIT 10 FORMAT Null;	0	1	0
-
+0	1	0
