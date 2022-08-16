@@ -1652,9 +1652,6 @@ def test_schema_inference_cache(started_cluster):
         check_cache_misses(
             instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
         )
-        #check_cache_evictions(
-        #    instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
-        #)
 
         run_describe_query(
             instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
