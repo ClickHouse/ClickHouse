@@ -112,6 +112,8 @@ DDLWorker::DDLWorker(
 
 void DDLWorker::startup()
 {
+    [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
+    chassert(true);
     main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
     cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
