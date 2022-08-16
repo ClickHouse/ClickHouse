@@ -739,11 +739,14 @@ public:
     ReplicatedFetchList & getReplicatedFetchList();
     const ReplicatedFetchList & getReplicatedFetchList() const;
 
+
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
+    // create a new zookeeper connection from auxiliary_zookeepers configuration entry
+    std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeperConnection(const String & name) const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true

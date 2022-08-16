@@ -2155,6 +2155,21 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 #endif
 }
 
+zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeperConnection(const String & name) const
+{
+    if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+
+    const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
+    if (!config.has("auxiliary_zookeepers." + name))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
+            "config.xml",
+            name);
+
+    return std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name, getZooKeeperLog());
+}
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
@@ -2163,19 +2178,8 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
-        if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
-
-        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-        if (!config.has("auxiliary_zookeepers." + name))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
-                "config.xml",
-                name);
-
-        zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        std::make_shared<zkutil::ZooKeeper>(config, "auxiliary_zookeepers." + name, getZooKeeperLog())).first;
+        auto new_connection = getAuxiliaryZooKeeperConnection(name);
+        zookeeper = shared->auxiliary_zookeepers.emplace(name, std::move(new_connection)).first;
     }
     else if (zookeeper->second->expired())
         zookeeper->second = zookeeper->second->startNewSession();

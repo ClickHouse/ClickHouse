@@ -42,6 +42,8 @@ private:
 
     zkutil::ZooKeeperPtr zookeeper;
 
+    UInt64 retry_period;
+
     void run();
 
     void tryReconnect();
