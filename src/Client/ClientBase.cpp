@@ -750,8 +750,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
+    /// For recent versions of the server query parameters will be transferred by network and applied on the server side.
     auto query = query_to_execute;
-    if (!query_parameters.empty())
+    if (!query_parameters.empty()
+        && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         ReplaceQueryParameterVisitor visitor(query_parameters);
@@ -772,6 +774,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             connection->sendQuery(
                 connection_parameters.timeouts,
                 query,
+                query_parameters,
                 global_context->getCurrentQueryId(),
                 query_processing_stage,
                 &global_context->getSettingsRef(),
@@ -1097,7 +1100,8 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     auto query = query_to_execute;
-    if (!query_parameters.empty())
+    if (!query_parameters.empty()
+        && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         ReplaceQueryParameterVisitor visitor(query_parameters);
@@ -1124,6 +1128,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
+        query_parameters,
         global_context->getCurrentQueryId(),
         query_processing_stage,
         &global_context->getSettingsRef(),
@@ -1496,7 +1501,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (with_output && with_output->settings_ast)
             apply_query_settings(*with_output->settings_ast);
 
-        if (!connection->checkConnected())
+        if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
         ASTPtr input_function;
@@ -1840,7 +1845,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                     have_error = false;
 
-                    if (!connection->checkConnected())
+                    if (!connection->checkConnected(connection_parameters.timeouts))
                         connect();
                 }
 
@@ -2057,7 +2062,7 @@ void ClientBase::runInteractive()
             /// Client-side exception during query execution can result in the loss of
             /// sync in the connection protocol.
             /// So we reconnect and allow to enter the next query.
-            if (!connection->checkConnected())
+            if (!connection->checkConnected(connection_parameters.timeouts))
                 connect();
         }
     }

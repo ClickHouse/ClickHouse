@@ -49,20 +49,8 @@ GridSymbols ascii_grid_symbols {
 }
 
 PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_)
-    : PrettyBlockOutputFormat(out_, header, format_settings_)
-    , mono_block(mono_block_)
+    : PrettyBlockOutputFormat(out_, header, format_settings_, mono_block_)
 {
-}
-
-void PrettyCompactBlockOutputFormat::writeSuffix()
-{
-    if (mono_chunk)
-    {
-        writeChunk(mono_chunk, PortKind::Main);
-        mono_chunk.clear();
-    }
-
-    PrettyBlockOutputFormat::writeSuffix();
 }
 
 void PrettyCompactBlockOutputFormat::writeHeader(
@@ -186,38 +174,6 @@ void PrettyCompactBlockOutputFormat::writeRow(
     writeCString("\n", out);
 }
 
-void PrettyCompactBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
-{
-    UInt64 max_rows = format_settings.pretty.max_rows;
-
-    if (total_rows >= max_rows)
-    {
-        total_rows += chunk.getNumRows();
-        return;
-    }
-    if (mono_block)
-    {
-        if (port_kind == PortKind::Main)
-        {
-            if (!mono_chunk)
-            {
-                mono_chunk = std::move(chunk);
-                return;
-            }
-
-            mono_chunk.append(chunk);
-            return;
-        }
-        else
-        {
-            /// Should be written from writeSuffix()
-            assert(!mono_chunk);
-        }
-    }
-
-    writeChunk(chunk, port_kind);
-}
-
 void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
 {
     UInt64 max_rows = format_settings.pretty.max_rows;
@@ -244,31 +200,7 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 
 void registerOutputFormatPrettyCompact(FormatFactory & factory)
 {
-    for (const auto & [name, mono_block] : {std::make_pair("PrettyCompact", false), std::make_pair("PrettyCompactMonoBlock", true)})
-    {
-        factory.registerOutputFormat(name, [mono_block = mono_block](
-            WriteBuffer & buf,
-            const Block & sample,
-            const RowOutputFormatParams &,
-            const FormatSettings & format_settings)
-        {
-            return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings, mono_block);
-        });
-    }
-
-    factory.markOutputFormatSupportsParallelFormatting("PrettyCompact");
-
-    factory.registerOutputFormat("PrettyCompactNoEscapes", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams &,
-        const FormatSettings & format_settings)
-    {
-        FormatSettings changed_settings = format_settings;
-        changed_settings.pretty.color = false;
-        return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, changed_settings, false /* mono_block */);
-    });
-    factory.markOutputFormatSupportsParallelFormatting("PrettyCompactNoEscapes");
+    registerPrettyFormatWithNoEscapesAndMonoBlock<PrettyCompactBlockOutputFormat>(factory, "PrettyCompact");
 }
 
 }

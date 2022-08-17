@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -121,7 +122,7 @@ namespace JSONUtils
     }
 
     template <class Element>
-    DataTypePtr getDataTypeFromFieldImpl(const Element & field)
+    DataTypePtr getDataTypeFromFieldImpl(const Element & field, const FormatSettings & settings, std::unordered_set<const IDataType *> & numbers_parsed_from_json_strings)
     {
         if (field.isNull())
             return nullptr;
@@ -129,11 +130,48 @@ namespace JSONUtils
         if (field.isBool())
             return DataTypeFactory::instance().get("Nullable(Bool)");
 
-        if (field.isInt64() || field.isUInt64() || field.isDouble())
+        if (field.isInt64() || field.isUInt64())
+        {
+            if (settings.try_infer_integers)
+                return makeNullable(std::make_shared<DataTypeInt64>());
+
+            return makeNullable(std::make_shared<DataTypeFloat64>());
+        }
+
+        if (field.isDouble())
             return makeNullable(std::make_shared<DataTypeFloat64>());
 
         if (field.isString())
+        {
+            if (auto date_type = tryInferDateOrDateTime(field.getString(), settings))
+                return date_type;
+
+            if (!settings.json.try_infer_numbers_from_strings)
+                return makeNullable(std::make_shared<DataTypeString>());
+
+            ReadBufferFromString buf(field.getString());
+
+            if (settings.try_infer_integers)
+            {
+                Int64 tmp_int;
+                if (tryReadIntText(tmp_int, buf) && buf.eof())
+                {
+                    auto type = std::make_shared<DataTypeInt64>();
+                    numbers_parsed_from_json_strings.insert(type.get());
+                    return makeNullable(type);
+                }
+            }
+
+            Float64 tmp;
+            if (tryReadFloatText(tmp, buf) && buf.eof())
+            {
+                auto type = std::make_shared<DataTypeFloat64>();
+                numbers_parsed_from_json_strings.insert(type.get());
+                return makeNullable(type);
+            }
+
             return makeNullable(std::make_shared<DataTypeString>());
+        }
 
         if (field.isArray())
         {
@@ -145,20 +183,32 @@ namespace JSONUtils
 
             DataTypes nested_data_types;
             /// If this array contains fields with different types we will treat it as Tuple.
-            bool is_tuple = false;
+            bool are_types_the_same = true;
             for (const auto element : array)
             {
-                auto type = getDataTypeFromFieldImpl(element);
+                auto type = getDataTypeFromFieldImpl(element, settings, numbers_parsed_from_json_strings);
                 if (!type)
                     return nullptr;
 
-                if (!nested_data_types.empty() && type->getName() != nested_data_types.back()->getName())
-                    is_tuple = true;
+                if (!nested_data_types.empty() && !type->equals(*nested_data_types.back()))
+                    are_types_the_same = false;
 
                 nested_data_types.push_back(std::move(type));
             }
 
-            if (is_tuple)
+            if (!are_types_the_same)
+            {
+                auto nested_types_copy = nested_data_types;
+                transformInferredJSONTypesIfNeeded(nested_types_copy, settings, &numbers_parsed_from_json_strings);
+                are_types_the_same = true;
+                for (size_t i = 1; i < nested_types_copy.size(); ++i)
+                    are_types_the_same &= nested_types_copy[i]->equals(*nested_types_copy[i - 1]);
+
+                if (are_types_the_same)
+                    nested_data_types = std::move(nested_types_copy);
+            }
+
+            if (!are_types_the_same)
                 return std::make_shared<DataTypeTuple>(nested_data_types);
 
             return std::make_shared<DataTypeArray>(nested_data_types.back());
@@ -167,38 +217,35 @@ namespace JSONUtils
         if (field.isObject())
         {
             auto object = field.getObject();
-            DataTypePtr value_type;
-            bool is_object = false;
+            DataTypes value_types;
+            bool have_object_value = false;
             for (const auto key_value_pair : object)
             {
-                auto type = getDataTypeFromFieldImpl(key_value_pair.second);
+                auto type = getDataTypeFromFieldImpl(key_value_pair.second, settings, numbers_parsed_from_json_strings);
                 if (!type)
                     continue;
 
                 if (isObject(type))
                 {
-                    is_object = true;
+                    have_object_value = true;
                     break;
                 }
 
-                if (!value_type)
-                {
-                    value_type = type;
-                }
-                else if (!value_type->equals(*type))
-                {
-                    is_object = true;
-                    break;
-                }
+                value_types.push_back(type);
             }
 
-            if (is_object)
+            if (value_types.empty())
+                return nullptr;
+
+            transformInferredJSONTypesIfNeeded(value_types, settings, &numbers_parsed_from_json_strings);
+            bool are_types_equal = true;
+            for (size_t i = 1; i < value_types.size(); ++i)
+                are_types_equal &= value_types[i]->equals(*value_types[0]);
+
+            if (have_object_value || !are_types_equal)
                 return std::make_shared<DataTypeObject>("json", true);
 
-            if (value_type)
-                return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
-
-            return nullptr;
+            return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_types[0]);
         }
 
         throw Exception{ErrorCodes::INCORRECT_DATA, "Unexpected JSON type"};
@@ -215,18 +262,19 @@ namespace JSONUtils
 #endif
     }
 
-    DataTypePtr getDataTypeFromField(const String & field)
+    DataTypePtr getDataTypeFromField(const String & field, const FormatSettings & settings)
     {
         auto [parser, element] = getJSONParserAndElement();
         bool parsed = parser.parse(field, element);
         if (!parsed)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON object here: {}", field);
 
-        return getDataTypeFromFieldImpl(element);
+        std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
+        return getDataTypeFromFieldImpl(element, settings, numbers_parsed_from_json_strings);
     }
 
     template <class Extractor, const char opening_bracket, const char closing_bracket>
-    static DataTypes determineColumnDataTypesFromJSONEachRowDataImpl(ReadBuffer & in, bool /*json_strings*/, Extractor & extractor)
+    static DataTypes determineColumnDataTypesFromJSONEachRowDataImpl(ReadBuffer & in, const FormatSettings & settings, bool /*json_strings*/, Extractor & extractor)
     {
         String line = readJSONEachRowLineIntoStringImpl<opening_bracket, closing_bracket>(in);
         auto [parser, element] = getJSONParserAndElement();
@@ -238,8 +286,9 @@ namespace JSONUtils
 
         DataTypes data_types;
         data_types.reserve(fields.size());
+        std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
         for (const auto & field : fields)
-            data_types.push_back(getDataTypeFromFieldImpl(field));
+            data_types.push_back(getDataTypeFromFieldImpl(field, settings, numbers_parsed_from_json_strings));
 
         /// TODO: For JSONStringsEachRow/JSONCompactStringsEach all types will be strings.
         ///       Should we try to parse data inside strings somehow in this case?
@@ -284,11 +333,11 @@ namespace JSONUtils
         std::vector<String> column_names;
     };
 
-    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings)
+    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, bool json_strings)
     {
         JSONEachRowFieldsExtractor extractor;
         auto data_types
-            = determineColumnDataTypesFromJSONEachRowDataImpl<JSONEachRowFieldsExtractor, '{', '}'>(in, json_strings, extractor);
+            = determineColumnDataTypesFromJSONEachRowDataImpl<JSONEachRowFieldsExtractor, '{', '}'>(in, settings, json_strings, extractor);
         NamesAndTypesList result;
         for (size_t i = 0; i != extractor.column_names.size(); ++i)
             result.emplace_back(extractor.column_names[i], data_types[i]);
@@ -313,10 +362,10 @@ namespace JSONUtils
         }
     };
 
-    DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, bool json_strings)
+    DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, const FormatSettings & settings, bool json_strings)
     {
         JSONCompactEachRowFieldsExtractor extractor;
-        return determineColumnDataTypesFromJSONEachRowDataImpl<JSONCompactEachRowFieldsExtractor, '[', ']'>(in, json_strings, extractor);
+        return determineColumnDataTypesFromJSONEachRowDataImpl<JSONCompactEachRowFieldsExtractor, '[', ']'>(in, settings, json_strings, extractor);
     }
 
 

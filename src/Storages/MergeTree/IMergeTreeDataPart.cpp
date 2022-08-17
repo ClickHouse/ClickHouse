@@ -217,55 +217,55 @@ void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, St
 }
 
 
-static void incrementStateMetric(IMergeTreeDataPart::State state)
+static void incrementStateMetric(MergeTreeDataPartState state)
 {
     switch (state)
     {
-        case IMergeTreeDataPart::State::Temporary:
+        case MergeTreeDataPartState::Temporary:
             CurrentMetrics::add(CurrentMetrics::PartsTemporary);
             return;
-        case IMergeTreeDataPart::State::PreActive:
+        case MergeTreeDataPartState::PreActive:
             CurrentMetrics::add(CurrentMetrics::PartsPreActive);
             CurrentMetrics::add(CurrentMetrics::PartsPreCommitted);
             return;
-        case IMergeTreeDataPart::State::Active:
+        case MergeTreeDataPartState::Active:
             CurrentMetrics::add(CurrentMetrics::PartsActive);
             CurrentMetrics::add(CurrentMetrics::PartsCommitted);
             return;
-        case IMergeTreeDataPart::State::Outdated:
+        case MergeTreeDataPartState::Outdated:
             CurrentMetrics::add(CurrentMetrics::PartsOutdated);
             return;
-        case IMergeTreeDataPart::State::Deleting:
+        case MergeTreeDataPartState::Deleting:
             CurrentMetrics::add(CurrentMetrics::PartsDeleting);
             return;
-        case IMergeTreeDataPart::State::DeleteOnDestroy:
+        case MergeTreeDataPartState::DeleteOnDestroy:
             CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
 }
 
-static void decrementStateMetric(IMergeTreeDataPart::State state)
+static void decrementStateMetric(MergeTreeDataPartState state)
 {
     switch (state)
     {
-        case IMergeTreeDataPart::State::Temporary:
+        case MergeTreeDataPartState::Temporary:
             CurrentMetrics::sub(CurrentMetrics::PartsTemporary);
             return;
-        case IMergeTreeDataPart::State::PreActive:
+        case MergeTreeDataPartState::PreActive:
             CurrentMetrics::sub(CurrentMetrics::PartsPreActive);
             CurrentMetrics::sub(CurrentMetrics::PartsPreCommitted);
             return;
-        case IMergeTreeDataPart::State::Active:
+        case MergeTreeDataPartState::Active:
             CurrentMetrics::sub(CurrentMetrics::PartsActive);
             CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
             return;
-        case IMergeTreeDataPart::State::Outdated:
+        case MergeTreeDataPartState::Outdated:
             CurrentMetrics::sub(CurrentMetrics::PartsOutdated);
             return;
-        case IMergeTreeDataPart::State::Deleting:
+        case MergeTreeDataPartState::Deleting:
             CurrentMetrics::sub(CurrentMetrics::PartsDeleting);
             return;
-        case IMergeTreeDataPart::State::DeleteOnDestroy:
+        case MergeTreeDataPartState::DeleteOnDestroy:
             CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
@@ -323,7 +323,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , use_metadata_cache(storage.use_metadata_cache)
 {
     if (parent_part)
-        state = State::Active;
+        state = MergeTreeDataPartState::Active;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
@@ -349,7 +349,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , use_metadata_cache(storage.use_metadata_cache)
 {
     if (parent_part)
-        state = State::Active;
+        state = MergeTreeDataPartState::Active;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
@@ -391,14 +391,14 @@ std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & colum
 }
 
 
-void IMergeTreeDataPart::setState(IMergeTreeDataPart::State new_state) const
+void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
 {
     decrementStateMetric(state);
     state = new_state;
     incrementStateMetric(state);
 }
 
-IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
+MergeTreeDataPartState IMergeTreeDataPart::getState() const
 {
     return state;
 }
@@ -506,7 +506,7 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
 void IMergeTreeDataPart::removeIfNeeded()
 {
     assert(assertHasValidVersionMetadata());
-    if (!is_temp && state != State::DeleteOnDestroy)
+    if (!is_temp && state != MergeTreeDataPartState::DeleteOnDestroy)
         return;
 
     try
@@ -536,7 +536,7 @@ void IMergeTreeDataPart::removeIfNeeded()
 
         remove();
 
-        if (state == State::DeleteOnDestroy)
+        if (state == MergeTreeDataPartState::DeleteOnDestroy)
         {
             LOG_TRACE(storage.log, "Removed part from old location {}", path);
         }
@@ -549,8 +549,8 @@ void IMergeTreeDataPart::removeIfNeeded()
         /// Seems like it's especially important for remote disks, because removal may fail due to network issues.
         tryLogCurrentException(__PRETTY_FUNCTION__);
         assert(!is_temp);
-        assert(state != State::DeleteOnDestroy);
-        assert(state != State::Temporary);
+        assert(state != MergeTreeDataPartState::DeleteOnDestroy);
+        assert(state != MergeTreeDataPartState::Temporary);
     }
 }
 
@@ -571,7 +571,7 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
-void IMergeTreeDataPart::assertState(const std::initializer_list<IMergeTreeDataPart::State> & affordable_states) const
+void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
 {
     if (!checkState(affordable_states))
     {
@@ -1305,7 +1305,7 @@ catch (Exception & e)
 
 bool IMergeTreeDataPart::wasInvolvedInTransaction() const
 {
-    assert(!version.creation_tid.isEmpty() || (state == State::Temporary /* && std::uncaught_exceptions() */));
+    assert(!version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
     bool created_by_transaction = !version.creation_tid.isPrehistoric();
     bool removed_by_transaction = version.isRemovalTIDLocked() && version.removal_tid_lock != Tx::PrehistoricTID.getHash();
     return created_by_transaction || removed_by_transaction;
@@ -1329,7 +1329,7 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
     if (part_is_probably_removed_from_disk)
         return true;
 
-    if (state == State::Temporary)
+    if (state == MergeTreeDataPartState::Temporary)
         return true;
 
     if (!data_part_storage->exists())
@@ -1465,7 +1465,7 @@ void IMergeTreeDataPart::remove() const
         projection_checksums.emplace_back(IDataPartStorage::ProjectionChecksums{.name = p_name, .checksums = projection_part->checksums});
     }
 
-    data_part_storage->remove(can_remove, files_not_to_remove, checksums, projection_checksums, storage.log);
+    data_part_storage->remove(can_remove, files_not_to_remove, checksums, projection_checksums, is_temp, getState(), storage.log);
 }
 
 String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached) const

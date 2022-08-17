@@ -1,6 +1,7 @@
 #include <iostream>
 #include <filesystem>
 #include <boost/program_options.hpp>
+#include <Common/filesystemHelpers.h>
 
 #include <sys/stat.h>
 #include <pwd.h>
@@ -380,10 +381,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             if (fs::exists(symlink_path))
             {
-                bool is_symlink = fs::is_symlink(symlink_path);
+                bool is_symlink = FS::isSymlink(symlink_path);
                 fs::path points_to;
                 if (is_symlink)
-                    points_to = fs::weakly_canonical(fs::read_symlink(symlink_path));
+                    points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
 
                 if (is_symlink && points_to == main_bin_path)
                 {

@@ -62,11 +62,10 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
     }
 }
 
-TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases databases_, bool force_restore_, bool force_attach_)
+TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases databases_, LoadingStrictnessLevel strictness_mode_)
 : global_context(global_context_)
 , databases(std::move(databases_))
-, force_restore(force_restore_)
-, force_attach(force_attach_)
+, strictness_mode(strictness_mode_)
 {
     metadata.default_database = global_context->getCurrentDatabase();
     log = &Poco::Logger::get("TablesLoader");
@@ -83,7 +82,7 @@ void TablesLoader::loadTables()
         if (need_resolve_dependencies && database.second->supportsLoadingInTopologicalOrder())
             databases_to_load.push_back(database.first);
         else
-            database.second->loadStoredObjects(global_context, force_restore, force_attach, true);
+            database.second->loadStoredObjects(global_context, strictness_mode, /* skip_startup_tables */ true);
     }
 
     if (databases_to_load.empty())
@@ -92,8 +91,9 @@ void TablesLoader::loadTables()
     /// Read and parse metadata from Ordinary, Atomic, Materialized*, Replicated, etc databases. Build dependency graph.
     for (auto & database_name : databases_to_load)
     {
-        databases[database_name]->beforeLoadingMetadata(global_context, force_restore, force_attach);
-        databases[database_name]->loadTablesMetadata(global_context, metadata, force_attach);
+        databases[database_name]->beforeLoadingMetadata(global_context, strictness_mode);
+        bool is_startup = LoadingStrictnessLevel::FORCE_ATTACH <= strictness_mode;
+        databases[database_name]->loadTablesMetadata(global_context, metadata, is_startup);
     }
 
     LOG_INFO(log, "Parsed metadata of {} tables in {} databases in {} sec",
@@ -119,7 +119,7 @@ void TablesLoader::startupTables()
 {
     /// Startup tables after all tables are loaded. Background tasks (merges, mutations, etc) may slow down data parts loading.
     for (auto & database : databases)
-        database.second->startupTables(pool, force_restore, force_attach);
+        database.second->startupTables(pool, strictness_mode);
 }
 
 
@@ -253,7 +253,7 @@ void TablesLoader::startLoadingIndependentTables(ThreadPool & pool, size_t level
         pool.scheduleOrThrowOnError([this, load_context, total_tables, &table_name]()
         {
             const auto & path_and_query = metadata.parsed_tables[table_name];
-            databases[table_name.database]->loadTableFromMetadata(load_context, path_and_query.path, table_name, path_and_query.ast, force_restore);
+            databases[table_name.database]->loadTableFromMetadata(load_context, path_and_query.path, table_name, path_and_query.ast, strictness_mode);
             logAboutProgress(log, ++tables_processed, total_tables, stopwatch);
         });
     }
