@@ -29,7 +29,6 @@ def main():
     lines = data.splitlines()
 
     print(lines.pop(0))
-    lines.pop(0)
 
     headers = {}
     for x in lines:
