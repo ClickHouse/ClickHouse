@@ -422,7 +422,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         case arrow::Type::LARGE_BINARY:
         case arrow::Type::LARGE_STRING:
-            return readColumnWithLargeStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
+            return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
         case arrow::Type::DATE32:
