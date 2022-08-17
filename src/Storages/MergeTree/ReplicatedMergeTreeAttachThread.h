@@ -20,6 +20,8 @@ class ReplicatedMergeTreeAttachThread
 public:
     explicit ReplicatedMergeTreeAttachThread(StorageReplicatedMergeTree & storage_);
 
+    ~ReplicatedMergeTreeAttachThread();
+
     void start() { task->activateAndSchedule(); }
 
     void shutdown();
@@ -38,11 +40,13 @@ private:
     bool first_try{true};
     std::atomic<bool> first_try_done{false};
 
-    std::atomic<bool> need_shutdown{false};
+    std::atomic<bool> shutdown_called{false};
 
     zkutil::ZooKeeperPtr zookeeper;
 
     UInt64 retry_period;
+
+    bool skip_sanity_checks{false};
 
     void run();
 
@@ -77,15 +81,13 @@ private:
                 else
                     throw;
 
-                if (need_shutdown)
+                if (shutdown_called)
                     throw Exception(ErrorCodes::ABORTED, "Shutdown called");
             }
         }
     }
 
     void notifyIfFirstTry();
-
-    bool skip_sanity_checks{false};
 };
 
 }

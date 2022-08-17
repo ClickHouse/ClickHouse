@@ -388,6 +388,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         attach_thread.setSkipSanityChecks(skip_sanity_checks);
         attach_thread.start();
         attach_thread.waitFirstTry();
+
         return;
     }
 
