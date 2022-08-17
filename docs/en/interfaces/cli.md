@@ -82,7 +82,7 @@ You can create a query with parameters and pass values to them from client appli
 $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
-It also possible to set parameters from within an interactive session:
+It is also possible to set parameters from within an interactive session:
 ``` bash
 $ clickhouse-client -nq "
   SET param_parName='[1, 2]';
