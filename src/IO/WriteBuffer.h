@@ -169,6 +169,9 @@ class WriteBufferWithoutFinalize : public WriteBuffer
 {
 public:
     WriteBufferWithoutFinalize(Position ptr, size_t size) : WriteBuffer(ptr, size, false) {}
+
+private:
+    void finalizeImpl() override {}
 };
 
 

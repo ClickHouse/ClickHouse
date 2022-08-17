@@ -67,12 +67,8 @@ void CascadeWriteBuffer::getResultBuffers(WriteBufferPtrs & res)
     /// Sync position with underlying buffer before invalidating
     curr_buffer->position() = position();
 
+    finalize();
     res = std::move(prepared_sources);
-    for (auto & buf : res)
-    {
-        if (buf)
-            buf->finalize();
-    }
 
     curr_buffer = nullptr;
     curr_buffer_num = num_sources = 0;
