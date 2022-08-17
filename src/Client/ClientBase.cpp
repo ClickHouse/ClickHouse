@@ -308,9 +308,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
     if (!allow_multi_statements)
         max_length = settings.max_query_size;
 
-    const String & sql_dialect = settings.sql_dialect;
+    const Dialect & dialect = settings.dialect;
 
-    if (sql_dialect == "kusto")
+    if (dialect == Dialect::kusto)
         parser = std::make_shared<ParserKQLStatement>(end, global_context->getSettings().allow_settings_after_format_in_insert);
     else
         parser = std::make_shared<ParserQuery>(end, global_context->getSettings().allow_settings_after_format_in_insert);

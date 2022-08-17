@@ -2,7 +2,9 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLLimit.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
 #include <cstdlib>
+#include <format>
 
 namespace DB
 {
@@ -46,7 +48,12 @@ bool ParserKQLLimit :: parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    if (!ParserExpressionWithOptionalAlias(false).parse(final_pos, node, expected))
+    String sub_query = std::format("( SELECT * FROM {} LIMIT {} )", table_name, String(final_pos->begin, final_pos->end));
+
+    Tokens token_subquery(sub_query.c_str(), sub_query.c_str() + sub_query.size());
+    IParser::Pos pos_subquery(token_subquery, pos.max_depth);
+
+    if (!ParserTablesInSelectQuery().parse(pos_subquery, node, expected))
         return false;
 
     pos = begin;
