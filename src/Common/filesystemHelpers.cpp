@@ -49,9 +49,13 @@ struct statvfs getStatVFS(const String & path)
 }
 
 
-bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t data_size [[maybe_unused]])
+bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 {
-    auto free_space = fs::space(path).free;
+    fs::path filepath(path);
+    /// `path` may point to nonexisting file, then we can't check it directly, move to parent directory
+    while (filepath.has_parent_path() && !fs::exists(filepath))
+        filepath = filepath.parent_path();
+    auto free_space = fs::space(filepath).free;
     return data_size <= free_space;
 }
 
