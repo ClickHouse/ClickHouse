@@ -106,7 +106,7 @@ public:
         u->update(theta_intersection.get_result());
     }
 
-    void a_not_b(const ThetaSketchData & rhs)
+    void aNotB(const ThetaSketchData & rhs)
     {
         datasketches::theta_union * u = getSkUnion();
 
