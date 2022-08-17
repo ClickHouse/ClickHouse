@@ -3102,7 +3102,7 @@ Possible values:
 -   0 — Positional arguments aren't supported.
 -   1 — Positional arguments are supported: column numbers can use instead of column names.
 
-Default value: `0`.
+Default value: `1`.
 
 **Example**
 
