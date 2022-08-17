@@ -98,6 +98,7 @@ static ColumnWithTypeAndName readColumnWithNumericData(std::shared_ptr<arrow::Ch
 /// Inserts chars and offsets right into internal column data to reduce an overhead.
 /// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
 /// Also internal strings are null terminated.
+template <typename ArrowArray>
 static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeString>();
@@ -108,7 +109,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
     size_t chars_t_size = 0;
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
         const size_t chunk_length = chunk.length();
 
         if (chunk_length > 0)
@@ -123,54 +124,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
-        std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
-        const size_t chunk_length = chunk.length();
-
-        for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
-        {
-            if (!chunk.IsNull(offset_i) && buffer)
-            {
-                const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
-                column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
-            }
-            column_chars_t.emplace_back('\0');
-
-            column_offsets.emplace_back(column_chars_t.size());
-        }
-    }
-    return {std::move(internal_column), std::move(internal_type), column_name};
-}
-
-/// Inserts chars and offsets right into internal column data to reduce an overhead.
-/// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
-/// Also internal strings are null terminated.
-static ColumnWithTypeAndName readColumnWithLargeStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
-{
-    auto internal_type = std::make_shared<DataTypeString>();
-    auto internal_column = internal_type->createColumn();
-    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*internal_column).getChars();
-    PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
-
-    size_t chars_t_size = 0;
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
-    {
-        arrow::LargeBinaryArray & chunk = dynamic_cast<arrow::LargeBinaryArray &>(*(arrow_column->chunk(chunk_i)));
-        const size_t chunk_length = chunk.length();
-
-        if (chunk_length > 0)
-        {
-            chars_t_size += chunk.value_offset(chunk_length - 1) + chunk.value_length(chunk_length - 1);
-            chars_t_size += chunk_length; /// additional space for null bytes
-        }
-    }
-
-    column_chars_t.reserve(chars_t_size);
-    column_offsets.reserve(arrow_column->length());
-
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
-    {
-        arrow::LargeBinaryArray & chunk = dynamic_cast<arrow::LargeBinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        ArrowArray & chunk = dynamic_cast<arrow::ArrowArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
@@ -465,10 +419,10 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::STRING:
         case arrow::Type::BINARY:
             //case arrow::Type::FIXED_SIZE_BINARY:
-            return readColumnWithStringData(arrow_column, column_name);
+            return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         case arrow::Type::LARGE_BINARY:
         case arrow::Type::LARGE_STRING:
-            return readColumnWithLargeStringData(arrow_column, column_name);
+            return readColumnWithLargeStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
         case arrow::Type::DATE32:
