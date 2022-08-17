@@ -63,6 +63,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::vector<std::pair<String, Pos>> operation_pos;
 
     operation_pos.push_back(std::make_pair("table",pos));
+    String table_name(pos->begin,pos->end);
 
     while (!pos->isEnd())
     {
@@ -95,8 +96,14 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!kql_project_p.parse(pos, select_expression_list, expected))
         return false;
 
+    kql_limit_p.setTableName(table_name);
     if (!kql_limit_p.parse(pos, limit_length, expected))
         return false;
+    else
+    {
+        if (limit_length)
+            tables = std::move(limit_length);
+    }
 
     if (!kql_filter_p.parse(pos, where_expression, expected))
         return false;
@@ -114,7 +121,6 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
-    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
 
     return true;
 }

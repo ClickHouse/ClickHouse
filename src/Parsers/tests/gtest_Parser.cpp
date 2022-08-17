@@ -308,23 +308,23 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3",
-            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 3"
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM\n(\n    SELECT *\n    FROM Customers\n    LIMIT 3\n)"
         },
         {
             "Customers | project FirstName,LastName,Occupation | limit 3",
-            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 3"
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM\n(\n    SELECT *\n    FROM Customers\n    LIMIT 3\n)"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 1 | take 3",
-            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 1"
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM\n(\n    SELECT *\n    FROM Customers\n    LIMIT 1\n)"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | take 1",
-            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM Customers\nLIMIT 1"
+            "SELECT\n    FirstName,\n    LastName,\n    Occupation\nFROM\n(\n    SELECT *\n    FROM Customers\n    LIMIT 1\n)"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName",
-            "SELECT\n    FirstName,\n    LastName\nFROM Customers\nLIMIT 3"
+            "SELECT\n    FirstName,\n    LastName\nFROM\n(\n    SELECT *\n    FROM Customers\n    LIMIT 3\n)"
         },
         {
             "Customers | project FirstName,LastName,Occupation | take 3 | project FirstName,LastName,Education",
@@ -336,7 +336,7 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserTest,
         },
         {
             "Customers | take 3 | order by FirstName desc",
-            "SELECT *\nFROM Customers\nORDER BY FirstName DESC\nLIMIT 3"
+            "SELECT *\nFROM\n(\n    SELECT *\n    FROM Customers\n    LIMIT 3\n)\nORDER BY FirstName DESC"
         },
         {
             "Customers | sort by FirstName asc",

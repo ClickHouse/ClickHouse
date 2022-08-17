@@ -397,10 +397,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query_table;
     try
     {
-        const String & sql_dialect = settings.sql_dialect;
-        assert(sql_dialect == "clickhouse" || sql_dialect == "kusto");
+        const Dialect & dialect = settings.dialect;
 
-        if (sql_dialect == "kusto" && !internal)
+        if (dialect == Dialect::kusto && !internal)
         {
             ParserKQLStatement parser(end, settings.allow_settings_after_format_in_insert);
 
