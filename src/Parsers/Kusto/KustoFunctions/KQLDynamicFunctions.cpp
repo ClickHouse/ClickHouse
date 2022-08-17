@@ -15,6 +15,8 @@
 #include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
 
+#include <format>
+
 namespace DB
 {
 
@@ -25,11 +27,23 @@ bool ArrayConcat::convertImpl(String &out,IParser::Pos &pos)
     return false;
 }
 
-bool ArrayIif::convertImpl(String &out,IParser::Pos &pos)
+bool ArrayIif::convertImpl(String & out, IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
+    const auto function_name = getKQLFunctionName(pos);
+    if (function_name.empty())
     return false;
+
+    const auto conditions = getArgument(function_name, pos);
+    const auto if_true = getArgument(function_name, pos);
+    const auto if_false = getArgument(function_name, pos);
+
+    out = std::format(
+        "arrayMap(x -> if(x.1 != 0, x.2, x.3), arrayZip({0}, arrayResize({1}, length({0}), null), arrayResize({2}, length({0}), null)))",
+        conditions,
+        if_true,
+        if_false);
+
+    return true;
 }
 
 bool ArrayIndexOf::convertImpl(String &out,IParser::Pos &pos)
