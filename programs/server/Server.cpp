@@ -613,10 +613,22 @@ static void sanityChecks(Server & server)
     {
         if (getAvailableMemoryAmount() < (2l << 30))
             server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+    }
+    catch (...)
+    {
+    }
 
+    try
+    {
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
             server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
+    }
+    catch (...)
+    {
+    }
 
+    try
+    {
         if (!logs_path.empty())
         {
             auto logs_parent = fs::path(logs_path).parent_path();
@@ -626,6 +638,13 @@ static void sanityChecks(Server & server)
     }
     catch (...)
     {
+    }
+
+    if (server.context()->getMergeTreeSettings().allow_remote_fs_zero_copy_replication)
+    {
+        server.context()->addWarningMessage("The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
+            " But the feature of 'zero-copy replication' is under development and is not ready for production."
+            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
 }
 
@@ -1362,6 +1381,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     size_t max_cache_size = memory_amount * cache_size_to_ram_max_ratio;
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
+    LOG_INFO(log, "Uncompressed cache policy name {}", uncompressed_cache_policy);
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size > max_cache_size)
     {
@@ -1369,7 +1390,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size);
+    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -1388,6 +1409,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Size of cache for marks (index of MergeTree family of tables).
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
+    String mark_cache_policy = config().getString("mark_cache_policy", "");
     if (!mark_cache_size)
         LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
     if (mark_cache_size > max_cache_size)
@@ -1396,7 +1418,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_size);
+    global_context->setMarkCache(mark_cache_size, mark_cache_policy);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
@@ -1519,7 +1541,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
-        maybeConvertOrdinaryDatabaseToAtomic(global_context, DatabaseCatalog::instance().getSystemDatabase());
+        maybeConvertSystemDatabase(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1533,6 +1555,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         database_catalog.loadMarkedAsDroppedTables();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
+        convertDatabasesEnginesIfNeed(global_context);
         startupSystemTables();
         database_catalog.loadDatabases();
         /// After loading validate that default database exists

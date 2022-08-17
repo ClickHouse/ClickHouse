@@ -160,15 +160,15 @@ void MultiplexedConnections::sendQuery(
             if (enable_sample_offset_parallel_processing)
                 modified_settings.parallel_replica_offset = i;
 
-            replica_states[i].connection->sendQuery(timeouts, query, query_id,
-                                                    stage, &modified_settings, &client_info, with_pending_data, {});
+            replica_states[i].connection->sendQuery(
+                timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
         }
     }
     else
     {
         /// Use single replica.
-        replica_states[0].connection->sendQuery(timeouts, query, query_id,
-                                                stage, &modified_settings, &client_info, with_pending_data, {});
+        replica_states[0].connection->sendQuery(
+            timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, {});
     }
 
     sent_query = true;

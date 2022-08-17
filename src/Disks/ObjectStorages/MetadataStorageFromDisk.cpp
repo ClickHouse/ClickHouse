@@ -250,6 +250,11 @@ void MetadataStorageFromDiskTransaction::setLastModified(const std::string & pat
     addOperation(std::make_unique<SetLastModifiedOperation>(path, timestamp, *metadata_storage.getDisk()));
 }
 
+void MetadataStorageFromDiskTransaction::chmod(const String & path, mode_t mode)
+{
+    addOperation(std::make_unique<ChmodOperation>(path, mode, *metadata_storage.getDisk()));
+}
+
 void MetadataStorageFromDiskTransaction::unlinkFile(const std::string & path)
 {
     addOperation(std::make_unique<UnlinkFileOperation>(path, *metadata_storage.getDisk()));

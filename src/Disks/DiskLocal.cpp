@@ -11,6 +11,8 @@
 
 #include <fstream>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskMemory.h>
@@ -39,6 +41,7 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_STAT;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -669,6 +672,23 @@ bool DiskLocal::setup()
     if (disk_checker_magic_number == -1)
         throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);
     return true;
+}
+
+struct stat DiskLocal::stat(const String & path) const
+{
+    struct stat st;
+    auto full_path = fs::path(disk_path) / path;
+    if (::stat(full_path.string().c_str(), &st) == 0)
+        return st;
+    DB::throwFromErrnoWithPath("Cannot stat file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+}
+
+void DiskLocal::chmod(const String & path, mode_t mode)
+{
+    auto full_path = fs::path(disk_path) / path;
+    if (::chmod(full_path.string().c_str(), mode) == 0)
+        return;
+    DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 void registerDiskLocal(DiskFactory & factory)
