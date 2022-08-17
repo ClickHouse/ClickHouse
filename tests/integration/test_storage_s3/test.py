@@ -1490,6 +1490,7 @@ def test_wrong_format_usage(started_cluster):
 
 def get_profile_event_for_query(instance, query, profile_event):
     instance.query("system flush logs")
+    time.sleep(0.5)
     query = query.replace("'", "\\'")
     return int(
         instance.query(
@@ -1553,6 +1554,7 @@ def test_schema_inference_cache(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     def test(storage_name):
+        instance.query("system drop schema cache")
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache0.jsonl') select * from numbers(100) settings s3_truncate_on_insert=1"
         )
@@ -1653,6 +1655,9 @@ def test_schema_inference_cache(started_cluster):
         check_cache_misses(
             instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
         )
+        check_cache_evictions(
+            instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
+        )
 
         run_describe_query(
             instance, "test_cache2.jsonl", storage_name, started_cluster, bucket
@@ -1689,7 +1694,5 @@ def test_schema_inference_cache(started_cluster):
         run_describe_query(instance, files, storage_name, started_cluster, bucket)
         check_cache_misses(instance, files, storage_name, started_cluster, bucket, 4)
 
-    instance.query("system drop schema cache")
     test("s3")
-    instance.query("system drop schema cache")
     test("url")
