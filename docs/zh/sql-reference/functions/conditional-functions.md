@@ -12,8 +12,6 @@ SELECT if(cond, then, else)
 
 如果条件 `cond` 的计算结果为非零值，则返回表达式 `then` 的结果，并且跳过表达式 `else` 的结果（如果存在）。 如果 `cond` 为零或 `NULL`，则将跳过 `then` 表达式的结果，并返回 `else` 表达式的结果（如果存在）。
 
-您可以使用[short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) 设置，来根据短路方案计算 `if` 函数。如果启用此设置，则仅在`cond`为真的时，加载`then`表达式，此时不加载`else`表达式。仅在`cond`为假时，加载`else`表达式，此时不加载`then`表达式。例如，执行查询`SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)`时不会抛出除以零的异常，因为`intDiv(42, number)`会仅对不满足条件`number = 0`的数字进行处理。
-
 **参数**
 
 -   `cond` – 条件结果可以为零或不为零。 类型是 UInt8，Nullable(UInt8) 或 NULL。
@@ -104,21 +102,11 @@ WHERE isNotNull(left) AND isNotNull(right)
 
 -   `then`和`else`可以是`NULL`
 
-**参考**
-
--   [ifNotFinite](../../sql-reference/functions/other-functions.md#ifnotfinite)。
-
 ## multiIf {#multiif}
 
 允许您在查询中更紧凑地编写[CASE](../operators/index.md#operator_case)运算符。
 
-**语法**
-
-``` sql
-multiIf(cond_1, then_1, cond_2, then_2, ..., else)
-```
-
-您可以使用[short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) 设置，根据短路方案计算 `multiIf` 函数。如果启用此设置，则 `then_i` 表达式仅在 `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` 为真，`cond_i ` 将仅对 `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` 为真的行进行执行。例如，执行查询“SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)”时不会抛出除以零的异常。
+    multiIf(cond_1, then_1, cond_2, then_2...else)
 
 **参数:**
 
@@ -204,4 +192,4 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/conditional_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/conditional_functions/) <!--hide-->

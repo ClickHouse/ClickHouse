@@ -5,7 +5,7 @@
   You can either move the settings to the right place inside "users.xml" file
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
-<clickhouse>
+<yandex>
     <logger>
         <!-- Possible levels [1]:
 
@@ -18,7 +18,6 @@
           - information
           - debug
           - trace
-          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
@@ -60,36 +59,7 @@
           </logger>
         </levels>
         -->
-        <!-- Structured log formatting:
-        You can specify log format(for now, JSON only). In that case, the console log will be printed
-        in specified format like JSON.
-        For example, as below:
-        {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
-        To enable JSON logging support, just uncomment <formatting> tag below.
-        -->
-        <!-- <formatting>json</formatting> -->
     </logger>
-
-    <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
-    <!-- It is off by default. Next headers are obligate for CORS.-->
-    <!-- http_options_response>
-        <header>
-            <name>Access-Control-Allow-Origin</name>
-            <value>*</value>
-        </header>
-        <header>
-            <name>Access-Control-Allow-Headers</name>
-            <value>origin, x-requested-with</value>
-        </header>
-        <header>
-            <name>Access-Control-Allow-Methods</name>
-            <value>POST, GET, OPTIONS</value>
-        </header>
-        <header>
-            <name>Access-Control-Max-Age</name>
-            <value>86400</value>
-        </header>
-    </http_options_response -->
 
     <!-- It is the name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.
@@ -156,13 +126,12 @@
     <!-- <interserver_https_port>9010</interserver_https_port> -->
 
     <!-- Hostname that is used by other replicas to request this server.
-         If not specified, then it is determined analogous to 'hostname -f' command.
+         If not specified, than it is determined analogous to 'hostname -f' command.
          This setting could be used to switch replication to another network interface
          (the server may be connected to multiple networks via multiple addresses)
       -->
-
     <!--
-    <interserver_http_host>example.clickhouse.com</interserver_http_host>
+    <interserver_http_host>example.yandex.ru</interserver_http_host>
     -->
 
     <!-- You can specify credentials for authenthication between replicas.
@@ -186,7 +155,6 @@
       -->
     <!-- <listen_host>::</listen_host> -->
 
-
     <!-- Same for hosts without support for IPv6: -->
     <!-- <listen_host>0.0.0.0</listen_host> -->
 
@@ -196,10 +164,6 @@
     <listen_host>127.0.0.1</listen_host>
     -->
 
-    <!-- <interserver_listen_host>::</interserver_listen_host> -->
-    <!-- Listen host for communication between replicas. Used for data exchange -->
-    <!-- Default values - equal to listen_host -->
-
     <!-- Don't exit if IPv6 or IPv4 networks are unavailable while trying to listen. -->
     <!-- <listen_try>0</listen_try> -->
 
@@ -207,7 +171,7 @@
       -->
     <!-- <listen_reuse_port>0</listen_reuse_port> -->
 
-    <!-- <listen_backlog>4096</listen_backlog> -->
+    <!-- <listen_backlog>64</listen_backlog> -->
 
     <max_connections>4096</max_connections>
 
@@ -229,12 +193,13 @@
         <!-- The following file is used only if ssl_require_client_auth=1 -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- Default transport compression type (can be overridden by client, see the transport_compression_type field in QueryInfo).
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm).
              Supported algorithms: none, deflate, gzip, stream_gzip -->
-        <transport_compression_type>none</transport_compression_type>
+        <compression>deflate</compression>
 
-        <!-- Default transport compression level. Supported levels: 0..3 -->
-        <transport_compression_level>0</transport_compression_level>
+        <!-- Default compression level (applied if client doesn't specify another level).
+             Supported levels: none, low, medium, high -->
+        <compression_level>medium</compression_level>
 
         <!-- Send/receive message size limits in bytes. -1 means unlimited -->
         <max_send_message_size>-1</max_send_message_size>
@@ -248,14 +213,14 @@
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-            <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
+            <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
                  Only file format with BEGIN DH PARAMETERS is supported.
               -->
-            <!-- <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>-->
+            <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
@@ -281,13 +246,6 @@
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
 
-    <!-- Maximum number of query processing threads to run all queries.
-         Note that This is not a hard limit. In case if the limit is reached the query will still get one thread to run.
-         For value equals to -1 this parameter is initialized by number of logical cores multiplies by 3.
-         Which is a good heuristic for CPU-bound tasks.
-    -->
-    <concurrent_threads_soft_limit>0</concurrent_threads_soft_limit>
-
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
 
@@ -312,10 +270,6 @@
     -->
 
     <max_thread_pool_size>10000</max_thread_pool_size>
-
-    <!-- Number of workers to recycle connections in background (see also drain_timeout).
-         If the pool is full, connection will be drained synchronously. -->
-    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -366,7 +320,7 @@
          The amount of data in mapped files can be monitored
          in system.metrics, system.metric_log by the MMappedFiles, MMappedFileBytes metrics
          and in system.asynchronous_metrics, system.asynchronous_metrics_log by the MMapCacheCells metric,
-         and also in system.events, system.processes, system.query_log, system.query_thread_log, system.query_views_log by the
+         and also in system.events, system.processes, system.query_log, system.query_thread_log by the
          CreatedReadBufferMMap, CreatedReadBufferMMapFailed, MMappedFileCacheHits, MMappedFileCacheMisses events.
          Note that the amount of data in mapped files does not consume memory directly and is not accounted
          in query or server memory usage - because this memory can be discarded similar to OS page cache.
@@ -384,65 +338,8 @@
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
-    <!-- Multi-disk configuration example: -->
-    <!--
-    <storage_configuration>
-        <disks>
-            <default>
-                <keep_free_space_bytes>0</keep_free_space_bytes>
-            </default>
-            <data>
-                <path>/data/</path>
-                <keep_free_space_bytes>0</keep_free_space_bytes>
-            </data>
-            <s3>
-                <type>s3</type>
-                <endpoint>http://path/to/endpoint</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-            </s3>
-            <blob_storage_disk>
-                <type>azure_blob_storage</type>
-                <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
-                <container_name>container</container_name>
-                <account_name>account</account_name>
-                <account_key>pass123</account_key>
-                <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-                <cache_enabled>true</cache_enabled>
-                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
-                <skip_access_check>false</skip_access_check>
-            </blob_storage_disk>
-        </disks>
-
-        <policies>
-            <all>
-                <volumes>
-                    <main>
-                        <disk>default</disk>
-                        <disk>data</disk>
-                        <disk>s3</disk>
-                        <disk>blob_storage_disk</disk>
-
-                        <max_data_part_size_bytes></max_data_part_size_bytes>
-                        <max_data_part_size_ratio></max_data_part_size_ratio>
-                        <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
-                        <prefer_not_to_merge>false</prefer_not_to_merge>
-                        <load_balancing>round_robin</load_balancing>
-                    </main>
-                </volumes>
-                <move_factor>0.2</move_factor>
-            </all>
-        </policies>
-    </storage_configuration>
-    -->
-
-
     <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
-
-    <!-- Disable AuthType plaintext_password and no_password for ACL. -->
-    <!-- <allow_plaintext_password>0</allow_plaintext_password> -->
-    <!-- <allow_no_password>0</allow_no_password> -->`
 
     <!-- Policy from the <storage_configuration> for the temporary files.
          If not set <tmp_path> is used, otherwise <tmp_path> is ignored.
@@ -617,31 +514,6 @@
         -->
     </user_directories>
 
-    <access_control_improvements>
-        <!-- Enables logic that users without permissive row policies can still read rows using a SELECT query.
-             For example, if there two users A, B and a row policy is defined only for A, then
-             if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
-             By default this setting is false for compatibility with earlier access configurations. -->
-        <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
-
-        <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
-             however you can change this behaviour by setting this to true -->
-        <on_cluster_queries_require_cluster_grant>false</on_cluster_queries_require_cluster_grant>
-
-        <!-- By default, for backward compatibility "SELECT * FROM system.<table>" doesn't require any grants and can be executed
-             by any user. You can change this behaviour by setting this to true.
-             If it's set to true then this query requires "GRANT SELECT ON system.<table>" just like as for non-system tables.
-             Exceptions: a few system tables ("tables", "columns", "databases", and some constant tables like "one", "contributors")
-             are still accessible for everyone; and if there is a SHOW privilege (e.g. "SHOW USERS") granted the corresponding system
-             table (i.e. "system.users") will be accessible. -->
-        <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
-
-        <!-- By default, for backward compatibility "SELECT * FROM information_schema.<table>" doesn't require any grants and can be
-             executed by any user. You can change this behaviour by setting this to true.
-             If it's set to true then this query requires "GRANT SELECT ON information_schema.<table>" just like as for ordinary tables. -->
-        <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
-    </access_control_improvements>
-
     <!-- Default profile of settings. -->
     <default_profile>default</default_profile>
 
@@ -670,9 +542,9 @@
          If not specified, system time zone at server startup is used.
 
          Please note, that server could display time zone alias instead of specified name.
-         Example: Zulu is an alias for UTC.
+         Example: W-SU is an alias for Europe/Moscow and Zulu is an alias for UTC.
     -->
-    <!-- <timezone>UTC</timezone> -->
+    <!-- <timezone>Europe/Moscow</timezone> -->
 
     <!-- You can specify umask here (see "man umask"). Server will apply it on startup.
          Number is always parsed as octal. Default umask is 027 (other users cannot read logs, data files, etc; group can only read).
@@ -693,14 +565,14 @@
 
          To install and run JDBC bridge in background:
          * [Debian/Ubuntu]
-           export MVN_URL=https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/
+           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
            export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
            wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
            apt install --no-install-recommends -f ./clickhouse-jdbc-bridge_$PKG_VER-1_all.deb
            clickhouse-jdbc-bridge &
 
          * [CentOS/RHEL]
-           export MVN_URL=https://repo1.maven.org/maven2/com/clickhouse/clickhouse-jdbc-bridge/
+           export MVN_URL=https://repo1.maven.org/maven2/ru/yandex/clickhouse/clickhouse-jdbc-bridge
            export PKG_VER=$(curl -sL $MVN_URL/maven-metadata.xml | grep '<release>' | sed -e 's|.*>\(.*\)<.*|\1|')
            wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v$PKG_VER/clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
            yum localinstall -y clickhouse-jdbc-bridge-$PKG_VER-1.noarch.rpm
@@ -716,7 +588,7 @@
     -->
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.com/docs/en/operations/table_engines/distributed/
+         https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
@@ -756,38 +628,6 @@
                 </replica>
             </shard>
         </test_shard_localhost>
-        <test_cluster_one_shard_three_replicas_localhost>
-            <shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.3</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <!--shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.3</host>
-                    <port>9000</port>
-                </replica>
-            </shard-->
-        </test_cluster_one_shard_three_replicas_localhost>
         <test_cluster_two_shards_localhost>
              <shard>
                  <replica>
@@ -862,14 +702,14 @@
     -->
     <!--<remote_url_allow_hosts>-->
         <!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
-            Example: "clickhouse.com", "clickhouse.com." and "www.clickhouse.com" are different hosts.
+            Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
                     If port is explicitly specified in URL, the host:port is checked as a whole.
                     If host specified here without port, any port with this host allowed.
-                    "clickhouse.com" -> "clickhouse.com:443", "clickhouse.com:80" etc. is allowed, but "clickhouse.com:80" -> only "clickhouse.com:80" is allowed.
+                    "yandex.ru" -> "yandex.ru:443", "yandex.ru:80" etc. is allowed, but "yandex.ru:80" -> only "yandex.ru:80" is allowed.
             If the host is specified as IP address, it is checked as specified in URL. Example: "[2a02:6b8:a::a]".
             If there are redirects and support for redirects is enabled, every redirect (the Location field) is checked.
             Host should be specified using the host xml tag:
-                    <host>clickhouse.com</host>
+                    <host>yandex.ru</host>
         -->
 
         <!-- Regular expression can be specified. RE2 engine is used for regexps.
@@ -880,13 +720,13 @@
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
-         Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
+         Values for substitutions are specified in /yandex/name_of_substitution elements in that file.
       -->
 
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/
       -->
 
     <!--
@@ -909,7 +749,7 @@
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
       -->
     <!--
     <macros>
@@ -996,7 +836,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr: https://clickhouse.com/docs/en/table_engines/mergetree-family/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/mergetree-family/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -1005,7 +845,7 @@
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
         <!--
-            Table TTL specification: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+            Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
             Example:
                 event_date + INTERVAL 1 WEEK
                 event_date + INTERVAL 7 DAY DELETE
@@ -1041,23 +881,14 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_thread_log>
 
-    <!-- Query views log. Has information about all dependent views associated with a query.
-         Used only for queries with setting log_query_views = 1. -->
-    <query_views_log>
-        <database>system</database>
-        <table>query_views_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </query_views_log>
-
     <!-- Uncomment if use part log.
-         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).-->
+         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
     <part_log>
         <database>system</database>
         <table>part_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </part_log>
+    -->
 
     <!-- Uncomment to write text log into table.
          Text log contains all information from usual server log but stores it in structured and efficient way.
@@ -1127,26 +958,16 @@
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </crash_log>
 
-    <!-- Session log. Stores user log in (successful or not) and log out events.
-
-        Note: session log has known security issues and should not be used in production.
+    <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
+         See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
     -->
-    <!-- <session_log>
-        <database>system</database>
-        <table>session_log</table>
 
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </session_log> -->
+    <!-- Path to file with region hierarchy. -->
+    <!-- <path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file> -->
 
-    <!-- Profiling on Processors level. -->
-    <processors_profile_log>
-        <database>system</database>
-        <table>processors_profile_log</table>
+    <!-- Path to directory with files containing names of regions -->
+    <!-- <path_to_regions_names_files>/opt/geo/</path_to_regions_names_files> -->
 
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </processors_profile_log>
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
@@ -1162,12 +983,9 @@
     </top_level_domains_lists>
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
+         https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
-
-    <!-- Configuration of user defined executable functions -->
-    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
@@ -1186,34 +1004,6 @@
         </case>
     </compression>
     -->
-
-    <!-- Configuration of encryption. The server executes a command to
-         obtain an encryption key at startup if such a command is
-         defined, or encryption codecs will be disabled otherwise. The
-         command is executed through /bin/sh and is expected to write
-         a Base64-encoded key to the stdout. -->
-    <encryption_codecs>
-        <!-- aes_128_gcm_siv -->
-            <!-- Example of getting hex key from env -->
-            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-            <!--key_hex from_env="..."></key_hex -->
-
-            <!-- Example of multiple hex keys. They can be imported from env or be written down in config-->
-            <!-- the code should use these keys and throw an exception if their length is not 16 bytes -->
-            <!-- key_hex id="0">...</key_hex -->
-            <!-- key_hex id="1" from_env=".."></key_hex -->
-            <!-- key_hex id="2">...</key_hex -->
-            <!-- current_key_id>2</current_key_id -->
-
-            <!-- Example of getting hex key from config -->
-            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-            <!-- key>...</key -->
-
-            <!-- example of adding nonce -->
-            <!-- nonce>...</nonce -->
-
-        <!-- /aes_128_gcm_siv -->
-    </encryption_codecs>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
@@ -1369,42 +1159,4 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
-
-    <!-- You can also configure rocksdb like this: -->
-    <!--
-    <rocksdb>
-        <options>
-            <max_background_jobs>8</max_background_jobs>
-        </options>
-        <column_family_options>
-            <num_levels>2</num_levels>
-        </column_family_options>
-        <tables>
-            <table>
-                <name>TABLE</name>
-                <options>
-                    <max_background_jobs>8</max_background_jobs>
-                </options>
-                <column_family_options>
-                    <num_levels>2</num_levels>
-                </column_family_options>
-            </table>
-        </tables>
-    </rocksdb>
-    -->
-
-    <!-- Uncomment if enable merge tree metadata cache -->
-    <!--merge_tree_metadata_cache>
-        <lru_cache_size>268435456</lru_cache_size>
-        <continue_if_corrupted>true</continue_if_corrupted>
-    </merge_tree_metadata_cache-->
-
-    <!-- This allows to disable exposing addresses in stack traces for security reasons.
-         Please be aware that it does not improve security much, but makes debugging much harder.
-         The addresses that are small offsets from zero will be displayed nevertheless to show nullptr dereferences.
-         Regardless of this configuration, the addresses are visible in the system.stack_trace and system.trace_log tables
-         if the user has access to these tables.
-         I don't recommend to change this setting.
-    -->
-    <show_addresses_in_stack_traces>false</show_addresses_in_stack_traces>
-</clickhouse>
+</yandex>

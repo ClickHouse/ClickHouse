@@ -1,8 +1,7 @@
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-
+#include <Columns/ColumnsNumber.h>
 #include "FunctionArrayMapped.h"
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -20,9 +19,6 @@ namespace ErrorCodes
 template <bool reverse>
 struct ArrayFillImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -129,7 +125,7 @@ struct NameArrayReverseFill { static constexpr auto name = "arrayReverseFill"; }
 using FunctionArrayFill = FunctionArrayMapped<ArrayFillImpl<false>, NameArrayFill>;
 using FunctionArrayReverseFill = FunctionArrayMapped<ArrayFillImpl<true>, NameArrayReverseFill>;
 
-REGISTER_FUNCTION(ArrayFill)
+void registerFunctionsArrayFill(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayFill>();
     factory.registerFunction<FunctionArrayReverseFill>();

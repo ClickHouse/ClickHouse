@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# If you have "no space left" error, you can change the location of temporary files with BUILDPLACE environment variable.
+
+# Version increment:
+# Default release: 18.1.2 -> 18.2.0:
+# ./release --version
+# or
+# ./release --version minor
+# Bugfix release (only with small patches to previous release): 18.1.2 -> 18.1.3:
+# ./release --version patch
+# Do this once per year: 18.1.2 -> 19.0.0:
+# ./release --version major
+
+set -e
+
+# Avoid dependency on locale
+LC_ALL=C
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+cd $CUR_DIR
+
+source "./utils/release/release_lib.sh"
+
+DEBUILD_NOSIGN_OPTIONS="-us -uc"
+DEBUILD_NODEPS_OPTIONS="-d"
+
+if [ -z "$VERSION_STRING" ] ; then
+    get_revision_author
+fi
+
+while [[ $1 == --* ]]
+do
+    if [[ $1 == '--test' ]]; then
+        TEST='yes'
+        VERSION_POSTFIX+=+test
+        shift
+    elif [[ $1 == '--check-build-dependencies' ]]; then
+        DEBUILD_NODEPS_OPTIONS=""
+        shift
+    elif [[ $1 == '--version' ]]; then
+        gen_revision_author $2
+        exit 0
+    elif [[ $1 == '--rpm' ]]; then
+        MAKE_RPM=1
+        shift
+    elif [[ $1 == '--tgz' ]]; then
+        MAKE_TGZ=1
+        shift
+    else
+        echo "Unknown option $1"
+        exit 2
+    fi
+done
+
+# Build options
+if [ -n "$SANITIZER" ]
+then
+    if [[ "$SANITIZER" == "address" ]]; then VERSION_POSTFIX+="+asan"
+    elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="+tsan"
+    elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="+msan"
+    elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="+ubsan"
+    elif [[ "$SANITIZER" == "libfuzzer" ]]; then
+        VERSION_POSTFIX+="+libfuzzer"
+        MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
+    else
+        echo "Unknown value of SANITIZER variable: $SANITIZER"
+        exit 3
+    fi
+
+    export DEB_CC=${DEB_CC=clang-10}
+    export DEB_CXX=${DEB_CXX=clang++-10}
+    EXTRAPACKAGES="$EXTRAPACKAGES clang-10 lld-10"
+elif [[ $BUILD_TYPE == 'valgrind' ]]; then
+    MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
+    VERSION_POSTFIX+="+valgrind"
+elif [[ $BUILD_TYPE == 'debug' ]]; then
+    CMAKE_BUILD_TYPE=Debug
+    VERSION_POSTFIX+="+debug"
+fi
+
+CMAKE_FLAGS=" $MALLOC_OPTS -DSANITIZE=$SANITIZER -DENABLE_CHECK_HEAVY_BUILDS=1 $CMAKE_FLAGS"
+[[ -n "$CMAKE_BUILD_TYPE" ]] && CMAKE_FLAGS=" -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $CMAKE_FLAGS"
+
+export CMAKE_FLAGS
+export EXTRAPACKAGES
+
+VERSION_STRING+=$VERSION_POSTFIX
+echo -e "\nCurrent version is $VERSION_STRING"
+
+if [ -z "$NO_BUILD" ] ; then
+    gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
+    # Build (only binary packages).
+    debuild --preserve-env -e PATH \
+    -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
+    -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+fi
+
+if [ -n "$MAKE_RPM" ]; then
+    make_rpm
+fi
+
+if [ -n "$MAKE_TGZ" ]; then
+    make_tgz
+fi

@@ -1,5 +1,3 @@
--- Tags: distributed
-
 -- test from https://github.com/ClickHouse/ClickHouse/issues/11755#issuecomment-700850254
 DROP TABLE IF EXISTS cat_hist;
 DROP TABLE IF EXISTS prod_hist;

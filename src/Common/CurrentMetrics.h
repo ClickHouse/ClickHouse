@@ -1,10 +1,10 @@
 #pragma once
 
-#include <cstddef>
+#include <stddef.h>
 #include <cstdint>
 #include <utility>
 #include <atomic>
-#include <base/types.h>
+#include <common/types.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
   *  - for high-level profiling.
@@ -41,12 +41,6 @@ namespace CurrentMetrics
         values[metric].store(value, std::memory_order_relaxed);
     }
 
-    /// Get value of specified metric.
-    inline Value get(Metric metric)
-    {
-        return values[metric].load(std::memory_order_relaxed);
-    }
-
     /// Add value for specified metric. You must subtract value later; or see class Increment below.
     inline void add(Metric metric, Value value = 1)
     {
@@ -72,7 +66,7 @@ namespace CurrentMetrics
         }
 
     public:
-        explicit Increment(Metric metric, Value amount_ = 1)
+        Increment(Metric metric, Value amount_ = 1)
             : Increment(&values[metric], amount_) {}
 
         ~Increment()
@@ -81,12 +75,12 @@ namespace CurrentMetrics
                 what->fetch_sub(amount, std::memory_order_relaxed);
         }
 
-        Increment(Increment && old) noexcept
+        Increment(Increment && old)
         {
             *this = std::move(old);
         }
 
-        Increment & operator=(Increment && old) noexcept
+        Increment & operator= (Increment && old)
         {
             what = old.what;
             amount = old.amount;

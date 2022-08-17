@@ -3,7 +3,7 @@
 #include <city.h>
 #include <type_traits>
 
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -237,26 +237,17 @@ public:
         detail::OneAdder<T, Data>::add(this->data(place), *columns[0], row_num);
     }
 
-    void addManyDefaults(
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        size_t /*length*/,
-        Arena * /*arena*/) const override
-    {
-        detail::OneAdder<T, Data>::add(this->data(place), *columns[0], 0);
-    }
-
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).set.read(buf);
     }
@@ -308,12 +299,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).set.read(buf);
     }

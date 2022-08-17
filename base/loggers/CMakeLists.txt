@@ -1,0 +1,5 @@
+include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
+add_headers_and_sources(loggers .)
+add_library(loggers ${loggers_sources} ${loggers_headers})
+target_link_libraries(loggers PRIVATE dbms clickhouse_common_io)
+target_include_directories(loggers PUBLIC ..)

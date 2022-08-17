@@ -9,15 +9,12 @@ from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
-node_default = cluster.add_instance("node_default")
-node_buffer_profile = cluster.add_instance(
-    "node_buffer_profile",
-    main_configs=["configs/buffer_profile.xml"],
-    user_configs=["configs/users.d/buffer_profile.xml"],
-)
+node_default = cluster.add_instance('node_default')
+node_buffer_profile = cluster.add_instance('node_buffer_profile',
+    main_configs=['configs/buffer_profile.xml'],
+    user_configs=['configs/users.d/buffer_profile.xml'])
 
-
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope='module', autouse=True)
 def start_cluster():
     try:
         cluster.start()
@@ -25,10 +22,8 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-
 def bootstrap(node):
-    node.query(
-        """
+    node.query("""
     CREATE TABLE data (key Int) Engine=MergeTree()
     ORDER BY key
     PARTITION BY key % 2;
@@ -45,20 +40,15 @@ def bootstrap(node):
     );
 
     INSERT INTO buffer SELECT * FROM numbers(100);
-    """
-    )
-
+    """)
 
 def test_default_profile():
     bootstrap(node_default)
     # flush the buffer
-    node_default.query("OPTIMIZE TABLE buffer")
-
+    node_default.query('OPTIMIZE TABLE buffer')
 
 def test_buffer_profile():
     bootstrap(node_buffer_profile)
-    with pytest.raises(
-        QueryRuntimeException, match="Too many partitions for single INSERT block"
-    ):
+    with pytest.raises(QueryRuntimeException, match='Too many partitions for single INSERT block'):
         # flush the buffer
-        node_buffer_profile.query("OPTIMIZE TABLE buffer")
+        node_buffer_profile.query('OPTIMIZE TABLE buffer')

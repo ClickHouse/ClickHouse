@@ -1,14 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <vector>
-#include <memory>
-#include <unordered_map>
-
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
+
+#include <optional>
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -36,7 +35,6 @@ struct MutationCommand
         DROP_PROJECTION,
         MATERIALIZE_TTL,
         RENAME_COLUMN,
-        MATERIALIZE_COLUMN,
     };
 
     Type type = EMPTY;
@@ -77,7 +75,5 @@ public:
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
 };
-
-using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
 
 }

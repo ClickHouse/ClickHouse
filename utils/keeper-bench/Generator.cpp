@@ -48,59 +48,8 @@ std::string generateRandomData(size_t size)
     return generateRandomString(size);
 }
 
-void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
-{
-    namespace fs = std::filesystem;
-
-    auto promise = std::make_shared<std::promise<void>>();
-    auto future = promise->get_future();
-
-    Strings children;
-    auto list_callback = [promise, &children] (const ListResponse & response)
-    {
-        children = response.names;
-
-        promise->set_value();
-    };
-    zookeeper.list(path, ListRequestType::ALL, list_callback, nullptr);
-    future.get();
-
-    while (!children.empty())
-    {
-        Coordination::Requests ops;
-        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
-        {
-            removeRecursive(zookeeper, fs::path(path) / children.back());
-            ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
-            children.pop_back();
-        }
-        auto multi_promise = std::make_shared<std::promise<void>>();
-        auto multi_future = multi_promise->get_future();
-
-        auto multi_callback = [multi_promise] (const MultiResponse &)
-        {
-            multi_promise->set_value();
-        };
-        zookeeper.multi(ops, multi_callback);
-        multi_future.get();
-    }
-    auto remove_promise = std::make_shared<std::promise<void>>();
-    auto remove_future = remove_promise->get_future();
-
-    auto remove_callback = [remove_promise] (const RemoveResponse &)
-    {
-        remove_promise->set_value();
-    };
-
-    zookeeper.remove(path, -1, remove_callback);
-    remove_future.get();
-}
-
-
 void CreateRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
 {
-    removeRecursive(zookeeper, path_prefix);
-
     auto promise = std::make_shared<std::promise<void>>();
     auto future = promise->get_future();
     auto create_callback = [promise] (const CreateResponse & response)
@@ -123,7 +72,7 @@ ZooKeeperRequestPtr CreateRequestGenerator::generate()
         plength = *path_length;
     auto path_candidate = generateRandomPath(path_prefix, plength);
 
-    while (paths_created.contains(path_candidate))
+    while (paths_created.count(path_candidate))
         path_candidate = generateRandomPath(path_prefix, plength);
 
     paths_created.insert(path_candidate);
@@ -131,33 +80,6 @@ ZooKeeperRequestPtr CreateRequestGenerator::generate()
     request->path = path_candidate;
     if (data_size)
         request->data = generateRandomData(*data_size);
-
-    return request;
-}
-
-
-void SetRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
-{
-    removeRecursive(zookeeper, path_prefix);
-
-    auto promise = std::make_shared<std::promise<void>>();
-    auto future = promise->get_future();
-    auto create_callback = [promise] (const CreateResponse & response)
-    {
-        if (response.error != Coordination::Error::ZOK)
-            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-        else
-            promise->set_value();
-    };
-    zookeeper.create(path_prefix, "", false, false, default_acls, create_callback);
-    future.get();
-}
-
-ZooKeeperRequestPtr SetRequestGenerator::generate()
-{
-    auto request = std::make_shared<ZooKeeperSetRequest>();
-    request->path = path_prefix;
-    request->data = generateRandomData(data_size);
 
     return request;
 }
@@ -311,11 +233,6 @@ std::unique_ptr<IGenerator> getGenerator(const std::string & name)
     {
         return std::make_unique<ListRequestGenerator>("/list_generator", 100000, 5);
     }
-    else if (name == "set_small_data")
-    {
-        return std::make_unique<SetRequestGenerator>("/set_generator", 5);
-    }
-
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown generator {}", name);
 }

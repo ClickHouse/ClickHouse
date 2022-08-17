@@ -48,20 +48,6 @@ void AlwaysAllowCredentials::setUserName(const String & user_name_)
     user_name = user_name_;
 }
 
-SSLCertificateCredentials::SSLCertificateCredentials(const String & user_name_, const String & common_name_)
-    : Credentials(user_name_)
-    , common_name(common_name_)
-{
-    is_ready = true;
-}
-
-const String & SSLCertificateCredentials::getCommonName() const
-{
-    if (!isReady())
-        throwNotReady();
-    return common_name;
-}
-
 BasicCredentials::BasicCredentials()
 {
     is_ready = true;

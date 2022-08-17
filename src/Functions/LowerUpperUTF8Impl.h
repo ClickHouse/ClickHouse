@@ -16,58 +16,61 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// xor or do nothing
-template <bool>
-UInt8 xor_or_identity(const UInt8 c, const int mask)
+namespace
 {
-    return c ^ mask;
-}
+    /// xor or do nothing
+    template <bool>
+    UInt8 xor_or_identity(const UInt8 c, const int mask)
+    {
+        return c ^ mask;
+    }
 
-template <>
-inline UInt8 xor_or_identity<false>(const UInt8 c, const int)
-{
-    return c;
-}
+    template <>
+    inline UInt8 xor_or_identity<false>(const UInt8 c, const int)
+    {
+        return c;
+    }
 
-/// It is caller's responsibility to ensure the presence of a valid cyrillic sequence in array
-template <bool to_lower>
-inline void UTF8CyrillicToCase(const UInt8 *& src, UInt8 *& dst)
-{
-    if (src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
+    /// It is caller's responsibility to ensure the presence of a valid cyrillic sequence in array
+    template <bool to_lower>
+    inline void UTF8CyrillicToCase(const UInt8 *& src, UInt8 *& dst)
     {
-        /// ЀЁЂЃЄЅІЇЈЉЊЋЌЍЎЏ
-        *dst++ = xor_or_identity<to_lower>(*src++, 0x1);
-        *dst++ = xor_or_identity<to_lower>(*src++, 0x10);
-    }
-    else if (src[0] == 0xD1u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
-    {
-        /// ѐёђѓєѕіїјљњћќѝўџ
-        *dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
-        *dst++ = xor_or_identity<!to_lower>(*src++, 0x10);
-    }
-    else if (src[0] == 0xD0u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
-    {
-        /// А-П
-        *dst++ = *src++;
-        *dst++ = xor_or_identity<to_lower>(*src++, 0x20);
-    }
-    else if (src[0] == 0xD0u && (src[1] >= 0xB0u && src[1] <= 0xBFu))
-    {
-        /// а-п
-        *dst++ = *src++;
-        *dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
-    }
-    else if (src[0] == 0xD0u && (src[1] >= 0xA0u && src[1] <= 0xAFu))
-    {
-        /// Р-Я
-        *dst++ = xor_or_identity<to_lower>(*src++, 0x1);
-        *dst++ = xor_or_identity<to_lower>(*src++, 0x20);
-    }
-    else if (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
-    {
-        /// р-я
-        *dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
-        *dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
+        if (src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
+        {
+            /// ЀЁЂЃЄЅІЇЈЉЊЋЌЍЎЏ
+            *dst++ = xor_or_identity<to_lower>(*src++, 0x1);
+            *dst++ = xor_or_identity<to_lower>(*src++, 0x10);
+        }
+        else if (src[0] == 0xD1u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
+        {
+            /// ѐёђѓєѕіїјљњћќѝўџ
+            *dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
+            *dst++ = xor_or_identity<!to_lower>(*src++, 0x10);
+        }
+        else if (src[0] == 0xD0u && (src[1] >= 0x90u && src[1] <= 0x9Fu))
+        {
+            /// А-П
+            *dst++ = *src++;
+            *dst++ = xor_or_identity<to_lower>(*src++, 0x20);
+        }
+        else if (src[0] == 0xD0u && (src[1] >= 0xB0u && src[1] <= 0xBFu))
+        {
+            /// а-п
+            *dst++ = *src++;
+            *dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
+        }
+        else if (src[0] == 0xD0u && (src[1] >= 0xA0u && src[1] <= 0xAFu))
+        {
+            /// Р-Я
+            *dst++ = xor_or_identity<to_lower>(*src++, 0x1);
+            *dst++ = xor_or_identity<to_lower>(*src++, 0x20);
+        }
+        else if (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
+        {
+            /// р-я
+            *dst++ = xor_or_identity<!to_lower>(*src++, 0x1);
+            *dst++ = xor_or_identity<!to_lower>(*src++, 0x20);
+        }
     }
 }
 
@@ -168,7 +171,7 @@ private:
     {
 #ifdef __SSE2__
         static constexpr auto bytes_sse = sizeof(__m128i);
-        const auto * src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
+        auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 
         /// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)
         const auto v_zero = _mm_setzero_si128();
@@ -213,7 +216,7 @@ private:
             else
             {
                 /// UTF-8
-                const auto * expected_end = src + bytes_sse;
+                const auto expected_end = src + bytes_sse;
 
                 while (src < expected_end)
                     toCase(src, src_end, dst);

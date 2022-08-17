@@ -1,11 +1,11 @@
 ---
-sidebar_position: 300
-sidebar_label: studentTTest
+toc_priority: 300
+toc_title: studentTTest
 ---
 
 # studentTTest {#studentttest}
 
-Вычисляет t-критерий Стьюдента для выборок из двух генеральных совокупностей.
+Вычисляет t-критерий Стьюдента для выборок из двух генеральных совокупностей. 
 
 **Синтаксис**
 

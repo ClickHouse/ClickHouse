@@ -1,11 +1,11 @@
 ---
-sidebar_position: 301
-sidebar_label: welchTTest
+toc_priority: 301
+toc_title: welchTTest
 ---
 
 # welchTTest {#welchttest}
 
-Вычисляет t-критерий Уэлча для выборок из двух генеральных совокупностей.
+Вычисляет t-критерий Уэлча для выборок из двух генеральных совокупностей. 
 
 **Синтаксис**
 

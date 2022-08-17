@@ -1,6 +1,6 @@
 ---
-sidebar_position: 44
-sidebar_label: DROP
+toc_priority: 44
+toc_title: DROP
 ---
 
 # DROP {#drop}
@@ -97,20 +97,3 @@ DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## DROP FUNCTION {#drop-function}
-
-Удаляет пользовательскую функцию, созданную с помощью [CREATE FUNCTION](./create/function.md).
-Удалить системные функции нельзя.
-
-**Синтаксис**
-
-``` sql
-DROP FUNCTION [IF EXISTS] function_name
-```
-
-**Пример**
-
-``` sql
-CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
-DROP FUNCTION linear_equation;
-```

@@ -48,11 +48,22 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
             "Illegal type " + arguments[0].type->getName() + " of first argument of function joinGet, expected a const string.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    auto qualified_name = QualifiedTableName::parseFromString(join_name);
-    if (qualified_name.database.empty())
-        qualified_name.database = context->getCurrentDatabase();
-
-    auto table = DatabaseCatalog::instance().getTable({qualified_name.database, qualified_name.table}, std::const_pointer_cast<Context>(context));
+    size_t dot = join_name.find('.');
+    String database_name;
+    if (dot == String::npos)
+    {
+        database_name = context->getCurrentDatabase();
+        dot = 0;
+    }
+    else
+    {
+        database_name = join_name.substr(0, dot);
+        ++dot;
+    }
+    String table_name = join_name.substr(dot);
+    if (table_name.empty())
+        throw Exception("joinGet does not allow empty table name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    auto table = DatabaseCatalog::instance().getTable({database_name, table_name}, std::const_pointer_cast<Context>(context));
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
         throw Exception("Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -74,29 +85,19 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
 {
     if (arguments.size() < 3)
         throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function '{}' doesn't match: passed {}, should be greater or equal to 3",
-            getName() , arguments.size());
+            "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                + ", should be greater or equal to 3",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     auto [storage_join, attr_name] = getJoin(arguments, getContext());
     DataTypes data_types(arguments.size() - 2);
-    DataTypes argument_types(arguments.size());
-    for (size_t i = 0; i < arguments.size(); ++i)
-    {
-        if (i >= 2)
-            data_types[i - 2] = arguments[i].type;
-        argument_types[i] = arguments[i].type;
-    }
-
-    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null || storage_join->useNulls());
+    for (size_t i = 2; i < arguments.size(); ++i)
+        data_types[i - 2] = arguments[i].type;
+    auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
     auto table_lock = storage_join->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-
-    if (storage_join->useNulls())
-        return std::make_unique<FunctionJoinGet<true>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
-
-    return std::make_unique<FunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
+    return std::make_unique<FunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, attr_name, data_types, return_type);
 }
 
-REGISTER_FUNCTION(JoinGet)
+void registerFunctionJoinGet(FunctionFactory & factory)
 {
     // joinGet
     factory.registerFunction<JoinGetOverloadResolver<false>>();

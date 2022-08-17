@@ -1,13 +1,15 @@
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AWS_S3
 
 #include <Storages/StorageS3Cluster.h>
-#include <Storages/StorageS3.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <DataTypes/DataTypeString.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/S3Common.h>
+#include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClientInfo.h>
@@ -17,7 +19,9 @@
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 #include "registerTableFunctions.h"
 
@@ -31,7 +35,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_GET;
 }
 
 
@@ -45,56 +48,55 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
 
     ASTs & args = args_func.at(0)->children;
 
-    for (auto & arg : args)
-        arg = evaluateConstantExpressionAsLiteral(arg, context);
-
     const auto message = fmt::format(
         "The signature of table function {} could be the following:\n" \
-        " - cluster, url\n"
-        " - cluster, url, format\n" \
         " - cluster, url, format, structure\n" \
-        " - cluster, url, access_key_id, secret_access_key\n" \
         " - cluster, url, format, structure, compression_method\n" \
-        " - cluster, url, access_key_id, secret_access_key, format\n"
         " - cluster, url, access_key_id, secret_access_key, format, structure\n" \
         " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method",
         getName());
 
-    if (args.size() < 2 || args.size() > 7)
+    if (args.size() < 4 || args.size() > 7)
         throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+
     /// This arguments are always the first
-    configuration.cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
+    cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    filename = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (!context->tryGetCluster(configuration.cluster_name))
-        throw Exception(ErrorCodes::BAD_GET, "Requested cluster '{}' not found", configuration.cluster_name);
+    /// Size -> argument indexes
+    static auto size_to_args = std::map<size_t, std::map<String, size_t>>
+    {
+        {4, {{"format", 2}, {"structure", 3}}},
+        {5, {{"format", 2}, {"structure", 3}, {"compression_method", 4}}},
+        {6, {{"access_key_id", 2}, {"secret_access_key", 3}, {"format", 4}, {"structure", 5}}},
+        {7, {{"access_key_id", 2}, {"secret_access_key", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}}}
+    };
 
-    /// Just cut the first arg (cluster_name) and try to parse s3 table function arguments as is
-    ASTs clipped_args;
-    clipped_args.reserve(args.size());
-    std::copy(args.begin() + 1, args.end(), std::back_inserter(clipped_args));
+    auto & args_to_idx = size_to_args[args.size()];
 
-    /// StorageS3ClusterConfiguration inherints from StorageS3Configuration, so it is safe to upcast it.
-    TableFunctionS3::parseArgumentsImpl(message, clipped_args, context, static_cast<StorageS3Configuration & >(configuration));
+    if (args_to_idx.contains("format"))
+        format = args[args_to_idx["format"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("structure"))
+        structure = args[args_to_idx["structure"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("compression_method"))
+        compression_method = args[args_to_idx["compression_method"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("access_key_id"))
+        access_key_id = args[args_to_idx["access_key_id"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("secret_access_key"))
+        secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
 
 ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr context) const
 {
-    if (configuration.structure == "auto")
-    {
-        return StorageS3::getTableStructureFromData(
-            configuration.format,
-            S3::URI(Poco::URI(configuration.url)),
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
-            configuration.compression_method,
-            false,
-            std::nullopt,
-            context);
-    }
-
-    return parseColumnsListFromString(configuration.structure, context);
+    return parseColumnsListFromString(structure, context);
 }
 
 StoragePtr TableFunctionS3Cluster::executeImpl(
@@ -102,46 +104,40 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     StoragePtr storage;
-
-    ColumnsDescription columns;
-    if (configuration.structure != "auto")
-        columns = parseColumnsListFromString(configuration.structure, context);
-    else if (!structure_hint.empty())
-        columns = structure_hint;
-
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs
-        Poco::URI uri (configuration.url);
+        Poco::URI uri (filename);
         S3::URI s3_uri (uri);
-        storage = std::make_shared<StorageS3>(
+        /// Actually this parameters are not used
+        UInt64 max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
+        UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
+        UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
+        UInt64 max_connections = context->getSettingsRef().s3_max_connections;
+        storage = StorageS3::create(
             s3_uri,
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
+            access_key_id,
+            secret_access_key,
             StorageID(getDatabaseName(), table_name),
-            configuration.format,
-            configuration.rw_settings,
-            columns,
+            format,
+            max_single_read_retries,
+            min_upload_part_size,
+            max_single_part_upload_size,
+            max_connections,
+            getActualTableStructure(context),
             ConstraintsDescription{},
             String{},
             context,
-            // No format_settings for S3Cluster
-            std::nullopt,
-            configuration.compression_method,
+            compression_method,
             /*distributed_processing=*/true);
     }
     else
     {
-        storage = std::make_shared<StorageS3Cluster>(
-            configuration.url,
-            configuration.auth_settings.access_key_id,
-            configuration.auth_settings.secret_access_key,
-            StorageID(getDatabaseName(), table_name),
-            configuration.cluster_name, configuration.format,
-            columns,
-            ConstraintsDescription{},
-            context,
-            configuration.compression_method);
+        storage = StorageS3Cluster::create(
+            filename, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
+            cluster_name, format, context->getSettingsRef().s3_max_connections,
+            getActualTableStructure(context), ConstraintsDescription{},
+            context, compression_method);
     }
 
     storage->startup();

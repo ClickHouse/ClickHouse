@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
+#include <common/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
@@ -17,16 +18,11 @@
 namespace DB
 {
 
-class StorageRabbitMQ final: public IStorage, WithContext
+class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
 {
-public:
-    StorageRabbitMQ(
-            const StorageID & table_id_,
-            ContextPtr context_,
-            const ColumnsDescription & columns_,
-            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
-            bool is_attach_);
+    friend struct shared_ptr_helper<StorageRabbitMQ>;
 
+public:
     std::string getName() const override { return "RabbitMQ"; }
 
     bool noPushingToViews() const override { return true; }
@@ -42,17 +38,16 @@ public:
     void checkTableCanBeDropped() const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(
+    BlockOutputStreamPtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context) override;
@@ -68,13 +63,19 @@ public:
 
     String getExchange() const { return exchange_name; }
     void unbindExchange();
+    bool exchangeRemoved() { return exchange_removed.load(); }
 
     bool updateChannel(ChannelPtr & channel);
     void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
     void prepareChannelForBuffer(ConsumerBufferPtr buffer);
 
-    void incrementReader();
-    void decrementReader();
+protected:
+    StorageRabbitMQ(
+            const StorageID & table_id_,
+            ContextPtr context_,
+            const ColumnsDescription & columns_,
+            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
+            bool is_attach_);
 
 private:
     ContextMutablePtr rabbitmq_context;
@@ -118,7 +119,9 @@ private:
 
     String sharding_exchange, bridge_exchange, consumer_exchange;
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
-
+    std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
+    std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
+    std::atomic<bool> exchange_removed = false, rabbit_is_ready = false;
     std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
@@ -129,33 +132,7 @@ private:
 
     uint64_t milliseconds_to_wait;
 
-    /**
-     * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
-     */
-    /// Needed for tell MV or producer background tasks
-    /// that they must finish as soon as possible.
-    std::atomic<bool> shutdown_called{false};
-    /// Counter for producer buffers, needed for channel id.
-    /// Needed to generate unique producer buffer identifiers.
-    std::atomic<size_t> producer_id = 1;
-    /// Has connection background task completed successfully?
-    /// It is started only once -- in constructor.
-    std::atomic<bool> rabbit_is_ready = false;
-    /// Allow to remove exchange only once.
-    std::atomic<bool> exchange_removed = false;
-    /// For select query we must be aware of the end of streaming
-    /// to be able to turn off the loop.
-    std::atomic<size_t> readers_count = 0;
-    std::atomic<bool> mv_attached = false;
-
-    /// In select query we start event loop, but do not stop it
-    /// after that select is finished. Then in a thread, which
-    /// checks for MV we also check if we have select readers.
-    /// If not - we turn off the loop. The checks are done under
-    /// mutex to avoid having a turned off loop when select was
-    /// started.
-    std::mutex loop_mutex;
-
+    std::atomic<bool> stream_cancelled{false};
     size_t read_attempts = 0;
     mutable bool drop_table = false;
     bool is_attach;
@@ -169,15 +146,11 @@ private:
     void loopingFunc();
     void connectionFunc();
 
-    void startLoop();
-    void stopLoop();
-    void stopLoopIfNoReaders();
-
     static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    ContextMutablePtr addSettings(ContextPtr context) const;
+    std::shared_ptr<Context> addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
@@ -191,7 +164,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    static String getRandomName()
+    String getRandomName() const
     {
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');

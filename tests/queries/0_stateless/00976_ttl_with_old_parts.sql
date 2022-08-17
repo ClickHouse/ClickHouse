@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 drop table if exists ttl;
 
 create table ttl (d Date, a Int) engine = MergeTree order by a partition by toDayOfMonth(d) settings remove_empty_parts = 0;
@@ -13,6 +11,6 @@ alter table ttl modify ttl d + interval 1 day;
 select sleep(1) format Null; -- wait if very fast merge happen
 optimize table ttl partition 10 final;
 
-select * from ttl order by d, a;
+select * from ttl order by d;
 
 drop table if exists ttl;

@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
 
     <storage_configuration>
         <disks>
@@ -7,21 +7,18 @@
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-                <send_metadata>true</send_metadata>
             </s31>
             <s31_again>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-                <send_metadata>true</send_metadata>
             </s31_again>
             <s32>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data2/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-                <send_metadata>true</send_metadata>
             </s32>
         </disks>
         <policies>
@@ -69,7 +66,7 @@
     <merge_tree>
         <min_bytes_for_wide_part>1024</min_bytes_for_wide_part>
         <old_parts_lifetime>1</old_parts_lifetime>
-        <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
+        <allow_remote_fs_zero_copy_replication>1</allow_remote_fs_zero_copy_replication>
     </merge_tree>
 
     <remote_servers>
@@ -93,4 +90,4 @@
         <cluster>test_cluster</cluster>
     </macros>
 
-</clickhouse>
+</yandex>

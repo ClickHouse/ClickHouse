@@ -8,27 +8,27 @@
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 
 
 static_assert(is_signed_v<Int128>);
 static_assert(!is_unsigned_v<Int128>);
-static_assert(is_integer<Int128>);
+static_assert(is_integer_v<Int128>);
 static_assert(sizeof(Int128) == 16);
 
 static_assert(is_signed_v<Int256>);
 static_assert(!is_unsigned_v<Int256>);
-static_assert(is_integer<Int256>);
+static_assert(is_integer_v<Int256>);
 static_assert(sizeof(Int256) == 32);
 
 static_assert(!is_signed_v<UInt128>);
 static_assert(is_unsigned_v<UInt128>);
-static_assert(is_integer<UInt128>);
+static_assert(is_integer_v<UInt128>);
 static_assert(sizeof(UInt128) == 16);
 
 static_assert(!is_signed_v<UInt256>);
 static_assert(is_unsigned_v<UInt256>);
-static_assert(is_integer<UInt256>);
+static_assert(is_integer_v<UInt256>);
 static_assert(sizeof(UInt256) == 32);
 
 
@@ -61,11 +61,8 @@ GTEST_TEST(WideInteger, Conversions)
     ASSERT_EQ(zero, minus_one);
 
     zero += minus_one;
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    ASSERT_EQ(0, memcmp(&zero, "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFE\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(zero)));
-#else
     ASSERT_EQ(0, memcmp(&zero, "\xFE\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(zero)));
-#endif
+
     zero += 2;
     ASSERT_EQ(zero, 0);
 
@@ -159,11 +156,8 @@ GTEST_TEST(WideInteger, Arithmetic)
     ASSERT_EQ(zero, minus_one);
 
     zero += minus_one;
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    ASSERT_EQ(0, memcmp(&zero, "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFE\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(zero)));
-#else
     ASSERT_EQ(0, memcmp(&zero, "\xFE\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(zero)));
-#endif
+
     zero += 2;
     ASSERT_EQ(zero, 0);
 
@@ -242,12 +236,8 @@ GTEST_TEST(WideInteger, Shift)
     Int128 x = 1;
 
     auto y = x << 64;
-
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01", sizeof(Int128)));
-#else
     ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00", sizeof(Int128)));
-#endif
+
     auto z = y << 11;
     ASSERT_EQ(toString(z), "37778931862957161709568");
 
@@ -260,11 +250,8 @@ GTEST_TEST(WideInteger, Shift)
     x = -1;
     y = x << 16;
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    ASSERT_EQ(0, memcmp(&y, "\xFF\xFF\xFF\xFF\xFF\xFF\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
-#else
     ASSERT_EQ(0, memcmp(&y, "\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
-#endif
+
     y >>= 16;
     ASSERT_EQ(0, memcmp(&y, "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
 
@@ -272,18 +259,10 @@ GTEST_TEST(WideInteger, Shift)
     ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
 
     y >>= 32;
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    ASSERT_EQ(0, memcmp(&y, "\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
-#else
     ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF", sizeof(Int128)));
-#endif
 
     y <<= 64;
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00", sizeof(Int128)));
-#else
     ASSERT_EQ(0, memcmp(&y, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\xFF\xFF", sizeof(Int128)));
-#endif
 }
 
 
@@ -298,4 +277,5 @@ GTEST_TEST(WideInteger, DecimalFormatting)
     Int128 fractional = DecimalUtils::getFractionalPart(x, 2);
 
     EXPECT_EQ(fractional, 40);
+    EXPECT_EQ(decimalFractional(fractional, 2), "40");
 }

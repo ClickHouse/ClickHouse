@@ -1,8 +1,8 @@
 ---
-sidebar_position: 3
+toc_priority: 3
 ---
 
-# max
+# max {#agg_function-max}
 
 Aggregate function that calculates the maximum across a group of values.
 

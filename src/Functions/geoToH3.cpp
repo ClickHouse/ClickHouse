@@ -1,17 +1,18 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_H3
 
 #include <array>
-#include <cmath>
+#include <math.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
+#include <common/range.h>
 
-#include <constants.h>
 #include <h3api.h>
 
 
@@ -20,9 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_COLUMN;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -41,96 +39,51 @@ public:
 
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isFloat64())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be Float64",
-                arg->getName(), 1, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be Float64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         arg = arguments[1].get();
         if (!WhichDataType(arg).isFloat64())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be Float64",
-                arg->getName(), 2, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(2) + " of function " + getName() + ". Must be Float64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         arg = arguments[2].get();
         if (!WhichDataType(arg).isUInt8())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 3, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(3) + " of function " + getName() + ". Must be UInt8",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto non_const_arguments = arguments;
-        for (auto & argument : non_const_arguments)
-            argument.column = argument.column->convertToFullColumnIfConst();
-
-        const auto * col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
-        if (!col_lon)
-            throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be Float64.",
-                    arguments[0].type->getName(),
-                    1,
-                    getName());
-        const auto & data_lon = col_lon->getData();
-
-        const auto * col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
-        if (!col_lat)
-            throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be Float64.",
-                    arguments[1].type->getName(),
-                    2,
-                    getName());
-        const auto & data_lat = col_lat->getData();
-
-        const auto * col_res = checkAndGetColumn<ColumnUInt8>(non_const_arguments[2].column.get());
-        if (!col_res)
-            throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be UInt8.",
-                    arguments[2].type->getName(),
-                    3,
-                    getName());
-        const auto & data_res = col_res->getData();
+        const auto * col_lon = arguments[0].column.get();
+        const auto * col_lat = arguments[1].column.get();
+        const auto * col_res = arguments[2].column.get();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (const auto row : collections::range(0, input_rows_count))
         {
-            const double lon = data_lon[row];
-            const double lat = data_lat[row];
-            const UInt8 res = data_res[row];
+            const double lon = col_lon->getFloat64(row);
+            const double lat = col_lat->getFloat64(row);
+            const UInt8 res = col_res->getUInt(row);
 
-            if (res > MAX_H3_RES)
-                throw Exception(
-                        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
-                        toString(res),
-                        getName(),
-                        MAX_H3_RES);
-
-            LatLng coord;
-            coord.lng = degsToRads(lon);
+            GeoCoord coord;
+            coord.lon = degsToRads(lon);
             coord.lat = degsToRads(lat);
 
-            H3Index hindex;
-            H3Error err = latLngToCell(&coord, res, &hindex);
-            if (err)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect coordinates latitude: {}, longitude: {}, error: {}", coord.lat, coord.lng, err);
+            H3Index hindex = geoToH3(&coord, res);
 
             dst_data[row] = hindex;
         }
@@ -141,7 +94,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(GeoToH3)
+void registerFunctionGeoToH3(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGeoToH3>();
 }

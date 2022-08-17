@@ -2,9 +2,7 @@
 
 #include <string>
 #include <vector>
-#include <mutex>
 #include <unordered_set>
-#include <base/defines.h>
 
 
 namespace Poco { class URI; }
@@ -26,11 +24,9 @@ public:
     void checkHostAndPort(const std::string & host, const std::string & port) const; /// Does the same as checkURL, but for host and port.
 
 private:
-    std::atomic_bool is_initialized = false;
-
-    mutable std::mutex hosts_mutex;
-    std::unordered_set<std::string> primary_hosts TSA_GUARDED_BY(hosts_mutex);  /// Allowed primary (<host>) URL from config.xml
-    std::vector<std::string> regexp_hosts TSA_GUARDED_BY(hosts_mutex);          /// Allowed regexp (<hots_regexp>) URL from config.xml
+    bool is_allow_by_default = true;
+    std::unordered_set<std::string> primary_hosts;      /// Allowed primary (<host>) URL from config.xml
+    std::vector<std::string> regexp_hosts;              /// Allowed regexp (<hots_regexp>) URL from config.xml
 
     /// Checks if the primary_hosts and regexp_hosts contain str. If primary_hosts and regexp_hosts are empty return true.
     bool checkForDirectEntry(const std::string & str) const;

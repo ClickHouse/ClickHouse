@@ -19,7 +19,6 @@ public:
     static constexpr auto name = "extractURLParameterNames";
     static String getName() { return name; }
 
-    static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
 
     static void checkArguments(const DataTypes & arguments)
@@ -89,7 +88,7 @@ public:
 struct NameExtractURLParameterNames { static constexpr auto name = "extractURLParameterNames"; };
 using FunctionExtractURLParameterNames = FunctionTokens<ExtractURLParameterNamesImpl>;
 
-REGISTER_FUNCTION(ExtractURLParameterNames)
+void registerFunctionExtractURLParameterNames(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionExtractURLParameterNames>();
 }

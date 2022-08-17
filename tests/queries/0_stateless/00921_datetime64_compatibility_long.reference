@@ -3,47 +3,47 @@ Code: 43
 "DateTime('UTC')","2019-09-16 16:20:11"
 "DateTime64(3, 'UTC')","2019-09-16 16:20:11.234"
 ------------------------------------------
-SELECT toYear(N, \'Asia/Istanbul\')
+SELECT toYear(N)
 "UInt16",2019
 "UInt16",2019
 "UInt16",2019
 ------------------------------------------
-SELECT toQuarter(N, \'Asia/Istanbul\')
+SELECT toQuarter(N)
 "UInt8",3
 "UInt8",3
 "UInt8",3
 ------------------------------------------
-SELECT toMonth(N, \'Asia/Istanbul\')
+SELECT toMonth(N)
 "UInt8",9
 "UInt8",9
 "UInt8",9
 ------------------------------------------
-SELECT toDayOfYear(N, \'Asia/Istanbul\')
+SELECT toDayOfYear(N)
 "UInt16",259
 "UInt16",259
 "UInt16",259
 ------------------------------------------
-SELECT toDayOfMonth(N, \'Asia/Istanbul\')
+SELECT toDayOfMonth(N)
 "UInt8",16
 "UInt8",16
 "UInt8",16
 ------------------------------------------
-SELECT toDayOfWeek(N, \'Asia/Istanbul\')
+SELECT toDayOfWeek(N)
 "UInt8",1
 "UInt8",1
 "UInt8",1
 ------------------------------------------
-SELECT toHour(N, \'Asia/Istanbul\')
+SELECT toHour(N)
 Code: 43
 "UInt8",19
 "UInt8",19
 ------------------------------------------
-SELECT toMinute(N, \'Asia/Istanbul\')
+SELECT toMinute(N)
 Code: 43
 "UInt8",20
 "UInt8",20
 ------------------------------------------
-SELECT toSecond(N, \'Asia/Istanbul\')
+SELECT toSecond(N)
 Code: 43
 "UInt8",11
 "UInt8",11
@@ -53,270 +53,270 @@ Code: 44
 "UInt32",1568650811
 "UInt32",1568650811
 ------------------------------------------
-SELECT toStartOfYear(N, \'Asia/Istanbul\')
-Code: 43
+SELECT toStartOfYear(N)
+"Date","2019-01-01"
 "Date","2019-01-01"
 "Date","2019-01-01"
 ------------------------------------------
-SELECT toStartOfISOYear(N, \'Asia/Istanbul\')
-Code: 43
+SELECT toStartOfISOYear(N)
 "Date","2018-12-31"
 "Date","2018-12-31"
+"Date","2018-12-31"
 ------------------------------------------
-SELECT toStartOfQuarter(N, \'Asia/Istanbul\')
-Code: 43
+SELECT toStartOfQuarter(N)
 "Date","2019-07-01"
 "Date","2019-07-01"
+"Date","2019-07-01"
 ------------------------------------------
-SELECT toStartOfMonth(N, \'Asia/Istanbul\')
-Code: 43
+SELECT toStartOfMonth(N)
 "Date","2019-09-01"
 "Date","2019-09-01"
+"Date","2019-09-01"
 ------------------------------------------
-SELECT toMonday(N, \'Asia/Istanbul\')
-Code: 43
+SELECT toMonday(N)
 "Date","2019-09-16"
 "Date","2019-09-16"
+"Date","2019-09-16"
 ------------------------------------------
-SELECT toStartOfWeek(N, \'Asia/Istanbul\')
-Code: 43
-Code: 43
-Code: 43
+SELECT toStartOfWeek(N)
+"Date","2019-09-15"
+"Date","2019-09-15"
+"Date","2019-09-15"
 ------------------------------------------
-SELECT toStartOfDay(N, \'Asia/Istanbul\')
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
+SELECT toStartOfDay(N)
+"DateTime","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
 ------------------------------------------
-SELECT toStartOfHour(N, \'Asia/Istanbul\')
+SELECT toStartOfHour(N)
 Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 ------------------------------------------
-SELECT toStartOfMinute(N, \'Asia/Istanbul\')
+SELECT toStartOfMinute(N)
 Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
-SELECT toStartOfFiveMinutes(N, \'Asia/Istanbul\')
+SELECT toStartOfFiveMinute(N)
 Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
-SELECT toStartOfTenMinutes(N, \'Asia/Istanbul\')
+SELECT toStartOfTenMinutes(N)
 Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
-SELECT toStartOfFifteenMinutes(N, \'Asia/Istanbul\')
+SELECT toStartOfFifteenMinutes(N)
 Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:15:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:15:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:15:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 ------------------------------------------
-SELECT toStartOfInterval(N, INTERVAL 1 year, \'Asia/Istanbul\')
-Code: 43
+SELECT toStartOfInterval(N, INTERVAL 1 year)
 "Date","2019-01-01"
-"Date","2019-01-01"
-------------------------------------------
-SELECT toStartOfInterval(N, INTERVAL 1 month, \'Asia/Istanbul\')
-Code: 43
-"Date","2019-09-01"
-"Date","2019-09-01"
-------------------------------------------
-SELECT toStartOfInterval(N, INTERVAL 1 day, \'Asia/Istanbul\')
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-------------------------------------------
-SELECT toStartOfInterval(N, INTERVAL 15 minute, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:15:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:15:00"
-------------------------------------------
-SELECT date_trunc(\'year\', N, \'Asia/Istanbul\')
-Code: 43
 "Date","2019-01-01"
 "Date","2019-01-01"
 ------------------------------------------
-SELECT date_trunc(\'month\', N, \'Asia/Istanbul\')
-Code: 43
+SELECT toStartOfInterval(N, INTERVAL 1 month)
 "Date","2019-09-01"
 "Date","2019-09-01"
+"Date","2019-09-01"
 ------------------------------------------
-SELECT date_trunc(\'day\', N, \'Asia/Istanbul\')
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 00:00:00"
+SELECT toStartOfInterval(N, INTERVAL 1 day)
+"DateTime","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
 ------------------------------------------
-SELECT date_trunc(\'minute\', N, \'Asia/Istanbul\')
+SELECT toStartOfInterval(N, INTERVAL 15 minute)
 Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:15:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 ------------------------------------------
-SELECT toTime(N, \'Asia/Istanbul\')
+SELECT date_trunc(\'year\', N)
+"Date","2019-01-01"
+"Date","2019-01-01"
+"Date","2019-01-01"
+------------------------------------------
+SELECT date_trunc(\'month\', N)
+"Date","2019-09-01"
+"Date","2019-09-01"
+"Date","2019-09-01"
+------------------------------------------
+SELECT date_trunc(\'day\', N)
+"DateTime","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+------------------------------------------
+SELECT date_trunc(\'minute\', N)
 Code: 43
-"DateTime('Asia/Istanbul')","1970-01-02 19:20:11"
-"DateTime('Asia/Istanbul')","1970-01-02 19:20:11"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
-SELECT toRelativeYearNum(N, \'Asia/Istanbul\')
+SELECT toTime(N)
+Code: 43
+"DateTime('Europe/Minsk')","1970-01-02 19:20:11"
+"DateTime('Europe/Minsk')","1970-01-02 19:20:11"
+------------------------------------------
+SELECT toRelativeYearNum(N)
 "UInt16",2019
 "UInt16",2019
 "UInt16",2019
 ------------------------------------------
-SELECT toRelativeQuarterNum(N, \'Asia/Istanbul\')
+SELECT toRelativeQuarterNum(N)
 "UInt32",8078
 "UInt32",8078
 "UInt32",8078
 ------------------------------------------
-SELECT toRelativeMonthNum(N, \'Asia/Istanbul\')
+SELECT toRelativeMonthNum(N)
 "UInt32",24237
 "UInt32",24237
 "UInt32",24237
 ------------------------------------------
-SELECT toRelativeWeekNum(N, \'Asia/Istanbul\')
+SELECT toRelativeWeekNum(N)
 "UInt32",2594
 "UInt32",2594
 "UInt32",2594
 ------------------------------------------
-SELECT toRelativeDayNum(N, \'Asia/Istanbul\')
+SELECT toRelativeDayNum(N)
 "UInt32",18155
 "UInt32",18155
 "UInt32",18155
 ------------------------------------------
-SELECT toRelativeHourNum(N, \'Asia/Istanbul\')
+SELECT toRelativeHourNum(N)
 "UInt32",435717
 "UInt32",435736
 "UInt32",435736
 ------------------------------------------
-SELECT toRelativeMinuteNum(N, \'Asia/Istanbul\')
+SELECT toRelativeMinuteNum(N)
 "UInt32",26143020
 "UInt32",26144180
 "UInt32",26144180
 ------------------------------------------
-SELECT toRelativeSecondNum(N, \'Asia/Istanbul\')
+SELECT toRelativeSecondNum(N)
 "UInt32",1568581200
 "UInt32",1568650811
 "UInt32",1568650811
 ------------------------------------------
-SELECT toISOYear(N, \'Asia/Istanbul\')
+SELECT toISOYear(N)
 "UInt16",2019
 "UInt16",2019
 "UInt16",2019
 ------------------------------------------
-SELECT toISOWeek(N, \'Asia/Istanbul\')
+SELECT toISOWeek(N)
 "UInt8",38
 "UInt8",38
 "UInt8",38
 ------------------------------------------
-SELECT toWeek(N, \'Asia/Istanbul\')
-Code: 43
-Code: 43
-Code: 43
+SELECT toWeek(N)
+"UInt8",37
+"UInt8",37
+"UInt8",37
 ------------------------------------------
-SELECT toYearWeek(N, \'Asia/Istanbul\')
-Code: 43
-Code: 43
-Code: 43
+SELECT toYearWeek(N)
+"UInt32",201937
+"UInt32",201937
+"UInt32",201937
 ------------------------------------------
-SELECT timeSlot(N, \'Asia/Istanbul\')
+SELECT timeSlot(N)
 Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:00:00"
-"DateTime('Asia/Istanbul')","2019-09-16 19:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 ------------------------------------------
-SELECT toYYYYMM(N, \'Asia/Istanbul\')
+SELECT toYYYYMM(N)
 "UInt32",201909
 "UInt32",201909
 "UInt32",201909
 ------------------------------------------
-SELECT toYYYYMMDD(N, \'Asia/Istanbul\')
+SELECT toYYYYMMDD(N)
 "UInt32",20190916
 "UInt32",20190916
 "UInt32",20190916
 ------------------------------------------
-SELECT toYYYYMMDDhhmmss(N, \'Asia/Istanbul\')
+SELECT toYYYYMMDDhhmmss(N)
 "UInt64",20190916000000
 "UInt64",20190916192011
 "UInt64",20190916192011
 ------------------------------------------
-SELECT addYears(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2020-09-16 19:20:11"
-Code: 43
+SELECT addYears(N, 1)
+"Date","2020-09-16"
+"DateTime('Europe/Minsk')","2020-09-16 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2020-09-16 19:20:11.234"
 ------------------------------------------
-SELECT addMonths(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-10-16 19:20:11"
-Code: 43
+SELECT addMonths(N, 1)
+"Date","2019-10-16"
+"DateTime('Europe/Minsk')","2019-10-16 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-10-16 19:20:11.234"
 ------------------------------------------
-SELECT addWeeks(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-23 19:20:11"
-Code: 43
+SELECT addWeeks(N, 1)
+"Date","2019-09-23"
+"DateTime('Europe/Minsk')","2019-09-23 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-09-23 19:20:11.234"
 ------------------------------------------
-SELECT addDays(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-17 19:20:11"
-Code: 43
+SELECT addDays(N, 1)
+"Date","2019-09-17"
+"DateTime('Europe/Minsk')","2019-09-17 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-09-17 19:20:11.234"
 ------------------------------------------
-SELECT addHours(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 20:20:11"
-Code: 43
+SELECT addHours(N, 1)
+"DateTime","2019-09-16 01:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 20:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 20:20:11.234"
 ------------------------------------------
-SELECT addMinutes(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:21:11"
-Code: 43
+SELECT addMinutes(N, 1)
+"DateTime","2019-09-16 00:01:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:21:11"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:21:11.234"
 ------------------------------------------
-SELECT addSeconds(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:12"
-Code: 43
+SELECT addSeconds(N, 1)
+"DateTime","2019-09-16 00:00:01"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:12"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
-SELECT addQuarters(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-12-16 19:20:11"
-Code: 43
+SELECT addQuarters(N, 1)
+"Date","2019-12-16"
+"DateTime('Europe/Minsk')","2019-12-16 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-12-16 19:20:11.234"
 ------------------------------------------
-SELECT subtractYears(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2018-09-16 19:20:11"
-Code: 43
+SELECT subtractYears(N, 1)
+"Date","2018-09-16"
+"DateTime('Europe/Minsk')","2018-09-16 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2018-09-16 19:20:11.234"
 ------------------------------------------
-SELECT subtractMonths(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-08-16 19:20:11"
-Code: 43
+SELECT subtractMonths(N, 1)
+"Date","2019-08-16"
+"DateTime('Europe/Minsk')","2019-08-16 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-08-16 19:20:11.234"
 ------------------------------------------
-SELECT subtractWeeks(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-09 19:20:11"
-Code: 43
+SELECT subtractWeeks(N, 1)
+"Date","2019-09-09"
+"DateTime('Europe/Minsk')","2019-09-09 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-09-09 19:20:11.234"
 ------------------------------------------
-SELECT subtractDays(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-15 19:20:11"
-Code: 43
+SELECT subtractDays(N, 1)
+"Date","2019-09-15"
+"DateTime('Europe/Minsk')","2019-09-15 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-09-15 19:20:11.234"
 ------------------------------------------
-SELECT subtractHours(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 18:20:11"
-Code: 43
+SELECT subtractHours(N, 1)
+"DateTime","2019-09-15 23:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 18:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 18:20:11.234"
 ------------------------------------------
-SELECT subtractMinutes(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:19:11"
-Code: 43
+SELECT subtractMinutes(N, 1)
+"DateTime","2019-09-15 23:59:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:19:11"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:19:11.234"
 ------------------------------------------
-SELECT subtractSeconds(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-09-16 19:20:10"
-Code: 43
+SELECT subtractSeconds(N, 1)
+"DateTime","2019-09-15 23:59:59"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:10"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
 ------------------------------------------
-SELECT subtractQuarters(N, 1, \'Asia/Istanbul\')
-Code: 43
-"DateTime('Asia/Istanbul')","2019-06-16 19:20:11"
-Code: 43
+SELECT subtractQuarters(N, 1)
+"Date","2019-06-16"
+"DateTime('Europe/Minsk')","2019-06-16 19:20:11"
+"DateTime64(3, 'Europe/Minsk')","2019-06-16 19:20:11.234"
 ------------------------------------------
 SELECT CAST(N as DateTime(\'Europe/Minsk\'))
 "DateTime('Europe/Minsk')","2019-09-16 00:00:00"
@@ -353,7 +353,7 @@ SELECT CAST(N as DateTime64(9, \'Europe/Minsk\'))
 "DateTime64(9, 'Europe/Minsk')","2019-09-16 19:20:11.000000000"
 "DateTime64(9, 'Europe/Minsk')","2019-09-16 19:20:11.234000000"
 ------------------------------------------
-SELECT formatDateTime(N, \'%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%\', \'Asia/Istanbul\')
+SELECT formatDateTime(N, \'%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%\')
 "String","20 16 09/16/19 16 2019-09-16 00 12 259 09 00 AM 00:00 00 00:00:00 1 38 1 19 2019 %"
 "String","20 16 09/16/19 16 2019-09-16 19 07 259 09 20 PM 19:20 11 19:20:11 1 38 1 19 2019 %"
 "String","20 16 09/16/19 16 2019-09-16 19 07 259 09 20 PM 19:20 11 19:20:11 1 38 1 19 2019 %"

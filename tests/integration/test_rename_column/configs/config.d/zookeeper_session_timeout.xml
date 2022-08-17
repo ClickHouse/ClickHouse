@@ -1,6 +1,6 @@
-<clickhouse>
+<yandex>
     <zookeeper>
         <!-- Required for correct timing in current test case -->
         <session_timeout_ms replace="1">15000</session_timeout_ms>
     </zookeeper>
-</clickhouse>
+</yandex>

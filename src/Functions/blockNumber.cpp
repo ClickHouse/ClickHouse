@@ -34,20 +34,12 @@ public:
         return true;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return false;
-    }
-
     size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
     {
@@ -68,7 +60,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(BlockNumber)
+void registerFunctionBlockNumber(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBlockNumber>();
 }

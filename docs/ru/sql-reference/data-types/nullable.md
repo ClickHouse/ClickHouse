@@ -1,6 +1,6 @@
 ---
-sidebar_position: 55
-sidebar_label: Nullable
+toc_priority: 55
+toc_title: Nullable
 ---
 
 # Nullable(TypeName) {#data_type-nullable}
@@ -24,9 +24,8 @@ sidebar_label: Nullable
 
 В случае, когда маска указывает, что в ячейке хранится `NULL`, в файле значений хранится значение по умолчанию для типа данных. Т.е. если, например, поле имеет тип `Nullable(Int8)`, то ячейка будет хранить значение по умолчанию для `Int8`. Эта особенность увеличивает размер хранилища.
 
-:::info "Info"
+!!! info "Info"
     Почти всегда использование `Nullable` снижает производительность, учитывайте это при проектировании своих баз.
-:::
 
 ## Поиск NULL {#finding-null}
 
@@ -34,7 +33,7 @@ sidebar_label: Nullable
 
 **Пример**
 
-Запрос:
+Запрос: 
 
 ``` sql
 CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();

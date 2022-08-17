@@ -1,14 +1,12 @@
 #pragma once
 
 #include <Core/SettingsFields.h>
-#include <Core/Joins.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
-
 enum class LoadBalancing
 {
     /// among replicas with a minimum number of errors selected randomly
@@ -28,9 +26,25 @@ enum class LoadBalancing
 
 DECLARE_SETTING_ENUM(LoadBalancing)
 
+
+enum class JoinStrictness
+{
+    Unspecified = 0, /// Query JOIN without strictness will throw Exception.
+    ALL, /// Query JOIN without strictness -> ALL JOIN ...
+    ANY, /// Query JOIN without strictness -> ANY JOIN ...
+};
+
 DECLARE_SETTING_ENUM(JoinStrictness)
 
-DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+enum class JoinAlgorithm
+{
+    AUTO = 0,
+    HASH,
+    PARTIAL_MERGE,
+    PREFER_PARTIAL_MERGE,
+};
+
+DECLARE_SETTING_ENUM(JoinAlgorithm)
 
 
 /// Which rows should be included in TOTALS.
@@ -80,7 +94,6 @@ enum class LogsLevel
     information,
     debug,
     trace,
-    test,
 };
 
 DECLARE_SETTING_ENUM(LogsLevel)
@@ -106,26 +119,12 @@ enum class DefaultDatabaseEngine
 
 DECLARE_SETTING_ENUM(DefaultDatabaseEngine)
 
-enum class DefaultTableEngine
-{
-    None = 0, /// Disable. Need to use ENGINE =
-    Log,
-    StripeLog,
-    MergeTree,
-    ReplacingMergeTree,
-    ReplicatedMergeTree,
-    ReplicatedReplacingMergeTree,
-    Memory,
-};
-
-DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 enum class MySQLDataTypesSupport
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
     DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
-    DATE2DATE32, // convert MySQL's date type to ClickHouse Date32
-    DATE2STRING  // convert MySQL's date type to ClickHouse String(This is usually used when your mysql date is less than 1925)
+    // ENUM
 };
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
@@ -151,36 +150,11 @@ DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 
 enum class HandleKafkaErrorMode
 {
-    DEFAULT = 0, // Ignore errors with threshold.
+    DEFAULT = 0, // Ignore errors whit threshold.
     STREAM, // Put errors to stream in the virtual column named ``_error.
     /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likey system.kafka_errors. This is not implemented now.  */
     /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
 };
 
 DECLARE_SETTING_ENUM(HandleKafkaErrorMode)
-
-enum class ShortCircuitFunctionEvaluation
-{
-    ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.
-    FORCE_ENABLE, // Use short-circuit function evaluation for all functions.
-    DISABLE, // Disable short-circuit function evaluation.
-};
-
-DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
-
-enum class TransactionsWaitCSNMode
-{
-    ASYNC,
-    WAIT,
-    WAIT_UNKNOWN,
-};
-
-DECLARE_SETTING_ENUM(TransactionsWaitCSNMode)
-
-DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
-
-DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
-
-DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
-
 }

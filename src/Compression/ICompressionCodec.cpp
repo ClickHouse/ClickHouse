@@ -3,7 +3,7 @@
 #include <cassert>
 
 #include <Parsers/ASTFunction.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 #include <Common/Exception.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
@@ -86,10 +86,11 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
     UInt8 header_size = getHeaderSize();
     /// Write data from header_size
     UInt32 compressed_bytes_written = doCompressData(source, source_size, &dest[header_size]);
-    unalignedStoreLE<UInt32>(&dest[1], compressed_bytes_written + header_size);
-    unalignedStoreLE<UInt32>(&dest[5], source_size);
+    unalignedStore<UInt32>(&dest[1], compressed_bytes_written + header_size);
+    unalignedStore<UInt32>(&dest[5], source_size);
     return header_size + compressed_bytes_written;
 }
+
 
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
@@ -112,19 +113,13 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
 
 UInt32 ICompressionCodec::readCompressedBlockSize(const char * source)
 {
-    UInt32 compressed_block_size = unalignedLoadLE<UInt32>(&source[1]);
-    if (compressed_block_size == 0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: header is corrupt with compressed block size 0");
-    return compressed_block_size;
+    return unalignedLoad<UInt32>(&source[1]);
 }
 
 
 UInt32 ICompressionCodec::readDecompressedBlockSize(const char * source)
 {
-    UInt32 decompressed_block_size = unalignedLoadLE<UInt32>(&source[5]);
-    if (decompressed_block_size == 0)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: header is corrupt with decompressed block size 0");
-    return decompressed_block_size;
+    return unalignedLoad<UInt32>(&source[5]);
 }
 
 

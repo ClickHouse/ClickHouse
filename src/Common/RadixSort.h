@@ -2,7 +2,7 @@
 
 
 #include <string.h>
-#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
 #include <algorithm>
@@ -13,8 +13,8 @@
 #include <type_traits>
 #include <memory>
 
-#include <base/bit_cast.h>
-#include <base/extended_types.h>
+#include <common/bit_cast.h>
+#include <common/extended_types.h>
 #include <Core/Defines.h>
 
 
@@ -37,12 +37,12 @@
   */
 struct RadixSortAllocator
 {
-    static void * allocate(size_t size)
+    void * allocate(size_t size)
     {
         return ::operator new(size);
     }
 
-    static void deallocate(void * ptr, size_t size)
+    void deallocate(void * ptr, size_t size)
     {
         ::operator delete(ptr, size);
     }
@@ -187,7 +187,7 @@ struct RadixSortIntTraits
 
 template <typename T>
 using RadixSortNumTraits = std::conditional_t<
-    is_integer<T>,
+    is_integer_v<T>,
     std::conditional_t<is_unsigned_v<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
     RadixSortFloatTraits<T>>;
 
@@ -355,6 +355,8 @@ private:
     template <size_t PASS>
     static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
     {
+//        std::cerr << PASS << ", " << size << ", " << limit << "\n";
+
         /// The beginning of every i-1-th bucket. 0th element will be equal to 1st.
         /// Last element will point to array end.
         std::unique_ptr<Element *[]> prev_buckets{new Element*[HISTOGRAM_SIZE + 1]};
@@ -511,11 +513,6 @@ public:
     static void executeLSD(Element * arr, size_t size)
     {
         radixSortLSDInternal<false>(arr, size, false, nullptr);
-    }
-
-    static void executeLSD(Element * arr, size_t size, bool reverse)
-    {
-        radixSortLSDInternal<false>(arr, size, reverse, nullptr);
     }
 
     /** This function will start to sort inplace (modify 'arr')

@@ -9,7 +9,9 @@
 
 #include <Poco/Version.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
@@ -74,12 +76,8 @@ namespace
         if (https)
         {
 #if USE_SSL
-            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
-            auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
-            if (resolve_host)
-                https_session->setResolvedHost(DNSResolver::instance().resolveHost(host).toString());
-
-            session = std::move(https_session);
+            /// Cannot resolve host in advance, otherwise SNI won't work in Poco.
+            session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
@@ -122,7 +120,7 @@ namespace
                 session->setProxyHost(proxy_host);
                 session->setProxyPort(proxy_port);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
+#if !defined(ARCADIA_BUILD) && defined(POCO_CLICKHOUSE_PATCH)
                 session->setProxyProtocol(proxy_scheme);
 
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.
@@ -212,7 +210,7 @@ namespace
             size_t max_connections_per_endpoint,
             bool resolve_host = true)
         {
-            std::lock_guard lock(mutex);
+            std::unique_lock lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);
@@ -255,13 +253,10 @@ namespace
                         {
                             session->reset();
                             session->setHost(ip);
+                            session->attachSessionData({});
                         }
                     }
                 }
-                /// Reset the message, once it has been printed,
-                /// otherwise you will get report for failed parts on and on,
-                /// even for different tables (since they uses the same session).
-                session->attachSessionData({});
             }
 
             setTimeouts(*session, timeouts);
@@ -320,7 +315,6 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
     if (!(status == Poco::Net::HTTPResponse::HTTP_OK
         || status == Poco::Net::HTTPResponse::HTTP_CREATED
         || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
-        || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
         || (isRedirect(status) && allow_redirects)))
     {
         std::stringstream error_message;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM

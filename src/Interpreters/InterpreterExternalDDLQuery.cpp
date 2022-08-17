@@ -1,4 +1,6 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/Context.h>
@@ -9,7 +11,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExternalDDLQuery.h>
 
-#if USE_MYSQL
+#ifdef USE_MYSQL
 #    include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
 #    include <Parsers/MySQL/ASTAlterQuery.h>
 #    include <Parsers/MySQL/ASTCreateQuery.h>
@@ -38,7 +40,7 @@ BlockIO InterpreterExternalDDLQuery::execute()
 
     if (external_ddl_query.from->name == "MySQL")
     {
-#if USE_MYSQL
+#ifdef USE_MYSQL
         const ASTs & arguments = external_ddl_query.from->arguments->children;
 
         if (arguments.size() != 2 || !arguments[0]->as<ASTIdentifier>() || !arguments[1]->as<ASTIdentifier>())

@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/Transforms/finalizeChunk.h>
 
 namespace DB
 {
@@ -15,19 +14,18 @@ class TotalsHavingStep : public ITransformingStep
 {
 public:
     TotalsHavingStep(
-        const DataStream & input_stream_,
-        const AggregateDescriptions & aggregates_,
-        bool overflow_row_,
-        const ActionsDAGPtr & actions_dag_,
-        const std::string & filter_column_,
-        bool remove_filter_,
-        TotalsMode totals_mode_,
-        double auto_include_threshold_,
-        bool final_);
+            const DataStream & input_stream_,
+            bool overflow_row_,
+            const ActionsDAGPtr & actions_dag_,
+            const std::string & filter_column_,
+            bool remove_filter_,
+            TotalsMode totals_mode_,
+            double auto_include_threshold_,
+            bool final_);
 
     String getName() const override { return "TotalsHaving"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
@@ -35,10 +33,6 @@ public:
     const ActionsDAGPtr & getActions() const { return actions_dag; }
 
 private:
-    void updateOutputStream() override;
-
-    const AggregateDescriptions aggregates;
-
     bool overflow_row;
     ActionsDAGPtr actions_dag;
     String filter_column_name;
@@ -49,3 +43,4 @@ private:
 };
 
 }
+

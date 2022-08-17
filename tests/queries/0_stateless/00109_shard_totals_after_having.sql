@@ -1,5 +1,3 @@
--- Tags: shard, no-parallel, no-fasttest
-
 SET max_rows_to_group_by = 100000;
 SET max_block_size = 100001;
 SET group_by_overflow_mode = 'any';

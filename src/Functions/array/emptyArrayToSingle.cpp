@@ -34,7 +34,6 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -417,7 +416,7 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
 }
 
 
-REGISTER_FUNCTION(EmptyArrayToSingle)
+void registerFunctionEmptyArrayToSingle(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionEmptyArrayToSingle>();
 }

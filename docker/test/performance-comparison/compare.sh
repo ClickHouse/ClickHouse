@@ -61,7 +61,7 @@ function configure
     cp -rv right/config left ||:
 
     # Start a temporary server to rename the tables
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn temporary in its own process groups
@@ -88,7 +88,7 @@ function configure
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
     clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
 
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     # Make copies of the original db for both servers. Use hardlinks instead
@@ -106,7 +106,7 @@ function configure
 
 function restart
 {
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     # Change the jemalloc settings here.
@@ -193,63 +193,41 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=($(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
     elif [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
+        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ] \
         && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
     then
         # If only the perf tests were changed in the PR, we will run only these
         # tests. The lists of changed files are prepared in entrypoint.sh because
         # it has the repository.
-        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
+        test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt)
     else
         # The default -- run all tests found in the test dir.
-        test_files=($(ls "$test_prefix"/*.xml))
+        test_files=$(ls "$test_prefix"/*.xml)
     fi
 
-    # We can filter out certain tests
-    if [ -v CHPC_TEST_GREP_EXCLUDE ]; then
-        # filter tests array in bash https://stackoverflow.com/a/40375567
-        filtered_test_files=( $( for i in ${test_files[@]} ; do echo $i ; done | grep -v ${CHPC_TEST_GREP_EXCLUDE} ) )
-        test_files=("${filtered_test_files[@]}")
+    # For PRs w/o changes in test definitons and scripts, test only a subset of
+    # queries, and run them less times. If the corresponding environment variables
+    # are already set, keep those values.
+    if [ "$PR_TO_TEST" -ne 0 ] \
+        && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ] \
+        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ]
+    then
+        CHPC_RUNS=${CHPC_RUNS:-7}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
+    else
+        CHPC_RUNS=${CHPC_RUNS:-13}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
     fi
-
-    # We split perf tests into multiple checks to make them faster
-    if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
-        # filter tests array in bash https://stackoverflow.com/a/40375567
-        for index in "${!test_files[@]}"; do
-            [ $(( index % CHPC_TEST_RUN_BY_HASH_TOTAL )) != "$CHPC_TEST_RUN_BY_HASH_NUM" ] && \
-                unset -v 'test_files[$index]'
-        done
-        # to have sequential indexes...
-        test_files=("${test_files[@]}")
-    fi
-
-    # For PRs w/o changes in test definitons, test only a subset of queries,
-    # and run them less times. If the corresponding environment variables are
-    # already set, keep those values.
-    #
-    # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
-    # NOTE: Currently we disabled complete run even for master branch
-    #if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
-    #then
-    #    CHPC_RUNS=${CHPC_RUNS:-7}
-    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-    #else
-    #    CHPC_RUNS=${CHPC_RUNS:-13}
-    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    #fi
-
-    CHPC_RUNS=${CHPC_RUNS:-7}
-    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
 
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
-    for test in ${test_files[@]}; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
+    for test in $test_files; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
 
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
@@ -258,8 +236,8 @@ function run_tests
         touch "$x"
     done
 
-    # Randomize test order. BTW, it's not an array no more.
-    test_files=$(for f in ${test_files[@]}; do echo "$f"; done | sort -R)
+    # Randomize test order.
+    test_files=$(for f in $test_files; do echo "$f"; done | sort -R)
 
     # Limit profiling time to 10 minutes, not to run for too long.
     profile_seconds_left=600
@@ -284,30 +262,24 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        (
-            set +x
-            argv=(
-                --host localhost localhost
-                --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
-                --runs "$CHPC_RUNS"
-                --max-queries "$CHPC_MAX_QUERIES"
-                --profile-seconds "$profile_seconds"
-
-                "$test"
-            )
-            TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
-            # one more subshell to suppress trace output for "set +x"
-            (
-                time "$script_dir/perf.py" "${argv[@]}" > "$test_name-raw.tsv" 2> "$test_name-err.log"
-            ) 2>>wall-clock-times.tsv >/dev/null \
-                || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
-        ) 2>/dev/null
+        TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
+        # The grep is to filter out set -x output and keep only time output.
+        # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
+        { \
+            time "$script_dir/perf.py" --host localhost localhost --port $LEFT_SERVER_PORT $RIGHT_SERVER_PORT \
+                --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
+                --profile-seconds "$profile_seconds" \
+                -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
+        } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
+            || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
 
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
         current_test=$((current_test + 1))
     done
+
+    unset TIMEFORMAT
 
     wait
 }
@@ -320,7 +292,7 @@ function get_profiles_watchdog
 
     for pid in $(pgrep -f clickhouse)
     do
-        sudo gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
     done
     wait
 
@@ -337,19 +309,24 @@ function get_profiles_watchdog
 function get_profiles
 {
     # Collect the profiles
+    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
     clickhouse-client --port $LEFT_SERVER_PORT --query "system flush logs" &
+
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "system flush logs" &
 
     wait
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type = 'QueryFinish' format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type = 'QueryFinish' format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
@@ -364,12 +341,27 @@ function get_profiles
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select 1"
 }
 
+function build_log_column_definitions
+{
+# FIXME This loop builds column definitons from TSVWithNamesAndTypes in an
+# absolutely atrocious way. This should be done by the file() function itself.
+for x in {right,left}-{addresses,{query,query-thread,trace,{async-,}metric}-log}.tsv
+do
+    paste -d' ' \
+        <(sed -n '1{s/\t/\n/g;p;q}' "$x" | sed 's/\(^.*$\)/"\1"/') \
+        <(sed -n '2{s/\t/\n/g;p;q}' "$x" ) \
+        | tr '\n' ', ' | sed 's/,$//' > "$x.columns"
+done
+}
+
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
 rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv ./*-report.tsv raw-queries.tsv ||:
 rm -rf analyze ||:
 mkdir analyze analyze/tmp ||:
+
+build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
 # To debug calculations only for a particular test, substitute a suitable
@@ -383,6 +375,7 @@ do
     sed -n "s/^report-threshold\t/$test_name\t/p" < "$test_file" >> "analyze/report-thresholds.tsv"
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
+    sed -n "s/^short\t/$test_name\t/p" < "$test_file" >> "analyze/marked-short-queries.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
 done
 
@@ -408,10 +401,12 @@ create table partial_query_times engine File(TSVWithNamesAndTypes,
 
 -- Process queries that were run normally, on both servers.
 create view left_query_log as select *
-    from file('left-query-log.tsv', TSVWithNamesAndTypes);
+    from file('left-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "left-query-log.tsv.columns")');
 
 create view right_query_log as select *
-    from file('right-query-log.tsv', TSVWithNamesAndTypes);
+    from file('right-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "right-query-log.tsv.columns")');
 
 create view query_logs as
     select 0 version, query_id, ProfileEvents,
@@ -529,9 +524,7 @@ unset IFS
 # all nodes.
 numactl --show
 numactl --cpunodebind=all --membind=all numactl --show
-# Use less jobs to avoid OOM. Some queries can consume 8+ GB of memory.
-jobs_count=$(($(grep -c ^processor /proc/cpuinfo) / 3))
-numactl --cpunodebind=all --membind=all parallel --jobs  $jobs_count --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
@@ -561,7 +554,7 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
 " 2> >(tee -a analyze/errors.log 1>&2)
 
 # Fetch historical query variability thresholds from the CI database
-if [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
+if [ -v CHPC_DATABASE_URL ]
 then
     set +x # Don't show password in the log
     client=(clickhouse-client
@@ -569,11 +562,12 @@ then
         # so I have to extract host and port with clickhouse-local. I tried to use
         # Poco URI parser to support this in the client, but it's broken and can't
         # parse host:port.
-        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
         --secure
-        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
         --config "right/config/client_config.xml"
+        --database perftest
         --date_time_input_format=best_effort)
 
 
@@ -628,6 +622,8 @@ mkdir report report/tmp ||:
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv run-errors.tsv ||:
 
+build_log_column_definitions
+
 cat analyze/errors.log >> report/errors.log ||:
 cat profile-errors.log >> report/errors.log ||:
 
@@ -639,13 +635,12 @@ create view query_display_names as select * from
 
 create view partial_query_times as select * from
     file('analyze/partial-query-times.tsv', TSVWithNamesAndTypes,
-        'test text, query_index int, time_stddev float, time_median double')
+        'test text, query_index int, time_stddev float, time_median float')
     ;
 
 -- Report for partial queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
-    settings output_format_decimal_trailing_zeros = 1
     as select toDecimal64(time_median, 3) time,
         toDecimal64(time_stddev / time_median, 3) relative_time_stddev,
         test, query_index, query_display_name
@@ -718,9 +713,8 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     order by test, query_index, metric_name
     ;
 
-create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as with
+create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv') as
+    with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
         -- of NaN to decimal.
@@ -736,9 +730,8 @@ create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
         changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
-create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as select
+create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv') as
+    select
         toDecimal64(left, 3), toDecimal64(right, 3), toDecimal64(diff, 3),
         toDecimal64(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
@@ -768,9 +761,8 @@ create view total_speedup as
     from test_speedup
     ;
 
-create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as with
+create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv') as
+    with
         (times_speedup >= 1
             ? '-' || toString(toDecimal64(times_speedup, 3)) || 'x'
             : '+' || toString(toDecimal64(1 / times_speedup, 3)) || 'x')
@@ -796,9 +788,8 @@ create view total_client_time_per_query as select *
     from file('analyze/client-times.tsv', TSV,
         'test text, query_index int, client float, server float');
 
-create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as select client, server, toDecimal64(client/server, 3) p,
+create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv') as
+    select client, server, toDecimal64(client/server, 3) p,
         test, query_display_name
     from total_client_time_per_query left join query_display_names using (test, query_index)
     where p > toDecimal64(1.02, 3) order by p desc;
@@ -822,6 +813,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 -- calculate and check the average query run time in the report.
 -- We have to be careful, because we will encounter:
 --  1) partial queries which run only on one server
+--  2) short queries which run for a much higher number of times
 --  3) some errors that make query run for a different number of times on a
 --     particular server.
 --
@@ -829,11 +821,15 @@ create view test_runs as
     select test,
         -- Default to 7 runs if there are only 'short' queries in the test, and
         -- we can't determine the number of runs.
-        if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
+        if((ceil(medianOrDefaultIf(t.runs, not short), 0) as r) != 0, r, 7) runs
     from (
         select
             -- The query id is the same for both servers, so no need to divide here.
             uniqExact(query_id) runs,
+            (test, query_index) in
+                (select * from file('analyze/marked-short-queries.tsv', TSV,
+                    'test text, query_index int'))
+            as short,
             test, query_index
         from query_runs
         group by test, query_index
@@ -878,9 +874,8 @@ create view test_times_view_total as
     from test_times_view
     ;
 
-create table test_times_report engine File(TSV, 'report/test-times.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as select
+create table test_times_report engine File(TSV, 'report/test-times.tsv') as
+    select
         test,
         toDecimal64(real, 3),
         toDecimal64(total_client_time, 3),
@@ -898,9 +893,8 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv')
     ;
 
 -- report for all queries page, only main metric
-create table all_tests_report engine File(TSV, 'report/all-queries.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as with
+create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
+    with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
         -- of NaN to decimal.
@@ -916,6 +910,41 @@ create table all_tests_report engine File(TSV, 'report/all-queries.tsv')
         toDecimal64(isFinite(stat_threshold) ? stat_threshold : 0, 3),
         test, query_index, query_display_name
     from queries order by test, query_index;
+
+
+-- Report of queries that have inconsistent 'short' markings:
+-- 1) have short duration, but are not marked as 'short'
+-- 2) the reverse -- marked 'short' but take too long.
+-- The threshold for 2) is significantly larger than the threshold for 1), to
+-- avoid jitter.
+create view shortness
+    as select
+        (test, query_index) in
+            (select * from file('analyze/marked-short-queries.tsv', TSV,
+            'test text, query_index int'))
+            as marked_short,
+        time, test, query_index, query_display_name
+    from (
+            select right time, test, query_index from queries
+            union all
+            select time_median, test, query_index from partial_query_times
+        ) times
+        left join query_display_names
+            on times.test = query_display_names.test
+                and times.query_index = query_display_names.query_index
+    ;
+
+create table inconsistent_short_marking_report
+    engine File(TSV, 'report/unexpected-query-duration.tsv')
+    as select
+        multiIf(marked_short and time > 0.1, '\"short\" queries must run faster than 0.02 s',
+                not marked_short and time < 0.02, '\"normal\" queries must run longer than 0.1 s',
+                '') problem,
+        marked_short, time,
+        test, query_index, query_display_name
+    from shortness
+    where problem != ''
+    ;
 
 
 --------------------------------------------------------------------------------
@@ -969,7 +998,8 @@ create table unstable_query_runs engine File(TSVWithNamesAndTypes,
     ;
 
 create view query_log as select *
-    from file('$version-query-log.tsv', TSVWithNamesAndTypes);
+    from file('$version-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-query-log.tsv.columns")');
 
 create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
         'unstable-run-metrics.$version.rep') as
@@ -997,7 +1027,8 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
     array join v, n;
 
 create view trace_log as select *
-    from file('$version-trace-log.tsv', TSVWithNamesAndTypes);
+    from file('$version-trace-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-trace-log.tsv.columns")');
 
 create view addresses_src as select addr,
         -- Some functions change name between builds, e.g. '__clone' or 'clone' or
@@ -1006,7 +1037,8 @@ create view addresses_src as select addr,
         [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
             -- this line is a subscript operator of the above array
             [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
-    from file('$version-addresses.tsv', TSVWithNamesAndTypes);
+    from file('$version-addresses.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-addresses.tsv.columns")');
 
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
@@ -1025,10 +1057,9 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
     ;
 
 create table metric_devation engine File(TSVWithNamesAndTypes,
-        'report/metric-deviation.$version.tsv')
-    settings output_format_decimal_trailing_zeros = 1
+        'report/metric-deviation.$version.tsv') as
     -- first goes the key used to split the file with grep
-    as select test, query_index, query_display_name,
+    select test, query_index, query_display_name,
         toDecimal64(d, 3) d, q, metric
     from (
         select
@@ -1133,12 +1164,15 @@ done
 
 function report_metrics
 {
+build_log_column_definitions
+
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
 create view right_async_metric_log as
-    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
+    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes,
+        '$(cat right-async-metric-log.tsv.columns)')
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -1146,15 +1180,15 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
     select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
-    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes) l
+    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes,
+        '$(cat left-async-metric-log.tsv.columns)') l
     on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
 
 -- Show metrics that have changed
-create table changes engine File(TSV, 'metrics/changes.tsv')
-    settings output_format_decimal_trailing_zeros = 1
-    as select metric, left, right,
+create table changes engine File(TSV, 'metrics/changes.tsv') as
+    select metric, left, right,
         toDecimal64(diff, 3), toDecimal64(times_diff, 3)
     from (
         select metric, median(left) as left, median(right) as right,
@@ -1162,7 +1196,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv')
             if(left > right, left / right, right / left) times_diff
         from metrics
         group by metric
-        having abs(diff) > 0.05 and isFinite(diff) and isFinite(times_diff)
+        having abs(diff) > 0.05 and isFinite(diff)
     )
     order by diff desc
     ;
@@ -1195,23 +1229,25 @@ unset IFS
 function upload_results
 {
     # Prepare info for the CI checks table.
-    rm -f ci-checks.tsv
-
+    rm ci-checks.tsv
     clickhouse-local --query "
-create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
+create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes,
+    'changed_fail int, changed_show int, unstable_fail int, unstable_show int,
+        left float, right float, diff float, stat_threshold float,
+        test text, query_index int, query_display_name text');
 
 create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
     as select
-        $PR_TO_TEST :: UInt32 AS pull_request_number,
-        '$SHA_TO_TEST' :: LowCardinality(String) AS commit_sha,
-        '${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME:-Performance}' :: LowCardinality(String) AS check_name,
-        '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' :: LowCardinality(String) AS check_status,
+        $PR_TO_TEST pull_request_number,
+        '$SHA_TO_TEST' commit_sha,
+        'Performance' check_name,
+        '$(sed -n 's/.*<!--status: \(.*\)-->/\1/p' report.html)' check_status,
         -- TODO toDateTime() can't parse output of 'date', so no time for now.
-        (($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000) :: UInt64 AS check_duration_ms,
+        ($(date +%s) - $CHPC_CHECK_START_TIMESTAMP) * 1000 check_duration_ms,
         fromUnixTimestamp($CHPC_CHECK_START_TIMESTAMP) check_start_time,
-        test_name :: LowCardinality(String) AS test_name ,
-        test_status :: LowCardinality(String) AS test_status,
-        test_duration_ms :: UInt64 AS test_duration_ms,
+        test_name,
+        test_status,
+        test_duration_ms,
         report_url,
         $PR_TO_TEST = 0
             ? 'https://github.com/ClickHouse/ClickHouse/commit/$SHA_TO_TEST'
@@ -1226,22 +1262,22 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         select '' test_name,
             '$(sed -n 's/.*<!--message: \(.*\)-->/\1/p' report.html)' test_status,
             0 test_duration_ms,
-            'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#fail1' report_url
+            'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#fail1' report_url
         union all
             select test || ' #' || toString(query_index), 'slower' test_status, 0 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#changes-in-performance.'
+                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#changes-in-performance.'
                     || test || '.' || toString(query_index) report_url
             from queries where changed_fail != 0 and diff > 0
         union all
             select test || ' #' || toString(query_index), 'unstable' test_status, 0 test_duration_ms,
-                'https://s3.amazonaws.com/clickhouse-test-reports/$PR_TO_TEST/$SHA_TO_TEST/${CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX}/report.html#unstable-queries.'
+                'https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/performance_comparison/report.html#unstable-queries.'
                     || test || '.' || toString(query_index) report_url
             from queries where unstable_fail != 0
     )
 ;
     "
 
-    if ! [ -v CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL ]
+    if ! [ -v CHPC_DATABASE_URL ]
     then
         echo Database for test results is not specified, will not upload them.
         return 0
@@ -1253,37 +1289,13 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
         # so I have to extract host and port with clickhouse-local. I tried to use
         # Poco URI parser to support this in the client, but it's broken and can't
         # parse host:port.
-        $(clickhouse-local --query "with '${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
+        $(clickhouse-local --query "with '${CHPC_DATABASE_URL}' as url select '--host ' || domain(url) || ' --port ' || toString(port(url)) format TSV")
         --secure
-        --user "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER}"
-        --password "${CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD}"
+        --user "${CHPC_DATABASE_USER}"
+        --password "${CHPC_DATABASE_PASSWORD}"
         --config "right/config/client_config.xml"
+        --database perftest
         --date_time_input_format=best_effort)
-
-    # CREATE TABLE IF NOT EXISTS query_metrics_v2 (
-    #     `event_date` Date,
-    #     `event_time` DateTime,
-    #     `pr_number` UInt32,
-    #     `old_sha` String,
-    #     `new_sha` String,
-    #     `test` LowCardinality(String),
-    #     `query_index` UInt32,
-    #     `query_display_name` String,
-    #     `metric` LowCardinality(String),
-    #     `old_value` Float64,
-    #     `new_value` Float64,
-    #     `diff` Float64,
-    #     `stat_threshold` Float64
-    # ) ENGINE = ReplicatedMergeTree
-    # ORDER BY event_date
-
-    # CREATE TABLE IF NOT EXISTS run_attributes_v1 (
-    #     `old_sha` String,
-    #     `new_sha` String,
-    #     `metric` LowCardinality(String),
-    #     `metric_value` String
-    # ) ENGINE = ReplicatedMergeTree
-    # ORDER BY (old_sha, new_sha)
 
     "${client[@]}" --query "
             insert into query_metrics_v2
@@ -1296,7 +1308,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
                 test,
                 query_index,
                 query_display_name,
-                metric_name as metric,
+                metric_name,
                 old_value,
                 new_value,
                 diff,
@@ -1304,7 +1316,9 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             from input('metric_name text, old_value float, new_value float, diff float,
                     ratio_display_text text, stat_threshold float,
                     test text, query_index int, query_display_name text')
+            settings date_time_input_format='best_effort'
             format TSV
+            settings date_time_input_format='best_effort'
 " < report/all-query-metrics.tsv # Don't leave whitespace after INSERT: https://github.com/ClickHouse/ClickHouse/issues/16652
 
     # Upload some run attributes. I use this weird form because it is the same
@@ -1332,7 +1346,7 @@ $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/
 EOF
 
     # Also insert some data about the check into the CI checks table.
-    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
+    "${client[@]}" --query "INSERT INTO "'"'"gh-data"'"'".checks FORMAT TSVWithNamesAndTypes" \
         < ci-checks.tsv
 
     set -x
@@ -1392,7 +1406,7 @@ case "$stage" in
     while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    while killall clickhouse; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")
@@ -1417,3 +1431,4 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
+

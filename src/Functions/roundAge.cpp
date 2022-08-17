@@ -11,7 +11,6 @@ struct RoundAgeImpl
 {
     using ResultType = UInt8;
     static constexpr const bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     static inline ResultType apply(A x)
     {
@@ -36,7 +35,7 @@ using FunctionRoundAge = FunctionUnaryArithmetic<RoundAgeImpl, NameRoundAge, fal
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundAge> : PositiveMonotonicity {};
 
-REGISTER_FUNCTION(RoundAge)
+void registerFunctionRoundAge(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRoundAge>();
 }

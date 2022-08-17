@@ -1,6 +1,6 @@
 ---
-sidebar_position: 35
-sidebar_label: Dictionary
+toc_priority: 35
+toc_title: Dictionary
 ---
 
 # Dictionary {#dictionary}
@@ -62,7 +62,7 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-В таком виде данные из словаря можно получить при помощи функций [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#dictget).
+В таком виде данные из словаря можно получить при помощи функций [dictGet\*](../../../engines/table-engines/special/dictionary.md#ext_dict_functions).
 
 Такое представление неудобно, когда нам необходимо получить данные в чистом виде, а также при выполнении операции `JOIN`. Для этих случаев можно использовать движок `Dictionary`, который отобразит данные словаря в таблицу.
 

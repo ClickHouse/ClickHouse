@@ -11,7 +11,7 @@ namespace DB
 class NullWriteBuffer : public BufferWithOwnMemory<WriteBuffer>, boost::noncopyable
 {
 public:
-    explicit NullWriteBuffer(size_t buf_size = 16<<10, char * existing_memory = nullptr, size_t alignment = false);
+    NullWriteBuffer(size_t buf_size = 16<<10, char * existing_memory = nullptr, size_t alignment = false);
     void nextImpl() override;
 };
 

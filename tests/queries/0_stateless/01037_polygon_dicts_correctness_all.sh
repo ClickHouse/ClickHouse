@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,7 +33,7 @@ CREATE TABLE test_01037.polygons_array
 ENGINE = Memory;
 "
 
-$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEachRow" --min_chunk_bytes_for_parallel_parsing=10485760 --max_insert_block_size=100000 < "${CURDIR}/01037_polygon_data"
+$CLICKHOUSE_CLIENT --query="INSERT INTO test_01037.polygons_array FORMAT JSONEachRow" --max_insert_block_size=100000 < "${CURDIR}/01037_polygon_data"
 
 rm "${CURDIR}"/01037_polygon_data
 

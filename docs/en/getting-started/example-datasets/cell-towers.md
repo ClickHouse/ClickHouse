@@ -1,8 +1,9 @@
 ---
-sidebar_label: Cell Towers
+toc_priority: 21
+toc_title: Cell Towers
 ---
 
-# Cell Towers 
+# Cell Towers {#cell-towers}
 
 This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
@@ -13,7 +14,7 @@ OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4
 
 ## Get the Dataset {#get-the-dataset}
 
-1. Download the snapshot of the dataset from February 2021: [https://datasets.clickhouse.com/cell_towers.csv.xz] (729 MB).
+1. Download the snapshot of the dataset from February 2021: [https://datasets.clickhouse.tech/cell_towers.csv.xz] (729 MB).
 
 2. Validate the integrity (optional step):
 ```
@@ -126,6 +127,6 @@ SELECT count() FROM cell_towers WHERE pointInPolygon((lon, lat), (SELECT * FROM 
 1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
 ```
 
-The data is also available for interactive queries in the [Playground](https://play.clickhouse.com/play?user=play), [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
+The data is also available for interactive queries in the [Playground](https://gh-api.clickhouse.tech/play?user=play), [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
 
 Although you cannot create temporary tables there.

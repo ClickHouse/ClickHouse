@@ -1,32 +1,32 @@
 #pragma once
 
-#include <Common/logger_useful.h>
-#include <Disks/DiskLocalCheckThread.h>
+#include <common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class DiskLocalReservation;
 
 class DiskLocal : public IDisk
 {
 public:
-    friend class DiskLocalCheckThread;
     friend class DiskLocalReservation;
 
-    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_);
-    DiskLocal(
-        const String & name_,
-        const String & path_,
-        UInt64 keep_free_space_bytes_,
-        ContextPtr context,
-        UInt64 local_disk_check_period_ms);
+    DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
+        : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_)
+    {
+        if (disk_path.back() != '/')
+            throw Exception("Disk path must end with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
+    }
 
     const String & getName() const override { return name; }
 
@@ -58,7 +58,7 @@ public:
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
-    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
+    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void createFile(const String & path) override;
 
@@ -68,21 +68,20 @@ public:
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
-    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
-
-    void listFiles(const String & path, std::vector<String> & file_names) const override;
+    void listFiles(const String & path, std::vector<String> & file_names) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode,
-        const WriteSettings & settings) override;
+        WriteMode mode) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
@@ -91,9 +90,7 @@ public:
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
-    Poco::Timestamp getLastModified(const String & path) const override;
-
-    time_t getLastChanged(const String & path) const override;
+    Poco::Timestamp getLastModified(const String & path) override;
 
     void setReadOnly(const String & path) override;
 
@@ -101,48 +98,17 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType getType() const override { return DiskType::Local; }
-    bool isRemote() const override { return false; }
-
-    bool supportZeroCopyReplication() const override { return false; }
+    DiskType::Type getType() const override { return DiskType::Type::Local; }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
-
-    bool isBroken() const override { return broken; }
-
-    void startup(ContextPtr) override;
-
-    void shutdown() override;
-
-    /// Check if the disk is OK to proceed read/write operations. Currently the check is
-    /// rudimentary. The more advanced choice would be using
-    /// https://github.com/smartmontools/smartmontools. However, it's good enough for now.
-    bool canRead() const noexcept;
-    bool canWrite() const noexcept;
-
-    bool supportsStat() const override { return true; }
-    struct stat stat(const String & path) const override;
-
-    bool supportsChmod() const override { return true; }
-    void chmod(const String & path, mode_t mode) override;
+private:
+    bool tryReserve(UInt64 bytes);
 
 private:
-    std::optional<UInt64> tryReserve(UInt64 bytes);
-
-    /// Setup disk for healthy check. Returns true if it's read-write, false if read-only.
-    /// Throw exception if it's not possible to setup necessary files and directories.
-    bool setup();
-
-    /// Read magic number from disk checker file. Return std::nullopt if exception happens.
-    std::optional<UInt32> readDiskCheckerMagicNumber() const noexcept;
-
     const String name;
     const String disk_path;
-    const String disk_checker_path = ".disk_checker_file";
-    std::atomic<UInt64> keep_free_space_bytes;
-    Poco::Logger * logger;
+    const UInt64 keep_free_space_bytes;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
@@ -150,15 +116,6 @@ private:
     static std::mutex reservation_mutex;
 
     Poco::Logger * log = &Poco::Logger::get("DiskLocal");
-
-    std::atomic<bool> broken{false};
-    std::atomic<bool> readonly{false};
-    std::unique_ptr<DiskLocalCheckThread> disk_checker;
-    /// A magic number to vaguely check if reading operation generates correct result.
-    /// -1 means there is no available disk_checker_file yet.
-    Int64 disk_checker_magic_number = -1;
-    bool disk_checker_can_check_read = true;
 };
-
 
 }

@@ -14,7 +14,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 
 #include <type_traits>
 
@@ -55,7 +55,6 @@ public:
     }
 
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -114,7 +113,7 @@ public:
             dispatchForColumns<ToRelativeWeekNumImpl>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "day" || unit == "dd" || unit == "d")
             dispatchForColumns<ToRelativeDayNumImpl>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "hour" || unit == "hh" || unit == "h")
+        else if (unit == "hour" || unit == "hh")
             dispatchForColumns<ToRelativeHourNumImpl>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "minute" || unit == "mi" || unit == "n")
             dispatchForColumns<ToRelativeMinuteNumImpl>(x, y, timezone_x, timezone_y, res->getData());
@@ -235,8 +234,8 @@ private:
     template <typename TransformX, typename TransformY, typename T1, typename T2>
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
-        return static_cast<Int64>(transform_y.execute(y, timezone_y))
-             - static_cast<Int64>(transform_x.execute(x, timezone_x));
+        return Int64(transform_y.execute(y, timezone_y))
+             - Int64(transform_x.execute(x, timezone_x));
     }
 
     template <typename T>
@@ -261,7 +260,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(DateDiff)
+void registerFunctionDateDiff(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDateDiff>(FunctionFactory::CaseInsensitive);
 }

@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -61,8 +61,6 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
         auto res_column = ColumnUInt8::create();
@@ -85,7 +83,7 @@ public:
                 auto second = RightConverter::convert(arguments[1].column->convertToFullColumnIfConst());
 
                 /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (size_t i = 0; i < input_rows_count; i++)
                 {
                     boost::geometry::correct(first[i]);
                     boost::geometry::correct(second[i]);
@@ -112,7 +110,7 @@ template <>
 const char * FunctionPolygonsWithin<SphericalPoint>::name = "polygonsWithinSpherical";
 
 
-REGISTER_FUNCTION(PolygonsWithin)
+void registerFunctionPolygonsWithin(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonsWithin<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonsWithin<SphericalPoint>>();

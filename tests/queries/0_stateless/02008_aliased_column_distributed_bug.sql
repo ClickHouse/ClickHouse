@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS click_storage;
 DROP TABLE IF EXISTS click_storage_dst;
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MutationCommands.h>
 #include <map>
@@ -12,7 +12,6 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
-class IBackupEntry;
 
 /// Mutation entry in /mutations path in zookeeper. This record contains information about blocks
 /// in patitions. We will mutatate all parts with left number less than this numbers.
@@ -49,8 +48,6 @@ struct ReplicatedMergeTreeMutationEntry
     int alter_version = -1;
 
     bool isAlterMutation() const { return alter_version != -1; }
-
-    std::shared_ptr<const IBackupEntry> backup() const;
 };
 
 using ReplicatedMergeTreeMutationEntryPtr = std::shared_ptr<const ReplicatedMergeTreeMutationEntry>;

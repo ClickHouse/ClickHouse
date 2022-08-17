@@ -4,34 +4,19 @@
 
 namespace DB
 {
-
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    DataPartStorageBuilderPtr data_part_storage_builder_,
     const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const NamesAndTypesList & columns_list,
-    bool reset_columns_)
+    const StorageMetadataPtr & metadata_snapshot_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage_builder(std::move(data_part_storage_builder_))
-    , reset_columns(reset_columns_)
+    , volume(data_part->volume)
+    , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
 {
-    if (reset_columns)
-    {
-        SerializationInfo::Settings info_settings =
-        {
-            .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
-            .choose_kind = false,
-        };
-
-        new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
-    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
-    SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
     const NameSet & empty_columns = data_part->expired_columns;
@@ -41,31 +26,30 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     if (empty_columns.empty() || isCompactPart(data_part))
         return {};
 
-    for (const auto & column : empty_columns)
-        LOG_TRACE(storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
-
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const auto & column : columns)
+    for (const NameAndTypePair & column : columns)
     {
-        data_part->getSerialization(column.name)->enumerateStreams(
+        auto serialization = data_part->getSerializationForColumn(column);
+        serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[ISerialization::getFileNameForStream(column.name, substream_path)];
-            });
+                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
+            },
+            {});
     }
 
     NameSet remove_files;
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
-        auto serialization = data_part->tryGetSerialization(column_name);
-        if (!serialization)
-            continue;
+        auto column_with_type = columns.tryGetByName(column_name);
+        if (!column_with_type)
+           continue;
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
+            String stream_name = ISerialization::getFileNameForStream(*column_with_type, substream_path);
             /// Delete files if they are no longer shared with another column.
             if (--stream_counts[stream_name] == 0)
             {
@@ -74,15 +58,18 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
+        auto serialization = data_part->getSerializationForColumn(*column_with_type);
         serialization->enumerateStreams(callback);
-        serialization_infos.erase(column_name);
     }
 
     /// Remove files on disk and checksums
     for (const String & removed_file : remove_files)
     {
-        if (checksums.files.contains(removed_file))
+        if (checksums.files.count(removed_file))
+        {
+            data_part->volume->getDisk()->removeFile(data_part->getFullRelativePath() + removed_file);
             checksums.files.erase(removed_file);
+        }
     }
 
     /// Remove columns from columns array

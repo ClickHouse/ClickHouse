@@ -51,9 +51,9 @@ struct NameLength
     static constexpr auto name = "length";
 };
 
-using FunctionLength = FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64, false>;
+using FunctionLength = FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64>;
 
-REGISTER_FUNCTION(Length)
+void registerFunctionLength(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLength>(FunctionFactory::CaseInsensitive);
 }

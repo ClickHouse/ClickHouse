@@ -11,7 +11,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <Common/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB
@@ -44,8 +44,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
@@ -186,7 +184,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
         while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
 
-        that->addBatchArray(0, input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
+        that->addBatchArray(input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -198,7 +196,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 }
 
 
-REGISTER_FUNCTION(ArrayReduce)
+void registerFunctionArrayReduce(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayReduce>();
 }

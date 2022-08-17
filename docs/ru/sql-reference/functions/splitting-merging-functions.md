@@ -1,6 +1,6 @@
 ---
-sidebar_position: 47
-sidebar_label: "Функции разбиения и слияния строк и массивов"
+toc_priority: 47
+toc_title: "Функции разбиения и слияния строк и массивов"
 ---
 
 # Функции разбиения и слияния строк и массивов {#funktsii-razbieniia-i-sliianiia-strok-i-massivov}
@@ -146,74 +146,10 @@ SELECT splitByRegexp('', 'abcde');
 └────────────────────────────┘
 ```
 
-## splitByWhitespace(s) {#splitbywhitespaceseparator-s}
-
-Разбивает строку на подстроки, используя в качестве разделителей пробельные символы.
-
-**Синтаксис**
-
-``` sql
-splitByWhitespace(s)
-```
-
-**Аргументы**
-
--   `s` — разбиваемая строка. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемые значения**
-
-Возвращает массив подстрок.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-**Пример**
-
-``` sql
-SELECT splitByWhitespace('  1!  a,  b.  ');
-```
-
-``` text
-┌─splitByWhitespace('  1!  a,  b.  ')─┐
-│ ['1!','a,','b.']                    │
-└─────────────────────────────────────┘
-```
-
-## splitByNonAlpha(s) {#splitbynonalphaseparator-s}
-
-Разбивает строку на подстроки, используя в качестве разделителей пробельные символы и символы пунктуации.
-
-**Синтаксис**
-
-``` sql
-splitByNonAlpha(s)
-```
-
-**Аргументы**
-
--   `s` — разбиваемая строка. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемые значения**
-
-Возвращает массив подстрок.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-**Пример**
-
-``` sql
-SELECT splitByNonAlpha('  1!  a,  b.  ');
-```
-
-``` text
-┌─splitByNonAlpha('  1!  a,  b.  ')─┐
-│ ['1','a','b']                     │
-└───────────────────────────────────┘
-```
-
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
-Склеивает строковые представления элементов массива с разделителем `separator`.
-`separator` - необязательный параметр, константная строка, по умолчанию равен пустой строке.
+Склеивает строки, перечисленные в массиве, с разделителем separator.
+separator - необязательный параметр, константная строка, по умолчанию равен пустой строке.
 Возвращается строка.
 
 ## alphaTokens(s) {#alphatokenss}
@@ -231,71 +167,4 @@ SELECT alphaTokens('abca1abc');
 ┌─alphaTokens('abca1abc')─┐
 │ ['abca','abc']          │
 └─────────────────────────┘
-```
-
-## ngrams {#ngrams}
-
-Выделяет из UTF-8 строки отрезки (n-граммы) размером `ngramsize` символов.
-
-**Синтаксис** 
-
-``` sql
-ngrams(string, ngramsize)
-```
-
-**Аргументы**
-
--   `string` — строка. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
--   `ngramsize` — размер n-грамм. [UInt](../../sql-reference/data-types/int-uint.md).
-
-**Возвращаемые значения**
-
--   Массив с n-граммами.
-
-Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT ngrams('ClickHouse', 3);
-```
-
-Результат:
-
-``` text
-┌─ngrams('ClickHouse', 3)───────────────────────────┐
-│ ['Cli','lic','ick','ckH','kHo','Hou','ous','use'] │
-└───────────────────────────────────────────────────┘
-```
-
-## tokens {#tokens}
-
-Разбивает строку на  токены, используя в качестве разделителей не буквенно-цифровые символы ASCII.
-
-**Аргументы**
-
--   `input_string` — набор байтов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемые значения**
-
-Возвращает массив токенов.
-
-Тип: [Array](../data-types/array.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
-```
-
-Результат:
-
-``` text
-┌─tokens────────────────────────────┐
-│ ['test1','test2','test3','test4'] │
-└───────────────────────────────────┘
 ```

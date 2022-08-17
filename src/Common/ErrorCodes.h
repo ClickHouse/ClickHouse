@@ -6,8 +6,7 @@
 #include <mutex>
 #include <string_view>
 #include <vector>
-#include <base/defines.h>
-#include <base/types.h>
+#include <common/types.h>
 
 /** Allows to count number of simultaneously happening error codes.
   * See also Exception.cpp for incrementing part.
@@ -26,12 +25,6 @@ namespace ErrorCodes
     /// Get name of error_code by identifier.
     /// Returns statically allocated string.
     std::string_view getName(ErrorCode error_code);
-    /// Get error code value by name.
-    ///
-    /// It has O(N) complexity, but this is not major, since it is used only
-    /// for test hints, and it does not worth to keep another structure for
-    /// this.
-    ErrorCode getErrorCodeByName(std::string_view error_name);
 
     struct Error
     {
@@ -58,7 +51,7 @@ namespace ErrorCodes
         void increment(bool remote, const std::string & message, const FramePointers & trace);
 
     private:
-        ErrorPair value TSA_GUARDED_BY(mutex);
+        ErrorPair value;
         std::mutex mutex;
     };
 

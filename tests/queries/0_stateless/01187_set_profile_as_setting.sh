@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
 
 unset CLICKHOUSE_LOG_COMMENT
 

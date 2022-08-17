@@ -5,7 +5,9 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 namespace DB
 {
@@ -59,6 +61,8 @@ public:
         FUNCTION,
     };
 
+    static const char * typeToString(ActionType type);
+
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
@@ -79,9 +83,6 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
-        /// It is deterministic (See IFunction::isDeterministic).
-        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
-        bool is_deterministic = true;
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
@@ -96,8 +97,8 @@ public:
 
 private:
     Nodes nodes;
+    NodeRawConstPtrs index;
     NodeRawConstPtrs inputs;
-    NodeRawConstPtrs outputs;
 
     bool project_input = false;
     bool projected_output = false;
@@ -111,12 +112,7 @@ public:
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
-    const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /** Output nodes can contain any column returned from DAG.
-      * You may manually change it if needed.
-      */
-    NodeRawConstPtrs & getOutputs() { return outputs; }
-
+    const NodeRawConstPtrs & getIndex() const { return index; }
     const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
@@ -138,26 +134,25 @@ public:
             NodeRawConstPtrs children,
             std::string result_name);
 
-    /// Find first column by name in output nodes. This search is linear.
-    const Node & findInOutputs(const std::string & name) const;
-
+    /// Index can contain any column returned from DAG.
+    /// You may manually change it if needed.
+    NodeRawConstPtrs & getIndex() { return index; }
+    /// Find first column by name in index. This search is linear.
+    const Node & findInIndex(const std::string & name) const;
     /// Same, but return nullptr if node not found.
-    const Node * tryFindInOutputs(const std::string & name) const;
-
-    /// Find first node with the same name in output nodes and replace it.
-    /// If was not found, add node to outputs end.
-    void addOrReplaceInOutputs(const Node & node);
+    const Node * tryFindInIndex(const std::string & name) const;
+    /// Find first node with the same name in index and replace it.
+    /// If was not found, add node to index end.
+    void addOrReplaceInIndex(const Node & node);
 
     /// Call addAlias several times.
     void addAliases(const NamesWithAliases & aliases);
-
-    /// Add alias actions and remove unused columns from outputs. Also specify result columns order in outputs.
+    /// Add alias actions and remove unused columns from index. Also specify result columns order in index.
     void project(const NamesWithAliases & projection);
 
-    /// If column is not in outputs, try to find it in nodes and insert back into outputs.
+    /// If column is not in index, try to find it in nodes and insert back into index.
     bool tryRestoreColumn(const std::string & column_name);
-
-    /// Find column in result. Remove it from outputs.
+    /// Find column in result. Remove it from index.
     /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
@@ -166,67 +161,29 @@ public:
     bool isInputProjected() const { return project_input; }
     bool isOutputProjected() const { return projected_output; }
 
-    /// Remove actions that are not needed to compute output nodes
-    void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
-
-    /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
-
-    /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
-    /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done
-    /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
-    /// (expressions). Consider the following example:
-    /// CREATE TABLE tbl (dt DateTime, val UInt64,
-    ///                   PROJECTION p_hour (SELECT SUM(val) GROUP BY toStartOfHour(dt)));
-    ///
-    /// Query: SELECT toStartOfHour(dt), SUM(val) FROM tbl GROUP BY toStartOfHour(dt);
-    ///
-    /// We will have an ActionsDAG like this:
-    /// FUNCTION: toStartOfHour(dt)       SUM(val)
-    ///                 ^                   ^
-    ///                 |                   |
-    /// INPUT:          dt                  val
-    ///
-    /// Now we traverse the DAG and see if any FUNCTION node can be replaced by projection's INPUT node.
-    /// The result DAG will be:
-    /// INPUT:  toStartOfHour(dt)       SUM(val)
-    ///
-    /// We don't need aggregate columns from projection because they are matched after DAG.
-    /// Currently we use canonical names of each node to find matches. It can be improved after we
-    /// have a full-featured name binding system.
-    ///
-    /// @param required_columns should contain columns which this DAG is required to produce after folding. It used for result actions.
-    /// @param projection_block_for_keys contains all key columns of given projection.
-    /// @param predicate_column_name means we need to produce the predicate column after folding.
-    /// @param add_missing_keys means whether to add additional missing columns to input nodes from projection key columns directly.
-    /// @return required columns for this folded DAG. It's expected to be fewer than the original ones if some projection is used.
     NameSet foldActionsByProjection(
         const NameSet & required_columns,
         const Block & projection_block_for_keys,
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
-
-    /// Reorder the output nodes using given position mapping.
     void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
-
-    /// Add aggregate columns to output nodes from projection
     void addAggregatesViaProjection(const Block & aggregates);
 
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
-    void assertDeterministic() const; /// Throw if not isDeterministic.
 
 #if USE_EMBEDDED_COMPILER
-    void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    void compileExpressions(size_t min_count_to_compile_expression);
 #endif
 
     ActionsDAGPtr clone() const;
 
     /// Execute actions for header. Input block must have empty columns.
-    /// Result should be equal to the execution of ExpressionActions built from this DAG.
+    /// Result should be equal to the execution of ExpressionActions build form this DAG.
     /// Actions are not changed, no expressions are compiled.
     ///
     /// In addition, check that result constants are constants according to DAG.
@@ -275,7 +232,7 @@ public:
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
     /// Execution of first then second parts on block is equivalent to execution of initial DAG.
-    /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal outputs.
+    /// First DAG and initial DAG have equal inputs, second DAG and initial DAG has equal index (outputs).
     /// Second DAG inputs may contain less inputs then first DAG (but also include other columns).
     SplitResult split(std::unordered_set<const Node *> split_nodes) const;
 
@@ -283,12 +240,8 @@ public:
     SplitResult splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
-    /// Outputs of initial actions must contain column_name.
+    /// Index of initial actions must contain column_name.
     SplitResult splitActionsForFilter(const std::string & column_name) const;
-
-    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
-    /// The second contains the rest.
-    SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
 
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
@@ -316,17 +269,13 @@ public:
 private:
     Node & addNode(Node node);
 
+    void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
+
 #if USE_EMBEDDED_COMPILER
-    void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    void compileFunctions(size_t min_count_to_compile_expression);
 #endif
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
-};
-
-/// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.
-struct ActionDAGNodes
-{
-    ActionsDAG::NodeRawConstPtrs nodes;
 };
 
 }

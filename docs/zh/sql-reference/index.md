@@ -1,7 +1,8 @@
 ---
-sidebar_label: SQL参考
+toc_folder_title: SQL参考
 toc_hidden: true
-sidebar_position: 28
+toc_priority: 28
+toc_title: hidden
 ---
 
 # SQL参考 {#sql-reference}
@@ -14,4 +15,4 @@ ClickHouse支持以下形式的查询:
 -   [ALTER](statements/alter.md#query_language_queries_alter)
 -   [其他类型的查询](statements/misc.md)
 
-[原始文档](https://clickhouse.com/docs/zh/sql-reference/) <!--hide-->
+[原始文档](https://clickhouse.tech/docs/zh/sql-reference/) <!--hide-->

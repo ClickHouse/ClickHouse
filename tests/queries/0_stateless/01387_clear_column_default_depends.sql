@@ -31,7 +31,6 @@ DROP TABLE test;
 
 -- The original report from Mikhail Petrov
 DROP TABLE IF EXISTS Test;
-set allow_deprecated_syntax_for_merge_tree=1;
 create table Test (impression_id String,impression_id_compressed FixedString(16) DEFAULT UUIDStringToNum(substring(impression_id, 1, 36)), impression_id_hashed UInt16 DEFAULT reinterpretAsUInt16(impression_id_compressed), event_date Date ) ENGINE = MergeTree(event_date, impression_id_hashed, (event_date, impression_id_hashed), 8192);
 alter table Test clear column impression_id in partition '202001';
 DROP TABLE Test;

@@ -1,8 +1,8 @@
 ---
-sidebar_position: 127
+toc_priority: 127
 ---
 
-# groupBitXor
+# groupBitXor {#groupbitxor}
 
 Applies bitwise `XOR` for series of numbers.
 

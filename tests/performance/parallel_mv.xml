@@ -3,39 +3,21 @@
         <parallel_view_processing>1</parallel_view_processing>
     </settings>
 
-    <create_query>create table main_table (number UInt64) engine = MergeTree order by tuple()</create_query>
-
-    <create_query>create table mt_1 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
-    <create_query>create table mt_2 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
-    <create_query>create table mt_3 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
-    <create_query>create table mt_4 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
-
-    <create_query>create materialized view mv_1 to mt_1 as
-        select number, toString(number) from main_table where number % 13 != 0</create_query>
-    <create_query>create materialized view mv_2 to mt_2 as
-        select number, toString(number) from main_table where number % 13 != 1</create_query>
-    <create_query>create materialized view mv_3 to mt_3 as
-        select number, toString(number) from main_table where number % 13 != 3</create_query>
-    <create_query>create materialized view mv_4 to mt_4 as
-        select number, toString(number) from main_table where number % 13 != 4</create_query>
-
-    <fill_query>SYSTEM STOP MERGES main_table</fill_query>
-    <fill_query>SYSTEM STOP MERGES mt_1</fill_query>
-    <fill_query>SYSTEM STOP MERGES mt_2</fill_query>
-    <fill_query>SYSTEM STOP MERGES mt_3</fill_query>
-    <fill_query>SYSTEM STOP MERGES mt_4</fill_query>
+    <create_query>create table main_table (number UInt64) engine = MergeTree order by tuple();</create_query>
+    <create_query>create materialized view mv_1 engine = MergeTree order by tuple() as
+        select number, toString(number) from main_table where number % 13 != 0;</create_query>
+    <create_query>create materialized view mv_2 engine = MergeTree order by tuple() as
+        select number, toString(number) from main_table where number % 13 != 1;</create_query>
+    <create_query>create materialized view mv_3 engine = MergeTree order by tuple() as
+        select number, toString(number) from main_table where number % 13 != 3;</create_query>
+    <create_query>create materialized view mv_4 engine = MergeTree order by tuple() as
+        select number, toString(number) from main_table where number % 13 != 4;</create_query>
 
     <query>insert into main_table select number from numbers(10000000)</query>
 
-    <drop_query>drop table if exists mv_1</drop_query>
-    <drop_query>drop table if exists mv_2</drop_query>
-    <drop_query>drop table if exists mv_3</drop_query>
-    <drop_query>drop table if exists mv_4</drop_query>
-
-    <drop_query>drop table if exists main_table</drop_query>
-
-    <drop_query>drop table if exists mt_1</drop_query>
-    <drop_query>drop table if exists mt_2</drop_query>
-    <drop_query>drop table if exists mt_3</drop_query>
-    <drop_query>drop table if exists mt_4</drop_query>
+    <drop_query>drop table if exists main_table;</drop_query>
+    <drop_query>drop table if exists mv_1;</drop_query>
+    <drop_query>drop table if exists mv_2;</drop_query>
+    <drop_query>drop table if exists mv_3;</drop_query>
+    <drop_query>drop table if exists mv_4;</drop_query>
 </test>

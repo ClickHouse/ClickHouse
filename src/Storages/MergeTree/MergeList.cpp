@@ -1,111 +1,59 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Common/CurrentMetrics.h>
+#include <common/getThreadId.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
-#include <base/getThreadId.h>
 
 
 namespace DB
 {
 
-
-MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MergeListEntry & merge_list_entry_)
-    : merge_list_entry(merge_list_entry_)
-{
-    // Each merge is executed into separate background processing pool thread
-    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
-    background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
-    background_thread_memory_tracker->setParent(&merge_list_entry->memory_tracker);
-
-    prev_untracked_memory_limit = current_thread->untracked_memory_limit;
-    current_thread->untracked_memory_limit = merge_list_entry->max_untracked_memory;
-
-    /// Avoid accounting memory from another mutation/merge
-    /// (NOTE: consider moving such code to ThreadFromGlobalPool and related places)
-    prev_untracked_memory = current_thread->untracked_memory;
-    current_thread->untracked_memory = merge_list_entry->untracked_memory;
-
-    prev_query_id = std::string(current_thread->getQueryId());
-    current_thread->setQueryId(merge_list_entry->query_id);
-}
-
-
-MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
-{
-    // Unplug memory_tracker from current background processing pool thread
-    background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
-
-    current_thread->untracked_memory_limit = prev_untracked_memory_limit;
-
-    merge_list_entry->untracked_memory = current_thread->untracked_memory;
-    current_thread->untracked_memory = prev_untracked_memory;
-
-    current_thread->setQueryId(prev_query_id);
-}
-
-MergeListElement::MergeListElement(
-    const StorageID & table_id_,
-    FutureMergedMutatedPartPtr future_part,
-    const Settings & settings)
+MergeListElement::MergeListElement(const StorageID & table_id_, const FutureMergedMutatedPart & future_part)
     : table_id{table_id_}
-    , partition_id{future_part->part_info.partition_id}
-    , result_part_name{future_part->name}
-    , result_part_path{future_part->path}
-    , result_part_info{future_part->part_info}
-    , num_parts{future_part->parts.size()}
-    , max_untracked_memory(settings.max_untracked_memory)
-    , query_id(table_id.getShortName() + "::" + result_part_name)
+    , partition_id{future_part.part_info.partition_id}
+    , result_part_name{future_part.name}
+    , result_part_path{future_part.path}
+    , result_part_info{future_part.part_info}
+    , num_parts{future_part.parts.size()}
     , thread_id{getThreadId()}
-    , merge_type{future_part->merge_type}
+    , merge_type{future_part.merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
-    , description{"to apply mutate/merge in " + query_id}
 {
-    for (const auto & source_part : future_part->parts)
+    for (const auto & source_part : future_part.parts)
     {
         source_part_names.emplace_back(source_part->name);
-        source_part_paths.emplace_back(source_part->data_part_storage->getFullPath());
+        source_part_paths.emplace_back(source_part->getFullPath());
 
         total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_marks += source_part->getMarksCount();
         total_rows_count += source_part->index_granularity.getTotalRows();
     }
 
-    if (!future_part->parts.empty())
+    if (!future_part.parts.empty())
     {
-        source_data_version = future_part->parts[0]->info.getDataVersion();
+        source_data_version = future_part.parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    memory_tracker.setDescription(description.c_str());
-    /// MemoryTracker settings should be set here, because
-    /// later (see MemoryTrackerThreadSwitcher)
-    /// parent memory tracker will be changed, and if merge executed from the
-    /// query (OPTIMIZE TABLE), all settings will be lost (since
-    /// current_thread::memory_tracker will have Thread level MemoryTracker,
-    /// which does not have any settings itself, it relies on the settings of the
-    /// thread_group::memory_tracker, but MemoryTrackerThreadSwitcher will reset parent).
-    memory_tracker.setProfilerStep(settings.memory_profiler_step);
-    memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
-    memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
-    if (settings.memory_tracker_fault_probability)
-        memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
-
-    /// Let's try to copy memory related settings from the query,
-    /// since settings that we have here is not from query, but global, from the table.
-    ///
-    /// NOTE: Remember, that Thread level MemoryTracker does not have any settings,
-    /// so it's parent is required.
-    MemoryTracker * query_memory_tracker = CurrentThread::getMemoryTracker();
-    MemoryTracker * parent_query_memory_tracker;
-    if (query_memory_tracker->level == VariableContext::Thread &&
-        (parent_query_memory_tracker = query_memory_tracker->getParent()) &&
-        parent_query_memory_tracker != &total_memory_tracker)
+    /// Each merge is executed into separate background processing pool thread
+    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
+    if (background_thread_memory_tracker)
     {
-        memory_tracker.setOrRaiseHardLimit(parent_query_memory_tracker->getHardLimit());
-    }
+        /// From the query context it will be ("for thread") memory tracker with VariableContext::Thread level,
+        /// which does not have any limits and sampling settings configured.
+        /// And parent for this memory tracker should be ("(for query)") with VariableContext::Process level,
+        /// that has limits and sampling configured.
+        MemoryTracker * parent;
+        if (background_thread_memory_tracker->level == VariableContext::Thread &&
+            (parent = background_thread_memory_tracker->getParent()) &&
+            parent != &total_memory_tracker)
+        {
+            background_thread_memory_tracker = parent;
+        }
 
+        background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
+        background_thread_memory_tracker->setParent(&memory_tracker);
+    }
 }
 
 MergeInfo MergeListElement::getInfo() const
@@ -142,7 +90,11 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
-MergeListElement::~MergeListElement() = default;
-
+MergeListElement::~MergeListElement()
+{
+    /// Unplug memory_tracker from current background processing pool thread
+    if (background_thread_memory_tracker)
+        background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+}
 
 }

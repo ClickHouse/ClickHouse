@@ -1,6 +1,5 @@
-<clickhouse>
+<yandex>
 	<remote_url_allow_hosts>
         <host>node1</host>
-        <host>node4</host>
     </remote_url_allow_hosts>
-</clickhouse>
+</yandex>

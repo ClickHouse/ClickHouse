@@ -1,11 +1,10 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <log_queries>1</log_queries>
             <!-- Just to test settings_pull -->
             <max_rows_in_distinct>5</max_rows_in_distinct>
-            <allow_deprecated_syntax_for_merge_tree>1</allow_deprecated_syntax_for_merge_tree>
         </default>
     </profiles>
 
@@ -32,4 +31,4 @@
         <default>
         </default>
     </quotas>
-</clickhouse>
+</yandex>

@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 SELECT 'executable_pool_simple';
 
 SELECT dictGet('executable_pool_simple', 'a', toUInt64(1));

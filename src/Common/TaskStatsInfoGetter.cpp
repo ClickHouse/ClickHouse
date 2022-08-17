@@ -1,18 +1,18 @@
 #include "TaskStatsInfoGetter.h"
 #include <Common/Exception.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <unistd.h>
 
 #if defined(OS_LINUX)
 
 #include "hasLinuxCapability.h"
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 
-#include <cerrno>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
@@ -21,7 +21,6 @@
 
 #if defined(__clang__)
     #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-    #pragma clang diagnostic ignored "-Wnested-anon-types"
 #endif
 
 /// Basic idea is motivated by "iotop" tool.
@@ -238,36 +237,27 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
     if (netlink_socket_fd < 0)
         throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-    try
+    /// On some containerized environments, operation on Netlink socket could hang forever.
+    /// We set reasonably small timeout to overcome this issue.
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 50000;
+
+    if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
+        throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+
+    union
     {
-        /// On some containerized environments, operation on Netlink socket could hang forever.
-        /// We set reasonably small timeout to overcome this issue.
+        ::sockaddr_nl addr{};
+        ::sockaddr sockaddr;
+    };
+    addr.nl_family = AF_NETLINK;
 
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 50000;
+    if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
+        throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-        if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
-            throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
-
-        union
-        {
-            ::sockaddr_nl addr{};
-            ::sockaddr sockaddr;
-        };
-        addr.nl_family = AF_NETLINK;
-
-        if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
-            throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
-
-        taskstats_family_id = getFamilyId(netlink_socket_fd);
-    }
-    catch (...)
-    {
-        if (netlink_socket_fd >= 0)
-            close(netlink_socket_fd);
-        throw;
-    }
+    taskstats_family_id = getFamilyId(netlink_socket_fd);
 }
 
 
@@ -275,24 +265,26 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid) const
 {
     NetlinkMessage answer = query(netlink_socket_fd, taskstats_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(tid));
 
-    const NetlinkMessage::Attribute * attr = &answer.payload.attribute;
-    if (attr->header.nla_type != TASKSTATS_TYPE_AGGR_PID)
-        throw Exception("Expected TASKSTATS_TYPE_AGGR_PID", ErrorCodes::NETLINK_ERROR);
+    for (const NetlinkMessage::Attribute * attr = &answer.payload.attribute;
+        attr < answer.end();
+        attr = attr->next())
+    {
+        if (attr->header.nla_type == TASKSTATS_TYPE_AGGR_TGID || attr->header.nla_type == TASKSTATS_TYPE_AGGR_PID)
+        {
+            for (const NetlinkMessage::Attribute * nested_attr = reinterpret_cast<const NetlinkMessage::Attribute *>(attr->payload);
+                nested_attr < attr->next();
+                nested_attr = nested_attr->next())
+            {
+                if (nested_attr->header.nla_type == TASKSTATS_TYPE_STATS)
+                {
+                    out_stats = unalignedLoad<::taskstats>(nested_attr->payload);
+                    return;
+                }
+            }
+        }
+    }
 
-    /// TASKSTATS_TYPE_AGGR_PID
-    const NetlinkMessage::Attribute * nested_attr = reinterpret_cast<const NetlinkMessage::Attribute *>(attr->payload);
-    if (nested_attr->header.nla_type != TASKSTATS_TYPE_PID)
-        throw Exception("Expected TASKSTATS_TYPE_PID", ErrorCodes::NETLINK_ERROR);
-    if (nested_attr == nested_attr->next())
-        throw Exception("No TASKSTATS_TYPE_STATS packet after TASKSTATS_TYPE_PID", ErrorCodes::NETLINK_ERROR);
-    nested_attr = nested_attr->next();
-    if (nested_attr->header.nla_type != TASKSTATS_TYPE_STATS)
-        throw Exception("Expected TASKSTATS_TYPE_STATS", ErrorCodes::NETLINK_ERROR);
-
-    out_stats = unalignedLoad<::taskstats>(nested_attr->payload);
-
-    if (attr->next() != answer.end())
-        throw Exception("Unexpected end of response", ErrorCodes::NETLINK_ERROR);
+    throw Exception("There is no TASKSTATS_TYPE_STATS attribute in the Netlink response", ErrorCodes::NETLINK_ERROR);
 }
 
 

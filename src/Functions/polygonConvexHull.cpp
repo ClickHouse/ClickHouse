@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -48,8 +48,6 @@ public:
         return false;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     size_t getNumberOfArguments() const override
     {
         return 1;
@@ -75,7 +73,7 @@ public:
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
-                for (size_t i = 0; i < input_rows_count; ++i)
+                for (size_t i = 0; i < input_rows_count; i++)
                 {
                     Polygon<Point> convex_hull{};
                     boost::geometry::convex_hull(geometries[i], convex_hull);
@@ -99,7 +97,7 @@ template <>
 const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
 
-REGISTER_FUNCTION(PolygonConvexHull)
+void registerFunctionPolygonConvexHull(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonConvexHull<CartesianPoint>>();
 }

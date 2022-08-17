@@ -1,11 +1,11 @@
 ---
-sidebar_position: 65
-sidebar_label: Caches
+toc_priority: 65
+toc_title: Caches
 ---
 
-# Cache Types
+# Cache Types {#cache-types}
 
-When performing queries, ClickHouse uses different caches.
+When performing queries, ClichHouse uses different caches.
 
 Main cache types:
 
@@ -26,4 +26,4 @@ Indirectly used:
 
 To drop cache, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md) statements.
 
-[Original article](https://clickhouse.com/docs/en/operations/caches/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/caches/) <!--hide-->

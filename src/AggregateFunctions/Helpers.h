@@ -3,6 +3,34 @@
 #include <DataTypes/IDataType.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#define FOR_BASIC_NUMERIC_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Float32) \
+    M(Float64)
+
+#define FOR_NUMERIC_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(UInt128) \
+    M(UInt256) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Int128) \
+    M(Int256) \
+    M(Float32) \
+    M(Float64)
+
 namespace DB
 {
 struct Settings;
@@ -27,7 +55,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 {
     WhichDataType which(argument_type);
 #define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<TYPE>>(std::forward<TArgs>(args)...); /// NOLINT
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<Data<TYPE>>(std::forward<TArgs>(args)...);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
     if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Data<Int8>>(std::forward<TArgs>(args)...);
@@ -66,7 +94,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 {
     WhichDataType which(argument_type);
 #define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...); /// NOLINT
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
     if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Int8, Data<Int8>>(std::forward<TArgs>(args)...);
@@ -93,7 +121,7 @@ static IAggregateFunction * createWithBasicNumberOrDateOrDateTime(const IDataTyp
     WhichDataType which(argument_type);
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...); /// NOLINT
+        return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...);
     FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 

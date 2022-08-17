@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database
-# Tag no-replicated-database: Fails due to additional replicas or shards
 
 set -e
 

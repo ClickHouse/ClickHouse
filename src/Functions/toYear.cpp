@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearImpl>;
 
-REGISTER_FUNCTION(ToYear)
+void registerFunctionToYear(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToYear>();
     /// MysQL compatibility alias.

@@ -1,18 +1,17 @@
 #pragma once
 
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include "domain.h"
 #include "tldLookup.h"
-#include <Common/TLDListsHolder.h> /// TLDType
 
 namespace DB
 {
 
 struct FirstSignificantSubdomainDefaultLookup
 {
-    bool operator()(StringRef host) const
+    bool operator()(const char *src, size_t len) const
     {
-        return tldLookup::isValid(host.data, host.size);
+        return tldLookup::isValid(src, len);
     }
 };
 
@@ -50,48 +49,46 @@ struct ExtractFirstSignificantSubdomain
         res_data = tmp;
         res_size = domain_length;
 
-        const auto * begin = tmp;
-        const auto * end = begin + domain_length;
-        std::array<const char *, 3> last_periods{};
+        auto begin = tmp;
+        auto end = begin + domain_length;
+        const char * last_3_periods[3]{};
 
-        const auto * pos = find_first_symbols<'.'>(begin, end);
+        auto pos = find_first_symbols<'.'>(begin, end);
         while (pos < end)
         {
-            last_periods[2] = last_periods[1];
-            last_periods[1] = last_periods[0];
-            last_periods[0] = pos;
+            last_3_periods[2] = last_3_periods[1];
+            last_3_periods[1] = last_3_periods[0];
+            last_3_periods[0] = pos;
             pos = find_first_symbols<'.'>(pos + 1, end);
         }
 
-        if (!last_periods[0])
+        if (!last_3_periods[0])
             return;
 
-        if (!last_periods[1])
+        if (!last_3_periods[1])
         {
-            res_size = last_periods[0] - begin;
+            res_size = last_3_periods[0] - begin;
             return;
         }
 
-        if (!last_periods[2])
-            last_periods[2] = begin - 1;
+        if (!last_3_periods[2])
+            last_3_periods[2] = begin - 1;
 
-        const auto * end_of_level_domain = find_first_symbols<'/'>(last_periods[0], end);
+        auto end_of_level_domain = find_first_symbols<'/'>(last_3_periods[0], end);
         if (!end_of_level_domain)
         {
             end_of_level_domain = end;
         }
 
-        size_t host_len = static_cast<size_t>(end_of_level_domain - last_periods[1] - 1);
-        StringRef host{last_periods[1] + 1, host_len};
-        if (lookup(host))
+        if (lookup(last_3_periods[1] + 1, end_of_level_domain - last_3_periods[1] - 1))
         {
-            res_data += last_periods[2] + 1 - begin;
-            res_size = last_periods[1] - last_periods[2] - 1;
+            res_data += last_3_periods[2] + 1 - begin;
+            res_size = last_3_periods[1] - last_3_periods[2] - 1;
         }
         else
         {
-            res_data += last_periods[1] + 1 - begin;
-            res_size = last_periods[0] - last_periods[1] - 1;
+            res_data += last_3_periods[1] + 1 - begin;
+            res_size = last_3_periods[0] - last_3_periods[1] - 1;
         }
     }
 
@@ -120,65 +117,42 @@ struct ExtractFirstSignificantSubdomain
         res_data = tmp;
         res_size = domain_length;
 
-        const auto * begin = tmp;
-        const auto * end = begin + domain_length;
-        std::array<const char *, 2> last_periods{};
-        last_periods[0] = begin - 1;
-        StringRef excluded_host{};
+        auto begin = tmp;
+        auto end = begin + domain_length;
+        const char * last_2_periods[2]{};
+        const char * prev = begin - 1;
 
-        const auto * pos = find_first_symbols<'.'>(begin, end);
+        auto pos = find_first_symbols<'.'>(begin, end);
         while (pos < end)
         {
-            size_t host_len = static_cast<size_t>(end - pos - 1);
-            StringRef host{pos + 1, host_len};
-            TLDType tld_type = lookup(host);
-            switch (tld_type)
+            if (lookup(pos + 1, end - pos - 1))
             {
-                case TLDType::TLD_NONE:
-                    break;
-                case TLDType::TLD_REGULAR:
-                    res_data += last_periods[0] + 1 - begin;
-                    res_size = end - 1 - last_periods[0];
-                    return;
-                case TLDType::TLD_ANY:
-                {
-                    StringRef regular_host{last_periods[0] + 1, static_cast<size_t>(end - 1 - last_periods[0])};
-                    if (last_periods[1] && excluded_host != regular_host)
-                    {
-                        /// Return TLD_REGULAR + 1
-                        res_data += last_periods[1] + 1 - begin;
-                        res_size = end - 1 - last_periods[1];
-                    }
-                    else
-                    {
-                        /// Same as TLD_REGULAR
-                        res_data += last_periods[0] + 1 - begin;
-                        res_size = end - 1 - last_periods[0];
-                    }
-                    return;
-                }
-                case TLDType::TLD_EXCLUDE:
-                    excluded_host = host;
-                    break;
+                res_data += prev + 1 - begin;
+                res_size = end - 1 - prev;
+                return;
             }
 
-            last_periods[1] = last_periods[0];
-            last_periods[0] = pos;
+            last_2_periods[1] = last_2_periods[0];
+            last_2_periods[0] = pos;
+            prev = pos;
             pos = find_first_symbols<'.'>(pos + 1, end);
         }
 
-        /// - if there is domain of the first level (i.e. no dots in the hostname) ->
-        ///   return nothing
-        if (last_periods[0] == begin - 1)
+        /// if there is domain of the first level (i.e. no dots in the hostname) -> return nothing
+        if (!last_2_periods[0])
             return;
 
-        /// - if there is domain of the second level ->
-        ///   always return itself
-        ///
-        /// - if there is domain of the 3+ level, and zero records in TLD list ->
-        ///   fallback to domain of the second level
-        res_data += last_periods[1] + 1 - begin;
-        res_size = last_periods[0] - last_periods[1] - 1;
+        /// if there is domain of the second level -> always return itself
+        if (!last_2_periods[1])
+        {
+            res_size = last_2_periods[0] - begin;
+            return;
+        }
+
+        /// if there is domain of the 3+ level, and zero records in TLD list ->
+        /// fallback to domain of the second level
+        res_data += last_2_periods[1] + 1 - begin;
+        res_size = last_2_periods[0] - last_2_periods[1] - 1;
     }
 };
 

@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToISOWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToISOWeekImpl>;
 
-REGISTER_FUNCTION(ToISOWeek)
+void registerFunctionToISOWeek(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToISOWeek>();
 }

@@ -1,6 +1,6 @@
 #include <map>
 #include <cstdlib>
-#include <cstdio>
+#include <stdio.h>
 #include <iostream>
 #include <string>
 
@@ -59,8 +59,8 @@ std::string randomDate()
     int32_t month = rng() % 12 + 1;
     int32_t day = rng() % 12 + 1;
     char answer[13];
-    size_t size = sprintf(answer, "'%04u-%02u-%02u'", year, month, day);
-    return std::string(answer, size);
+    sprintf(answer, "'%04u-%02u-%02u'", year, month, day);
+    return std::string(answer);
 }
 
 std::string randomDatetime()
@@ -72,7 +72,7 @@ std::string randomDatetime()
     int32_t minutes = rng() % 60;
     int32_t seconds = rng() % 60;
     char answer[22];
-    size_t size = sprintf(
+    sprintf(
             answer,
             "'%04u-%02u-%02u %02u:%02u:%02u'",
             year,
@@ -81,7 +81,7 @@ std::string randomDatetime()
             hours,
             minutes,
             seconds);
-    return std::string(answer, size);
+    return std::string(answer);
 }
 TableAndColumn get_table_a_column(const std::string & c)
 {
@@ -229,7 +229,7 @@ std::map<std::string, FuncRet> func_to_return_type = {
         {"torelativeweeknum", FuncRet(Type::i, "")}, {"torelativedaynum", FuncRet(Type::i, "")}, {"torelativehournum", FuncRet(Type::i, "")},
         {"torelativeminutenum", FuncRet(Type::i, "")}, {"torelativesecondsnum", FuncRet(Type::i, "")}, {"datediff", FuncRet(Type::d | Type::dt, "")},
         {"formatdatetime", FuncRet(Type::s, "")}, {"now", FuncRet(Type::dt | Type::d, "now()")}, {"today", FuncRet(Type::d | Type::dt, "today()")},
-        {"yesterday", FuncRet(Type::d | Type::dt, "yesterday()")}, {"tolastdayofmonth", FuncRet(Type::dt | Type::d, "")}
+        {"yesterday", FuncRet(Type::d | Type::dt, "yesterday()")}
 };
 
 std::set<std::string> func_args_same_types = {
@@ -249,11 +249,11 @@ std::map<std::string, ColumnType> func_to_param_type = {
         {"alphatokens", Type::s}, {"toyear", Type::d | Type::dt}, {"tomonth", Type::d | Type::dt}, {"todayofmonth", Type::d | Type::dt}, {"tohour", Type::dt},
         {"tominute", Type::dt}, {"tosecond", Type::dt}, {"touixtimestamp", Type::dt}, {"tostartofyear", Type::d | Type::dt},
         {"tostartofquarter", Type::d | Type::dt}, {"tostartofmonth", Type::d | Type::dt}, {"tomonday", Type::d | Type::dt},
-        {"tostartoffiveminutes", Type::dt}, {"tostartoftenminutes", Type::dt}, {"tostartoffifteenminutes", Type::d | Type::dt},
+        {"tostartoffiveminute", Type::dt}, {"tostartoftenminutes", Type::dt}, {"tostartoffifteenminutes", Type::d | Type::dt},
         {"tostartofinterval", Type::d | Type::dt}, {"totime", Type::d | Type::dt}, {"torelativehonthnum", Type::d | Type::dt},
         {"torelativeweeknum", Type::d | Type::dt}, {"torelativedaynum", Type::d | Type::dt}, {"torelativehournum", Type::d | Type::dt},
         {"torelativeminutenum", Type::d | Type::dt}, {"torelativesecondnum", Type::d | Type::dt}, {"datediff", Type::d | Type::dt},
-        {"formatdatetime", Type::dt}, {"tolastdayofmonth", Type::d | Type::dt}
+        {"formatdatetime", Type::dt}
 };
 
 
@@ -419,7 +419,7 @@ public:
 
     bool columnExists(const std::string & column_name) const
     {
-        return columns.contains(column_name); // || columns_maybe.contains(column_name);
+        return columns.count(column_name); // || columns_maybe.count(column_name);
     }
 
     void addColumn(const std::string & column_name)
@@ -440,7 +440,7 @@ public:
         for (const auto & column : columns)
         {
             std::cout << column << "\n";
-            if (column_description.contains(column))
+            if (column_description.count(column))
                 column_description[column].print();
             std::cout << "\n";
         }
@@ -519,7 +519,7 @@ public:
 
     bool tableExists(const std::string & table_name) const
     {
-        return tables.contains(table_name);
+        return tables.count(table_name);
     }
 
     void addColumn(std::string full_column)
@@ -528,12 +528,12 @@ public:
         std::tie(table, column) = get_table_a_column(full_column);
         if (!table.empty())
         {
-            if (tables.contains(table))
+            if (tables.count(table))
             {
                 tables[table].addColumn(column);
                 return;
             }
-            if (aliases.contains(table))
+            if (aliases.count(table))
             {
                 tables[aliases[table]].addColumn(column);
                 return;
@@ -545,7 +545,7 @@ public:
 
     void addTable(std::string table_name)
     {
-        if (tables.contains(table_name))
+        if (tables.count(table_name))
             return;
 
         tables[table_name] = Table(table_name);
@@ -556,7 +556,7 @@ public:
     void addDescription(const Column & description)
     {
         std::string table = description.name.first;
-        if (tables.contains(table))
+        if (tables.count(table))
             tables[table].setDescription(description);
     }
 
@@ -566,10 +566,10 @@ public:
         std::tie(table, column) = get_table_a_column(full_column);
         if (!table.empty())
         {
-            if (tables.contains(table))
+            if (tables.count(table))
                 return std::make_pair(table, column);
 
-            if (aliases.contains(table))
+            if (aliases.count(table))
             {
                 table = aliases.find(table)->second;
                 return std::make_pair(table, column);
@@ -632,7 +632,7 @@ FuncRet arrayJoinFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto c = Column(indent);
             c.type = Type::all;
             c.is_array = true;
-            if (columns.contains(indent))
+            if (columns.count(indent))
                 columns[indent].merge(c);
             else
                 columns[indent] = c;
@@ -693,7 +693,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             {
                 FuncHandler f;
                 auto arg_func_name = std::dynamic_pointer_cast<DB::ASTFunction>(arg)->name;
-                if (handlers.contains(arg_func_name))
+                if (handlers.count(arg_func_name))
                     f = handlers[arg_func_name];
                 else
                     f = handlers[""];
@@ -711,7 +711,7 @@ FuncRet inFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             c.type = type_value;
             c.values.insert(values.begin(), values.end());
             c.generateValues(1);
-            if (columns.contains(indent))
+            if (columns.count(indent))
                 columns[indent].merge(c);
             else
                 columns[indent] = c;
@@ -756,7 +756,7 @@ FuncRet arrayFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto c = Column(indent);
             c.type = type_value;
-            if (columns.contains(indent))
+            if (columns.count(indent))
                 columns[indent].merge(c);
             else
                 columns[indent] = c;
@@ -797,7 +797,7 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             {
                 FuncHandler f;
                 auto arg_func_name = std::dynamic_pointer_cast<DB::ASTFunction>(arg)->name;
-                if (handlers.contains(arg_func_name))
+                if (handlers.count(arg_func_name))
                     f = handlers[arg_func_name];
                 else
                     f = handlers[""];
@@ -814,7 +814,7 @@ FuncRet arithmeticFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         {
             auto c = Column(indent);
             c.type = type_value;
-            if (columns.contains(indent))
+            if (columns.count(indent))
                 columns[indent].merge(c);
             else
                 columns[indent] = c;
@@ -857,7 +857,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             {
                 std::string value = applyVisitor(DB::FieldVisitorToString(), literal->value);
                 std::string example{};
-                for (size_t i = 0; i != value.size(); ++i) /// NOLINT
+                for (size_t i = 0; i != value.size(); ++i)
                 {
                     if (value[i] == '%')
                         example += randomString(rng() % 10);
@@ -874,7 +874,7 @@ FuncRet likeFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto c = Column(indent);
             c.type = type_value;
             c.values.insert(values.begin(), values.end());
-            if (columns.contains(indent))
+            if (columns.count(indent))
                 columns[indent].merge(c);
             else
                 columns[indent] = c;
@@ -895,7 +895,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
         ColumnType type_value = Type::all;
         bool is_array = false;
         bool no_indent = true;
-        if (func_to_param_type.contains(boost::algorithm::to_lower_copy(x->name)))
+        if (func_to_param_type.count(boost::algorithm::to_lower_copy(x->name)))
         {
             type_value &= func_to_param_type[boost::algorithm::to_lower_copy(x->name)];
             is_array = func_to_param_type[boost::algorithm::to_lower_copy(x->name)] & Type::a;
@@ -922,7 +922,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             {
                 FuncHandler f;
                 auto arg_func_name = std::dynamic_pointer_cast<DB::ASTFunction>(arg)->name;
-                if (handlers.contains(arg_func_name))
+                if (handlers.count(arg_func_name))
                     f = handlers[arg_func_name];
                 else
                     f = handlers[""];
@@ -969,7 +969,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
                     }
                 }
             }
-            if (func_args_same_types.contains(boost::algorithm::to_lower_copy(x->name)))
+            if (func_args_same_types.count(boost::algorithm::to_lower_copy(x->name)))
                 type_value &= type;
         }
         for (const auto & indent : indents)
@@ -977,19 +977,19 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             auto c = Column(indent);
             c.type = type_value;
             c.is_array = is_array;
-            if (func_args_same_types.contains(
+            if (func_args_same_types.count(
                     boost::algorithm::to_lower_copy(x->name)))
                 c.values = values;
             for (const auto & ind : indents)
                 if (ind != indent)
                     c.equals.insert(std::make_pair("", ind));
 
-            if (columns.contains(indent))
+            if (columns.count(indent))
                 columns[indent].merge(c);
             else
                 columns[indent] = c;
         }
-        if (func_to_return_type.contains(boost::algorithm::to_lower_copy(x->name)))
+        if (func_to_return_type.count(boost::algorithm::to_lower_copy(x->name)))
         {
             if (no_indent)
             {
@@ -1001,7 +1001,7 @@ FuncRet simpleFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
             }
             return func_to_return_type[boost::algorithm::to_lower_copy(x->name)];
         }
-        else if (func_to_param_type.contains(
+        else if (func_to_param_type.count(
             boost::algorithm::to_lower_copy(x->name)))
         {
             if (no_indent)
@@ -1027,7 +1027,7 @@ void processFunc(DB::ASTPtr ch, std::map<std::string, Column> & columns)
     {
         FuncHandler f;
         auto arg_func_name = x->name;
-        if (handlers.contains(arg_func_name))
+        if (handlers.count(arg_func_name))
             f = handlers[arg_func_name];
         else
             f = handlers[""];
@@ -1084,7 +1084,7 @@ connectedEqualityFind(
 {
     std::set<TableAndColumn> result;
     for (const auto & column : now.equals)
-        if (!visited.contains(column))
+        if (!visited.count(column))
         {
             visited.insert(column);
             auto sub_r = connectedEqualityFind(
@@ -1124,7 +1124,7 @@ unificateColumns(
     }
     std::set<TableAndColumn> visited;
     for (auto & column : result)
-        if (!visited.contains(column.second.name))
+        if (!visited.count(column.second.name))
         {
             auto equal = connectedEqualityFind(
                 result[column.second.name.first + "." + column.second.name.second],
@@ -1242,9 +1242,9 @@ void parseSelectQuery(DB::ASTPtr ast, TableList & all_tables)
     processFunc(ast, columns_descriptions);
 
     for (const auto & column : columns)
-        if (!column_aliases.contains(column))
+        if (!column_aliases.count(column))
         {
-            if (!columns_descriptions.contains(column))
+            if (!columns_descriptions.count(column))
                 columns_descriptions[column] = Column(column);
             all_tables.addColumn(column);
         }

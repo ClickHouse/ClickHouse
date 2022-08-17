@@ -1,5 +1,7 @@
 #pragma once
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_BASE64
 #    include <Columns/ColumnConst.h>
@@ -74,8 +76,6 @@ public:
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     bool useDefaultImplementationForConstants() const override
     {
         return true;
@@ -85,7 +85,7 @@ public:
     {
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of 1st argument of function " + getName() + ". Must be String.",
+                "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -98,7 +98,7 @@ public:
 
         if (!input)
             throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName() + ", must be of type String",
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
         auto dst_column = ColumnString::create();
@@ -124,26 +124,13 @@ public:
 
             if constexpr (std::is_same_v<Func, Base64Encode>)
             {
-                /*
-                 * Some bug in sse arm64 implementation?
-                 * `base64Encode(repeat('a', 46))` returns wrong padding character
-                 */
-#if defined(__aarch64__)
-                    outlen = tb64senc(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
-#else
-                    outlen = _tb64e(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
-#endif
+                outlen = _tb64e(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
             }
             else if constexpr (std::is_same_v<Func, Base64Decode>)
             {
                 if (srclen > 0)
                 {
-#if defined(__aarch64__)
-                   outlen = tb64sdec(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
-#else
-                   outlen = _tb64d(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
-#endif
-
+                    outlen = _tb64d(reinterpret_cast<const uint8_t *>(source), srclen, reinterpret_cast<uint8_t *>(dst_pos));
                     if (!outlen)
                         throw Exception("Failed to " + getName() + " input '" + String(reinterpret_cast<const char *>(source), srclen) + "'", ErrorCodes::INCORRECT_DATA);
                 }

@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_DATASKETCHES
 
 #include <boost/noncopyable.hpp>
 #include <memory>
-#include <base/StringRef.h>
-#include <theta_sketch.hpp>
-#include <theta_union.hpp>
+#include <theta_sketch.hpp> // Y_IGNORE
+#include <theta_union.hpp> // Y_IGNORE
 
 
 namespace DB
@@ -43,7 +44,7 @@ public:
     ~ThetaSketchData() = default;
 
     /// Insert original value without hash, as `datasketches::update_theta_sketch.update` will do the hash internal.
-    void insertOriginal(StringRef value)
+    void insertOriginal(const StringRef & value)
     {
         getSkUpdate()->update(value.data, value.size);
     }

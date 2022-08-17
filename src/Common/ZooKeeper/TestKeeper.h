@@ -71,7 +71,6 @@ public:
 
     void list(
             const String & path,
-            ListRequestType list_request_type,
             ListCallback callback,
             WatchCallback watch) override;
 
@@ -80,20 +79,11 @@ public:
             int32_t version,
             CheckCallback callback) override;
 
-    void sync(
-            const String & path,
-            SyncCallback callback) override;
-
     void multi(
             const Requests & requests,
             MultiCallback callback) override;
 
-    void finalize(const String & reason) override;
-
-    DB::KeeperApiVersion getApiVersion() override
-    {
-        return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
-    }
+    void finalize() override;
 
     struct Node
     {

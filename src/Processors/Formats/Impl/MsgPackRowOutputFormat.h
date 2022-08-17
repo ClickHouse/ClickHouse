@@ -1,7 +1,9 @@
 #pragma once
 
-#include "config_formats.h"
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#    include "config_core.h"
+#endif
 
 #if USE_MSGPACK
 
@@ -15,20 +17,19 @@
 namespace DB
 {
 
-class MsgPackRowOutputFormat final : public IRowOutputFormat
+class MsgPackRowOutputFormat : public IRowOutputFormat
 {
 public:
-    MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
+    MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_);
 
     String getName() const override { return "MsgPackRowOutputFormat"; }
 
-private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
     void serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num);
 
+private:
     msgpack::packer<DB::WriteBuffer> packer;
-    const FormatSettings format_settings;
 };
 
 }

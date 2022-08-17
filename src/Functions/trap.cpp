@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
 #include <thread>
 #include <memory>
@@ -52,8 +52,6 @@ public:
     {
         return 1;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -177,11 +175,19 @@ public:
 };
 
 
-REGISTER_FUNCTION(Trap)
+void registerFunctionTrap(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTrap>();
 }
 
+}
+
+#else
+
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionTrap(FunctionFactory &) {}
 }
 
 #endif

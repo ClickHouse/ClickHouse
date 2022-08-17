@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <memory>
 #include <string>
@@ -43,7 +43,7 @@ public:
         /// These methods could be overridden for the need of the unit test.
         virtual bool hasAtLeastTwoShards(const IStorage & table) const;
         virtual std::pair<std::string, std::string> getRemoteDatabaseAndTableName(const IStorage & table) const;
-        virtual ~CheckShardsAndTables() = default;
+        virtual ~CheckShardsAndTables() {}
     };
 
     InJoinSubqueriesPreprocessor(

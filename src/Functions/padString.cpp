@@ -5,7 +5,7 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 
 namespace DB
 {
@@ -89,9 +89,6 @@ namespace
             }
 
             /// Not necessary, but good for performance.
-            /// We repeat `pad_string` multiple times until it's length becomes 16 or more.
-            /// It speeds up the function appendTo() because it allows to copy padding characters by portions of at least
-            /// 16 bytes instead of single bytes.
             while (numCharsInPadString() < 16)
             {
                 pad_string += pad_string;
@@ -107,12 +104,6 @@ namespace
         }
 
         String pad_string;
-
-        /// Offsets of code points in `pad_string`:
-        /// utf8_offsets[0] is the offset of the first code point in `pad_string`, it's always 0;
-        /// utf8_offsets[1] is the offset of the second code point in `pad_string`;
-        /// utf8_offsets[2] is the offset of the third code point in `pad_string`;
-        /// ...
         std::vector<size_t> utf8_offsets;
     };
 
@@ -151,8 +142,6 @@ namespace
 
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
-
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
         bool useDefaultImplementationForConstants() const override { return false; }
 
@@ -254,32 +243,30 @@ namespace
             const PaddingChars<is_utf8> & padding_chars,
             StringSink & res_sink) const
         {
-            bool is_const_new_length = lengths.isConst();
-            size_t new_length = 0;
+            bool is_const_length = lengths.isConst();
+            bool need_check_length = true;
 
-            /// Insert padding characters to each string from `strings`, write the result strings into `res_sink`.
-            /// If for some input string its current length is greater than the specified new length then that string
-            /// will be trimmed to the specified new length instead of padding.
             for (; !res_sink.isEnd(); res_sink.next(), strings.next(), lengths.next())
             {
                 auto str = strings.getWhole();
                 size_t current_length = getLengthOfSlice<is_utf8>(str);
 
-                if (!res_sink.rowNum() || !is_const_new_length)
+                auto new_length_slice = lengths.getWhole();
+                size_t new_length = new_length_slice.elements->getUInt(new_length_slice.position);
+
+                if (need_check_length)
                 {
-                    /// If `is_const_new_length` is true we can get and check the new length only once.
-                    auto new_length_slice = lengths.getWhole();
-                    new_length = new_length_slice.elements->getUInt(new_length_slice.position);
                     if (new_length > MAX_NEW_LENGTH)
                     {
                         throw Exception(
                             "New padded length (" + std::to_string(new_length) + ") is too big, maximum is: " + std::to_string(MAX_NEW_LENGTH),
                             ErrorCodes::TOO_LARGE_STRING_SIZE);
                     }
-                    if (is_const_new_length)
+                    if (is_const_length)
                     {
                         size_t rows_count = res_sink.offsets.size();
                         res_sink.reserve((new_length + 1 /* zero terminator */) * rows_count);
+                        need_check_length = false;
                     }
                 }
 
@@ -307,7 +294,7 @@ namespace
     };
 }
 
-REGISTER_FUNCTION(PadString)
+void registerFunctionPadString(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPadString<false, false>>(); /// leftPad
     factory.registerFunction<FunctionPadString<false, true>>();  /// leftPadUTF8

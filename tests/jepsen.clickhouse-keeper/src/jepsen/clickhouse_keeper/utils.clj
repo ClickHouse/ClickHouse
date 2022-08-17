@@ -88,13 +88,9 @@
         new-set (conj current-set elem)]
     (zk-set conn path (pr-str new-set) (:version (:stat current-value)))))
 
-(defn zk-create
-  [conn path data]
-  (zk/create conn path :data (data/to-bytes (str data)) :persistent? true))
-
 (defn zk-create-if-not-exists
   [conn path data]
-  (if-not (zk/exists conn path) (zk-create conn path data)))
+  (zk/create conn path :data (data/to-bytes (str data)) :persistent? true))
 
 (defn zk-create-sequential
   [conn path-prefix data]
@@ -123,10 +119,6 @@
       (subs path 0 rslash_pos)
       "/")))
 
-(defn concat-path
-  [parent child]
-  (str parent (if (= parent "/") "" "/") child))
-
 (defn zk-multi-delete-first-child
   [conn path]
   (let [{children :children stat :stat} (zk-list-with-stat conn path)
@@ -136,7 +128,7 @@
       (try
         (do (.check txn path (:version stat))
             (.setData txn path (data/to-bytes "") -1) ; I'm just checking multitransactions
-            (.delete txn (concat-path path first-child) -1)
+            (.delete txn (str path first-child) -1)
             (.commit txn)
             first-child)
         (catch KeeperException$BadVersionException _ nil)
@@ -183,8 +175,7 @@
     :--logger.log (str logs-dir "/clickhouse-keeper.log")
     :--logger.errorlog (str logs-dir "/clickhouse-keeper.err.log")
     :--keeper_server.snapshot_storage_path coordination-snapshots-dir
-    :--keeper_server.log_storage_path coordination-logs-dir
-    :--path coordination-data-dir)
+    :--keeper_server.log_storage_path coordination-logs-dir)
    (wait-clickhouse-alive! node test)))
 
 (defn md5 [^String s]

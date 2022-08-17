@@ -1,7 +1,7 @@
 #include <Functions/JSONPath/ASTs/ASTJSONPathMemberAccess.h>
 #include <Functions/JSONPath/Parsers/ParserJSONPathMemberAccess.h>
 
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/Lexer.h>
 

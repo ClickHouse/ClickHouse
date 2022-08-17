@@ -26,7 +26,7 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
-#include <base/getPageSize.h>
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -156,7 +156,7 @@ public:
                     throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
 
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
-                invalidate_cache = false;
+                InvalidateCache = false;
             }
 #    endif
             int res = mprotect(block.base(), block.blockSize(), protection_flags);
@@ -243,6 +243,28 @@ private:
         allocated_size += allocate_size;
     }
 };
+
+// class AssemblyPrinter
+// {
+// public:
+
+//     explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
+//     : target_machine(target_machine_)
+//     {
+//     }
+
+//     void print(llvm::Module & module)
+//     {
+//         llvm::legacy::PassManager pass_manager;
+//         target_machine.Options.MCOptions.AsmVerbose = true;
+//         if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+//             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
+
+//         pass_manager.run(module);
+//     }
+// private:
+//     llvm::TargetMachine & target_machine;
+// };
 
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.

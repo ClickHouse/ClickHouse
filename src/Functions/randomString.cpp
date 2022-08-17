@@ -7,7 +7,7 @@
 #include <Functions/PerformanceAdaptors.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 
 
 namespace DB
@@ -32,8 +32,6 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -126,7 +124,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(RandomString)
+void registerFunctionRandomString(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRandomString>();
 }

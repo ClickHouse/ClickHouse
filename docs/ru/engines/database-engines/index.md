@@ -1,6 +1,7 @@
 ---
-sidebar_position: 27
-sidebar_label: "Движки баз данных"
+toc_folder_title: "Движки баз данных"
+toc_priority: 27
+toc_title: "Введение"
 ---
 
 # Движки баз данных {#database-engines}
@@ -13,11 +14,9 @@ sidebar_label: "Движки баз данных"
 
 -   [MySQL](../../engines/database-engines/mysql.md)
 
--   [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
+-   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
 
 -   [PostgreSQL](../../engines/database-engines/postgresql.md)
-
--   [Replicated](../../engines/database-engines/replicated.md)
 

@@ -2,7 +2,6 @@
 
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Common/config.h>
 #include <Poco/Logger.h>
 
 #if USE_ODBC

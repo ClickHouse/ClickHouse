@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
-#include <Common/DateLUT.h>
+#include <common/DateLUT.h>
 
 
 namespace DB
@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-std::string extractTimeZoneNameFromColumn(const IColumn & column)
+static std::string extractTimeZoneNameFromColumn(const IColumn & column)
 {
     const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(&column);
 

@@ -1,19 +1,16 @@
 #!/usr/bin/expect -f
 
-set basedir [file dirname $argv0]
-set basename [file tail $argv0]
-exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
-
 log_user 0
 set timeout 60
 match_max 100000
+# A default timeout action is to do nothing, change it to fail
 expect_after {
-    # Do not ignore eof from expect
-    eof { exp_continue }
-    # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    timeout {
+        exit 1
+    }
 }
 
+set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
 expect ":) "
 
@@ -22,12 +19,6 @@ expect "│ 1 │"
 expect ":) "
 
 send -- "SELECT 1\\G\r"
-expect "Row 1:"
-expect "1: 1"
-expect ":) "
-
-
-send -- "SELECT 1\\G;\r"
 expect "Row 1:"
 expect "1: 1"
 expect ":) "
@@ -41,15 +32,6 @@ expect ":) "
 send -- "SELECT 1\\\r"
 expect ":-] "
 send -- ", 2\\G\r"
-expect "Row 1:"
-expect "1: 1"
-expect "2: 2"
-expect ":) "
-
-
-send -- "SELECT 1\\\r"
-expect ":-] "
-send -- ", 2\\G;\r"
 expect "Row 1:"
 expect "1: 1"
 expect "2: 2"

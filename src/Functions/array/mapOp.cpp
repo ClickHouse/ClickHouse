@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <base/arithmeticOverflow.h>
+#include <common/arithmeticOverflow.h>
 #include "Columns/ColumnMap.h"
 #include "DataTypes/DataTypeMap.h"
 
@@ -56,7 +56,6 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     void checkTypes(
         DataTypePtr & key_type, DataTypePtr & promoted_val_type, const DataTypePtr & check_key_type, DataTypePtr & check_val_type) const
@@ -204,7 +203,7 @@ private:
 
         std::map<KeyType, ValType> summing_map;
 
-        for (size_t i = 0; i < row_count; ++i)
+        for (size_t i = 0; i < row_count; i++)
         {
             [[maybe_unused]] bool first = true;
             for (auto & arg : args)
@@ -222,19 +221,21 @@ private:
                 }
 
                 Field temp_val;
-                for (size_t j = 0; j < len; ++j)
+                for (size_t j = 0; j < len; j++)
                 {
                     KeyType key;
-                    if constexpr (std::is_same_v<KeyType, String>)
+                    if constexpr (std::is_same<KeyType, String>::value)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
                             key = col_fixed->getDataAt(offset + j).toString();
                         else if (const auto * col_str = checkAndGetColumn<ColumnString>(arg.key_column.get()))
                             key = col_str->getDataAt(offset + j).toString();
-                        else // should not happen
-                            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Expected String or FixedString, got {} in {}",
-                                arg.key_column->getDataType(), getName());
+                        else
+                            // should not happen
+                            throw Exception(
+                                "Expected String or FixedString, got " + std::string(getTypeName(arg.key_column->getDataType()))
+                                    + " in " + getName(),
+                                ErrorCodes::LOGICAL_ERROR);
                     }
                     else
                     {
@@ -448,7 +449,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(MapOp)
+void registerFunctionMapOp(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMapOp<OpTypes::ADD>>();
     factory.registerFunction<FunctionMapOp<OpTypes::SUBTRACT>>();

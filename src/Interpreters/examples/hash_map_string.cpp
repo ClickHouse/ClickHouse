@@ -12,11 +12,11 @@
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -30,14 +30,11 @@ struct CompactStringRef
     union
     {
         const char * data_mixed = nullptr;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wnested-anon-types"
         struct
         {
             char dummy[6];
             UInt16 size;
         };
-#pragma clang diagnostic pop
     };
 
     CompactStringRef(const char * data_, size_t size_)

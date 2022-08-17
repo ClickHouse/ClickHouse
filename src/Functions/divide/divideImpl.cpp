@@ -1,6 +1,14 @@
 /// This translation unit should be compiled multiple times
 /// with different values of NAMESPACE and machine flags (sse2, avx2).
 
+#if !defined(NAMESPACE)
+    #if defined(ARCADIA_BUILD)
+        #define NAMESPACE Generic
+    #else
+        #error "NAMESPACE macro must be defined"
+    #endif
+#endif
+
 #if defined(__AVX2__)
     #define REG_SIZE 32
     #define LIBDIVIDE_AVX2

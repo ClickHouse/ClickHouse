@@ -1,16 +1,18 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBase64Conversion.h>
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_BASE64
 #    include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
-REGISTER_FUNCTION(Base64Encode)
+void registerFunctionBase64Encode(FunctionFactory & factory)
 {
-    tb64ini(0, 0);
+    tb64ini(0, 1);
     factory.registerFunction<FunctionBase64Conversion<Base64Encode>>();
 
     /// MysQL compatibility alias.

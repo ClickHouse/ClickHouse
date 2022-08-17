@@ -17,7 +17,7 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    explicit DataTypeArray(const DataTypePtr & nested_);
+    DataTypeArray(const DataTypePtr & nested_);
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 
@@ -54,12 +54,23 @@ public:
         return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
 
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
+    SerializationPtr getSubcolumnSerialization(
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
+
     SerializationPtr doGetDefaultSerialization() const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
     /// 1 for plain array, 2 for array of arrays and so on.
     size_t getNumberOfDimensions() const;
+
+private:
+    ColumnPtr getSubcolumnImpl(const String & subcolumn_name, const IColumn & column, size_t level) const;
+    DataTypePtr tryGetSubcolumnTypeImpl(const String & subcolumn_name, size_t level) const;
+    SerializationPtr getSubcolumnSerializationImpl(
+        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter, size_t level) const;
 };
 
 }

@@ -1,18 +1,16 @@
 #include <Storages/System/StorageSystemSettingsProfiles.h>
-#include <Access/AccessControl.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/SettingsProfile.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Access/AccessControlManager.h>
+#include <Access/SettingsProfile.h>
+#include <Access/AccessFlags.h>
 
 
 namespace DB
@@ -34,11 +32,8 @@ NamesAndTypesList StorageSystemSettingsProfiles::getNamesAndTypes()
 
 void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
-    const auto & access_control = context->getAccessControl();
-    if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
-        context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
-
+    context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<SettingsProfile>();
 
     size_t column_index = 0;
@@ -87,20 +82,6 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, Conte
 
         add_row(profile->getName(), id, storage->getStorageName(), profile->elements, profile->to_roles);
     }
-}
-
-void StorageSystemSettingsProfiles::backupData(
-    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
-{
-    const auto & access_control = backup_entries_collector.getContext()->getAccessControl();
-    access_control.backup(backup_entries_collector, data_path_in_backup, AccessEntityType::SETTINGS_PROFILE);
-}
-
-void StorageSystemSettingsProfiles::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
-{
-    auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
 }
 
 }

@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <allow_introspection_functions>1</allow_introspection_functions>
@@ -18,19 +18,12 @@
             <!-- One NUMA node w/o hyperthreading -->
             <max_threads>12</max_threads>
 
-            <!-- disable JIT for perf tests -->
+            <!-- mmap shows some improvements in perf tests -->
+            <min_bytes_to_use_mmap_io>64Mi</min_bytes_to_use_mmap_io>
+
+            <!-- disable jit for perf tests -->
             <compile_expressions>0</compile_expressions>
             <compile_aggregate_expressions>0</compile_aggregate_expressions>
-
-            <!-- Don't fail some prewarm queries too early -->
-            <timeout_before_checking_execution_speed>60</timeout_before_checking_execution_speed>
-
-            <!-- Query profiler enabled only for prewarm queries explicitly (see perf.py)
-                 This is needed for flamegraphs.  -->
-            <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
-            <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
-            <!-- Disable memory profiler too, since due to max_untracked_memory some queries may add trace entry and some may not -->
-            <memory_profiler_step>0</memory_profiler_step>
         </default>
     </profiles>
     <users>
@@ -38,4 +31,4 @@
             <access_management>1</access_management>
         </default>
     </users>
-</clickhouse>
+</yandex>

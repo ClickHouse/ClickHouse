@@ -19,7 +19,7 @@ class IColumn;
 class IDataTypeCustomName
 {
 public:
-    virtual ~IDataTypeCustomName() = default;
+    virtual ~IDataTypeCustomName() {}
 
     virtual String getName() const = 0;
 };
@@ -33,7 +33,7 @@ struct DataTypeCustomDesc
     DataTypeCustomNamePtr name;
     SerializationPtr serialization;
 
-    explicit DataTypeCustomDesc(
+    DataTypeCustomDesc(
         DataTypeCustomNamePtr name_,
         SerializationPtr serialization_ = nullptr)
     : name(std::move(name_))
@@ -49,7 +49,7 @@ class DataTypeCustomFixedName : public IDataTypeCustomName
 private:
     String name;
 public:
-    explicit DataTypeCustomFixedName(String name_) : name(name_) {}
+    DataTypeCustomFixedName(String name_) : name(name_) {}
     String getName() const override { return name; }
 };
 

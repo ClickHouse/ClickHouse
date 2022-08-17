@@ -22,7 +22,6 @@ struct BitBoolMaskAndImpl
 {
     using ResultType = UInt8;
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply([[maybe_unused]] A left, [[maybe_unused]] B right)
@@ -47,7 +46,7 @@ using FunctionBitBoolMaskAnd = BinaryArithmeticOverloadResolver<BitBoolMaskAndIm
 
 }
 
-REGISTER_FUNCTION(BitBoolMaskAnd)
+void registerFunctionBitBoolMaskAnd(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitBoolMaskAnd>();
 }

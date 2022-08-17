@@ -10,7 +10,7 @@ template <typename JSONParser>
 class VisitorJSONPathStar : public IVisitor<JSONParser>
 {
 public:
-    explicit VisitorJSONPathStar(ASTPtr)
+    VisitorJSONPathStar(ASTPtr)
     {
         current_index = 0;
     }
@@ -19,6 +19,7 @@ public:
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {
+        typename JSONParser::Element result;
         typename JSONParser::Array array = element.getArray();
         element = array[current_index];
         return VisitorStatus::Ok;

@@ -13,11 +13,14 @@ struct NameMultiMatchAnyIndex
     static constexpr auto name = "multiMatchAnyIndex";
 };
 
-using FunctionMultiMatchAnyIndex = FunctionsMultiStringSearch<MultiMatchAnyImpl<NameMultiMatchAnyIndex, /*ResultType*/ UInt64, MultiMatchTraits::Find::AnyIndex, /*WithEditDistance*/ false>>;
+using FunctionMultiMatchAnyIndex = FunctionsMultiStringSearch<
+    MultiMatchAnyImpl<UInt64, false, true, false>,
+    NameMultiMatchAnyIndex,
+    std::numeric_limits<UInt32>::max()>;
 
 }
 
-REGISTER_FUNCTION(MultiMatchAnyIndex)
+void registerFunctionMultiMatchAnyIndex(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiMatchAnyIndex>();
 }

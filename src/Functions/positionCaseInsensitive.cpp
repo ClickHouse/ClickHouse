@@ -13,11 +13,11 @@ struct NamePositionCaseInsensitive
     static constexpr auto name = "positionCaseInsensitive";
 };
 
-using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<NamePositionCaseInsensitive, PositionCaseInsensitiveASCII>>;
+using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive>;
 
 }
 
-REGISTER_FUNCTION(PositionCaseInsensitive)
+void registerFunctionPositionCaseInsensitive(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPositionCaseInsensitive>();
 }

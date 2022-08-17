@@ -104,4 +104,4 @@ SELECT
 
 -   [dictgetuid](ext-dict-functions.md)
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/uuid_function/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->

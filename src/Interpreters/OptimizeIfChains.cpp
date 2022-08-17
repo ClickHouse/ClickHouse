@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfChains.h>

@@ -1,21 +1,20 @@
 ---
-sidebar_position: 41
-sidebar_label: For Searching in Strings
+toc_priority: 41
+toc_title: For Searching in Strings
 ---
 
-# Functions for Searching in Strings
+# Functions for Searching in Strings {#functions-for-searching-strings}
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-:::note
-Functions for [replacing](../../sql-reference/functions/string-replace-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
-:::
+!!! note "Note"
+    Functions for [replacing](../../sql-reference/functions/string-replace-functions.md) and [other manipulations with strings](../../sql-reference/functions/string-functions.md) are described separately.
 
-## position(haystack, needle), locate(haystack, needle)
+## position(haystack, needle), locate(haystack, needle) {#position}
 
 Searches for the substring `needle` in the string `haystack`.
 
-Returns the position (in bytes) of the found substring in the string, starting from 1.
+Returns the position (in bytes) of the found substring in the string, starting from 1. 
 
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
@@ -23,17 +22,16 @@ For a case-insensitive search, use the function [positionCaseInsensitive](#posit
 
 ``` sql
 position(haystack, needle[, start_pos])
-```
+``` 
 
 ``` sql
 position(needle IN haystack)
-```
+``` 
 
 Alias: `locate(haystack, needle[, start_pos])`.
 
-:::note
-Syntax of `position(needle IN haystack)` provides SQL-compatibility, the function works the same way as to `position(haystack, needle)`.
-:::
+!!! note "Note"
+    Syntax of `position(needle IN haystack)` provides SQL-compatibility, the function works the same way as to `position(haystack, needle)`.
 
 **Arguments**
 
@@ -124,7 +122,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## positionCaseInsensitive
+## positionCaseInsensitive {#positioncaseinsensitive}
 
 The same as [position](#position) returns the position (in bytes) of the found substring in the string, starting from 1. Use the function for a case-insensitive search.
 
@@ -165,7 +163,7 @@ Result:
 └───────────────────────────────────────────────────┘
 ```
 
-## positionUTF8
+## positionUTF8 {#positionutf8}
 
 Returns the position (in Unicode points) of the found substring in the string, starting from 1.
 
@@ -240,7 +238,7 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-## positionCaseInsensitiveUTF8
+## positionCaseInsensitiveUTF8 {#positioncaseinsensitiveutf8}
 
 The same as [positionUTF8](#positionutf8), but is case-insensitive. Returns the position (in Unicode points) of the found substring in the string, starting from 1.
 
@@ -281,7 +279,7 @@ Result:
 └────────────────────────────────────────────────────┘
 ```
 
-## multiSearchAllPositions
+## multiSearchAllPositions {#multisearchallpositions}
 
 The same as [position](../../sql-reference/functions/string-search-functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
@@ -322,112 +320,106 @@ Result:
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## multiSearchAllPositionsUTF8
+## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
 
 See `multiSearchAllPositions`.
 
-## multiSearchFirstPosition(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
+## multiSearchFirstPosition(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\]) {#multisearchfirstposition}
 
 The same as `position` but returns the leftmost offset of the string `haystack` that is matched to some of the needles.
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchFirstPositionCaseInsensitive, multiSearchFirstPositionUTF8, multiSearchFirstPositionCaseInsensitiveUTF8`.
 
-## multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
+## multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\]) {#multisearchfirstindexhaystack-needle1-needle2-needlen}
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise.
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
-## multiSearchAny(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
+## multiSearchAny(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\]) {#function-multisearchany}
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
-:::note
-In all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.
-:::
+!!! note "Note"
+    In all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.
 
-## match(haystack, pattern)
+## match(haystack, pattern) {#matchhaystack-pattern}
 
-Checks whether the string matches the regular expression `pattern` in `re2` syntax. `Re2` has a more limited [syntax](https://github.com/google/re2/wiki/Syntax) than Perl regular expressions.
+Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
 
 Returns 0 if it does not match, or 1 if it matches.
 
-Matching is based on UTF-8, e.g. `.` matches the Unicode code point `¥` which is represented in UTF-8 using two bytes. The regular expression must not contain null bytes.
-If the haystack or pattern contain a sequence of bytes that are not valid UTF-8, then the behavior is undefined.
-No automatic Unicode normalization is performed, if you need it you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
+Note that the backslash symbol (`\`) is used for escaping in the regular expression. The same symbol is used for escaping in string literals. So in order to escape the symbol in a regular expression, you must write two backslashes (\\) in a string literal.
 
+The regular expression works with the string as if it is a set of bytes. The regular expression can’t contain null bytes.
 For patterns to search for substrings in a string, it is better to use LIKE or ‘position’, since they work much faster.
 
-## multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+## multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multimatchanyhaystack-pattern1-pattern2-patternn}
 
 The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) library. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
 
-:::note
-The length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.
-:::
+!!! note "Note"
+    The length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.
 
-## multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+## multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multimatchanyindexhaystack-pattern1-pattern2-patternn}
 
 The same as `multiMatchAny`, but returns any index that matches the haystack.
 
-## multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+## multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multimatchallindiceshaystack-pattern1-pattern2-patternn}
 
-The same as `multiMatchAny`, but returns the array of all indices that match the haystack in any order.
+The same as `multiMatchAny`, but returns the array of all indicies that match the haystack in any order.
 
-## multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+## multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyhaystack-distance-pattern1-pattern2-patternn}
 
-The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function relies on the experimental feature of [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) library, and can be slow for some corner cases. The performance depends on the edit distance value and patterns used, but it's always more expensive compared to a non-fuzzy variants.
+The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function is also in an experimental mode and can be extremely slow. For more information see [hyperscan documentation](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
 
-## multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+## multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyindexhaystack-distance-pattern1-pattern2-patternn}
 
 The same as `multiFuzzyMatchAny`, but returns any index that matches the haystack within a constant edit distance.
 
-## multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
+## multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchallindiceshaystack-distance-pattern1-pattern2-patternn}
 
 The same as `multiFuzzyMatchAny`, but returns the array of all indices in any order that match the haystack within a constant edit distance.
 
-:::note
-`multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.
-:::
+!!! note "Note"
+    `multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.
 
-:::note
-To turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.
-:::
+!!! note "Note"
+    To turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.
 
-## extract(haystack, pattern)
+## extract(haystack, pattern) {#extracthaystack-pattern}
 
 Extracts a fragment of a string using a regular expression. If ‘haystack’ does not match the ‘pattern’ regex, an empty string is returned. If the regex does not contain subpatterns, it takes the fragment that matches the entire regex. Otherwise, it takes the fragment that matches the first subpattern.
 
-## extractAll(haystack, pattern)
+## extractAll(haystack, pattern) {#extractallhaystack-pattern}
 
 Extracts all the fragments of a string using a regular expression. If ‘haystack’ does not match the ‘pattern’ regex, an empty string is returned. Returns an array of strings consisting of all matches to the regex. In general, the behavior is the same as the ‘extract’ function (it takes the first subpattern, or the entire expression if there isn’t a subpattern).
 
-## extractAllGroupsHorizontal
+## extractAllGroupsHorizontal {#extractallgroups-horizontal}
 
-Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc.
+Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc.  
 
-:::note
-`extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
-:::
+!!! note "Note"
+    `extractAllGroupsHorizontal` function is slower than [extractAllGroupsVertical](#extractallgroups-vertical).
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 extractAllGroupsHorizontal(haystack, pattern)
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
--   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md). 
 
 **Returned value**
 
 -   Type: [Array](../../sql-reference/data-types/array.md).
 
-If `haystack` does not match the `pattern` regex, an array of empty arrays is returned.
+If `haystack` does not match the `pattern` regex, an array of empty arrays is returned. 
 
 **Example**
 
@@ -449,17 +441,17 @@ Result:
 
 -   [extractAllGroupsVertical](#extractallgroups-vertical)
 
-## extractAllGroupsVertical
+## extractAllGroupsVertical {#extractallgroups-vertical}
 
 Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where each array includes matching fragments from every group. Fragments are grouped in order of appearance in the `haystack`.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 extractAllGroupsVertical(haystack, pattern)
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
 -   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
@@ -468,7 +460,7 @@ extractAllGroupsVertical(haystack, pattern)
 
 -   Type: [Array](../../sql-reference/data-types/array.md).
 
-If `haystack` does not match the `pattern` regex, an empty array is returned.
+If `haystack` does not match the `pattern` regex, an empty array is returned. 
 
 **Example**
 
@@ -490,7 +482,7 @@ Result:
 
 -   [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
-## like(haystack, pattern), haystack LIKE pattern operator
+## like(haystack, pattern), haystack LIKE pattern operator {#function-like}
 
 Checks whether a string matches a simple regular expression.
 The regular expression can contain the metasymbols `%` and `_`.
@@ -501,22 +493,16 @@ The regular expression can contain the metasymbols `%` and `_`.
 
 Use the backslash (`\`) for escaping metasymbols. See the note on escaping in the description of the ‘match’ function.
 
-Matching is based on UTF-8, e.g. `_` matches the Unicode code point `¥` which is represented in UTF-8 using two bytes.
-If the haystack or pattern contain a sequence of bytes that are not valid UTF-8, then the behavior is undefined.
-No automatic Unicode normalization is performed, if you need it you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
-
 For regular expressions like `%needle%`, the code is more optimal and works as fast as the `position` function.
 For other regular expressions, the code is the same as for the ‘match’ function.
 
-## notLike(haystack, pattern), haystack NOT LIKE pattern operator
+## notLike(haystack, pattern), haystack NOT LIKE pattern operator {#function-notlike}
 
 The same thing as ‘like’, but negative.
 
-## ilike
+## ilike {#ilike}
 
-Case insensitive variant of [like](https://clickhouse.com/docs/en/sql-reference/functions/string-search-functions/#function-like) function. You can use `ILIKE` operator instead of the `ilike` function.
-
-The function ignores the language, e.g. for Turkish (i/İ), the result might be incorrect.
+Case insensitive variant of [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) function. You can use `ILIKE` operator instead of the `ilike` function.
 
 **Syntax**
 
@@ -572,25 +558,24 @@ Result:
 
 **See Also**
 
--   [like](https://clickhouse.com/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+-   [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
 
-## ngramDistance(haystack, needle)
+## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 
 Calculates the 4-gram distance between `haystack` and `needle`: counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns float number from 0 to 1 – the closer to zero, the more strings are similar to each other. If the constant `needle` or `haystack` is more than 32Kb, throws an exception. If some of the non-constant `haystack` or `needle` strings are more than 32Kb, the distance is always one.
 
 For case-insensitive search or/and in UTF-8 format use functions `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8`.
 
-## ngramSearch(haystack, needle)
+## ngramSearch(haystack, needle) {#ngramsearchhaystack-needle}
 
 Same as `ngramDistance` but calculates the non-symmetric difference between `needle` and `haystack` – the number of n-grams from needle minus the common number of n-grams normalized by the number of `needle` n-grams. The closer to one, the more likely `needle` is in the `haystack`. Can be useful for fuzzy string search.
 
 For case-insensitive search or/and in UTF-8 format use functions `ngramSearchCaseInsensitive, ngramSearchUTF8, ngramSearchCaseInsensitiveUTF8`.
 
-:::note
-For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
-:::
+!!! note "Note"
+    For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
 
-## countSubstrings
+## countSubstrings {#countSubstrings}
 
 Returns the number of substring occurrences.
 
@@ -658,7 +643,7 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-## countSubstringsCaseInsensitive
+## countSubstringsCaseInsensitive {#countSubstringsCaseInsensitive}
 
 Returns the number of substring occurrences case-insensitive.
 
@@ -724,7 +709,7 @@ Result:
 └───────────────────────────────────────────────────────┘
 ```
 
-## countSubstringsCaseInsensitiveUTF8
+## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
 
 Returns the number of substring occurrences in `UTF-8` case-insensitive.
 
@@ -746,7 +731,7 @@ SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**Examples**
+**Examples** 
 
 Query:
 
@@ -776,7 +761,7 @@ Result:
 └────────────────────────────────────────────────────────────┘
 ```
 
-## countMatches(haystack, pattern)
+## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
 
 Returns the number of regular expression matches for a `pattern` in a `haystack`.
 

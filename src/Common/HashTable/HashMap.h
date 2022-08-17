@@ -10,13 +10,6 @@
   * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
   */
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-}
 
 struct NoInitTag
 {
@@ -181,7 +174,7 @@ template <
     typename Key,
     typename Cell,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Grower = HashTableGrower<>,
     typename Allocator = HashTableAllocator>
 class HashMapTable : public HashTable<Key, Cell, Hash, Grower, Allocator>
 {
@@ -269,13 +262,6 @@ public:
 
         return it->getMapped();
     }
-
-    const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
-    {
-        if (auto it = this->find(x); it != this->end())
-            return it->getMapped();
-        throw DB::Exception("Cannot find element in HashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
-    }
 };
 
 namespace std
@@ -296,7 +282,7 @@ template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Grower = HashTableGrower<>,
     typename Allocator = HashTableAllocator>
 using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 
@@ -305,7 +291,7 @@ template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
-    typename Grower = HashTableGrowerWithPrecalculation<>,
+    typename Grower = HashTableGrower<>,
     typename Allocator = HashTableAllocator>
 using HashMapWithSavedHash = HashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;
 

@@ -1,0 +1,21 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+ADDINCL(
+    contrib/libs/lz4
+    contrib/libs/zstd/include
+)
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/lz4
+    contrib/libs/zstd
+)
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

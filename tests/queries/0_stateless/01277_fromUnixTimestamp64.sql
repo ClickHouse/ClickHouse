@@ -43,29 +43,3 @@ SELECT
 	fromUnixTimestamp64Milli(i64, tz),
 	fromUnixTimestamp64Micro(i64, tz),
 	fromUnixTimestamp64Nano(i64, tz) as dt64;
-
-SELECT 'upper range bound';
-WITH
-    10413688942 AS timestamp,
-    CAST(10413688942123 AS Int64) AS milli,
-    CAST(10413688942123456 AS Int64) AS micro,
-    CAST(10413688942123456789 AS Int64) AS nano,
-    'UTC' AS tz
-SELECT
-    timestamp,
-    fromUnixTimestamp64Milli(milli, tz),
-    fromUnixTimestamp64Micro(micro, tz),
-    fromUnixTimestamp64Nano(nano, tz);
-
-SELECT 'lower range bound';
-WITH
-    -2208985199 AS timestamp,
-    CAST(-2208985199123 AS Int64) AS milli,
-    CAST(-2208985199123456 AS Int64) AS micro,
-    CAST(-2208985199123456789 AS Int64) AS nano,
-    'UTC' AS tz
-SELECT
-    timestamp,
-    fromUnixTimestamp64Milli(milli, tz),
-    fromUnixTimestamp64Micro(micro, tz),
-    fromUnixTimestamp64Nano(nano, tz);

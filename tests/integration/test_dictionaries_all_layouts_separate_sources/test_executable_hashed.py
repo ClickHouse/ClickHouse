@@ -1,4 +1,4 @@
-import os
+import os 
 import math
 import pytest
 
@@ -8,9 +8,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceExecutableHashed
 
-SOURCE = SourceExecutableHashed(
-    "ExecutableHashed", "localhost", "9000", "hashed_node", "9000", "", ""
-)
+SOURCE = SourceExecutableHashed("ExecutableHashed", "localhost", "9000", "hashed_node", "9000", "", "")
 
 cluster = None
 node = None
@@ -38,21 +36,18 @@ def setup_module(module):
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
 
-    cluster = ClickHouseCluster(__file__)
+    cluster = ClickHouseCluster(__file__, name=test_name)
 
     main_configs = []
-    main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))
+    main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
 
     dictionaries = simple_tester.list_dictionaries()
+    
+    node = cluster.add_instance('hashed_node', main_configs=main_configs, dictionaries=dictionaries)
 
-    node = cluster.add_instance(
-        "hashed_node", main_configs=main_configs, dictionaries=dictionaries
-    )
-
-
+    
 def teardown_module(module):
     simple_tester.cleanup()
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -68,16 +63,13 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
-@pytest.mark.parametrize("layout_name", ["hashed"])
+@pytest.mark.parametrize("layout_name", ['hashed'])
 def test_simple(started_cluster, layout_name):
     simple_tester.execute(layout_name, node)
 
-
-@pytest.mark.parametrize("layout_name", ["complex_key_hashed"])
+@pytest.mark.parametrize("layout_name", ['complex_key_hashed'])
 def test_complex(started_cluster, layout_name):
     complex_tester.execute(layout_name, node)
-
 
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
 def test_ranged(started_cluster, layout_name):

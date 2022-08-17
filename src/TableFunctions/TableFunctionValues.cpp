@@ -4,11 +4,12 @@
 #include <Core/Block.h>
 #include <Storages/StorageValues.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/getLeastSupertype.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionValues.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
@@ -27,14 +28,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
-static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
+static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, ContextPtr context)
 {
     if (res_columns.size() == 1) /// Parsing arguments as Fields
     {
-        for (size_t i = start; i < args.size(); ++i)
+        for (size_t i = 1; i < args.size(); ++i)
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
 
@@ -44,7 +44,7 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
     else /// Parsing arguments as Tuples
     {
-        for (size_t i = start; i < args.size(); ++i)
+        for (size_t i = 1; i < args.size(); ++i)
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
 
@@ -68,59 +68,34 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-DataTypes TableFunctionValues::getTypesFromArgument(const ASTPtr & arg, ContextPtr context)
-{
-    const auto & [value_field, value_type_ptr] = evaluateConstantExpression(arg, context);
-    DataTypes types;
-    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get()))
-        return type_tuple->getElements();
-
-    return {value_type_ptr};
-}
-
-void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
 {
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
     ASTs & args = args_func.at(0)->children;
 
-    if (args.empty())
-        throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (args.size() < 2)
+        throw Exception("Table function '" + getName() + "' requires 2 or more arguments: structure and values.",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const auto & literal = args[0]->as<const ASTLiteral>();
-    String value;
-    if (args.size() > 1 && literal && literal->value.tryGet(value) && tryParseColumnsListFromString(value, structure, context))
+    /// Parsing first argument as table structure and creating a sample block
+    if (!args[0]->as<const ASTLiteral>())
     {
-        has_structure_in_arguments = true;
-        return;
+        throw Exception(fmt::format(
+            "The first argument of table function '{}' must be a literal. "
+            "Got '{}' instead", getName(), args[0]->formatForErrorMessage()),
+            ErrorCodes::BAD_ARGUMENTS);
     }
 
-    has_structure_in_arguments = false;
-    DataTypes data_types = getTypesFromArgument(args[0], context);
-    for (size_t i = 1; i < args.size(); ++i)
-    {
-        auto arg_types = getTypesFromArgument(args[i], context);
-        if (data_types.size() != arg_types.size())
-            throw Exception(
-                ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot determine common structure for {} function arguments: the amount of columns is differ for different arguments",
-                getName());
-        for (size_t j = 0; j != arg_types.size(); ++j)
-            data_types[j] = getLeastSupertype(DataTypes{data_types[j], arg_types[j]});
-    }
-
-    NamesAndTypesList names_and_types;
-    for (size_t i = 0; i != data_types.size(); ++i)
-        names_and_types.emplace_back("c" + std::to_string(i + 1), data_types[i]);
-    structure = ColumnsDescription(names_and_types);
+    structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*context*/) const
+ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr context) const
 {
-    return structure;
+    return parseColumnsListFromString(structure, context);
 }
 
 StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
@@ -136,11 +111,11 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
     ASTs & args = ast_function->children.at(0)->children;
 
     /// Parsing other arguments as values and inserting them into columns
-    parseAndInsertValues(res_columns, args, sample_block, has_structure_in_arguments ? 1 : 0, context);
+    parseAndInsertValues(res_columns, args, sample_block, context);
 
     Block res_block = sample_block.cloneWithColumns(std::move(res_columns));
 
-    auto res = std::make_shared<StorageValues>(StorageID(getDatabaseName(), table_name), columns, res_block);
+    auto res = StorageValues::create(StorageID(getDatabaseName(), table_name), columns, res_block);
     res->startup();
     return res;
 }

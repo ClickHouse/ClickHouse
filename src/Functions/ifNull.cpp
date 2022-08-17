@@ -36,7 +36,6 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -47,7 +46,7 @@ public:
         if (!arguments[0]->isNullable())
             return arguments[0];
 
-        return getLeastSupertype(DataTypes{removeNullable(arguments[0]), arguments[1]});
+        return getLeastSupertype({removeNullable(arguments[0]), arguments[1]});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -89,7 +88,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(IfNull)
+void registerFunctionIfNull(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIfNull>(FunctionFactory::CaseInsensitive);
 }

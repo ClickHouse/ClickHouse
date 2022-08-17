@@ -8,7 +8,7 @@ class QueryPipeline;
 class Block;
 class Chunk;
 class LazyOutputFormat;
-struct ProfileInfo;
+struct BlockStreamProfileInfo;
 
 /// Asynchronous pulling executor for QueryPipeline.
 /// Always creates extra thread. If query is executed in single thread, use PullingPipelineExecutor.
@@ -44,7 +44,7 @@ public:
     Block getExtremesBlock();
 
     /// Get query profile info.
-    ProfileInfo & getProfileInfo();
+    BlockStreamProfileInfo & getProfileInfo();
 
     /// Internal executor data.
     struct Data;

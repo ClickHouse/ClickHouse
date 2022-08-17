@@ -39,8 +39,6 @@ public:
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -73,7 +71,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(FinalizeAggregation)
+void registerFunctionFinalizeAggregation(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFinalizeAggregation>();
 }

@@ -12,7 +12,6 @@ struct GreatestBaseImpl
 {
     using ResultType = NumberTraits::ResultOfGreatest<A, B>;
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -43,7 +42,6 @@ struct GreatestSpecialImpl
 {
     using ResultType = make_unsigned_t<A>;
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -63,7 +61,7 @@ using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<
 struct NameGreatest { static constexpr auto name = "greatest"; };
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
-REGISTER_FUNCTION(Greatest)
+void registerFunctionGreatest(FunctionFactory & factory)
 {
     factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Greatest, FunctionGreatest>>(FunctionFactory::CaseInsensitive);
 }

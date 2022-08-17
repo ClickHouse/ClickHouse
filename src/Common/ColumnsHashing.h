@@ -4,9 +4,9 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
-#include <Common/CacheBase.h>
+#include <Common/LRUCache.h>
 #include <Common/assert_cast.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -44,7 +44,7 @@ struct HashMethodOneNumber
         vec = key_columns[0]->getRawData().data;
     }
 
-    explicit HashMethodOneNumber(const IColumn * column)
+    HashMethodOneNumber(const IColumn * column)
     {
         vec = column->getRawData().data;
     }
@@ -188,7 +188,7 @@ public:
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
 
 private:
-    using Cache = CacheBase<DictionaryKey, CachedValues, DictionaryKeyHash>;
+    using Cache = LRUCache<DictionaryKey, CachedValues, DictionaryKeyHash>;
     Cache cache;
 };
 
@@ -206,7 +206,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         NotFound = 2,
     };
 
-    static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
+    static constexpr bool has_mapped = !std::is_same<Mapped, void>::value;
     using EmplaceResult = columns_hashing_impl::EmplaceResultImpl<Mapped>;
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
@@ -233,7 +233,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     static const ColumnLowCardinality & getLowCardinalityColumn(const IColumn * column)
     {
-        const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
+        auto low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column);
         if (!low_cardinality_column)
             throw Exception("Invalid aggregation key type for HashMethodSingleLowCardinalityColumn method. "
                             "Excepted LowCardinality, got " + column->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -244,7 +244,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context)
         : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
     {
-        const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
+        auto column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
 
         if (!context)
             throw Exception("Cache wasn't created for HashMethodSingleLowCardinalityColumn",
@@ -262,7 +262,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
         }
 
-        const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
+        auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
         key_columns = {dict};
         bool is_shared_dict = column->isSharedDictionary();
@@ -387,52 +387,47 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     template <typename Data>
-    ALWAYS_INLINE FindResult findKey(Data & data, size_t row_, Arena & pool)
+    ALWAYS_INLINE FindResult findFromRow(Data & data, size_t row_, Arena & pool)
     {
         size_t row = getIndexAt(row_);
 
         if (is_nullable && row == 0)
         {
             if constexpr (has_mapped)
-                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData(), 0);
+                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData());
             else
-                return FindResult(data.hasNullKeyData(), 0);
+                return FindResult(data.hasNullKeyData());
         }
 
         if (visit_cache[row] != VisitValue::Empty)
         {
             if constexpr (has_mapped)
-                return FindResult(&mapped_cache[row], visit_cache[row] == VisitValue::Found, 0);
+                return FindResult(&mapped_cache[row], visit_cache[row] == VisitValue::Found);
             else
-                return FindResult(visit_cache[row] == VisitValue::Found, 0);
+                return FindResult(visit_cache[row] == VisitValue::Found);
         }
 
         auto key_holder = getKeyHolder(row_, pool);
 
-        typename Data::LookupResult it;
+        typename Data::iterator it;
         if (saved_hash)
-            it = data.find(keyHolderGetKey(key_holder), saved_hash[row]);
+            it = data.find(*key_holder, saved_hash[row]);
         else
-            it = data.find(keyHolderGetKey(key_holder));
+            it = data.find(*key_holder);
 
-        bool found = it;
+        bool found = it != data.end();
         visit_cache[row] = found ? VisitValue::Found : VisitValue::NotFound;
 
         if constexpr (has_mapped)
         {
             if (found)
-                mapped_cache[row] = it->getMapped();
+                mapped_cache[row] = it->second;
         }
 
-        size_t offset = 0;
-
-        if constexpr (FindResult::has_offset)
-            offset = found ? data.offsetInternal(it) : 0;
-
         if constexpr (has_mapped)
-            return FindResult(&mapped_cache[row], found, offset);
+            return FindResult(&mapped_cache[row], found);
         else
-            return FindResult(found, offset);
+            return FindResult(found);
     }
 
     template <typename Data>
@@ -504,7 +499,7 @@ struct HashMethodKeysFixed
     }
 
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
-        : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
+        : Base(key_columns), key_sizes(std::move(key_sizes_)), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
         {
@@ -513,7 +508,7 @@ struct HashMethodKeysFixed
             low_cardinality_keys.position_sizes.resize(key_columns.size());
             for (size_t i = 0; i < key_columns.size(); ++i)
             {
-                if (const auto * low_cardinality_col = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
+                if (auto * low_cardinality_col = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
                 {
                     low_cardinality_keys.nested_columns[i] = low_cardinality_col->getDictionary().getNestedColumn().get();
                     low_cardinality_keys.positions[i] = &low_cardinality_col->getIndexes();

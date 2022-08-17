@@ -42,9 +42,6 @@ public:
     {
         return true;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -129,7 +126,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Bar)
+void registerFunctionBar(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBar>();
 }

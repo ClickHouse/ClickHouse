@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionToStartOfQuarter = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfQuarterImpl>;
 
-REGISTER_FUNCTION(ToStartOfQuarter)
+void registerFunctionToStartOfQuarter(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToStartOfQuarter>();
 }

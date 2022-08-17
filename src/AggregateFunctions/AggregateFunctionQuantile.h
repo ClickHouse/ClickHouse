@@ -1,7 +1,6 @@
 #pragma once
 
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 /// These must be exposed in header for the purpose of dynamic compilation.
 #include <AggregateFunctions/QuantileReservoirSampler.h>
@@ -21,11 +20,9 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
-#include <Interpreters/GatherFunctionQuantileVisitor.h>
 
 #include <type_traits>
 
@@ -64,15 +61,16 @@ template <
     typename FloatReturnType,
     /// If true, the function will accept multiple parameters with quantile levels
     ///  and return an Array filled with many values of that quantiles.
-    bool returns_many>
-class AggregateFunctionQuantile final
-    : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
+    bool returns_many
+>
+class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data,
+    AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
 {
 private:
-    using ColVecType = ColumnVectorOrDecimal<Value>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static_assert(!is_decimal<Value> || !returns_float);
+    static_assert(!IsDecimalNumber<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
 
@@ -83,14 +81,11 @@ private:
 
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
-            argument_types_, params)
-        , levels(params, returns_many)
-        , level(levels.levels[0])
-        , argument_type(this->argument_types[0])
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(argument_types_, params)
+        , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require one parameter or less", getName());
+            throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
     String getName() const override { return Name::name; }
@@ -110,24 +105,6 @@ public:
             return res;
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
-    {
-        return GatherFunctionQuantileData::toFusedNameOrSelf(getName()) == GatherFunctionQuantileData::toFusedNameOrSelf(rhs.getName())
-            && this->haveEqualArgumentTypes(rhs);
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        /// Return normalized state type: quantiles*(1)(...)
-        Array params{1};
-        AggregateFunctionProperties properties;
-        return std::make_shared<DataTypeAggregateFunction>(
-            AggregateFunctionFactory::instance().get(
-                GatherFunctionQuantileData::toFusedNameOrSelf(getName()), this->argument_types, params, properties),
-            this->argument_types,
-            params);
-    }
-
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -142,7 +119,9 @@ public:
         }
 
         if constexpr (has_second_arg)
-            this->data(place).add(value, columns[1]->getUInt(row_num));
+            this->data(place).add(
+                value,
+                columns[1]->getUInt(row_num));
         else
             this->data(place).add(value);
     }
@@ -152,19 +131,20 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like compactization) before serializing.
         this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
+        /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.
         auto & data = this->data(place);
 
         if constexpr (returns_many)
@@ -210,11 +190,7 @@ public:
         {
             assertBinary(Name::name, types);
             if (!isUnsignedInteger(types[1]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Second argument (weight) for function {} must be unsigned integer, but it has type {}",
-                    Name::name,
-                    types[1]->getName());
+                throw Exception("Second argument (weight) for function " + std::string(Name::name) + " must be unsigned integer, but it has type " + types[1]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else
             assertUnary(Name::name, types);
@@ -256,7 +232,5 @@ struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDi
 
 struct NameQuantileBFloat16 { static constexpr auto name = "quantileBFloat16"; };
 struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16"; };
-struct NameQuantileBFloat16Weighted { static constexpr auto name = "quantileBFloat16Weighted"; };
-struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBFloat16Weighted"; };
 
 }

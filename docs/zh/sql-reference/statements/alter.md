@@ -1,6 +1,6 @@
 ---
-sidebar_position: 36
-sidebar_label: ALTER
+toc_priority: 36
+toc_title: ALTER
 ---
 
 ## ALTER {#query_language_queries_alter}
@@ -208,7 +208,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 -   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) —   从表中复制数据分区到其它表.
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) —  重置分区中某个列的值
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) —  重置分区中指定的二级索引
--   [FREEZE PARTITION](#alter_freeze-partition) —  创建分区的备份
+-   [FREEZE PARTITION](#alter_freeze-partition) —  创建分区的备份 
 -   [FETCH PARTITION](#alter_fetch-partition) —  从其它服务器上下载分
 -   [MOVE PARTITION\|PART](#alter_move-partition) —  将分区/数据块移动到另外的磁盘/卷
 
@@ -380,7 +380,7 @@ ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
 从另一服务器上下载分区数据。仅支持可复制引擎表。
 该操作做了如下步骤：
 1.  从指定数据分片上下载分区。在 path-in-zookeeper 这一参数你必须设置Zookeeper中该分片的path值。
-2.  然后将已下载的数据放到 `table_name` 表的 `detached` 目录下。通过 [ATTACH PARTITION\|PART](#alter_attach-partition)将数据加载到表中。
+2.  然后将已下载的数据放到 `table_name` 表的 `detached` 目录下。通过 [ATTACH PARTITION\|PART](#alter_attach-partition)将数据加载到表中。 
 
 示例:
 
@@ -586,4 +586,4 @@ ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
-[Original article](https://clickhouse.com/docs/en/query_language/alter/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

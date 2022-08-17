@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <Common/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 
 namespace DB
@@ -58,8 +58,6 @@ public:
     {
         return false;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -138,7 +136,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(RunningAccumulate)
+void registerFunctionRunningAccumulate(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRunningAccumulate>();
 }

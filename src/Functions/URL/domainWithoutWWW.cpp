@@ -9,7 +9,7 @@ struct NameDomainWithoutWWW { static constexpr auto name = "domainWithoutWWW"; }
 using FunctionDomainWithoutWWW = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>>, NameDomainWithoutWWW>;
 
 
-REGISTER_FUNCTION(DomainWithoutWWW)
+void registerFunctionDomainWithoutWWW(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDomainWithoutWWW>();
 }

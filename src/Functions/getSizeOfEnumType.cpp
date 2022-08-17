@@ -37,8 +37,6 @@ public:
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         WhichDataType which(arguments[0]);
@@ -76,7 +74,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(GetSizeOfEnumType)
+void registerFunctionGetSizeOfEnumType(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGetSizeOfEnumType>();
 }

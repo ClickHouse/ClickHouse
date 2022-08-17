@@ -1,4 +1,4 @@
-# functions
+# system.functions {#system-functions}
 
 Contains information about normal and aggregate functions.
 
@@ -14,20 +14,20 @@ Columns:
 ```
 
 ```text
-┌─name──────────────────┬─is_aggregate─┬─case_insensitive─┬─alias_to─┬─create_query─┬─origin─┐
-│ logTrace              │            0 │                0 │          │              │ System │
-│ aes_decrypt_mysql     │            0 │                0 │          │              │ System │
-│ aes_encrypt_mysql     │            0 │                0 │          │              │ System │
-│ decrypt               │            0 │                0 │          │              │ System │
-│ encrypt               │            0 │                0 │          │              │ System │
-│ toBool                │            0 │                0 │          │              │ System │
-│ windowID              │            0 │                0 │          │              │ System │
-│ hopStart              │            0 │                0 │          │              │ System │
-│ hop                   │            0 │                0 │          │              │ System │
-│ snowflakeToDateTime64 │            0 │                0 │          │              │ System │
-└───────────────────────┴──────────────┴──────────────────┴──────────┴──────────────┴────────┘
+┌─name─────────────────────┬─is_aggregate─┬─case_insensitive─┬─alias_to─┐
+│ sumburConsistentHash     │            0 │                0 │          │
+│ yandexConsistentHash     │            0 │                0 │          │
+│ demangle                 │            0 │                0 │          │
+│ addressToLine            │            0 │                0 │          │
+│ JSONExtractRaw           │            0 │                0 │          │
+│ JSONExtractKeysAndValues │            0 │                0 │          │
+│ JSONExtract              │            0 │                0 │          │
+│ JSONExtractString        │            0 │                0 │          │
+│ JSONExtractFloat         │            0 │                0 │          │
+│ JSONExtractInt           │            0 │                0 │          │
+└──────────────────────────┴──────────────┴──────────────────┴──────────┘
 
-10 rows in set. Elapsed: 0.002 sec.
+10 rows in set. Elapsed: 0.002 sec. 
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/functions) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/functions) <!--hide-->

@@ -6,7 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
-#include <base/getPageSize.h>
+#include <common/getPageSize.h>
 
 #include <cstdlib>
 #include <iomanip>
@@ -15,7 +15,8 @@
 #include <vector>
 
 #include <fcntl.h>
-#include <ctime>
+#include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 
@@ -53,7 +54,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
     if ((mode & MODE_DIRECT))
         buf = direct_buf.data();
     else
-        buf = simple_buf.data();
+        buf = &simple_buf[0];
 
     pcg64 rng(randomSeed());
 
@@ -137,14 +138,14 @@ int mainImpl(int argc, char ** argv)
 
     ThreadPool pool(threads);
 
-    #ifndef OS_DARWIN
+    #ifndef __APPLE__
     int fd = open(file_name, ((mode & MODE_READ) ? O_RDONLY : O_WRONLY) | ((mode & MODE_DIRECT) ? O_DIRECT : 0) | ((mode & MODE_SYNC) ? O_SYNC : 0));
     #else
     int fd = open(file_name, ((mode & MODE_READ) ? O_RDONLY : O_WRONLY) | ((mode & MODE_SYNC) ? O_SYNC : 0));
     #endif
     if (-1 == fd)
         throwFromErrno("Cannot open file", ErrorCodes::CANNOT_OPEN_FILE);
-    #ifdef OS_DARWIN
+    #ifdef __APPLE__
     if (mode & MODE_DIRECT)
         if (fcntl(fd, F_NOCACHE, 1) == -1)
             throwFromErrno("Cannot open file", ErrorCodes::CANNOT_CLOSE_FILE);
@@ -155,11 +156,7 @@ int mainImpl(int argc, char ** argv)
         pool.scheduleOrThrowOnError([=]{ thread(fd, mode, min_offset, max_offset, block_size, count); });
     pool.wait();
 
-    #if defined(OS_DARWIN)
-        fsync(fd);
-    #else
-        fdatasync(fd);
-    #endif
+    fsync(fd);
 
     watch.stop();
 

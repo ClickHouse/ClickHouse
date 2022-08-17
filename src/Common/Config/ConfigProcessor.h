@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
 
 #include <string>
 #include <unordered_set>
@@ -16,7 +18,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace zkutil
@@ -55,10 +57,11 @@ public:
     /// 2) Determine the includes file from the config: <include_from>/path2/metrika.xml</include_from>
     ///    If this path is not configured, use /etc/metrika.xml
     /// 3) Replace elements matching the "<foo incl="bar"/>" pattern with
-    ///    "<foo>contents of the clickhouse/bar element in metrika.xml</foo>"
+    ///    "<foo>contents of the yandex/bar element in metrika.xml</foo>"
     /// 4) If zk_node_cache is non-NULL, replace elements matching the "<foo from_zk="/bar">" pattern with
     ///    "<foo>contents of the /bar ZooKeeper node</foo>".
     ///    If has_zk_includes is non-NULL and there are such elements, set has_zk_includes to true.
+    /// 5) (Yandex.Metrika-specific) Substitute "<layer/>" with "<layer>layer number from the hostname</layer>".
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
@@ -98,6 +101,7 @@ public:
     /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
 
+public:
     using Files = std::vector<std::string>;
 
     static Files getConfigMergeFiles(const std::string & config_path);
@@ -121,6 +125,7 @@ private:
     Poco::AutoPtr<Poco::XML::NamePool> name_pool;
     Poco::XML::DOMParser dom_parser;
 
+private:
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
     void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
@@ -137,3 +142,4 @@ private:
 };
 
 }
+

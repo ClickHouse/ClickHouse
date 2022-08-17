@@ -11,7 +11,7 @@ private:
     SerializationPtr nested;
 
 public:
-    explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+    SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
@@ -19,7 +19,7 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -35,10 +35,7 @@ public:
       * This is necessary, because when implementing nested structures, several arrays can have common sizes.
       */
 
-    void enumerateStreams(
-        SubstreamPath & path,
-        const StreamCallback & callback,
-        const SubstreamData & data) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
@@ -65,18 +62,6 @@ public:
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const override;
-
-private:
-    struct SubcolumnCreator : public ISubcolumnCreator
-    {
-        const ColumnPtr offsets;
-
-        explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
-
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
-    };
 };
 
 ColumnPtr arrayOffsetsToSizes(const IColumn & column);

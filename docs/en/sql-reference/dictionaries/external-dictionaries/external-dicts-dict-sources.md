@@ -1,16 +1,16 @@
 ---
-sidebar_position: 43
-sidebar_label: Sources of External Dictionaries
+toc_priority: 43
+toc_title: Sources of External Dictionaries
 ---
 
-# Sources of External Dictionaries
+# Sources of External Dictionaries {#dicts-external-dicts-dict-sources}
 
-An external dictionary can be connected to ClickHouse from many different sources.
+An external dictionary can be connected from many different sources.
 
-If the dictionary is configured using an xml-file, the configuration looks like this:
+If dictionary is configured using xml-file, the configuration looks like this:
 
 ``` xml
-<clickhouse>
+<yandex>
   <dictionary>
     ...
     <source>
@@ -21,10 +21,10 @@ If the dictionary is configured using an xml-file, the configuration looks like 
     ...
   </dictionary>
   ...
-</clickhouse>
+</yandex>
 ```
 
-In case of [DDL-query](../../../sql-reference/statements/create/dictionary.md), the configuration described above will look like:
+In case of [DDL-query](../../../sql-reference/statements/create/dictionary.md), equal configuration will looks like:
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -66,13 +66,14 @@ Types of sources (`source_type`):
 -   DBMS
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
     -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
     -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
 
-## Local File
+## Local File {#dicts-external_dicts_dict_sources-local_file}
 
 Example of settings:
 
@@ -96,15 +97,15 @@ Setting fields:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
 
-When a dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in the `user_files` directory to prevent DB users from accessing arbitrary files on the ClickHouse node.
+When dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in `user_files` directory, to prevent DB users accessing arbitrary file on ClickHouse node.
 
 **See Also**
 
 -   [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
-## Executable File
+## Executable File {#dicts-external_dicts_dict_sources-executable}
 
-Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
 
 Example of settings:
 
@@ -120,22 +121,17 @@ Example of settings:
 
 Setting fields:
 
--   `command` — The absolute path to the executable file, or the file name (if the command's directory is in the `PATH`).
+-   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` — The file format. All the formats described in [Formats](../../../interfaces/formats.md#formats) are supported.
--   `command_termination_timeout` — The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. `command_termination_timeout` is specified in seconds. Default value is 10. Optional parameter.
--   `command_read_timeout` - Timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
--   `command_write_timeout` - Timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
--   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using a whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
--   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
-That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
+That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-## Executable Pool
+## Executable Pool {#dicts-external_dicts_dict_sources-executable_pool}
 
-Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, or `complex_key_direct` layouts.
+Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](external-dicts-dict-layout.md#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, `complex_key_direct` layouts.
 
-Executable pool will spawn a pool of processes with the specified command and keep them running until they exit. The program should read data from STDIN while it is available and output the result to STDOUT. It can wait for the next block of data on STDIN. ClickHouse will not close STDIN after processing a block of data, but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing — it should poll STDIN and flush data to STDOUT early.
+Executable pool will spawn pool of processes with specified command and keep them running until they exit. The program should read data from STDIN while it is available and output result to STDOUT, and it can wait for next block of data on STDIN. ClickHouse will not close STDIN after processing a block of data but will pipe another chunk of data when needed. The executable script should be ready for this way of data processing — it should poll STDIN and flush data to STDOUT early.
 
 Example of settings:
 
@@ -155,18 +151,14 @@ Setting fields:
 
 -   `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` — The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
--   `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
--   `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
+-   `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions.
+-   `command_termination_timeout` — Executable pool script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
 -   `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
--   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
--   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
--   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
--   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-## Http(s)
+## Http(s) {#dicts-external_dicts_dict_sources-http}
 
 Working with an HTTP(s) server depends on [how the dictionary is stored in memory](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
@@ -218,11 +210,49 @@ Setting fields:
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
-### Known Vulnerability of the ODBC Dictionary Functionality
+## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
-:::note
-When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
-:::
+You can use this method to connect any database that has an ODBC driver.
+
+Example of settings:
+
+``` xml
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+    </odbc>
+</source>
+```
+
+or
+
+``` sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+))
+```
+
+Setting fields:
+
+-   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
+-   `table` – Name of the table and schema if exists.
+-   `connection_string` – Connection string.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+
+If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
+
+### Known Vulnerability of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
+
+!!! attention "Attention"
+    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
 
 **Example of insecure use**
 
@@ -247,7 +277,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 
 ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
-### Example of Connecting Postgresql
+### Example of Connecting Postgresql {#example-of-connecting-postgresql}
 
 Ubuntu OS.
 
@@ -281,7 +311,7 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that
 The dictionary configuration in ClickHouse:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>table_name</name>
         <source>
@@ -310,7 +340,7 @@ The dictionary configuration in ClickHouse:
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 or
@@ -328,7 +358,7 @@ LIFETIME(MIN 300 MAX 360)
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example of Connecting MS SQL Server
+### Example of Connecting MS SQL Server {#example-of-connecting-ms-sql-server}
 
 Ubuntu OS.
 
@@ -386,7 +416,7 @@ Remarks:
 Configuring the dictionary in ClickHouse:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>test</name>
         <source>
@@ -416,7 +446,7 @@ Configuring the dictionary in ClickHouse:
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 or
@@ -432,55 +462,9 @@ LAYOUT(FLAT())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-## DBMS
+## DBMS {#dbms}
 
-### ODBC
-
-You can use this method to connect any database that has an ODBC driver.
-
-Example of settings:
-
-``` xml
-<source>
-    <odbc>
-        <db>DatabaseName</db>
-        <table>ShemaName.TableName</table>
-        <connection_string>DSN=some_parameters</connection_string>
-        <invalidate_query>SQL_QUERY</invalidate_query>
-        <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
-    </odbc>
-</source>
-```
-
-or
-
-``` sql
-SOURCE(ODBC(
-    db 'DatabaseName'
-    table 'SchemaName.TableName'
-    connection_string 'DSN=some_parameters'
-    invalidate_query 'SQL_QUERY'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-))
-```
-
-Setting fields:
-
--   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
--   `table` – Name of the table and schema if exists.
--   `connection_string` – Connection string.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
--   `query` – The custom query. Optional parameter.
-
-:::note
-The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
-:::
-
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
-
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../faq/integration/oracle-odbc.md) item.
-
-### Mysql
+### Mysql {#dicts-external_dicts_dict_sources-mysql}
 
 Example of settings:
 
@@ -503,7 +487,6 @@ Example of settings:
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
-      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
   </mysql>
 </source>
 ```
@@ -522,7 +505,6 @@ SOURCE(MYSQL(
     where 'id=10'
     invalidate_query 'SQL_QUERY'
     fail_on_connection_loss 'true'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
 ))
 ```
 
@@ -549,17 +531,7 @@ Setting fields:
 
 -   `fail_on_connection_loss` – The configuration parameter that controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`.
 
--   `query` – The custom query. Optional parameter.
-
-:::note
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::
-
-:::note
-There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
-:::
-
-MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`.
+MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
 Example of settings:
 
@@ -575,7 +547,6 @@ Example of settings:
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
-	  <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
   </mysql>
 </source>
 ```
@@ -593,11 +564,10 @@ SOURCE(MYSQL(
     where 'id=10'
     invalidate_query 'SQL_QUERY'
     fail_on_connection_loss 'true'
-	query 'SELECT id, value_1, value_2 FROM db_name.table_name'
 ))
 ```
 
-### ClickHouse
+### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
 Example of settings:
 
@@ -612,7 +582,6 @@ Example of settings:
         <table>ids</table>
         <where>id=10</where>
         <secure>1</secure>
-		<query>SELECT id, value_1, value_2 FROM default.ids</query>
     </clickhouse>
 </source>
 ```
@@ -629,8 +598,7 @@ SOURCE(CLICKHOUSE(
     table 'ids'
     where 'id=10'
     secure 1
-	query 'SELECT id, value_1, value_2 FROM default.ids'
-));
+))
 ```
 
 Setting fields:
@@ -644,13 +612,8 @@ Setting fields:
 -   `where` – The selection criteria. May be omitted.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `secure` - Use ssl for connection.
--   `query` – The custom query. Optional parameter.
 
-:::note
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::
-
-### Mongodb
+### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
 Example of settings:
 
@@ -689,7 +652,7 @@ Setting fields:
 -   `db` – Name of the database.
 -   `collection` – Name of the collection.
 
-### Redis
+### Redis {#dicts-external_dicts_dict_sources-redis}
 
 Example of settings:
 
@@ -722,7 +685,7 @@ Setting fields:
 -   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-### Cassandra
+### Cassandra {#dicts-external_dicts_dict_sources-cassandra}
 
 Example of settings:
 
@@ -740,31 +703,27 @@ Example of settings:
         <consistency>One</consistency>
         <where>"SomeColumn" = 42</where>
         <max_threads>8</max_threads>
-        <query>SELECT id, value_1, value_2 FROM database_name.table_name</query>
     </cassandra>
 </source>
 ```
 
 Setting fields:
+- `host` – The Cassandra host or comma-separated list of hosts.
+- `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
+- `user` – Name of the Cassandra user.
+- `password` – Password of the Cassandra user.
+- `keyspace` – Name of the keyspace (database).
+- `column_family` – Name of the column family (table).
+- `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+- `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table.
+Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra.
+Default value is 1 (the first key column is a partition key and other key columns are clustering key).
+- `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`,
+`All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
+- `where` – Optional selection criteria.
+- `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 
--   `host` – The Cassandra host or comma-separated list of hosts.
--   `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
--   `user` – Name of the Cassandra user.
--   `password` – Password of the Cassandra user.
--   `keyspace` – Name of the keyspace (database).
--   `column_family` – Name of the column family (table).
--   `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
--   `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is 1 (the first key column is a partition key and other key columns are clustering key).
--   `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`.
--   `where` – Optional selection criteria.
--   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
--   `query` – The custom query. Optional parameter.
-
-:::note
-The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
-:::
-
-### PostgreSQL
+### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
 Example of settings:
 
@@ -778,7 +737,6 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
-      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
   </postgresql>
 </source>
 ```
@@ -797,7 +755,6 @@ SOURCE(POSTGRESQL(
     replica(host 'example01-2' port 5432 priority 2)
     where 'id=10'
     invalidate_query 'SQL_QUERY'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
 ))
 ```
 
@@ -807,16 +764,11 @@ Setting fields:
 -   `port` – The port on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 -   `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 -   `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `replica` – Section of replica configurations. There can be multiple sections:
-    -   `replica/host` – The PostgreSQL host.
-    -   `replica/port` – The PostgreSQL port.
-    -   `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+-   `replica` – Section of replica configurations. There can be multiple sections.
+        - `replica/host` – The PostgreSQL host.
+        - `replica/port` – The PostgreSQL port.
+        - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 -   `db` – Name of the database.
 -   `table` – Name of the table.
--   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL, for example, `id > 10 AND id < 20`. Optional parameter.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
--   `query` – The custom query. Optional parameter.
-
-:::note
-The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
-:::

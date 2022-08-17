@@ -1,5 +1,3 @@
--- Tags: long, no-fasttest
-
 SELECT 'uniqTheta';
 
 SELECT Y, uniqTheta(X) FROM (SELECT number AS X, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 15) GROUP BY Y;

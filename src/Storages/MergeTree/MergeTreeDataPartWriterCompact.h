@@ -10,7 +10,6 @@ class MergeTreeDataPartWriterCompact : public MergeTreeDataPartWriterOnDisk
 public:
     MergeTreeDataPartWriterCompact(
         const MergeTreeData::DataPartPtr & data_part,
-        DataPartStorageBuilderPtr data_part_storage_builder_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
@@ -21,13 +20,11 @@ public:
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums) override;
-    void finish(bool sync) override;
+    void finish(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
 
 private:
     /// Finish serialization of the data. Flush rows in buffer to disk, compute checksums.
-    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums);
-    void finishDataSerialization(bool sync);
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync);
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 

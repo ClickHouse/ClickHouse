@@ -13,21 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing|benchmark'
-
-# From [1]:
-#     But since array_to_string_internal() in array.c still loops over array
-#     elements and concatenates them into a string, it's probably not more
-#     efficient than the looping solutions proposed, but it's more readable.
-#
-#  [1]: https://stackoverflow.com/a/15394738/328260
-function in_array()
-{
-    local IFS="|"
-    local value=$1 && shift
-
-    [[ "${IFS}${*}${IFS}" =~ "${IFS}${value}${IFS}" ]]
-}
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing/|Parsers/New'
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE_DIRS |
@@ -54,81 +40,24 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE_DIRS |
     while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
 
-# Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
-declare -A EXTERN_TYPES
-EXTERN_TYPES[ErrorCodes]=int
-EXTERN_TYPES[ProfileEvents]=Event
-EXTERN_TYPES[CurrentMetrics]=Metric
-declare -A EXTERN_ALLOWED_CHARS
-EXTERN_ALLOWED_CHARS[ErrorCodes]='_A-Z'
-EXTERN_ALLOWED_CHARS[ProfileEvents]='_A-Za-z'
-EXTERN_ALLOWED_CHARS[CurrentMetrics]='_A-Za-z'
-EXTERN_TYPES_EXCLUDES=(
-    ProfileEvents::global_counters
-    ProfileEvents::Event
-    ProfileEvents::Count
-    ProfileEvents::Counters
-    ProfileEvents::end
-    ProfileEvents::increment
-    ProfileEvents::getName
-    ProfileEvents::Type
-    ProfileEvents::TypeEnum
-    ProfileEvents::dumpToMapColumn
-    ProfileEvents::getProfileEvents
-    ProfileEvents::ThreadIdToCountersSnapshot
-    ProfileEvents::LOCAL_NAME
-    ProfileEvents::CountersIncrement
+# Unused ErrorCodes
+# NOTE: to fix automatically, replace echo with:
+# sed -i "/extern const int $code/d" $file
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'extern const int [_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sed -r -e 's/^.*?extern const int ([_A-Z]+);.*?$/\1/' | while read code; do grep -q "ErrorCodes::$code" $file || echo "ErrorCode $code is defined but not used in file $file"; done; done
 
-    CurrentMetrics::add
-    CurrentMetrics::sub
-    CurrentMetrics::set
-    CurrentMetrics::end
-    CurrentMetrics::Increment
-    CurrentMetrics::Metric
-    CurrentMetrics::values
-)
-for extern_type in ${!EXTERN_TYPES[@]}; do
-    type_of_extern=${EXTERN_TYPES[$extern_type]}
-    allowed_chars=${EXTERN_ALLOWED_CHARS[$extern_type]}
+# Undefined ErrorCodes
+# NOTE: to fix automatically, replace echo with:
+# ( grep -q -F 'namespace ErrorCodes' $file && sed -i -r "0,/(\s*)extern const int [_A-Z]+/s//\1extern const int $code;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace ErrorCodes\n{\n    extern const int '$code';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'ErrorCodes::[_A-Z]+' $file | sed -r -e 's/^.*?ErrorCodes::([_A-Z]+).*?$/\1/' | while read code; do grep -q "extern const int $code" $file || echo "ErrorCode $code is used in file $file but not defined"; done; done
 
-    # Unused
-    # NOTE: to fix automatically, replace echo with:
-    # sed -i "/extern const $type_of_extern $val/d" $file
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern [$allowed_chars]+"
-    } | while read file; do
-        grep -P "extern const $type_of_extern [$allowed_chars]+;" $file | sed -r -e "s/^.*?extern const $type_of_extern ([$allowed_chars]+);.*?$/\1/" | while read val; do
-            if ! grep -q "$extern_type::$val" $file; then
-                # Excludes for SOFTWARE_EVENT/HARDWARE_EVENT/CACHE_EVENT in ThreadProfileEvents.cpp
-                if [[ ! $extern_type::$val =~ ProfileEvents::Perf.* ]]; then
-                    echo "$extern_type::$val is defined but not used in file $file"
-                fi
-            fi
-        done
-    done
-
-    # Undefined
-    # NOTE: to fix automatically, replace echo with:
-    # ( grep -q -F 'namespace $extern_type' $file && sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
-    } | while read file; do
-        grep -P "$extern_type::[$allowed_chars]+" $file | sed -r -e "s/^.*?$extern_type::([$allowed_chars]+).*?$/\1/" | while read val; do
-            if ! grep -q "extern const $type_of_extern $val" $file; then
-                if ! in_array "$extern_type::$val" "${EXTERN_TYPES_EXCLUDES[@]}"; then
-                    echo "$extern_type::$val is used in file $file but not defined"
-                fi
-            fi
-        done
-    done
-
-    # Duplicates
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
-    } | while read file; do
-        grep -P "extern const $type_of_extern [$allowed_chars]+;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
-    done
-done
+# Duplicate ErrorCodes
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate ErrorCode in file $file"; done
 
 # Three or more consecutive empty lines
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -141,11 +70,16 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     xargs xmllint --noout --nonet
 
 # FIXME: for now only clickhouse-test
-pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
+pylint --rcfile=$ROOT_PATH/.pylintrc --score=n $ROOT_PATH/tests/clickhouse-test
 
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
     grep -vP $EXCLUDE_DIRS |
     xargs yamllint --config-file=$ROOT_PATH/.yamllint
+
+# Machine translation to Russian is strictly prohibited
+find $ROOT_PATH/docs/ru -name '*.md' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -F 'machine_translated: true'
 
 # Tests should not be named with "fail" in their names. It makes looking at the results less convenient.
 find $ROOT_PATH/tests/queries -iname '*fail*' |
@@ -155,7 +89,7 @@ find $ROOT_PATH/tests/queries -iname '*fail*' |
 # Queries to system.query_log/system.query_thread_log should have current_database = currentDatabase() condition
 # NOTE: it is not that accuate, but at least something.
 tests_with_query_log=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
         grep -vP $EXCLUDE_DIRS |
         xargs grep --with-filename -e system.query_log -e system.query_thread_log | cut -d: -f1 | sort -u
 ) )
@@ -165,25 +99,13 @@ for test_case in "${tests_with_query_log[@]}"; do
     } || echo "Queries to system.query_log/system.query_thread_log does not have current_database = currentDatabase() condition in $test_case"
 done
 
-# Queries to:
-tables_with_database_column=(
-    system.tables
-    system.parts
-    system.detached_parts
-    system.parts_columns
-    system.columns
-    system.projection_parts
-    system.mutations
-)
-# should have database = currentDatabase() condition
-#
+# Queries to system.tables/system.parts/system.detached_parts/system.parts_columns/system.columns should have database = currentDatabase() condition
 # NOTE: it is not that accuate, but at least something.
 tests_with_database_column=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
         grep -vP $EXCLUDE_DIRS |
-        xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") |
-        grep -v -e ':--' -e ':#' |
-        cut -d: -f1 | sort -u
+        grep -v -x -e $ROOT_PATH/tests/queries/query_test.py |
+        xargs grep --with-filename -e system.tables -e system.parts -e system.detached_parts -e system.parts_columns -e system.columns | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_database_column[@]}"; do
     grep -qE database.*currentDatabase "$test_case" || {
@@ -192,28 +114,32 @@ for test_case in "${tests_with_database_column[@]}"; do
         # explicit database
         grep -qE "database[ ]*=[ ]*'" "$test_case"
     } || {
-        echo "Queries to ${tables_with_database_column[*]} does not have database = currentDatabase()/\$CLICKHOUSE_DATABASE condition in $test_case"
+        echo "Queries to system.tables/system.parts/system.detached_parts/system.parts_columns/system.columns does not have database = currentDatabase()/\$CLICKHOUSE_DATABASE condition in $test_case"
     }
 done
 
 # Queries with ReplicatedMergeTree
 # NOTE: it is not that accuate, but at least something.
 tests_with_replicated_merge_tree=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' |
         grep -vP $EXCLUDE_DIRS |
-        xargs grep --with-filename -e "Replicated.*MergeTree[ ]*(.*" | cut -d: -f1 | sort -u
+        xargs grep --with-filename -e ReplicatedMergeTree | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_replicated_merge_tree[@]}"; do
     case "$test_case" in
-        *.gen.*)
-            ;;
         *.sh)
             test_case_zk_prefix="\$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
-            grep -q -e "Replicated.*MergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "Replicated.*MergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
+            grep -q -e "ReplicatedMergeTree.*$test_case_zk_prefix" "$test_case" || echo "ReplicatedMergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
             ;;
-        *.sql|*.sql.j2)
-            test_case_zk_prefix="\({database}\|currentDatabase()\|{uuid}\|{default_path_test}\)"
-            grep -q -e "Replicated.*MergeTree[ ]*(.*$test_case_zk_prefix" "$test_case" || echo "Replicated.*MergeTree should contain '$test_case_zk_prefix' in zookeeper path to avoid overlaps ($test_case)"
+        *.sql)
+            # NOTE: *.sql is not supported because it is not possible right now, because:
+            # - ReplicatedMergeTree supports only ASTLiteral for zookeeper path
+            #   (and adding support of other nodes, with evaluating them are not that easy, due to zk_prefix is "optional")
+            # - Hence concat(currentDatabase(), 'foo')
+            # - Also params cannot be used, because the are wrapped with CAST()
+            #
+            # But hopefully they will not be a problem
+            # (since they do not do any "stressing" and overlap probability should be lower).
             ;;
         *.py)
             # Right now there is not such tests anyway
@@ -229,10 +155,30 @@ find $ROOT_PATH -name '.gitmodules' | while read i; do grep -F 'url = ' $i | gre
 find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | xargs grep -i -F 'General Public License' && echo "There shouldn't be any code snippets under GPL or LGPL"
 
 # There shouldn't be any docker containers outside docker directory
-find $ROOT_PATH -not -path $ROOT_PATH'/tests/ci*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
+find $ROOT_PATH -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
 
 # There shouldn't be any docker compose files outside docker directory
 #find $ROOT_PATH -not -path $ROOT_PATH'/tests/testflows*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name '*compose*.yml' -type f 2>/dev/null | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to docker directory:"
+
+# Check that ya.make files are auto-generated
+"$ROOT_PATH"/utils/generate-ya-make/generate-ya-make.sh
+# FIXME: apparently sandbox (don't confuse it with docker) cloning sources
+# using some ancient git version, <2.8, that contains one bug for submodules
+# initialization [1]:
+#
+#    " * A partial rewrite of "git submodule" in the 2.7 timeframe changed
+#        the way the gitdir: pointer in the submodules point at the real
+#        repository location to use absolute paths by accident.  This has
+#        been corrected."
+#
+#  [1]: https://github.com/git/git/blob/cf11a67975b057a144618badf16dc4e3d25b9407/Documentation/RelNotes/2.8.3.txt#L33-L36
+#
+# Due to which "git status" will report the following error:
+#
+#     fatal: not a git repository: /place/sandbox-data/tasks/0/2/882869720/ClickHouse/.git/modules/contrib/AMQP-CPP
+#
+# Anyway this check does not requires any submodule traverse, so it is fine to ignore those errors.
+git status -uno 2> >(grep "fatal: not a git repository: /place/sandbox-data/tasks/.*/ClickHouse/\\.git/modules/contrib") | grep ya.make && echo "ya.make files should be generated with utils/generate-ya-make/generate-ya-make.sh"
 
 # Check that every header file has #pragma once in first line
 find $ROOT_PATH/{src,programs,utils} -name '*.h' |
@@ -240,7 +186,7 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' |
     while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
 
 # Check for executable bit on non-executable files
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.j2' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
 
 # Check for BOM
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"
@@ -255,70 +201,12 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
-    xargs grep -n -P ' $' | grep -n -P '.' && echo "^ Trailing whitespaces."
+    xargs grep -P ' $' | grep -P '.' && echo "^ Trailing whitespaces."
 
 # Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P 'std::[io]?stringstream' | grep -v "STYLE_CHECK_ALLOW_STD_STRING_STREAM" && echo "Use WriteBufferFromOwnString or ReadBufferFromString instead of std::stringstream"
-
-# Forbid std::cerr/std::cout in src (fine in programs/utils)
-std_cerr_cout_excludes=(
-    /examples/
-    /tests/
-    _fuzzer
-    # OK
-    src/Common/ProgressIndication.cpp
-    # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
-    src/Common/HashTable/HashTable.h
-    # SensitiveDataMasker::printStats()
-    src/Common/SensitiveDataMasker.cpp
-    # StreamStatistics::print()
-    src/Compression/LZ4_decompress_faster.cpp
-    # ContextSharedPart with subsequent std::terminate()
-    src/Interpreters/Context.cpp
-    # IProcessor::dump()
-    src/Processors/IProcessor.cpp
-    src/Client/ClientBase.cpp
-    src/Client/QueryFuzzer.cpp
-    src/Client/Suggest.cpp
-    src/Bridge/IBridge.cpp
-    src/Daemon/BaseDaemon.cpp
-    src/Loggers/Loggers.cpp
-)
-sources_with_std_cerr_cout=( $(
-    find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
-        grep -vP $EXCLUDE_DIRS | \
-        grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
-        xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
-) )
-# Exclude comments
-for src in "${sources_with_std_cerr_cout[@]}"; do
-    # suppress stderr, since it may contain warning for #pargma once in headers
-    if gcc -fpreprocessed -dD -E "$src" 2>/dev/null | grep -F -q -e std::cerr -e std::cout; then
-        echo "$src: uses std::cerr/std::cout"
-    fi
-done
-
-# Queries with event_date should have yesterday() not today()
-#
-# NOTE: it is not that accuate, but at least something.
-tests_with_event_time_date=( $(
-    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        grep -vP $EXCLUDE_DIRS |
-        xargs grep --with-filename -e event_time -e event_date | cut -d: -f1 | sort -u
-) )
-for test_case in "${tests_with_event_time_date[@]}"; do
-    cat "$test_case" | tr '\n' ' ' | grep -q -i -e 'WHERE.*event_date[ ]*=[ ]*today()' -e 'WHERE.*event_date[ ]*=[ ]*today()' && {
-        echo "event_time/event_date should be filtered using >=yesterday() in $test_case (to avoid flakiness)"
-    }
-done
-
-expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
-for test_case in "${expect_tests[@]}"; do
-    pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
-    grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
-done
 
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
@@ -327,27 +215,3 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' 
 # Forbid subprocess.check_call(...) in integration tests because it does not provide enough information on errors
 find $ROOT_PATH'/tests/integration' -name '*.py' |
     xargs grep -F 'subprocess.check_call' | grep -v "STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL" && echo "Use helpers.cluster.run_and_check or subprocess.run instead of subprocess.check_call to print detailed info on error"
-
-# Forbid non-unique error codes
-if [[ "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | wc -l)" != "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | sort | uniq | wc -l)" ]]
-then
-    echo "ErrorCodes.cpp contains non-unique error codes"
-fi
-
-# Check that there is no system-wide libraries/headers in use.
-#
-# NOTE: it is better to override find_path/find_library in cmake, but right now
-# it is not possible, see [1] for the reference.
-#
-#   [1]: git grep --recurse-submodules -e find_library -e find_path contrib
-if git grep -e find_path -e find_library -- :**CMakeLists.txt; then
-    echo "There is find_path/find_library usage. ClickHouse should use everything bundled. Consider adding one more contrib module."
-fi
-
-# Forbid files that differ only by character case
-find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
-
-# Forbid std::filesystem::is_symlink and std::filesystem::read_symlink, because it's easy to use them incorrectly
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
-    grep -vP $EXCLUDE_DIRS |
-    xargs grep -P '::(is|read)_symlink' | grep -v "STYLE_CHECK_ALLOW_STD_FS_SYMLINK" && echo "Use DB::FS::isSymlink and DB::FS::readSymlink instead"

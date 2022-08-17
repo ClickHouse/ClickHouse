@@ -1,4 +1,4 @@
-#include <Common/DateLUTImpl.h>
+#include <common/DateLUTImpl.h>
 
 #include <Core/DecimalFunctions.h>
 #include <IO/WriteHelpers.h>
@@ -58,8 +58,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
     bool isVariadic() const override { return true; }
@@ -112,7 +110,7 @@ public:
             || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of function {}, must be Date or DateTime.",
+                "Illegal column {} of function {], must be Date or DateTime.",
                 arguments[1].column->getName(),
                 getName());
 
@@ -148,7 +146,7 @@ public:
         UInt32 scale [[maybe_unused]] = 0;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
         {
-            scale = times->getScale();
+            scale = times_data.getScale();
         }
 
         auto result_column = ColumnString::create();
@@ -343,7 +341,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(DateName)
+void registerFunctionDateName(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDateNameImpl>(FunctionFactory::CaseInsensitive);
 }

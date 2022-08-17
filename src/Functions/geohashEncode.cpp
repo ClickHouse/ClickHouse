@@ -39,7 +39,6 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -133,7 +132,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(GeohashEncode)
+void registerFunctionGeohashEncode(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGeohashEncode>();
 }

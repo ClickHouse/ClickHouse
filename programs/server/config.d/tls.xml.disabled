@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <https_port>8443</https_port>
     <tcp_port_secure>9440</tcp_port_secure>
     <openSSL>
@@ -6,4 +6,4 @@
             <dhParamsFile remove="remove"/>
         </server>
     </openSSL>
-</clickhouse>
+</yandex>
