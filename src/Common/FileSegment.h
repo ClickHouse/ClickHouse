@@ -145,6 +145,8 @@ public:
     /// Wait for the change of state from DOWNLOADING to any other.
     State wait();
 
+    void waitBackgroundDownloadIfExists(size_t offset) const;
+
     bool isDownloaded() const { return is_downloaded.load(); }
 
     size_t getHitsCount() const { return hits_count; }
@@ -350,13 +352,23 @@ private:
         std::atomic<size_t> downloaded_size = 0;
         std::atomic<size_t> future_downloaded_size = 0;
 
+        struct BackgroundDownloadResult
+        {
+            std::shared_future<void> shared_future;
+            size_t expected_size;
+
+            BackgroundDownloadResult(std::shared_future<void> && shared_future_, size_t expected_size_)
+                : shared_future(std::move(shared_future_)), expected_size(expected_size_) {}
+        };
+        /// Ordered.
+        std::map<size_t, BackgroundDownloadResult> currently_downloading;
+
     private:
         /// Contains the first exception happened when writing data
         /// from `buffers`. No further buffer can be written, if there
         /// was exception while writing previous buffer.
         std::exception_ptr exception TSA_GUARDED_BY(exception_mutex);
         mutable std::mutex exception_mutex;
-
         // std::string toString() const
         // {
         //     WriteBufferFromOwnString wb;

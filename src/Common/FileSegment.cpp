@@ -279,6 +279,101 @@ void FileSegment::write(const char * from, size_t size, size_t offset_)
         synchronousWrite(from, size, offset_, false);
 }
 
+void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
+{
+    if (!async_write_state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no write state for background download");
+
+    std::optional<std::shared_future<void>> shared_future;
+
+    {
+        std::lock_guard segment_lock(mutex);
+
+        /// Get offset which corresponds to the first byte for which
+        /// there is no in memory buffer in the background download queue:
+        ///
+        /// [___][___] ... [___] -- buffers in the background download queue
+        ///  b1    b2       bn  ^
+        ///                     current_write_offset
+        const size_t current_write_offset = getCurrentWriteOffsetUnlocked(segment_lock);
+
+        if (offset > current_write_offset)
+        {
+            /// ... [______] -- queue of background download buffers
+            ///       bn
+            ///                    ^
+            ///                    offset
+            ///             ^
+            ///             current_write_offset
+
+            /// There is no data starting from `offset` which is waiting
+            /// to be downloaded by the background thread.
+            return;
+        }
+
+        const auto & currently_downloading = async_write_state->currently_downloading;
+        if (currently_downloading.empty())
+            return;
+
+        size_t first_non_downloaded_offset = currently_downloading.begin()->first;
+
+        if (offset < first_non_downloaded_offset)
+        {
+            ///             [______]
+            ///                b1
+            ///   ^         ^
+            ///   offset    first_non_downloaded_offset
+
+            /// Data containing `offset` is already downloaded.
+            return;
+        }
+
+        auto it = std::lower_bound(
+            currently_downloading.begin(),
+            currently_downloading.end(),
+            offset,
+            [](const auto & map, size_t value) { return map.first < value; });
+
+        /// [___][___] ... [___]
+        ///  b1    b2       bn  ^
+        ///
+        ///  At this point we have the following invariant:
+        ///  b1.offset <= offset <= it.offset <= bn.end
+
+        assert(!currently_downloading.empty());
+        assert(currently_downloading.begin()->first <= offset);
+
+        if (it == currently_downloading.end())
+        {
+            ///  [______] -- bn
+            ///     ^
+            ///     offset
+           it = std::prev(currently_downloading.end());
+        }
+        else
+        {
+            assert(offset <= it->first);
+
+            if (offset < it->first)
+            {
+                /// [______________][_________]
+                ///                     it
+                ///        ^         ^
+                ///        offset    it.offset
+                it = std::prev(it);
+            }
+        }
+
+        shared_future = it->second.shared_future;
+    }
+
+    LOG_DEBUG(log, "Waiting for buffer at offset {} to be downloaded", offset);
+
+    shared_future->wait();
+
+    LOG_DEBUG(log, "Waiting for buffer at offset {} to be downloaded is finished", offset);
+}
+
 void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offset)
 {
     if (!size)
@@ -402,20 +497,42 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
             assert(background_downloader_id.empty());
         });
 
-        std::optional<size_t> start_offset = 0;
+        std::optional<size_t> start_offset;
         size_t total_size = 0;
 
         try
         {
-            size_t written_bytes = 0;
+            struct OffsetAndSize
+            {
+                size_t offset;
+                size_t size;
+            };
+            std::optional<OffsetAndSize> last_finished_buffer;
+
             while (true)
             {
                 WriteState::Buffer buffer;
+
                 {
                     std::lock_guard segment_lock(file_segment->mutex);
 
-                    state.downloaded_size += written_bytes;
-                    written_bytes = 0;
+                    if (last_finished_buffer)
+                    {
+                        state.downloaded_size += last_finished_buffer->size;
+
+                        auto erased = state.currently_downloading.erase(last_finished_buffer->offset);
+                        if (erased == 0)
+                        {
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "There is no offset {} in currently downloading list",
+                                last_finished_buffer->offset);
+                        }
+
+                        LOG_TEST(log, "Removed offset {} from currently downloading", last_finished_buffer->offset);
+
+                        last_finished_buffer.reset();
+                    }
 
                     if (state.buffers.empty())
                     {
@@ -439,7 +556,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
                 LOG_TEST(log, "Background download: [{}:{})", buffer.offset, buffer.offset + buffer.size());
 
                 synchronousWrite(buffer.data(), buffer.size(), buffer.offset, true);
-                written_bytes = buffer.size();
+                last_finished_buffer = {buffer.offset, buffer.size()};
                 total_size += buffer.size();
 
                 {
@@ -452,6 +569,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
             state.setExceptionIfEmpty();
+            state.currently_downloading.clear();
 
             try
             {
@@ -480,6 +598,12 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         ///                     wait_offset
         cv.notify_all();
     });
+
+    {
+        std::lock_guard segment_lock(mutex);
+        WriteState::BackgroundDownloadResult result(task->get_future(), size);
+        async_write_state->currently_downloading.emplace(offset, result);
+    }
 
     cache->getThreadPoolForAsyncWrite().scheduleOrThrow([task]{ (*task)(); });
 }

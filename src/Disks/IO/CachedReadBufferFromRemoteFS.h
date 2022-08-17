@@ -80,6 +80,8 @@ private:
 
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
+    bool canStartFromCache(size_t current_offset, const FileSegment & file_segment) const;
+
     Poco::Logger * log;
     FileCache::Key cache_key;
     String remote_fs_object_path;

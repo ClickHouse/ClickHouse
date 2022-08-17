@@ -187,6 +187,24 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getRemoteFSReadBuffer(FileSe
     }
 }
 
+bool CachedReadBufferFromRemoteFS::canStartFromCache(size_t current_offset, const FileSegment & file_segment) const
+{
+    if (settings.filesystem_cache_asynchronous_write)
+    {
+        file_segment.waitBackgroundDownloadIfExists(current_offset);
+    }
+
+    ///                      segment{k} state: DOWNLOADING
+    /// cache:           [______|___________
+    ///                         ^
+    ///                         first_non_downloaded_offset (in progress)
+    /// requested_range:    [__________]
+    ///                     ^
+    ///                     current_offset
+    size_t first_non_downloaded_offset = file_segment.getFirstNonDownloadedOffset();
+    return first_non_downloaded_offset > current_offset;
+}
+
 SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(FileSegmentPtr & file_segment)
 {
     auto range = file_segment->range();
@@ -221,11 +239,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
             }
             case FileSegment::State::DOWNLOADING:
             {
-                size_t first_non_downloaded_offset = file_segment->getFirstNonDownloadedOffset();
-                bool can_start_from_cache = first_non_downloaded_offset > file_offset_of_buffer_end;
-
-                /// If file segment is being downloaded but we can already read from already downloaded part, do that.
-                if (can_start_from_cache)
+                if (canStartFromCache(file_offset_of_buffer_end, *file_segment))
                 {
                     ///                      segment{k} state: DOWNLOADING
                     /// cache:           [______|___________
@@ -245,6 +259,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                 }
                 else
                 {
+                    /// FIXME: !!!
                     download_state = FileSegment::State::SKIP_CACHE;
                 }
 
@@ -275,12 +290,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                 auto downloader_id = file_segment->getOrSetDownloader();
                 if (downloader_id == file_segment->getCallerId())
                 {
-                    size_t downloaded_offset = file_segment->getFirstNonDownloadedOffset();
-                    bool can_start_from_cache = downloaded_offset > file_offset_of_buffer_end;
-
-                    LOG_TEST(log, "Current download offset: {}, file offset of buffer end: {}", downloaded_offset, file_offset_of_buffer_end);
-
-                    if (can_start_from_cache)
+                    if (canStartFromCache(file_offset_of_buffer_end, *file_segment))
                     {
                         ///                      segment{k}
                         /// cache:           [______|___________
@@ -311,8 +321,6 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
                         chassert(bytes_to_predownload < range.size());
                     }
 
-                    chassert(!can_start_from_cache);
-
                     read_type = ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
                     return getRemoteFSReadBuffer(file_segment, read_type);
                 }
@@ -322,10 +330,7 @@ SeekableReadBufferPtr CachedReadBufferFromRemoteFS::getReadBufferForFileSegment(
             }
             case FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION:
             {
-                size_t first_non_downloaded_offset = file_segment->getFirstNonDownloadedOffset();
-                bool can_start_from_cache = first_non_downloaded_offset > file_offset_of_buffer_end;
-
-                if (can_start_from_cache)
+                if (canStartFromCache(file_offset_of_buffer_end, *file_segment))
                 {
                     read_type = ReadType::CACHED;
                     return getCacheReadBuffer(range.left);
