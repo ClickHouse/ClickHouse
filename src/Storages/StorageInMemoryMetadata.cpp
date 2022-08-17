@@ -464,8 +464,8 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
 
 namespace
 {
-    using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
+    using NamesAndTypesMap = HashMapWithSavedHash<std::string_view, const IDataType *>;
+    using UniqueStrings = HashSetWithSavedHash<std::string_view>;
 
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
