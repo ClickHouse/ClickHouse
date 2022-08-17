@@ -5,6 +5,19 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 
+/**
+ * When ClickHouse has frozen data on remote storage it requred 'smart' data removing during UNFREEZE.
+ * For remote storage actually frozen not remote data but local metadata with referrers on remote data.
+ * So remote data can be referred from working and frozen data sets (or two frozen) at same time.
+ * In this case during UNFREEZE ClickHouse should remove only local metadata and keep remote data.
+ * But when data was already removed from working data set ClickHouse should remove remote data too.
+ * To detect is current data used or not in some other place ClickHouse uses
+ *   - ref_count from metadata to check if data used in some other metadata on the same replica;
+ *   - Keeper record to check if data used on other replica.
+ * StorageReplicatedMergeTree::removeSharedDetachedPart makes required checks, so here this method
+ * called for each frozen part.
+ */
+
 namespace DB
 {
 namespace ErrorCodes
@@ -61,7 +74,7 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
     readIntText(version, buffer);
     if (version < 1 or version > 2)
     {
-        LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown freezed metadata version: {}", version);
+        LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown frozen metadata version: {}", version);
         return false;
     }
     DB::assertChar('\n', buffer);
