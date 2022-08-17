@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionToLastDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate, ToLastDayOfMonthImpl>;
+using FunctionToLastDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate32, ToLastDayOfMonthImpl>;
 
 REGISTER_FUNCTION(ToLastDayOfMonth)
 {
