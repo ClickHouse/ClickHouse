@@ -321,6 +321,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     else
         part_name = new_part_info.getPartName();
 
+    String part_dir = TMP_PREFIX + part_name;
+    temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);

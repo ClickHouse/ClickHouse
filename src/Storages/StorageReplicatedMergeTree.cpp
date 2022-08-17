@@ -41,14 +41,17 @@
 #include <Storages/Freeze.h>
 
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseReplicated.h>
 
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -58,6 +61,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sinks/EmptySink.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -72,6 +76,7 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/JoinedTables.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
@@ -158,6 +163,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
     extern const int CHECKSUM_DOESNT_MATCH;
+    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
 }
 
 namespace ActionLocks
@@ -466,7 +472,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
         /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
         /// don't allow to reinitialize them, delete each of them immediately.
-        clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_"});
+        clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
         clearOldWriteAheadLogs();
         if (getSettings()->merge_tree_enable_clear_old_broken_detached)
             clearOldBrokenPartsFromDetachedDirecory();
@@ -1107,19 +1113,18 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     }
 }
 
-void StorageReplicatedMergeTree::setTableStructure(
+void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
     ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, getContext(), old_metadata);
+    StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, local_context, old_metadata);
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
     checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
 
-    auto table_id = getStorageID();
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(getContext(), table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
 }
 
 
@@ -1957,6 +1962,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         String replica;
 
         MergeTreeData::HardlinkedFiles hardlinked_files;
+
+        scope_guard temporary_part_lock;
     };
 
     using PartDescriptionPtr = std::shared_ptr<PartDescription>;
@@ -2203,8 +2210,10 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (part_desc->checksum_hex != part_desc->src_table_part->checksums.getTotalChecksumHex())
                 throw Exception("Checksums of " + part_desc->src_table_part->name + " is suddenly changed", ErrorCodes::UNFINISHED);
 
-            part_desc->res_part = cloneAndLoadDataPartOnSameDisk(
+            auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
                 part_desc->src_table_part, TMP_PREFIX + "clone_", part_desc->new_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &part_desc->hardlinked_files, false);
+            part_desc->res_part = std::move(res_part);
+            part_desc->temporary_part_lock = std::move(temporary_part_lock);
         }
         else if (!part_desc->replica.empty())
         {
@@ -3841,7 +3850,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     if (!to_detached)
     {
-        if (auto part = getPartIfExists(part_info, {IMergeTreeDataPart::State::Outdated, IMergeTreeDataPart::State::Deleting}))
+        if (auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting}))
         {
             LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
             /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
@@ -3943,12 +3952,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
     MergeTreeData::HardlinkedFiles hardlinked_files;
+    scope_guard part_to_clone_lock;
 
     if (part_to_clone)
     {
         get_part = [&, part_to_clone]()
         {
-            return cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, false);
+            auto [cloned_part, lock] = cloneAndLoadDataPartOnSameDisk(part_to_clone, "tmp_clone_", part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, false);
+            part_to_clone_lock = std::move(lock);
+            return cloned_part;
         };
     }
     else
@@ -4044,7 +4056,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         /// The same part is being written right now (but probably it's not committed yet).
         /// We will check the need for fetch later.
         if (e.code() == ErrorCodes::DIRECTORY_ALREADY_EXISTS)
+        {
+            LOG_TRACE(log, "Not fetching part: {}", e.message());
             return false;
+        }
 
         throw;
     }
@@ -4077,7 +4092,7 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     auto zookeeper = getZooKeeper();
     const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    if (auto part = getPartIfExists(part_info, {IMergeTreeDataPart::State::Outdated, IMergeTreeDataPart::State::Deleting}))
+    if (auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting}))
     {
         LOG_DEBUG(log, "Part {} should be deleted after previous attempt before fetch", part->name);
         /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
@@ -4156,7 +4171,10 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
         /// The same part is being written right now (but probably it's not committed yet).
         /// We will check the need for fetch later.
         if (e.code() == ErrorCodes::DIRECTORY_ALREADY_EXISTS)
+        {
+            LOG_TRACE(log, "Not fetching part: {}", e.message());
             return nullptr;
+        }
 
         throw;
     }
@@ -4443,13 +4461,114 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
 
     // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeSink?
+    // TODO: insert_quorum = 'auto' would be supported in https://github.com/ClickHouse/ClickHouse/pull/39970, now it's same as 0.
     return std::make_shared<ReplicatedMergeTreeSink>(
-        *this, metadata_snapshot, query_settings.insert_quorum,
+        *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,
         query_settings.insert_quorum_parallel,
         deduplicate,
         local_context);
+}
+
+
+std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context)
+{
+    const auto & settings = local_context->getSettingsRef();
+    auto extension = src_storage_cluster->getTaskIteratorExtension(local_context);
+
+    /// Here we won't check that the cluster formed from table replicas is a subset of a cluster specified in s3Cluster/hdfsCluster table function
+    auto src_cluster = src_storage_cluster->getCluster(local_context);
+
+    /// Actually the query doesn't change, we just serialize it to string
+    String query_str;
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
+        ast_format_settings.always_quote_identifiers = true;
+        query.IAST::format(ast_format_settings);
+        query_str = buf.str();
+    }
+
+    QueryPipeline pipeline;
+    ContextMutablePtr query_context = Context::createCopy(local_context);
+    ++query_context->getClientInfo().distributed_depth;
+
+    for (const auto & replicas : src_cluster->getShardsAddresses())
+    {
+        /// There will be only one replica, because we consider each replica as a shard
+        for (const auto & node : replicas)
+        {
+            auto connection = std::make_shared<Connection>(
+                node.host_name, node.port, query_context->getGlobalContext()->getCurrentDatabase(),
+                node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                "ParallelInsertSelectInititiator",
+                node.compression,
+                node.secure
+            );
+
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                connection,
+                query_str,
+                Block{},
+                query_context,
+                /*throttler=*/nullptr,
+                Scalars{},
+                Tables{},
+                QueryProcessingStage::Complete,
+                extension);
+
+            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote));
+            remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
+
+            pipeline.addCompletedPipeline(std::move(remote_pipeline));
+        }
+    }
+
+    return pipeline;
+}
+
+std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+{
+    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
+    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return {};
+
+    const Settings & settings = local_context->getSettingsRef();
+    if (settings.max_distributed_depth && local_context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
+        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+
+    StoragePtr src_storage;
+
+    if (select.list_of_selects->children.size() == 1)
+    {
+        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        {
+            JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
+
+            if (joined_tables.tablesCount() == 1)
+            {
+                src_storage = joined_tables.getLeftTableStorage();
+            }
+        }
+    }
+
+    if (!src_storage)
+        return {};
+
+    if (auto src_distributed = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
+    {
+        return distributedWriteFromClusterStorage(src_distributed, query, local_context);
+    }
+    else if (local_context->getClientInfo().distributed_depth == 0)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parallel distributed INSERT SELECT is not possible. Reason: distributed "\
+            "reading into Replicated table is supported only from *Cluster table functions, but got {} storage", src_storage->getName());
+    }
+
+    return {};
 }
 
 
@@ -4614,7 +4733,31 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "columns", entry.columns_str, -1));
     requests.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "metadata", entry.metadata_str, -1));
 
-    zookeeper->multi(requests);
+    auto table_id = getStorageID();
+    auto alter_context = getContext();
+
+    auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    bool is_in_replicated_database = database->getEngineName() == "Replicated";
+
+    if (is_in_replicated_database)
+    {
+        auto mutable_alter_context = Context::createCopy(getContext());
+        const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get());
+        mutable_alter_context->makeQueryContext();
+        auto alter_txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, replicated->getZooKeeperPath(),
+                                                                       /* is_initial_query */ false, /* task_zk_path */ "");
+        mutable_alter_context->initZooKeeperMetadataTransaction(alter_txn);
+        alter_context = mutable_alter_context;
+
+        for (auto & op : requests)
+            alter_txn->addOp(std::move(op));
+        requests.clear();
+        /// Requests will be executed by database in setTableStructure
+    }
+    else
+    {
+        zookeeper->multi(requests);
+    }
 
     {
         auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
@@ -4622,13 +4765,14 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
         auto metadata_diff = ReplicatedMergeTreeTableMetadata(*this, getInMemoryMetadataPtr()).checkAndFindDiff(metadata_from_entry, getInMemoryMetadataPtr()->getColumns(), getContext());
-        setTableStructure(std::move(columns_from_entry), metadata_diff);
+        setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff);
         metadata_version = entry.alter_version;
 
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", metadata_version);
     }
 
     /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
+    /// TODO Maybe do in in one transaction for Replicated database?
     zookeeper->createOrUpdate(fs::path(replica_path) / "metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
 
     return true;
@@ -5142,9 +5286,28 @@ void StorageReplicatedMergeTree::checkTableCanBeRenamed(const StorageID & new_na
         return;
 
     if (renaming_restrictions == RenamingRestrictions::DO_NOT_ALLOW)
-        throw Exception("Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. "
-                        "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, "
-                        "you should edit metadata file first and restart server or reattach the table.", ErrorCodes::NOT_IMPLEMENTED);
+    {
+        auto old_name = getStorageID();
+        bool is_server_startup = Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER
+            && !Context::getGlobalContextInstance()->isServerCompletelyStarted();
+        bool move_to_atomic = old_name.uuid == UUIDHelpers::Nil && new_name.uuid != UUIDHelpers::Nil;
+
+        bool likely_converting_ordinary_to_atomic = is_server_startup && move_to_atomic;
+        if (likely_converting_ordinary_to_atomic)
+        {
+            LOG_INFO(log, "Table {} should not be renamed, because zookeeper_path contains implicit 'database' or 'table' macro. "
+                          "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. "
+                          "However, we allow renaming while converting Ordinary database to Atomic, because all tables will be renamed back",
+                          old_name.getNameForLogs());
+            return;
+        }
+
+        throw Exception(
+            "Cannot rename Replicated table, because zookeeper_path contains implicit 'database' or 'table' macro. "
+            "We cannot rename path in ZooKeeper, so path may become inconsistent with table name. If you really want to rename table, "
+            "you should edit metadata file first and restart server or reattach the table.",
+            ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     assert(renaming_restrictions == RenamingRestrictions::ALLOW_PRESERVING_UUID);
     if (!new_name.hasUUID() && getStorageID().hasUUID())
@@ -6376,6 +6539,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     {
         DataPartsVector src_parts;
         MutableDataPartsVector dst_parts;
+        std::vector<scope_guard> dst_parts_locks;
         Strings block_id_paths;
         Strings part_checksums;
         std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
@@ -6442,10 +6606,11 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             bool copy_instead_of_hardlink = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                                             && src_part->isStoredOnRemoteDiskWithZeroCopySupport();
 
-            auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, copy_instead_of_hardlink);
+            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, copy_instead_of_hardlink);
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
+            dst_parts_locks.emplace_back(std::move(part_lock));
             ephemeral_locks.emplace_back(std::move(*lock));
             block_id_paths.emplace_back(block_id_path);
             part_checksums.emplace_back(hash_hex);
@@ -6645,6 +6810,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
         Coordination::Stat dest_alter_partition_version_stat;
         zookeeper->get(dest_alter_partition_version_path, &dest_alter_partition_version_stat);
         std::vector<MergeTreeData::HardlinkedFiles> hardlinked_files_for_parts;
+        std::vector<scope_guard> temporary_parts_locks;
 
         for (const auto & src_part : src_all_parts)
         {
@@ -6671,10 +6837,11 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             bool copy_instead_of_hardlink = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                                             && src_part->isStoredOnRemoteDiskWithZeroCopySupport();
 
-            auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, copy_instead_of_hardlink);
+            auto [dst_part, dst_part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, NO_TRANSACTION_PTR, &hardlinked_files, copy_instead_of_hardlink);
 
             src_parts.emplace_back(src_part);
             dst_parts.emplace_back(dst_part);
+            temporary_parts_locks.emplace_back(std::move(dst_part_lock));
             ephemeral_locks.emplace_back(std::move(*lock));
             block_id_paths.emplace_back(block_id_path);
             part_checksums.emplace_back(hash_hex);

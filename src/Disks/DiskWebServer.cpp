@@ -19,7 +19,6 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 

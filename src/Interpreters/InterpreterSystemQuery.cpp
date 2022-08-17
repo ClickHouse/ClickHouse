@@ -8,7 +8,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
 #include <Common/FileCacheFactory.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -760,6 +760,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -767,8 +768,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
         if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
-            LOG_ERROR(log, "SYNC DATABASE REPLICA {}: Timed out!", database_name);
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: command timed out. " \
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
                     "See the 'receive_timeout' setting", database_name);
         }
         LOG_TRACE(log, "SYNC DATABASE REPLICA {}: OK", database_name);
