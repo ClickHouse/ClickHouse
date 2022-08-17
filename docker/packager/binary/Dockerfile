@@ -51,7 +51,8 @@ RUN git clone https://github.com/llvm/llvm-project.git \
     && cd llvm-build \
     && cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm \
     && ninja \
-    && ninja install
+    && ninja install \
+    && cd .. && rm -rf llvm-build llvm-project
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH
