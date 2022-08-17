@@ -61,24 +61,22 @@ struct ToDateImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        auto day_num = time_zone.toDayNum(t);
-        if (day_num < 0)
+        if (t < 0)
             return 0;
-        else if (day_num > DATE_LUT_MAX_DAY_NUM)
-            return UInt16(DATE_LUT_MAX_DAY_NUM);
-        else
-            return UInt16(day_num);
+
+        auto day_num = time_zone.toDayNum(t);
+        return day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM;
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return UInt16(time_zone.toDayNum(t));
+        return time_zone.toDayNum(t);
     }
     static inline UInt16 execute(Int32 t, const DateLUTImpl &)
     {
         if (t < 0)
             return 0;
 
-        return UInt16(t < DATE_LUT_MAX_DAY_NUM ? t : DATE_LUT_MAX_DAY_NUM);
+        return t < DATE_LUT_MAX_DAY_NUM ? t : DATE_LUT_MAX_DAY_NUM;
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -123,7 +121,11 @@ struct ToStartOfDayImpl
         if (t.whole < 0)
             return 0;
 
-        return time_zone.toDate(t.whole < DATE_LUT_MAX_DAY_NUM ? t.whole : DATE_LUT_MAX_DAY_NUM);
+        Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(t.whole));
+        if (date_time <= 0xffffffff)
+            return date_time;
+        else
+            return time_zone.toDate(0xffffffff);
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -134,11 +136,19 @@ struct ToStartOfDayImpl
         if (d < 0)
             return 0;
 
-        return time_zone.toDate(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM);
+        Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(d));
+        if (date_time <= 0xffffffff)
+            return date_time;
+        else
+            return time_zone.toDate(0xffffffff);
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDate(DayNum(d));
+        Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(d));
+        if (date_time <= 0xffffffff)
+            return date_time;
+        else
+            return time_zone.toDate(0xffffffff);
     }
 
     using FactorTransform = ZeroTransform;
@@ -155,13 +165,10 @@ struct ToMondayImpl
 
         auto day_num = time_zone.toDayNum(t);
 
-        return time_zone.toFirstDayNumOfWeek(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM);
-        //return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
-//        return time_zone.toFirstDayNumOfWeek(t);
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        //return time_zone.toFirstDayNumOfWeek(time_zone.toDayNum(t));
         return time_zone.toFirstDayNumOfWeek(t);
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
@@ -169,8 +176,8 @@ struct ToMondayImpl
         if (d < 0)
             return 0;
 
-        return time_zone.toFirstDayNumOfWeek(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM))
+            ;
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -191,20 +198,18 @@ struct ToStartOfMonthImpl
 
         auto day_num = time_zone.toDayNum(t);
 
-        return time_zone.toFirstDayNumOfMonth(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t));
+        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t));
+        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(time_zone.toDayNum(t)));
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if (d < 0)
             return 0;
 
-        return time_zone.toFirstDayNumOfMonth(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -224,9 +229,7 @@ struct ToLastDayOfMonthImpl
             return 0;
 
         auto day_num = time_zone.toDayNum(t);
-
-        return time_zone.toLastDayNumOfMonth(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
+        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -237,8 +240,7 @@ struct ToLastDayOfMonthImpl
         if (d < 0)
             return 0;
 
-        return time_zone.toLastDayNumOfMonth(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
+        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -259,8 +261,7 @@ struct ToStartOfQuarterImpl
 
         auto day_num = time_zone.toDayNum(t);
 
-        return time_zone.toFirstDayNumOfQuarter(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toFirstDayNumOfQuarter(time_zone.toDayNum(t));
+        return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -271,8 +272,7 @@ struct ToStartOfQuarterImpl
         if (d < 0)
             return 0;
 
-        return time_zone.toFirstDayNumOfQuarter(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -293,8 +293,7 @@ struct ToStartOfYearImpl
 
         auto day_num = time_zone.toDayNum(t);
 
-        return time_zone.toFirstDayNumOfYear(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toFirstDayNumOfYear(time_zone.toDayNum(t));
+        return time_zone.toFirstDayNumOfYear(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -305,8 +304,7 @@ struct ToStartOfYearImpl
         if (d < 0)
             return 0;
 
-        return time_zone.toFirstDayNumOfYear(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM);
-//        return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
