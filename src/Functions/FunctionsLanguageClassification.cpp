@@ -221,7 +221,7 @@ struct NameDetectLanguage
 
 using FunctionDetectLanguage = FunctionTextClassificationString<FunctionDetectLanguageImpl, NameDetectLanguage>;
 
-void registerFunctionsDetectLanguage(FunctionFactory & factory)
+REGISTER_FUNCTION(DetectLanguage)
 {
     factory.registerFunction<FunctionDetectLanguage>();
     factory.registerFunction<FunctionDetectLanguageMixed>();

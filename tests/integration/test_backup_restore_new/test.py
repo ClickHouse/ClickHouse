@@ -301,21 +301,21 @@ def test_async():
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
     backup_name = new_backup_name()
-    [id, _, status] = instance.query(
+    [id, status] = instance.query(
         f"BACKUP TABLE test.table TO {backup_name} ASYNC"
     ).split("\t")
 
-    assert status == "MAKING_BACKUP\n" or status == "BACKUP_COMPLETE\n"
+    assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
-        TSV([["BACKUP_COMPLETE", ""]]),
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
+        TSV([["BACKUP_CREATED", ""]]),
     )
 
     instance.query("DROP TABLE test.table")
 
-    [id, _, status] = instance.query(
+    [id, status] = instance.query(
         f"RESTORE TABLE test.table FROM {backup_name} ASYNC"
     ).split("\t")
 
@@ -323,7 +323,7 @@ def test_async():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["RESTORED", ""]]),
     )
 
@@ -335,31 +335,51 @@ def test_async_backups_to_same_destination(interface):
     create_and_fill_table()
     backup_name = new_backup_name()
 
-    ids = []
-    for _ in range(2):
-        if interface == "http":
-            res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
-        else:
-            res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
-        ids.append(res.split("\t")[0])
+    # The first backup.
+    if interface == "http":
+        res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+    else:
+        res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+    id1 = res.split("\t")[0]
 
-    [id1, id2] = ids
+    # The second backup to the same destination.
+    if interface == "http":
+        res, err = instance.http_query_and_get_answer_with_error(
+            f"BACKUP TABLE test.table TO {backup_name} ASYNC"
+        )
+    else:
+        res, err = instance.query_and_get_answer_with_error(
+            f"BACKUP TABLE test.table TO {backup_name} ASYNC"
+        )
+
+    # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+    # If it fails immediately we won't even get its ID.
+    id2 = None if err else res.split("\t")[0]
+
+    ids = [id1]
+    if id2:
+        ids.append(id2)
+    ids_for_query = "[" + ", ".join(f"'{id}'" for id in ids) + "]"
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status FROM system.backups WHERE uuid IN ['{id1}', '{id2}'] AND status == 'MAKING_BACKUP'",
+        f"SELECT status FROM system.backups WHERE id IN {ids_for_query} AND status == 'CREATING_BACKUP'",
         "",
     )
 
+    # The first backup should succeed.
     assert instance.query(
-        f"SELECT status, error FROM system.backups WHERE uuid='{id1}'"
-    ) == TSV([["BACKUP_COMPLETE", ""]])
+        f"SELECT status, error FROM system.backups WHERE id='{id1}'"
+    ) == TSV([["BACKUP_CREATED", ""]])
 
-    assert (
-        instance.query(f"SELECT status FROM system.backups WHERE uuid='{id2}'")
-        == "FAILED_TO_BACKUP\n"
-    )
+    if id2:
+        # The second backup should fail.
+        assert (
+            instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
+            == "BACKUP_FAILED\n"
+        )
 
+    # Check that the first backup is all right.
     instance.query("DROP TABLE test.table")
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
@@ -758,8 +778,8 @@ def test_system_users_async():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
-        TSV([["BACKUP_COMPLETE", ""]]),
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
+        TSV([["BACKUP_CREATED", ""]]),
     )
 
     instance.query("DROP USER u1")
@@ -770,7 +790,7 @@ def test_system_users_async():
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status, error FROM system.backups WHERE uuid='{id}'",
+        f"SELECT status, error FROM system.backups WHERE id='{id}'",
         TSV([["RESTORED", ""]]),
     )
 
@@ -882,6 +902,101 @@ def test_restore_partition():
     assert instance.query("SELECT * FROM test.table ORDER BY x") == TSV(
         [[2, "2"], [3, "3"], [12, "12"], [13, "13"], [22, "22"], [23, "23"]]
     )
+
+
+def test_operation_id():
+    create_and_fill_table(n=30)
+
+    backup_name = new_backup_name()
+
+    [id, status] = instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS id='first' ASYNC"
+    ).split("\t")
+
+    assert id == "first"
+    assert status == "CREATING_BACKUP\n" or status == "BACKUP_CREATED\n"
+
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status, error FROM system.backups WHERE id='first'",
+        TSV([["BACKUP_CREATED", ""]]),
+    )
+
+    instance.query("DROP TABLE test.table")
+
+    [id, status] = instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='second' ASYNC"
+    ).split("\t")
+
+    assert id == "second"
+    assert status == "RESTORING\n" or status == "RESTORED\n"
+
+    assert_eq_with_retry(
+        instance,
+        f"SELECT status, error FROM system.backups WHERE id='second'",
+        TSV([["RESTORED", ""]]),
+    )
+
+    # Reuse the same ID again
+    instance.query("DROP TABLE test.table")
+
+    [id, status] = instance.query(
+        f"RESTORE TABLE test.table FROM {backup_name} SETTINGS id='first'"
+    ).split("\t")
+
+    assert id == "first"
+    assert status == "RESTORED\n"
+
+
+def test_system_backups():
+    create_and_fill_table(n=30)
+
+    backup_name = new_backup_name()
+
+    id = instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[0]
+
+    [name, status, num_files, uncompressed_size, compressed_size, error] = (
+        instance.query(
+            f"SELECT name, status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE id='{id}'"
+        )
+        .strip("\n")
+        .split("\t")
+    )
+
+    escaped_backup_name = backup_name.replace("'", "\\'")
+    num_files = int(num_files)
+    compressed_size = int(compressed_size)
+    uncompressed_size = int(uncompressed_size)
+    assert name == escaped_backup_name
+    assert status == "BACKUP_CREATED"
+    assert num_files > 1
+    assert uncompressed_size > 1
+    assert compressed_size == uncompressed_size
+    assert error == ""
+
+    backup_name = new_backup_name()
+    expected_error = "Table test.non_existent_table was not found"
+    assert expected_error in instance.query_and_get_error(
+        f"BACKUP TABLE test.non_existent_table TO {backup_name}"
+    )
+
+    escaped_backup_name = backup_name.replace("'", "\\'")
+    [status, num_files, uncompressed_size, compressed_size, error] = (
+        instance.query(
+            f"SELECT status, num_files, uncompressed_size, compressed_size, error FROM system.backups WHERE name='{escaped_backup_name}'"
+        )
+        .strip("\n")
+        .split("\t")
+    )
+
+    num_files = int(num_files)
+    compressed_size = int(compressed_size)
+    uncompressed_size = int(uncompressed_size)
+    assert status == "BACKUP_FAILED"
+    assert num_files == 0
+    assert uncompressed_size == 0
+    assert compressed_size == 0
+    assert expected_error in error
 
 
 def test_mutation():
