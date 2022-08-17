@@ -157,9 +157,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index,
-    const SelectQueryInfo & query,
-    ContextPtr context)
+    const IndexDescription & index, const SelectQueryInfo & query, ContextPtr context)
     : index_data_types(index.data_types)
     , condition(query, context, index.column_names, index.expression)
 {

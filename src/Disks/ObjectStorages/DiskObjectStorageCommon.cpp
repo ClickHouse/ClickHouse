@@ -1,7 +1,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/FileCacheFactory.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
 #include <Common/FileCacheSettings.h>
 #include <Interpreters/Context.h>
 

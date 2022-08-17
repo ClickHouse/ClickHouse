@@ -55,8 +55,6 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
-    "DB::Exception: Cannot enqueue query",
-    "is executing longer than distributed_ddl_task_timeout",  # FIXME
 ]
 
 MAX_RETRIES = 3
@@ -180,6 +178,15 @@ def get_db_engine(args, database_name):
     if args.db_engine:
         return " ENGINE=" + args.db_engine
     return ""  # Will use default engine
+
+
+def get_create_database_settings(args, testcase_args):
+    create_database_settings = dict()
+    if testcase_args:
+        create_database_settings["log_comment"] = testcase_args.testcase_basename
+    if args.db_engine == "Ordinary":
+        create_database_settings["allow_deprecated_database_ordinary"] = 1
+    return create_database_settings
 
 
 def get_zookeeper_session_uptime(args):
@@ -537,9 +544,7 @@ class TestCase:
             clickhouse_execute(
                 args,
                 "CREATE DATABASE " + database + get_db_engine(testcase_args, database),
-                settings={
-                    "log_comment": testcase_args.testcase_basename,
-                },
+                settings=get_create_database_settings(args, testcase_args),
             )
 
             os.environ["CLICKHOUSE_DATABASE"] = database
@@ -914,7 +919,7 @@ class TestCase:
         description_full += result.description
         description_full += "\n"
 
-        if result.status == TestStatus.FAIL:
+        if result.status == TestStatus.FAIL and self.testcase_args:
             description_full += "Database: " + self.testcase_args.testcase_database
 
         result.description = description_full
@@ -1179,15 +1184,21 @@ class TestSuite:
         def is_shebang(line: str) -> bool:
             return line.startswith("#!")
 
+        def find_tag_line(file):
+            for line in file:
+                line = line.strip()
+                if line and not is_shebang(line):
+                    return line
+            return ''
+
         def load_tags_from_file(filepath):
+            comment_sign = get_comment_sign(filepath)
             with open(filepath, "r", encoding="utf-8") as file:
                 try:
-                    line = file.readline()
-                    if is_shebang(line):
-                        line = file.readline()
+                    line = find_tag_line(file)
                 except UnicodeDecodeError:
                     return []
-            return parse_tags_from_line(line, get_comment_sign(filepath))
+            return parse_tags_from_line(line, comment_sign)
 
         all_tags = {}
         start_time = datetime.now()
@@ -1559,7 +1570,7 @@ def collect_build_flags(args):
         args,
         "SELECT value FROM system.settings WHERE name = 'allow_deprecated_database_ordinary'",
     )
-    if value == b"1":
+    if value == b"1" or args.db_engine == "Ordinary":
         result.append(BuildFlags.ORDINARY_DATABASE)
 
     value = int(
@@ -1746,10 +1757,7 @@ def main(args):
         stop_time = time() + args.global_time_limit
 
     if args.zookeeper is None:
-        try:
-            args.zookeeper = int(extract_key(" --key zookeeper | grep . | wc -l")) > 0
-        except ValueError:
-            args.zookeeper = False
+        args.zookeeper = True
 
     if args.shard is None:
         args.shard = bool(extract_key(' --key listen_host | grep -E "127.0.0.2|::"'))
@@ -1763,6 +1771,7 @@ def main(args):
                     args,
                     f"CREATE DATABASE IF NOT EXISTS {db_name} "
                     f"{get_db_engine(args, db_name)}",
+                    settings=get_create_database_settings(args, None),
                 )
             except HTTPError as e:
                 total_time = (datetime.now() - start_time).total_seconds()
