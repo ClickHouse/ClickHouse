@@ -139,9 +139,9 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host, b
     if (prefer_ipv6)
     {
         /// Move IPv4 addresses to the end of the container
-        [[maybe_unused]] auto first_ipv4_addr = std::remove_if(addresses.begin(), addresses.end(), [](const Poco::Net::IPAddress & element)
+        std::partition(addresses.begin(), addresses.end(), [](const Poco::Net::IPAddress & element)
         {
-           return element.family() == Poco::Net::AddressFamily::IPv4;
+           return element.family() == Poco::Net::AddressFamily::IPv6;
         });
     }
 
