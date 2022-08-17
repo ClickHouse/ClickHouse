@@ -448,6 +448,8 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
             LOG_TRACE(&Poco::Logger::get("QueryPlan"), "{}", buf.str());
             throw Exception(ErrorCodes::LOGICAL_ERROR, e.message());
         }
+
+        throw;
     }
     QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
 }
