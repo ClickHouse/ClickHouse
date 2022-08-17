@@ -323,7 +323,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         {
             /// It's not quite correct to run DDL queries while database is not started up.
             ThreadPool pool;
-            DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, /* force_restore */ true, /* force_attach */ true);
+            DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
         }
 
         auto local_context = Context::createCopy(context);
