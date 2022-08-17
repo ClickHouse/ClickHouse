@@ -34,6 +34,7 @@ public:
     /// How data is sorted.
     enum class SortMode
     {
+        None,
         Chunk, /// Separate chunks are sorted
         Port, /// Data from each port is sorted
         Stream, /// Data is globally sorted
@@ -41,7 +42,7 @@ public:
 
     /// It is not guaranteed that header has columns from sort_description.
     SortDescription sort_description = {};
-    SortMode sort_mode = SortMode::Chunk;
+    SortMode sort_mode = SortMode::None;
 
     /// Things which may be added:
     /// * limit

@@ -100,6 +100,8 @@ private:
     /// It's used to prevent automatic schema inference while table creation on each server startup.
     void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
 
+    BlockIO executeQueryOnCluster(ASTCreateQuery & create);
+
     ASTPtr query_ptr;
 
     /// Skip safety threshold when loading tables.
