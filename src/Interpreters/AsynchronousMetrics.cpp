@@ -649,6 +649,10 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         }
     }
 
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+    MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
+#endif
+
 #if USE_JEMALLOC
     // 'epoch' is a special mallctl -- it updates the statistics. Without it, all
     // the following calls will return stale values. It increments and returns
@@ -677,7 +681,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     /// Process process memory usage according to OS
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     {
-        MemoryStatisticsOS::Data data = memory_stat.get();
+        MemoryStatisticsOS::Data & data = memory_statistics_data;
 
         new_values["MemoryVirtual"] = data.virt;
         new_values["MemoryResident"] = data.resident;
