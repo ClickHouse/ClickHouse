@@ -42,6 +42,9 @@ public:
     /// Get this server host name
     String getHostName();
 
+    /// Prefer IPv6 addresses for DNS resolution
+    void setPreferIPv6(bool prefer_ipv6 = true);
+
     /// Disables caching
     void setDisableCacheFlag(bool is_disabled = true);
 

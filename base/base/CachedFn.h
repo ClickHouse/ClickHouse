@@ -29,7 +29,7 @@ public:
     template <class ...Args>
     Result operator()(Args && ...args)
     {
-        Key key{std::forward<Args>(args)...};
+        Key key = std::make_tuple(std::forward<Args>(args)...);
 
         {
             std::lock_guard lock(mutex);
@@ -51,7 +51,7 @@ public:
     template <class ...Args>
     void update(Args && ...args)
     {
-        Key key{std::forward<Args>(args)...};
+        Key key = std::make_tuple(std::forward<Args>(args)...);
         Result res = std::apply(Func, key);
 
         {

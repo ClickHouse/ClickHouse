@@ -1628,6 +1628,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context, config().getInt("dns_cache_update_period", 15), config().getUInt("dns_max_consecutive_failures", 5));
     }
 
+    if (config().has("dns_prefer_ipv6") && config().getInt("dns_prefer_ipv6"))
+        DNSResolver::instance().setPreferIPv6();
+
 #if defined(OS_LINUX)
     auto tasks_stats_provider = TasksStatsCounters::findBestAvailableProvider();
     if (tasks_stats_provider == TasksStatsCounters::MetricsProvider::None)

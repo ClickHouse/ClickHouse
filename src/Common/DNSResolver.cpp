@@ -115,7 +115,7 @@ static DNSResolver::IPAddresses hostByName(const std::string & host)
     return addresses;
 }
 
-static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
+static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host, bool prefer_ipv6)
 {
     Poco::Net::IPAddress ip;
 
@@ -135,6 +135,15 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     }
 
     DNSResolver::IPAddresses addresses = hostByName(host);
+
+    if (prefer_ipv6)
+    {
+        /// Move IPv4 addresses to the end of the container
+        [[maybe_unused]] auto first_ipv4_addr = std::remove_if(addresses.begin(), addresses.end(), [](const Poco::Net::IPAddress & element)
+        {
+           return element.family() == Poco::Net::AddressFamily::IPv4;
+        });
+    }
 
     return addresses;
 }
@@ -176,6 +185,9 @@ struct DNSResolver::Impl
 
     /// If disabled, will not make cache lookups, will resolve addresses manually on each call
     std::atomic<bool> disable_cache{false};
+
+    /// Prefer IPv6 addresses during DNS resolution
+    bool prefer_ipv6{false};
 };
 
 
@@ -189,10 +201,10 @@ Poco::Net::IPAddress DNSResolver::resolveHost(const std::string & host)
 DNSResolver::IPAddresses DNSResolver::resolveHostAll(const std::string & host)
 {
     if (impl->disable_cache)
-        return resolveIPAddressImpl(host);
+        return resolveIPAddressImpl(host, impl->prefer_ipv6);
 
     addToNewHosts(host);
-    return impl->cache_host(host);
+    return impl->cache_host(host, impl->prefer_ipv6);
 }
 
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
@@ -205,7 +217,7 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_an
     splitHostAndPort(host_and_port, host, port);
 
     addToNewHosts(host);
-    return Poco::Net::SocketAddress(impl->cache_host(host).front(), port);
+    return Poco::Net::SocketAddress(impl->cache_host(host, impl->prefer_ipv6).front(), port);
 }
 
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, UInt16 port)
@@ -214,7 +226,7 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, U
         return Poco::Net::SocketAddress(host, port);
 
     addToNewHosts(host);
-    return  Poco::Net::SocketAddress(impl->cache_host(host).front(), port);
+    return  Poco::Net::SocketAddress(impl->cache_host(host, impl->prefer_ipv6).front(), port);
 }
 
 std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std::string & host, UInt16 port)
@@ -227,7 +239,7 @@ std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std:
     if (!impl->disable_cache)
         addToNewHosts(host);
 
-    std::vector<Poco::Net::IPAddress> ips = impl->disable_cache ? hostByName(host) : impl->cache_host(host);
+    std::vector<Poco::Net::IPAddress> ips = impl->disable_cache ? hostByName(host) : impl->cache_host(host, impl->prefer_ipv6);
     auto ips_end = std::unique(ips.begin(), ips.end());
 
     addresses.reserve(ips_end - ips.begin());
@@ -258,6 +270,11 @@ void DNSResolver::dropCache()
     impl->new_hosts.clear();
     impl->new_addresses.clear();
     impl->host_name.reset();
+}
+
+void DNSResolver::setPreferIPv6(bool prefer_ipv6)
+{
+    impl->prefer_ipv6 = prefer_ipv6;
 }
 
 void DNSResolver::setDisableCacheFlag(bool is_disabled)
@@ -382,9 +399,9 @@ bool DNSResolver::updateCache(UInt32 max_consecutive_failures)
 bool DNSResolver::updateHost(const String & host)
 {
     /// Usage of updateHost implies that host is already in cache and there is no extra computations
-    auto old_value = impl->cache_host(host);
-    impl->cache_host.update(host);
-    return old_value != impl->cache_host(host);
+    auto old_value = impl->cache_host(host, impl->prefer_ipv6);
+    impl->cache_host.update(host, impl->prefer_ipv6);
+    return old_value != impl->cache_host(host, impl->prefer_ipv6);
 }
 
 bool DNSResolver::updateAddress(const Poco::Net::IPAddress & address)
