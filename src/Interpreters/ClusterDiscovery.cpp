@@ -266,6 +266,21 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false);
     auto & nodes_info = cluster_info.nodes_info;
 
+    auto on_exit = [this, start_version, &zk, &cluster_info, &nodes_info]()
+    {
+        /// in case of successful update we still need to check if configuration of cluster still valid and also set watch callback
+        int current_version;
+        getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true);
+
+        if (current_version != start_version)
+        {
+            LOG_DEBUG(log, "Cluster '{}' configuration changed during update", cluster_info.name);
+            nodes_info.clear();
+            return false;
+        }
+        return true;
+    };
+
     if (!cluster_info.current_node_is_observer && !contains(node_uuids, current_node_name))
     {
         LOG_ERROR(log, "Can't find current node in cluster '{}', will register again", cluster_info.name);
@@ -277,7 +292,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     if (!needUpdate(node_uuids, nodes_info))
     {
         LOG_DEBUG(log, "No update required for cluster '{}'", cluster_info.name);
-        return true;
+        return on_exit();
     }
 
     nodes_info = getNodes(zk, cluster_info.zk_root, node_uuids);
@@ -287,15 +302,8 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
         return false;
     }
 
-    int current_version;
-    getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true);
-
-    if (current_version != start_version)
-    {
-        LOG_DEBUG(log, "Cluster '{}' configuration changed during update", cluster_info.name);
-        nodes_info.clear();
+    if (bool ok = on_exit(); !ok)
         return false;
-    }
 
     LOG_DEBUG(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
 
