@@ -143,9 +143,9 @@ ReadFromMergeTree::ReadFromMergeTree(
         {
             auto const & settings = context->getSettingsRef();
             if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
-                output_stream->sort_mode = DataStream::SortMode::Port;
+                output_stream->sort_scope = DataStream::SortScope::Stream;
             else
-                output_stream->sort_mode = DataStream::SortMode::Chunk;
+                output_stream->sort_scope = DataStream::SortScope::Chunk;
         }
 
         output_stream->sort_description = std::move(sort_description);
