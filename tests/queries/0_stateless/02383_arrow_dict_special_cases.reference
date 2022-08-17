@@ -22,3 +22,11 @@ two
 three
 lc	LowCardinality(Nullable(String))					
 OK
+dict	LowCardinality(Nullable(String))					
+one
+two
+
+three
+one
+\N
+three
