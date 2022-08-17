@@ -33,15 +33,16 @@ public:
 
 private:
     DiskPtr disk;
+
+    /// If disk is not provided, fallback to Poco::TemporaryFile
+    /// TODO: it's better to use DiskLocal for that case as well
+    std::unique_ptr<Poco::TemporaryFile> tmp_file;
+
     String filepath;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TotalTemporaryFiles};
     /// Specified if we know what for file is used (sort/aggregate/join).
     std::unique_ptr<CurrentMetrics::Increment> sub_metric_increment;
-
-    /// If disk is not provided, fallback to Poco::TemporaryFile
-    /// TODO: it's better to use DiskLocal for that case
-    std::unique_ptr<Poco::TemporaryFile> tmp_file;
 };
 
 }

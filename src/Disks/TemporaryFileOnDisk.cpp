@@ -13,6 +13,7 @@ namespace DB
 
 TemporaryFileOnDisk::TemporaryFileOnDisk(const String & prefix_)
     : tmp_file(std::make_unique<Poco::TemporaryFile>(prefix_))
+    , filepath(tmp_file->path())
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 }
