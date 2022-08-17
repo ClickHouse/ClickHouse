@@ -207,7 +207,7 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header,
 kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 {
     uint32_t segment_count;
-    in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    in.readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
     /// Don't allow large amount of segments as it's done in capnproto library:
     /// https://github.com/capnproto/capnproto/blob/931074914eda9ca574b5c24d1169c0f7a5156594/c%2B%2B/src/capnp/serialize.c%2B%2B#L181
     /// Large amount of segments can indicate that corruption happened.
