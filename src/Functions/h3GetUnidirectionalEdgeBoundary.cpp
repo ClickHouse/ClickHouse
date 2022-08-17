@@ -101,7 +101,7 @@ public:
 
 }
 
-void registerFunctionH3GetUnidirectionalEdgeBoundary(FunctionFactory & factory)
+REGISTER_FUNCTION(H3GetUnidirectionalEdgeBoundary)
 {
     factory.registerFunction<FunctionH3GetUnidirectionalEdgeBoundary>();
 }

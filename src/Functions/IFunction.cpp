@@ -2,7 +2,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/LRUCache.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -233,13 +232,13 @@ ColumnPtr IExecutableFunction::defaultImplementationForNothing(
 ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
+    if (auto res = defaultImplementationForNothing(args, result_type, input_rows_count))
+        return res;
+
     if (auto res = defaultImplementationForConstantArguments(args, result_type, input_rows_count, dry_run))
         return res;
 
     if (auto res = defaultImplementationForNulls(args, result_type, input_rows_count, dry_run))
-        return res;
-
-    if (auto res = defaultImplementationForNothing(args, result_type, input_rows_count))
         return res;
 
     ColumnPtr res;
@@ -450,6 +449,15 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
 {
     checkNumberOfArguments(arguments.size());
 
+    if (!arguments.empty() && useDefaultImplementationForNothing())
+    {
+        for (const auto & arg : arguments)
+        {
+            if (isNothing(arg.type))
+                return std::make_shared<DataTypeNothing>();
+        }
+    }
+
     if (!arguments.empty() && useDefaultImplementationForNulls())
     {
         NullPresence null_presence = getNullPresense(arguments);
@@ -463,15 +471,6 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
             Block nested_columns = createBlockWithNestedColumns(arguments);
             auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
             return makeNullable(return_type);
-        }
-    }
-
-    if (!arguments.empty() && useDefaultImplementationForNothing())
-    {
-        for (const auto & arg : arguments)
-        {
-            if (isNothing(arg.type))
-                return std::make_shared<DataTypeNothing>();
         }
     }
 

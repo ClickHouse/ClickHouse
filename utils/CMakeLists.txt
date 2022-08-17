@@ -9,6 +9,10 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
+    add_subdirectory (self-extracting-executable)
+endif ()
+
 # Utils used in package
 add_subdirectory (config-processor)
 add_subdirectory (report)
@@ -32,7 +36,6 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (check-mysql-binlog)
     add_subdirectory (keeper-bench)
     add_subdirectory (graphite-rollup)
-    add_subdirectory (self-extr-exec)
 
     if (TARGET ch_contrib::nuraft)
         add_subdirectory (keeper-data-dumper)

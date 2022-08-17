@@ -145,4 +145,3 @@ column_marks_bytes:                    48
 
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 
-[Original article](https://clickhouse.com/docs/en/operations/system_tables/parts_columns) <!--hide-->

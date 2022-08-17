@@ -7,6 +7,7 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
+#include <bit>
 
 #include <type_traits>
 
@@ -836,7 +837,7 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseFromString(const std::string_view & str)
+inline T parseFromString(std::string_view str)
 {
     return parse<T>(str.data(), str.size());
 }
@@ -908,6 +909,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         return ReturnType(false);
     }
 
+    int negative_multiplier = 1;
+
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
     if (!buf.eof() && *buf.position() == '.')
@@ -934,29 +937,18 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
 
-        /// Keep sign of fractional part the same with whole part if datetime64 is negative
-        /// Case1:
-        ///     1965-12-12 12:12:12.123
-        ///     => whole = -127914468, fractional = 123(coefficient>0)
-        ///     => new whole = -127914467, new fractional = 877(coefficient<0)
-        ///
-        /// Case2:
-        ///     1969-12-31 23:59:59.123
-        ///     => whole = -1, fractional = 123(coefficient>0)
-        ///     => new whole = 0, new fractional = -877(coefficient>0)
+        /// Fractional part (subseconds) is treated as positive by users
+        /// (as DateTime64 itself is a positive, although underlying decimal is negative)
+        /// setting fractional part to be negative when whole is 0 results in wrong value,
+        /// so we multiply result by -1.
         if (components.whole < 0 && components.fractional != 0)
         {
             const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
             ++components.whole;
-            if (components.whole)
+            components.fractional = scale_multiplier - components.fractional;
+            if (!components.whole)
             {
-                /// whole keep the sign, fractional should be non-negative
-                components.fractional = scale_multiplier - components.fractional;
-            }
-            else
-            {
-                /// when whole is zero, fractional should keep the sign
-                components.fractional = components.fractional - scale_multiplier;
+                negative_multiplier = -1;
             }
         }
     }
@@ -969,7 +961,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
-    datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
+    datetime64 = negative_multiplier * DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
 
     return ReturnType(true);
 }
@@ -1036,15 +1028,17 @@ requires is_arithmetic_v<T> && (sizeof(T) <= 8)
 inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
 {
     readPODBinary(x, buf);
-
-    if constexpr (sizeof(x) == 1)
-        return;
-    else if constexpr (sizeof(x) == 2)
-        x = __builtin_bswap16(x);
-    else if constexpr (sizeof(x) == 4)
-        x = __builtin_bswap32(x);
-    else if constexpr (sizeof(x) == 8)
-        x = __builtin_bswap64(x);
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        if constexpr (sizeof(x) == 1)
+            return;
+        else if constexpr (sizeof(x) == 2)
+            x = __builtin_bswap16(x);
+        else if constexpr (sizeof(x) == 4)
+            x = __builtin_bswap32(x);
+        else if constexpr (sizeof(x) == 8)
+            x = __builtin_bswap64(x);
+    }
 }
 
 template <typename T>
@@ -1073,6 +1067,8 @@ inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
 {
     return tryReadIntText(x, buf);
 }
+
+inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
 
 inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
@@ -1245,7 +1241,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field);
 
 
 /** Read serialized exception.
@@ -1345,7 +1341,7 @@ inline T parseWithSizeSuffix(const char * data, size_t size)
 }
 
 template <typename T>
-inline T parseWithSizeSuffix(const std::string_view & s)
+inline T parseWithSizeSuffix(std::string_view s)
 {
     return parseWithSizeSuffix<T>(s.data(), s.size());
 }

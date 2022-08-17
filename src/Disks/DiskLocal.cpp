@@ -11,6 +11,8 @@
 
 #include <fstream>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskMemory.h>
@@ -39,6 +41,7 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_STAT;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -68,6 +71,8 @@ static void loadDiskLocalConfig(const String & name,
             throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         if (path.back() != '/')
             throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        if (path == context->getPath())
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path ('{}') cannot be equal to <path>. Use <default> disk instead.", path);
     }
 
     bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
@@ -325,7 +330,7 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
     fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
-DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path) const
 {
     fs::path meta_path = fs::path(disk_path) / path;
     if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
@@ -387,7 +392,7 @@ void DiskLocal::removeRecursive(const String & path)
     fs::remove_all(fs::path(disk_path) / path);
 }
 
-void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
+void DiskLocal::listFiles(const String & path, std::vector<String> & file_names) const
 {
     file_names.clear();
     for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
@@ -399,9 +404,14 @@ void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & tim
     FS::setModificationTime(fs::path(disk_path) / path, timestamp.epochTime());
 }
 
-Poco::Timestamp DiskLocal::getLastModified(const String & path)
+Poco::Timestamp DiskLocal::getLastModified(const String & path) const
 {
     return FS::getModificationTimestamp(fs::path(disk_path) / path);
+}
+
+time_t DiskLocal::getLastChanged(const String & path) const
+{
+    return FS::getChangeTime(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
@@ -662,6 +672,23 @@ bool DiskLocal::setup()
     if (disk_checker_magic_number == -1)
         throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);
     return true;
+}
+
+struct stat DiskLocal::stat(const String & path) const
+{
+    struct stat st;
+    auto full_path = fs::path(disk_path) / path;
+    if (::stat(full_path.string().c_str(), &st) == 0)
+        return st;
+    DB::throwFromErrnoWithPath("Cannot stat file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+}
+
+void DiskLocal::chmod(const String & path, mode_t mode)
+{
+    auto full_path = fs::path(disk_path) / path;
+    if (::chmod(full_path.string().c_str(), mode) == 0)
+        return;
+    DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 void registerDiskLocal(DiskFactory & factory)

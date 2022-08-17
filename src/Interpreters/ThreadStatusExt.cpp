@@ -16,7 +16,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/setThreadName.h>
-#include <Common/LockMemoryExceptionInThread.h>
+#include <Common/noexcept_scope.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
@@ -343,7 +343,7 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
-    LockMemoryExceptionInThread lock(VariableContext::Global);
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {
@@ -384,8 +384,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         span.finish_time_us =
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-        span.attribute_names.push_back("clickhouse.thread_id");
-        span.attribute_values.push_back(thread_id);
+        span.attributes.push_back(Tuple{"clickhouse.thread_id", toString(thread_id)});
 
         opentelemetry_span_log->add(span);
     }

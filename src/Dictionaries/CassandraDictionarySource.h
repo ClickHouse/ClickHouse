@@ -8,6 +8,7 @@
 #include "IDictionarySource.h"
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/Logger.h>
 #include <mutex>
 
@@ -82,9 +83,10 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
 
-    std::mutex connect_mutex;
     CassClusterPtr cluster;
-    CassSessionWeak maybe_session;
+
+    std::mutex connect_mutex;
+    CassSessionWeak maybe_session TSA_GUARDED_BY(connect_mutex);
 };
 }
 

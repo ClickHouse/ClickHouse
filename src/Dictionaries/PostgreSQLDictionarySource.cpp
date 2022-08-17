@@ -185,16 +185,27 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr context,
                                  const std::string & /* default_database */,
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr
+                                 [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr
     {
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
         auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key) || key.starts_with("replica"); };
         auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context, has_config_key);
+        const auto & settings = context->getSettingsRef();
+
+        if (created_from_ddl)
+        {
+            for (const auto & replicas : configuration.replicas_configurations)
+                for (const auto & replica : replicas.second)
+                    context->getRemoteHostFilter().checkHostAndPort(replica.host, toString(replica.port));
+        }
+
         auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    configuration.replicas_configurations,
-                    context->getSettingsRef().postgresql_connection_pool_size,
-                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+            configuration.replicas_configurations,
+            settings.postgresql_connection_pool_size,
+            settings.postgresql_connection_pool_wait_timeout,
+            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+            settings.postgresql_connection_pool_auto_close_connection);
 
         PostgreSQLDictionarySource::Configuration dictionary_configuration
         {

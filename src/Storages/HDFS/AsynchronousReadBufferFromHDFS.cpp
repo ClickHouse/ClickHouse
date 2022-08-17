@@ -3,9 +3,9 @@
 #if USE_HDFS
 #include <mutex>
 #include <Common/logger_useful.h>
-#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+
 
 namespace CurrentMetrics
 {
@@ -90,7 +90,7 @@ void AsynchronousReadBufferFromHDFS::prefetch()
 }
 
 
-std::optional<size_t> AsynchronousReadBufferFromHDFS::getFileSize()
+size_t AsynchronousReadBufferFromHDFS::getFileSize()
 {
     return impl->getFileSize();
 }
@@ -112,6 +112,8 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
     Stopwatch next_watch;
     Int64 wait = -1;
     size_t size = 0;
+    size_t bytes_read = 0;
+
     if (prefetch_future.valid())
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
@@ -126,7 +128,9 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
             LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
 
             /// If prefetch_future is valid, size should always be greater than zero.
-            assert(offset < size);
+            assert(offset <= size);
+            bytes_read = size - offset;
+
             wait = watch.elapsedMicroseconds();
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, wait);
         }
@@ -134,7 +138,9 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         prefetch_buffer.swap(memory);
 
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        setWithBytesToIgnore(memory.data(), size, offset);
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+        working_buffer = Buffer(memory.data() + offset, memory.data() + size);
+        pos = working_buffer.begin();
     }
     else
     {
@@ -145,12 +151,15 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
         auto offset = result.offset;
 
         LOG_TEST(log, "Current size: {}, offset: {}", size, offset);
-        assert(offset < size);
+        assert(offset <= size);
+        bytes_read = size - offset;
 
-        if (size)
+        if (bytes_read)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            setWithBytesToIgnore(memory.data(), size, offset);
+            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
+            pos = working_buffer.begin();
         }
     }
 
@@ -162,7 +171,7 @@ bool AsynchronousReadBufferFromHDFS::nextImpl()
 
     sum_duration += next_watch.elapsedMicroseconds();
     sum_wait += wait;
-    return size;
+    return bytes_read;
 }
 
 off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
