@@ -313,6 +313,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
 
+    // we use the same config as for the CH replicas because it is for internal communication between Keeper instances
     std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config, "", "interserver_listen_host");
 
     if (listen_hosts.empty())
@@ -344,6 +345,9 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
+    if (!raft_instance)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
+
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
     nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
@@ -352,9 +356,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         asio_listener->listen(casted_raft_server);
     }
-
-    if (!raft_instance)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 }
 
 void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6)
