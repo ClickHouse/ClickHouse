@@ -19,10 +19,15 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
     retry_period = storage_settings->initialization_retry_period.totalSeconds();
 }
 
+ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
+{
+    shutdown();
+}
+
 void ReplicatedMergeTreeAttachThread::shutdown()
 {
-    need_shutdown = true;
-    task->deactivate();
+    if (!shutdown_called.exchange(true))
+        task->deactivate();
 }
 
 void ReplicatedMergeTreeAttachThread::run()
@@ -30,9 +35,19 @@ void ReplicatedMergeTreeAttachThread::run()
     try
     {
         LOG_INFO(log, "Table will be in readonly mode until initialization is finished");
-        zookeeper = storage.current_zookeeper;
+        zookeeper = storage.tryGetZooKeeper();
         if (!zookeeper)
+        {
+            // if we failed to connect to ZK cluster once we don't want to wait connection timeout twice
+            notifyIfFirstTry();
             tryReconnect();
+        }
+
+        if (shutdown_called)
+        {
+            LOG_WARNING(log, "Shutdown called, cancelling initialization");
+            return;
+        }
 
         const auto & zookeeper_path = storage.zookeeper_path;
         bool metadata_exists = withRetries([&] { return zookeeper->exists(zookeeper_path + "/metadata"); });
@@ -120,13 +135,19 @@ void ReplicatedMergeTreeAttachThread::run()
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::ABORTED && need_shutdown)
+        if (e.code() == ErrorCodes::ABORTED && shutdown_called)
         {
             LOG_WARNING(log, "Shutdown called, cancelling initialization");
             return;
         }
 
         LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", e.message());
+
+        {
+            std::lock_guard lock(storage.initialization_mutex);
+            storage.init_phase = StorageReplicatedMergeTree::InitializationPhase::INITIALIZATION_DONE;
+        }
+
         notifyIfFirstTry();
     }
 };
@@ -164,7 +185,7 @@ void ReplicatedMergeTreeAttachThread::notifyIfFirstTry()
 void ReplicatedMergeTreeAttachThread::tryReconnect()
 {
     zookeeper = nullptr;
-    while (!need_shutdown)
+    while (!shutdown_called)
     {
         try
         {
@@ -183,7 +204,6 @@ void ReplicatedMergeTreeAttachThread::tryReconnect()
         }
     }
 }
-
 
 void ReplicatedMergeTreeAttachThread::resetCurrentZooKeeper()
 {
