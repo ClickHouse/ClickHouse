@@ -47,17 +47,21 @@ public:
         const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupWriter> writer_,
         const ContextPtr & context_,
-        const std::optional<UUID> & backup_uuid_ = {},
         bool is_internal_backup_ = false,
-        const std::shared_ptr<IBackupCoordination> & coordination_ = {});
+        const std::shared_ptr<IBackupCoordination> & coordination_ = {},
+        const std::optional<UUID> & backup_uuid_ = {});
 
     ~BackupImpl() override;
 
     const String & getName() const override { return backup_name; }
     OpenMode getOpenMode() const override { return open_mode; }
-    time_t getTimestamp() const override;
+    time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
-    Strings listFiles(const String & prefix, const String & terminator) const override;
+    size_t getNumFiles() const override;
+    UInt64 getUncompressedSize() const override;
+    UInt64 getCompressedSize() const override;
+    Strings listFiles(const String & directory, bool recursive) const override;
+    bool hasFiles(const String & directory) const override;
     bool fileExists(const String & file_name) const override;
     bool fileExists(const SizeAndChecksum & size_and_checksum) const override;
     UInt64 getFileSize(const String & file_name) const override;
@@ -75,12 +79,33 @@ private:
 
     void open(const ContextPtr & context);
     void close();
+    void closeArchives();
+
+    /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata();
     void readBackupMetadata();
+
+    /// Checks that a new backup doesn't exist yet.
+    void checkBackupDoesntExist() const;
+
+    /// Lock file named ".lock" and containing the UUID of a backup is used to own the place where we're writing the backup.
+    /// Thus it will not be allowed to put any other backup to the same place (even if the BACKUP command is executed on a different node).
+    void createLockFile();
+    bool checkLockFile(bool throw_if_failed) const;
+    void removeLockFile();
+
+    void removeAllFilesAfterFailure();
+
     String getArchiveNameWithSuffix(const String & suffix) const;
     std::shared_ptr<IArchiveReader> getArchiveReader(const String & suffix) const;
     std::shared_ptr<IArchiveWriter> getArchiveWriter(const String & suffix);
-    void removeAllFilesAfterFailure();
+
+    /// Increases `uncompressed_size` by a specific value and `num_files` by 1.
+    void increaseUncompressedSize(UInt64 file_size);
+    void increaseUncompressedSize(const FileInfo & info);
+
+    /// Calculates and sets `compressed_size`.
+    void setCompressedSize();
 
     const String backup_name;
     const ArchiveParams archive_params;
@@ -94,6 +119,9 @@ private:
     mutable std::mutex mutex;
     std::optional<UUID> uuid;
     time_t timestamp = 0;
+    size_t num_files = 0;
+    UInt64 uncompressed_size = 0;
+    UInt64 compressed_size = 0;
     UInt64 version;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
@@ -101,6 +129,8 @@ private:
     mutable std::unordered_map<String /* archive_suffix */, std::shared_ptr<IArchiveReader>> archive_readers;
     std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
     String current_archive_suffix;
+    String lock_file_name;
+    size_t num_files_written = 0;
     bool writing_finalized = false;
     const Poco::Logger * log;
 };

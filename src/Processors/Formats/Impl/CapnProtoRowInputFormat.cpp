@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_)
@@ -48,6 +49,11 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 {
     uint32_t segment_count;
     in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    /// Don't allow large amount of segments as it's done in capnproto library:
+    /// https://github.com/capnproto/capnproto/blob/931074914eda9ca574b5c24d1169c0f7a5156594/c%2B%2B/src/capnp/serialize.c%2B%2B#L181
+    /// Large amount of segments can indicate that corruption happened.
+    if (segment_count >= 512)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Message has too many segments. Most likely, data was corrupted");
 
     // one for segmentCount and one because segmentCount starts from 0
     const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
@@ -264,20 +270,20 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     if (in->eof())
         return false;
 
-    auto array = readMessage();
-
-#if CAPNP_VERSION >= 7000 && CAPNP_VERSION < 8000
-    capnp::UnalignedFlatArrayMessageReader msg(array);
-#else
-    capnp::FlatArrayMessageReader msg(array);
-#endif
-
-    auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
-
-    for (size_t i = 0; i != columns.size(); ++i)
+    try
     {
-        auto value = getReaderByColumnName(root_reader, column_names[i]);
-        insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
+        auto array = readMessage();
+        capnp::FlatArrayMessageReader msg(array);
+        auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
+        for (size_t i = 0; i != columns.size(); ++i)
+        {
+            auto value = getReaderByColumnName(root_reader, column_names[i]);
+            insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
+        }
+    }
+    catch (const kj::Exception & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read row: {}", e.getDescription().cStr());
     }
 
     return true;
@@ -298,7 +304,7 @@ NamesAndTypesList CapnProtoSchemaReader::readSchema()
 
     auto schema_parser = CapnProtoSchemaParser();
     auto schema = schema_parser.getMessageSchema(schema_info);
-    return capnProtoSchemaToCHSchema(schema);
+    return capnProtoSchemaToCHSchema(schema, format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
 }
 
 void registerInputFormatCapnProto(FormatFactory & factory)

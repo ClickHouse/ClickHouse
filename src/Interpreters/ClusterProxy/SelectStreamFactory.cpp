@@ -257,7 +257,6 @@ SelectStreamFactory::ShardPlans SelectStreamFactory::createForShardWithParallelR
             std::move(scalars),
             std::move(external_tables),
             &Poco::Logger::get("ReadFromParallelRemoteReplicasStep"),
-            shard_count,
             storage_limits);
 
         remote_plan->addStep(std::move(read_from_remote));

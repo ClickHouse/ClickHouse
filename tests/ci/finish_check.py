@@ -7,7 +7,7 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from commit_status_helper import get_commit
 
-NAME = "Run Check (actions)"
+NAME = "Run Check"
 
 
 def filter_statuses(statuses):
@@ -30,7 +30,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True)
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
     url = GITHUB_RUN_URL

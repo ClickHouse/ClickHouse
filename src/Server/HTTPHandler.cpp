@@ -26,6 +26,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/ParserSetQuery.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
@@ -649,7 +650,7 @@ void HTTPHandler::processQuery(
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str));
+        wrapReadBufferReference(request.getStream()), chooseCompressionMethod({}, http_request_compression_method_str), context->getSettingsRef().zstd_window_log_max);
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -1014,10 +1015,10 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
     if (key == param_name)
         return true;    /// do nothing
 
-    if (startsWith(key, "param_"))
+    if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
     {
         /// Save name and values of substitution in dictionary.
-        const String parameter_name = key.substr(strlen("param_"));
+        const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (!context->getQueryParameters().contains(parameter_name))
             context->setQueryParameter(parameter_name, value);

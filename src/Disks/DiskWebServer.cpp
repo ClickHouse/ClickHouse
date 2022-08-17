@@ -6,6 +6,7 @@
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
+#include <Disks/IO/ReadBufferFromWebServer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -18,7 +19,6 @@
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -74,7 +74,6 @@ void DiskWebServer::initialize(const String & uri_path) const
             if (file_data.type == FileType::Directory)
             {
                 directories_to_load.push_back(file_path);
-                // file_path = fs::path(file_path) / "";
             }
 
             file_path = file_path.substr(url.size());
@@ -170,10 +169,22 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     auto remote_path = fs_path.parent_path() / (escapeForFileName(fs_path.stem()) + fs_path.extension().string());
     remote_path = remote_path.string().substr(url.size());
 
-    std::vector<BlobPathWithSize> blobs_to_read;
-    blobs_to_read.emplace_back(remote_path, iter->second.size);
+    StoredObjects objects;
+    objects.emplace_back(remote_path, iter->second.size);
 
-    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(url, path, blobs_to_read, getContext(), read_settings);
+    auto read_buffer_creator =
+        [this, read_settings]
+        (const std::string & path_, size_t read_until_position) -> std::shared_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_shared<ReadBufferFromWebServer>(
+            fs::path(url) / path_,
+            getContext(),
+            read_settings,
+            /* use_external_buffer */true,
+            read_until_position);
+    };
+
+    auto web_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, read_settings);
 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
@@ -188,7 +199,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
 }
 
 
-DirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path)
+DirectoryIteratorPtr DiskWebServer::iterateDirectory(const String & path) const
 {
     std::vector<fs::path> dir_file_paths;
     if (files.find(path) == files.end())

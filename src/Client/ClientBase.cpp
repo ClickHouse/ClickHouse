@@ -69,6 +69,7 @@
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <IO/ForkWriteBuffer.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
 namespace fs = std::filesystem;
@@ -152,7 +153,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     auto & dst_column_host_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["host_name"]]);
     auto & dst_array_current_time = typeid_cast<ColumnUInt32 &>(*mutable_columns[name_pos["current_time"]]).getData();
-    // auto & dst_array_thread_id = typeid_cast<ColumnUInt64 &>(*mutable_columns[name_pos["thread_id"]]).getData();
     auto & dst_array_type = typeid_cast<ColumnInt8 &>(*mutable_columns[name_pos["type"]]).getData();
     auto & dst_column_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["name"]]);
     auto & dst_array_value = typeid_cast<ColumnInt64 &>(*mutable_columns[name_pos["value"]]).getData();
@@ -411,7 +411,6 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     processed_rows += block.rows();
-
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
@@ -422,7 +421,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-    if (need_render_progress && (stdout_is_a_tty || is_interactive) && !select_into_file)
+    if (need_render_progress && (stdout_is_a_tty || is_interactive) && (!select_into_file || select_into_file_and_stdout))
         progress_indication.clearProgressOutput();
 
     try
@@ -442,7 +441,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Restore progress bar after data block.
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
     {
-        if (select_into_file)
+        if (select_into_file && !select_into_file_and_stdout)
             std::cerr << "\r";
         progress_indication.writeProgress();
     }
@@ -519,7 +518,7 @@ try
         String current_format = format;
 
         select_into_file = false;
-
+        select_into_file_and_stdout = false;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -531,18 +530,43 @@ try
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                 out_file = out_file_node.value.safeGet<std::string>();
 
-                std::string compression_method;
+                std::string compression_method_string;
+
                 if (query_with_output->compression)
                 {
                     const auto & compression_method_node = query_with_output->compression->as<ASTLiteral &>();
-                    compression_method = compression_method_node.value.safeGet<std::string>();
+                    compression_method_string = compression_method_node.value.safeGet<std::string>();
+                }
+
+                CompressionMethod compression_method = chooseCompressionMethod(out_file, compression_method_string);
+                UInt64 compression_level = 3;
+
+                if (query_with_output->compression_level)
+                {
+                    const auto & compression_level_node = query_with_output->compression_level->as<ASTLiteral &>();
+                    bool res = compression_level_node.value.tryGet<UInt64>(compression_level);
+                    auto range = getCompressionLevelRange(compression_method);
+
+                    if (!res || compression_level < range.first || compression_level > range.second)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Invalid compression level, must be positive integer in range {}-{}",
+                            range.first,
+                            range.second);
                 }
 
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                    chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ 3
+                    compression_method,
+                    compression_level
                 );
+
+                if (query_with_output->is_into_outfile_with_stdout)
+                {
+                    select_into_file_and_stdout = true;
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
+                            std::make_shared<WriteBufferFromFileDescriptor>(STDOUT_FILENO)});
+                }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
                 if (is_interactive && is_default_format)
@@ -566,9 +590,14 @@ try
         if (has_vertical_output_suffix)
             current_format = "Vertical";
 
-        /// It is not clear how to write progress intermixed with data with parallel formatting.
+        bool logs_into_stdout = server_logs_file == "-";
+        bool extras_into_stdout = need_render_progress || logs_into_stdout;
+        bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
+
+        /// It is not clear how to write progress and logs
+        /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
-        if (!need_render_progress || select_into_file)
+        if (!extras_into_stdout || select_only_into_file)
             output_format = global_context->getOutputFormatParallelIfPossible(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
@@ -590,6 +619,7 @@ void ClientBase::initLogsOutputStream()
     {
         WriteBuffer * wb = out_logs_buf.get();
 
+        bool color_logs = false;
         if (!out_logs_buf)
         {
             if (server_logs_file.empty())
@@ -597,11 +627,13 @@ void ClientBase::initLogsOutputStream()
                 /// Use stderr by default
                 out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
                 wb = out_logs_buf.get();
+                color_logs = stderr_is_a_tty;
             }
             else if (server_logs_file == "-")
             {
                 /// Use stdout if --server_logs_file=- specified
                 wb = &std_out;
+                color_logs = stdout_is_a_tty;
             }
             else
             {
@@ -611,7 +643,7 @@ void ClientBase::initLogsOutputStream()
             }
         }
 
-        logs_out_stream = std::make_unique<InternalTextLogs>(*wb, stdout_is_a_tty);
+        logs_out_stream = std::make_unique<InternalTextLogs>(*wb, color_logs);
     }
 }
 
@@ -715,8 +747,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
+    /// For recent versions of the server query parameters will be transferred by network and applied on the server side.
     auto query = query_to_execute;
-    if (!query_parameters.empty())
+    if (!query_parameters.empty()
+        && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         ReplaceQueryParameterVisitor visitor(query_parameters);
@@ -737,6 +771,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             connection->sendQuery(
                 connection_parameters.timeouts,
                 query,
+                query_parameters,
                 global_context->getCurrentQueryId(),
                 query_processing_stage,
                 &global_context->getSettingsRef(),
@@ -957,21 +992,19 @@ void ClientBase::onProfileEvents(Block & block)
                 progress_indication.addThreadIdToList(host_name, thread_id);
             auto event_name = names.getDataAt(i);
             auto value = array_values[i];
+
+            /// Ignore negative time delta or memory usage just in case.
+            if (value < 0)
+                continue;
+
             if (event_name == user_time_name)
-            {
                 thread_times[host_name][thread_id].user_ms = value;
-            }
             else if (event_name == system_time_name)
-            {
                 thread_times[host_name][thread_id].system_ms = value;
-            }
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-            {
                 thread_times[host_name][thread_id].memory_usage = value;
-            }
         }
-        auto elapsed_time = profile_events.watch.elapsedMicroseconds();
-        progress_indication.updateThreadEventData(thread_times, elapsed_time);
+        progress_indication.updateThreadEventData(thread_times);
 
         if (need_render_progress)
             progress_indication.writeProgress();
@@ -1064,7 +1097,8 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
     auto query = query_to_execute;
-    if (!query_parameters.empty())
+    if (!query_parameters.empty()
+        && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         ReplaceQueryParameterVisitor visitor(query_parameters);
@@ -1091,6 +1125,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
+        query_parameters,
         global_context->getCurrentQueryId(),
         query_processing_stage,
         &global_context->getSettingsRef(),
@@ -1133,7 +1168,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (need_render_progress && have_data_in_stdin)
     {
         /// Set total_bytes_to_read for current fd.
-        FileProgress file_progress(0, std_in.size());
+        FileProgress file_progress(0, std_in.getFileSize());
         progress_indication.updateProgress(Progress(file_progress));
 
         /// Set callback to be called on file progress.
@@ -1283,7 +1318,7 @@ try
         }
 
         /// Check if server send Log packet
-        receiveLogs(parsed_query);
+        receiveLogsAndProfileEvents(parsed_query);
 
         /// Check if server send Exception packet
         auto packet_type = connection->checkPacket(0);
@@ -1336,11 +1371,11 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
 
 
 /// Process Log packets, used when inserting data by blocks
-void ClientBase::receiveLogs(ASTPtr parsed_query)
+void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
-    while (packet_type && *packet_type == Protocol::Server::Log)
+    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -1463,7 +1498,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (with_output && with_output->settings_ast)
             apply_query_settings(*with_output->settings_ast);
 
-        if (!connection->checkConnected())
+        if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
         ASTPtr input_function;
@@ -1807,7 +1842,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                     have_error = false;
 
-                    if (!connection->checkConnected())
+                    if (!connection->checkConnected(connection_parameters.timeouts))
                         connect();
                 }
 
@@ -1842,8 +1877,20 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
 bool ClientBase::processQueryText(const String & text)
 {
-    if (exit_strings.end() != exit_strings.find(trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; })))
+    auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+
+    if (exit_strings.end() != exit_strings.find(trimmed_input))
         return false;
+
+    if (trimmed_input.starts_with("\\i"))
+    {
+        size_t skip_prefix_size = std::strlen("\\i");
+        auto file_name = trim(
+            trimmed_input.substr(skip_prefix_size, trimmed_input.size() - skip_prefix_size),
+            [](char c) { return isWhitespaceASCII(c); });
+
+        return processMultiQueryFromFile(file_name);
+    }
 
     if (!is_multiquery)
     {
@@ -2012,7 +2059,7 @@ void ClientBase::runInteractive()
             /// Client-side exception during query execution can result in the loss of
             /// sync in the connection protocol.
             /// So we reconnect and allow to enter the next query.
-            if (!connection->checkConnected())
+            if (!connection->checkConnected(connection_parameters.timeouts))
                 connect();
         }
     }
@@ -2027,6 +2074,17 @@ void ClientBase::runInteractive()
 }
 
 
+bool ClientBase::processMultiQueryFromFile(const String & file_name)
+{
+    String queries_from_file;
+
+    ReadBufferFromFile in(file_name);
+    readStringUntilEOF(queries_from_file, in);
+
+    return executeMultiQuery(queries_from_file);
+}
+
+
 void ClientBase::runNonInteractive()
 {
     if (delayed_interactive)
@@ -2034,23 +2092,13 @@ void ClientBase::runNonInteractive()
 
     if (!queries_files.empty())
     {
-        auto process_multi_query_from_file = [&](const String & file)
-        {
-            String queries_from_file;
-
-            ReadBufferFromFile in(file);
-            readStringUntilEOF(queries_from_file, in);
-
-            return executeMultiQuery(queries_from_file);
-        };
-
         for (const auto & queries_file : queries_files)
         {
             for (const auto & interleave_file : interleave_queries_files)
-                if (!process_multi_query_from_file(interleave_file))
+                if (!processMultiQueryFromFile(interleave_file))
                     return;
 
-            if (!process_multi_query_from_file(queries_file))
+            if (!processMultiQueryFromFile(queries_file))
                 return;
         }
 
@@ -2132,6 +2180,7 @@ void ClientBase::init(int argc, char ** argv)
 
     stdin_is_a_tty = isatty(STDIN_FILENO);
     stdout_is_a_tty = isatty(STDOUT_FILENO);
+    stderr_is_a_tty = isatty(STDERR_FILENO);
     terminal_width = getTerminalWidth();
 
     Arguments common_arguments{""}; /// 0th argument is ignored.

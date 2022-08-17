@@ -47,7 +47,7 @@ private: // IAccessStorage implementations.
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
+    virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
     virtual std::optional<UUID> authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists, bool allow_no_password, bool allow_plaintext_password) const override;
 
     void setConfiguration(const Poco::Util::AbstractConfiguration & config, const String & prefix);
