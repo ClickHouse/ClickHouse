@@ -638,7 +638,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", });
+    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
 
     size_t clearEmptyParts();
 
@@ -792,7 +792,7 @@ public:
         NameSet hardlinks_from_source_part;
     };
 
-    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
         const MergeTreePartInfo & dst_part_info, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn, HardlinkedFiles * hardlinked_files,
@@ -1000,6 +1000,9 @@ public:
 
     /// Used for freezePartitionsByMatcher and unfreezePartitionsByMatcher
     using MatcherFn = std::function<bool(const String &)>;
+
+    /// Returns an object that protects temporary directory from cleanup
+    scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name);
 
 protected:
     friend class IMergeTreeDataPart;

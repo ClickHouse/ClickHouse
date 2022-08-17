@@ -88,8 +88,13 @@ ColumnsDescription readSchemaFromFormat(
             catch (...)
             {
                 auto exception_message = getCurrentExceptionMessage(false);
-                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file: {}. You can specify the structure manually", format_name, exception_message);
+                throw Exception(
+                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                    "Cannot extract table structure from {} format file:\n{}\nYou can specify the structure manually",
+                    format_name,
+                    exception_message);
             }
+
             ++iterations;
 
             if (is_eof)

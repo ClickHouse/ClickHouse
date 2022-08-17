@@ -266,8 +266,8 @@ Result:
 └────────────────┘
 ```
 
-:::note    
-The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
+:::note
+The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1900 - 2299) will give an incorrect result.
 :::
 
 ## toStartOfYear
@@ -291,7 +291,7 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-:::note    
+:::note
 The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
 :::
 
@@ -956,9 +956,28 @@ SELECT
 
 ## timeSlots(StartTime, Duration,\[, Size\])
 
-For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter: a constant UInt32, set to 1800 by default.
-For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
-This is necessary for searching for pageviews in the corresponding session.
+For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.  
+This is necessary, for example, when searching for pageviews in the corresponding session.  
+Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.  
+Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
+
+Example:
+```sql
+SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
+SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
+SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
+``` 
+``` text
+┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
+│ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
+└─────────────────────────────────────────────────────────────┘
+┌─timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299)─┐
+│ ['1980-12-12 20:56:13','1980-12-12 21:01:12','1980-12-12 21:06:11']     │
+└─────────────────────────────────────────────────────────────────────────┘
+┌─timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0))─┐
+│ ['1980-12-12 20:56:13.0000','1980-12-12 21:01:12.0000','1980-12-12 21:06:11.0000']                        │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## formatDateTime
 

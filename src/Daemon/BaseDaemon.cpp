@@ -1013,9 +1013,21 @@ void BaseDaemon::setupWatchdog()
         /// If streaming compression of logs is used then we write watchdog logs to cerr
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
-            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+            Poco::AutoPtr<OwnPatternFormatter> pf;
+            if (config().getString("logger.formatting", "") == "json")
+                pf = new OwnJSONPatternFormatter;
+            else
+                pf = new OwnPatternFormatter;
             Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
+        }
+
+        /// Cuncurrent writing logs to the same file from two threads is questionable on its own,
+        ///  but rotating them from two threads is disastrous.
+        if (auto * channel = dynamic_cast<DB::OwnSplitChannel *>(logger().getChannel()))
+        {
+            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
+            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));

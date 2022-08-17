@@ -537,7 +537,7 @@ def test_schema_inference_with_globs(started_cluster):
     )
 
     result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')")
-    assert result.strip() == "c1\tNullable(Float64)"
+    assert result.strip() == "c1\tNullable(Int64)"
 
     result = node1.query(
         f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"

@@ -167,8 +167,8 @@ private:
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "encryption mode string"},
-                {"input", &isStringOrFixedString<IDataType>, nullptr, "plaintext"},
-                {"key", &isStringOrFixedString<IDataType>, nullptr, "encryption key binary string"},
+                {"input", &isStringOrFixedString<IDataType>, {}, "plaintext"},
+                {"key", &isStringOrFixedString<IDataType>, {}, "encryption key binary string"},
             },
             optional_args
         );
@@ -439,8 +439,8 @@ private:
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "decryption mode string"},
-                {"input", nullptr, nullptr, "ciphertext"},
-                {"key", &isStringOrFixedString<IDataType>, nullptr, "decryption key binary string"},
+                {"input", &isStringOrFixedString<IDataType>, {}, "ciphertext"},
+                {"key", &isStringOrFixedString<IDataType>, {}, "decryption key binary string"},
             },
             optional_args
         );
