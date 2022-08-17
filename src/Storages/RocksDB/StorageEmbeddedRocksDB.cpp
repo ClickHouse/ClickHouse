@@ -1,3 +1,4 @@
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 
