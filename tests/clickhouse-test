@@ -55,8 +55,6 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
-    "DB::Exception: Cannot enqueue query",
-    "is executing longer than distributed_ddl_task_timeout",  # FIXME
 ]
 
 MAX_RETRIES = 3
@@ -457,6 +455,7 @@ class SettingsRandomizer:
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
+        "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
     }
 
     @staticmethod
