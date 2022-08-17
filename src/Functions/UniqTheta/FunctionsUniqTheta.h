@@ -53,7 +53,7 @@ namespace DB
     {
         static void apply(AggregateFunctionUniqThetaData & sketch_data_1, const AggregateFunctionUniqThetaData & sketch_data_2)
         {
-            sketch_data_1.set.a_not_b(sketch_data_2.set);
+            sketch_data_1.set.aNotB(sketch_data_2.set);
         }
     };
 
