@@ -256,6 +256,7 @@ void WriteBufferFromS3::writePart()
     if (schedule)
     {
         UploadPartTask * task = nullptr;
+
         int part_number;
         {
             std::lock_guard lock(bg_tasks_mutex);
@@ -264,45 +265,57 @@ void WriteBufferFromS3::writePart()
             part_number = num_added_bg_tasks;
         }
 
-        fillUploadRequest(task->req, part_number);
-
-        if (file_segments_holder)
+        /// Notify waiting thread when task finished
+        auto task_finish_notify = [&, task]()
         {
-            task->cache_files.emplace(std::move(*file_segments_holder));
-            file_segments_holder.reset();
+            std::lock_guard lock(bg_tasks_mutex);
+            task->is_finised = true;
+            ++num_finished_bg_tasks;
+
+            /// Notification under mutex is important here.
+            /// Otherwise, WriteBuffer could be destroyed in between
+            /// Releasing lock and condvar notification.
+            bg_tasks_condvar.notify_one();
+        };
+
+        try
+        {
+            fillUploadRequest(task->req, part_number);
+
+            if (file_segments_holder)
+            {
+                task->cache_files.emplace(std::move(*file_segments_holder));
+                file_segments_holder.reset();
+            }
+
+            schedule([this, task, task_finish_notify]()
+            {
+                try
+                {
+                    processUploadRequest(*task);
+                }
+                catch (...)
+                {
+                    task->exception = std::current_exception();
+                }
+
+                try
+                {
+                    finalizeCacheIfNeeded(task->cache_files);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+
+                task_finish_notify();
+            });
         }
-
-        schedule([this, task]()
+        catch (...)
         {
-            try
-            {
-                processUploadRequest(*task);
-            }
-            catch (...)
-            {
-                task->exception = std::current_exception();
-            }
-
-            try
-            {
-                finalizeCacheIfNeeded(task->cache_files);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-
-            {
-                std::lock_guard lock(bg_tasks_mutex);
-                task->is_finised = true;
-                ++num_finished_bg_tasks;
-
-                /// Notification under mutex is important here.
-                /// Otherwise, WriteBuffer could be destroyed in between
-                /// Releasing lock and condvar notification.
-                bg_tasks_condvar.notify_one();
-            }
-        });
+            task_finish_notify();
+            throw;
+        }
     }
     else
     {
@@ -397,43 +410,56 @@ void WriteBufferFromS3::makeSinglepartUpload()
     {
         put_object_task = std::make_unique<PutObjectTask>();
 
-        fillPutRequest(put_object_task->req);
-        if (file_segments_holder)
+        /// Notify waiting thread when put object task finished
+        auto task_notify_finish = [&]()
         {
-            put_object_task->cache_files.emplace(std::move(*file_segments_holder));
-            file_segments_holder.reset();
+            std::lock_guard lock(bg_tasks_mutex);
+            put_object_task->is_finised = true;
+
+            /// Notification under mutex is important here.
+            /// Othervies, WriteBuffer could be destroyed in between
+            /// Releasing lock and condvar notification.
+            bg_tasks_condvar.notify_one();
+        };
+
+        try
+        {
+            fillPutRequest(put_object_task->req);
+
+            if (file_segments_holder)
+            {
+                put_object_task->cache_files.emplace(std::move(*file_segments_holder));
+                file_segments_holder.reset();
+            }
+
+            schedule([this, task_notify_finish]()
+            {
+                try
+                {
+                    processPutRequest(*put_object_task);
+                }
+                catch (...)
+                {
+                    put_object_task->exception = std::current_exception();
+                }
+
+                try
+                {
+                    finalizeCacheIfNeeded(put_object_task->cache_files);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+
+                task_notify_finish();
+            });
         }
-
-        schedule([this]()
+        catch (...)
         {
-            try
-            {
-                processPutRequest(*put_object_task);
-            }
-            catch (...)
-            {
-                put_object_task->exception = std::current_exception();
-            }
-
-            try
-            {
-                finalizeCacheIfNeeded(put_object_task->cache_files);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-
-            {
-                std::lock_guard lock(bg_tasks_mutex);
-                put_object_task->is_finised = true;
-
-                /// Notification under mutex is important here.
-                /// Othervies, WriteBuffer could be destroyed in between
-                /// Releasing lock and condvar notification.
-                bg_tasks_condvar.notify_one();
-            }
-        });
+            task_notify_finish();
+            throw;
+        }
     }
     else
     {

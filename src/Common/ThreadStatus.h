@@ -135,6 +135,8 @@ public:
     Int64 untracked_memory = 0;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Increase limit in case of exception.
+    Int64 untracked_memory_limit_increase = 0;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
