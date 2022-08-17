@@ -26,22 +26,16 @@ class FunctionThrowIf : public IFunction
 {
 public:
     static constexpr auto name = "throwIf";
+
     static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionThrowIf>();
     }
 
-    String getName() const override
-    {
-        return name;
-    }
-
+    String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
+    size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -55,12 +49,13 @@ public:
 
         if (!isNativeNumber(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Argument for function {} must be number",
-                getName());
+                "First argument of function {} must be a number (passed: {})",
+                getName(),
+                arguments[0]->getName());
 
         if (number_of_arguments > 1 && !isString(arguments[1]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}",
+                "Second argument of function {} must be a string (passed: {})",
                 arguments[1]->getName(),
                 getName());
 
@@ -86,9 +81,7 @@ public:
         {
             const auto * message_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
             if (!message_column)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Second argument for function {} must be constant String",
-                    getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant String", getName());
 
             custom_message = message_column->getValue<String>();
         }
@@ -108,12 +101,13 @@ public:
             || (res = execute<Float32>(in, custom_message))
             || (res = execute<Float64>(in, custom_message))))
         {
-            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }
 
         return res;
     }
 
+private:
     template <typename T>
     ColumnPtr execute(const IColumn * in_untyped, const std::optional<String> & message) const
     {
@@ -128,7 +122,7 @@ public:
             if (!memoryIsZero(in_data.data(), 0, in_data.size() * sizeof(in_data[0])))
             {
                 throw Exception(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO,
-                    message.value_or("Value passed to '" + getName() + "' function is non zero"));
+                    message.value_or("Value passed to '" + getName() + "' function is non-zero"));
             }
 
             size_t result_size = in_untyped->size();

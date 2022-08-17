@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-default_exception_message="Value passed to 'throwIf' function is non zero"
+default_exception_message="Value passed to 'throwIf' function is non-zero"
 custom_exception_message="Number equals 1000000"
 
 ${CLICKHOUSE_CLIENT} --server_logs_file /dev/null --query="SELECT throwIf(number = 1000000) FROM system.numbers" 2>&1 | grep -cF "$default_exception_message"
