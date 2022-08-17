@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
     extern const int THERE_IS_NO_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 static CapnProtoRowInputFormat::NestedField split(const Block & header, size_t i)
@@ -206,7 +207,12 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header,
 kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 {
     uint32_t segment_count;
-    in.readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    /// Don't allow large amount of segments as it's done in capnproto library:
+    /// https://github.com/capnproto/capnproto/blob/931074914eda9ca574b5c24d1169c0f7a5156594/c%2B%2B/src/capnp/serialize.c%2B%2B#L181
+    /// Large amount of segments can indicate that corruption happened.
+    if (segment_count >= 512)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Message has too many segments. Most likely, data was corrupted");
 
     // one for segmentCount and one because segmentCount starts from 0
     const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
