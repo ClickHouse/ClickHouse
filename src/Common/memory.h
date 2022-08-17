@@ -115,7 +115,7 @@ requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE void trackMemory(std::size_t size, TAlign... align)
 {
     std::size_t actual_size = getActualAllocationSize(size, align...);
-    CurrentMemoryTracker::allocNoThrow(actual_size);
+    CurrentMemoryTracker::alloc(actual_size);
 }
 
 template <std::same_as<std::align_val_t>... TAlign>
