@@ -672,7 +672,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     saveJemallocMetric<uint64_t>(new_values, "background_thread.num_runs");
     saveJemallocMetric<uint64_t>(new_values, "background_thread.run_intervals");
     saveAllArenasMetric<size_t>(new_values, "pactive");
-    saveAllArenasMetric<size_t>(new_values, "pdirty");
+    [[maybe_unused]] size_t je_malloc_pdirty = saveAllArenasMetric<size_t>(new_values, "pdirty");
     [[maybe_unused]] size_t je_malloc_pmuzzy = saveAllArenasMetric<size_t>(new_values, "pmuzzy");
     saveAllArenasMetric<size_t>(new_values, "dirty_purged");
     saveAllArenasMetric<size_t>(new_values, "muzzy_purged");
@@ -703,7 +703,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 #if USE_JEMALLOC
             /// This is a memory which is kept by allocator.
             /// Will subsract it from RSS to decrease memory drift.
-            free_memory_in_allocator_arenas = je_malloc_pmuzzy * getPageSize();
+            free_memory_in_allocator_arenas = je_malloc_pdirty * getPageSize();
 #endif
 
             Int64 difference = rss - free_memory_in_allocator_arenas - amount;
