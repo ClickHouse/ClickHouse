@@ -93,6 +93,21 @@ It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to onl
 -   If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
 -   If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
 -   If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
+    - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
+    ```sql
+    ...
+    SOURCE(CLICKHOUSE(... 
+        update_field 'added_time' 
+        QUERY '
+            SELECT my_arr.1 AS x, my_arr.2 AS y, creation_time 
+            FROM (
+                SELECT arrayZip(x_arr, y_arr) AS my_arr, creation_time 
+                FROM dictionary_source
+                WHERE {condition}
+            )'
+    ))
+    ...
+    ```
 
 If `update_field` option is set, additional option `update_lag` can be set. Value of `update_lag` option is subtracted from previous update time before request updated data.
 
