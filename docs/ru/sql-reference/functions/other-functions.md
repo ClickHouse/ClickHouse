@@ -1727,10 +1727,13 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 
 Принимает на вход имя и аргументы модели. Возвращает Float64.
 
-## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
+## throwIf(x\[, message\[, error_code\]\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+`custom_message` - необязательный параметр, константная строка, задает текст сообщения об ошибке.
+`error_code` - необязательный параметр, константое число, задает устанавливает код ошибки.
+
+Чтобы использовать аргумент `error_code`, должен быть включен параметр конфигурации `allow_custom_error_code_in_throwif`.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
