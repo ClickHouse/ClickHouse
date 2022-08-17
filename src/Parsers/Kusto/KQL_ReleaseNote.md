@@ -1,6 +1,14 @@
 
 ## KQL implemented features
 
+# August XX, 2022
+## Dynamic functions
+- [array_iff / array_iif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayifffunction)
+   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
+   `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
+   `print array_iif(dynamic([true, false, true, false]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, null])`
+   `print array_iif(dynamic([1, 0, -1, 44, 0]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, 4, null])`
+
 # August 15, 2022
    **double quote support**  
    ``print res = strcat("double ","quote")``  
@@ -49,7 +57,7 @@
    `print tostring(123) == '123'`  
    `print tostring('asd') == 'asd'`  
 
-## DateType
+## Data Types
  - [dynamic](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/scalar-data-types/dynamic)  
     *Supports only 1D array*  
     `print output = dynamic(['a', 'b', 'c'])`  

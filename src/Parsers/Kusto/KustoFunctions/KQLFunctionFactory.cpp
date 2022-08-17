@@ -93,6 +93,7 @@ namespace DB
         {"url_encode", KQLFunctionValue::url_encode},
 
         {"array_concat", KQLFunctionValue::array_concat},
+        {"array_iff", KQLFunctionValue::array_iif},
         {"array_iif", KQLFunctionValue::array_iif},
         {"array_index_of", KQLFunctionValue::array_index_of},
         {"array_length", KQLFunctionValue::array_length},
