@@ -167,6 +167,12 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
     }
 }
 
+bool DictionaryStructure::hasAttribute(const std::string & attribute_name) const
+{
+    auto it = attribute_name_to_index.find(attribute_name);
+    return it != attribute_name_to_index.end();
+}
+
 const DictionaryAttribute & DictionaryStructure::getAttribute(const std::string & attribute_name) const
 {
     auto it = attribute_name_to_index.find(attribute_name);

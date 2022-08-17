@@ -17,7 +17,7 @@ using FunctionReplaceAll = FunctionStringReplace<ReplaceStringImpl<false>, NameR
 
 }
 
-void registerFunctionReplaceAll(FunctionFactory & factory)
+REGISTER_FUNCTION(ReplaceAll)
 {
     factory.registerFunction<FunctionReplaceAll>();
     factory.registerAlias("replace", NameReplaceAll::name, FunctionFactory::CaseInsensitive);

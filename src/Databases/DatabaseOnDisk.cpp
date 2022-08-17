@@ -230,7 +230,7 @@ void DatabaseOnDisk::createTable(
 
 /// If the table was detached permanently we will have a flag file with
 /// .sql.detached extension, is not needed anymore since we attached the table back
-void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool) const
+void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & table_name, const String & table_metadata_path, bool)
 {
     try
     {

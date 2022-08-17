@@ -3,14 +3,11 @@
 from collections import namedtuple
 import fnmatch
 import json
-import os
 import time
 
 import jwt
 import requests  # type: ignore
 import boto3  # type: ignore
-
-API_URL = os.getenv("API_URL", "https://api.github.com/repos/ClickHouse/ClickHouse")
 
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
@@ -27,7 +24,7 @@ SUSPICIOUS_PATTERNS = [
 MAX_RETRY = 5
 
 # Number of times a check can re-run as a whole.
-# It is needed, because we are using AWS "spot" instances, that are terminated very frequently.
+# It is needed, because we are using AWS "spot" instances, that are terminated often
 MAX_WORKFLOW_RERUN = 20
 
 WorkflowDescription = namedtuple(
@@ -46,6 +43,7 @@ WorkflowDescription = namedtuple(
         "rerun_url",
         "jobs_url",
         "attempt",
+        "repo_url",
         "url",
     ],
 )
@@ -189,10 +187,11 @@ def is_trusted_contributor(pr_user_login, pr_user_orgs):
     return False
 
 
-def _exec_get_with_retry(url):
+def _exec_get_with_retry(url, token):
+    headers = {"Authorization": f"token {token}"}
     for i in range(MAX_RETRY):
         try:
-            response = requests.get(url)
+            response = requests.get(url, headers=headers)
             response.raise_for_status()
             return response.json()
         except Exception as ex:
@@ -228,9 +227,9 @@ def _exec_post_with_retry(url, token, data=None):
     raise Exception("Cannot execute POST request with retry")
 
 
-def _get_pull_requests_from(owner, branch):
-    url = f"{API_URL}/pulls?head={owner}:{branch}"
-    return _exec_get_with_retry(url)
+def _get_pull_requests_from(repo_url, owner, branch, token):
+    url = f"{repo_url}/pulls?head={owner}:{branch}"
+    return _exec_get_with_retry(url, token)
 
 
 def get_workflow_description_from_event(event):
@@ -248,6 +247,7 @@ def get_workflow_description_from_event(event):
     rerun_url = event["workflow_run"]["rerun_url"]
     url = event["workflow_run"]["html_url"]
     api_url = event["workflow_run"]["url"]
+    repo_url = event["repository"]["url"]
     return WorkflowDescription(
         name=name,
         action=action,
@@ -262,24 +262,24 @@ def get_workflow_description_from_event(event):
         jobs_url=jobs_url,
         rerun_url=rerun_url,
         url=url,
+        repo_url=repo_url,
         api_url=api_url,
     )
 
 
-def get_pr_author_and_orgs(pull_request):
+def get_pr_author_and_orgs(pull_request, token):
     author = pull_request["user"]["login"]
-    orgs = _exec_get_with_retry(pull_request["user"]["organizations_url"])
+    orgs = _exec_get_with_retry(pull_request["user"]["organizations_url"], token)
     return author, [org["id"] for org in orgs]
 
 
-def get_changed_files_for_pull_request(pull_request):
-    number = pull_request["number"]
+def get_changed_files_for_pull_request(pull_request, token):
+    url = pull_request["url"]
 
     changed_files = set([])
     for i in range(1, 31):
         print("Requesting changed files page", i)
-        url = f"{API_URL}/pulls/{number}/files?page={i}&per_page=100"
-        data = _exec_get_with_retry(url)
+        data = _exec_get_with_retry(f"{url}/files?page={i}&per_page=100", token)
         print(f"Got {len(data)} changed files")
         if len(data) == 0:
             print("No more changed files")
@@ -317,14 +317,13 @@ def check_suspicious_changed_files(changed_files):
     return False
 
 
-def approve_run(run_id, token):
-    url = f"{API_URL}/actions/runs/{run_id}/approve"
+def approve_run(workflow_description: WorkflowDescription, token):
+    url = f"{workflow_description.api_url}/approve"
     _exec_post_with_retry(url, token)
 
 
 def label_manual_approve(pull_request, token):
-    number = pull_request["number"]
-    url = f"{API_URL}/issues/{number}/labels"
+    url = f"{pull_request['url']}/labels"
     data = {"labels": "manual approve"}
 
     _exec_post_with_retry(url, token, data)
@@ -343,14 +342,14 @@ def get_token_from_aws():
     return get_access_token(encoded_jwt, installation_id)
 
 
-def get_workflow_jobs(workflow_description):
+def get_workflow_jobs(workflow_description, token):
     jobs_url = (
         workflow_description.api_url + f"/attempts/{workflow_description.attempt}/jobs"
     )
     jobs = []
     i = 1
     while True:
-        got_jobs = _exec_get_with_retry(jobs_url + f"?page={i}")
+        got_jobs = _exec_get_with_retry(jobs_url + f"?page={i}", token)
         if len(got_jobs["jobs"]) == 0:
             break
 
@@ -360,7 +359,7 @@ def get_workflow_jobs(workflow_description):
     return jobs
 
 
-def check_need_to_rerun(workflow_description):
+def check_need_to_rerun(workflow_description, token):
     if workflow_description.attempt >= MAX_WORKFLOW_RERUN:
         print(
             "Not going to rerun workflow because it's already tried more than two times"
@@ -368,7 +367,7 @@ def check_need_to_rerun(workflow_description):
         return False
     print("Going to check jobs")
 
-    jobs = get_workflow_jobs(workflow_description)
+    jobs = get_workflow_jobs(workflow_description, token)
     print("Got jobs", len(jobs))
     for job in jobs:
         if job["conclusion"] not in ("success", "skipped"):
@@ -395,17 +394,30 @@ def rerun_workflow(workflow_description, token):
         _exec_post_with_retry(workflow_description.rerun_url, token)
 
 
-def main(event):
-    token = get_token_from_aws()
-    event_data = json.loads(event["body"])
-    print("The body received:", event["body"])
-    workflow_description = get_workflow_description_from_event(event_data)
+def check_workflow_completed(
+    event_data, workflow_description: WorkflowDescription, token: str
+) -> bool:
+    if workflow_description.action == "completed":
+        attempt = 0
+        # Nice and reliable GH API sends from time to time such events, e.g:
+        # action='completed', conclusion=None, status='in_progress',
+        # So let's try receiving a real workflow data
+        while workflow_description.conclusion is None and attempt < MAX_RETRY:
+            progressive_sleep = 3 * sum(i + 1 for i in range(attempt))
+            time.sleep(progressive_sleep)
+            event_data["workflow_run"] = _exec_get_with_retry(
+                workflow_description.api_url, token
+            )
+            workflow_description = get_workflow_description_from_event(event_data)
+            attempt += 1
 
-    print("Got workflow description", workflow_description)
-    if (
-        workflow_description.action == "completed"
-        and workflow_description.conclusion == "failure"
-    ):
+        if workflow_description.conclusion != "failure":
+            print(
+                "Workflow finished with status "
+                f"{workflow_description.conclusion}, exiting"
+            )
+            return True
+
         print(
             "Workflow",
             workflow_description.url,
@@ -418,11 +430,24 @@ def main(event):
                 workflow_description.name,
                 "not in list of rerunable workflows",
             )
-            return
+            return True
 
-        if check_need_to_rerun(workflow_description):
+        if check_need_to_rerun(workflow_description, token):
             rerun_workflow(workflow_description, token)
-            return
+            return True
+
+    return False
+
+
+def main(event):
+    token = get_token_from_aws()
+    event_data = json.loads(event["body"])
+    print("The body received:", event["body"])
+    workflow_description = get_workflow_description_from_event(event_data)
+
+    print("Got workflow description", workflow_description)
+    if check_workflow_completed(event_data, workflow_description, token):
+        return
 
     if workflow_description.action != "requested":
         print("Exiting, event action is", workflow_description.action)
@@ -430,30 +455,31 @@ def main(event):
 
     if workflow_description.workflow_id in TRUSTED_WORKFLOW_IDS:
         print("Workflow in trusted list, approving run")
-        approve_run(workflow_description.run_id, token)
+        approve_run(workflow_description, token)
         return
 
     pull_requests = _get_pull_requests_from(
-        workflow_description.fork_owner_login, workflow_description.fork_branch
+        workflow_description.repo_url,
+        workflow_description.fork_owner_login,
+        workflow_description.fork_branch,
+        token,
     )
 
     print("Got pull requests for workflow", len(pull_requests))
-    if len(pull_requests) > 1:
-        raise Exception("Received more than one PR for workflow run")
-
-    if len(pull_requests) < 1:
-        raise Exception("Cannot find any pull requests for workflow run")
+    if len(pull_requests) != 1:
+        print(f"Can't continue with non-uniq PRs: {pull_requests}")
+        return
 
     pull_request = pull_requests[0]
     print("Pull request for workflow number", pull_request["number"])
 
-    author, author_orgs = get_pr_author_and_orgs(pull_request)
+    author, author_orgs = get_pr_author_and_orgs(pull_request, token)
     if is_trusted_contributor(author, author_orgs):
         print("Contributor is trusted, approving run")
-        approve_run(workflow_description.run_id, token)
+        approve_run(workflow_description, token)
         return
 
-    changed_files = get_changed_files_for_pull_request(pull_request)
+    changed_files = get_changed_files_for_pull_request(pull_request, token)
     print(f"Totally have {len(changed_files)} changed files in PR:", changed_files)
     if check_suspicious_changed_files(changed_files):
         print(
@@ -463,8 +489,12 @@ def main(event):
         label_manual_approve(pull_request, token)
     else:
         print(f"Pull Request {pull_request['number']} has no suspicious changes")
-        approve_run(workflow_description.run_id, token)
+        approve_run(workflow_description, token)
 
 
 def handler(event, _):
-    main(event)
+    try:
+        main(event)
+    except Exception:
+        print("Received event: ", event)
+        raise
