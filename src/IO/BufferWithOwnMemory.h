@@ -8,6 +8,8 @@
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
+#include <base/arithmeticOverflow.h>
+
 
 namespace ProfileEvents
 {
@@ -18,6 +20,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
 
 
 /** Replacement for std::vector<char> to use in buffers.
@@ -38,9 +45,9 @@ struct Memory : boost::noncopyable, Allocator
     Memory() = default;
 
     /// If alignment != 0, then allocate memory aligned to specified value.
-    explicit Memory(size_t size_, size_t alignment_ = 0) : m_capacity(size_), m_size(m_capacity), alignment(alignment_)
+    explicit Memory(size_t size_, size_t alignment_ = 0) : alignment(alignment_)
     {
-        alloc();
+        alloc(size_);
     }
 
     ~Memory()
@@ -75,28 +82,26 @@ struct Memory : boost::noncopyable, Allocator
 
     void resize(size_t new_size)
     {
-        if (0 == m_capacity)
+        if (!m_data)
         {
-            m_size = new_size;
-            m_capacity = new_size;
-            alloc();
+            alloc(new_size);
+            return;
         }
-        else if (new_size <= m_capacity - pad_right)
+
+        if (new_size <= m_capacity - pad_right)
         {
             m_size = new_size;
             return;
         }
-        else
-        {
-            size_t new_capacity = align(new_size, alignment) + pad_right;
 
-            size_t diff = new_capacity - m_capacity;
-            ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
+        size_t new_capacity = alignWithPadding(new_size, alignment);
 
-            m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
-            m_capacity = new_capacity;
-            m_size = m_capacity - pad_right;
-        }
+        size_t diff = new_capacity - m_capacity;
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
+
+        m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
+        m_capacity = new_capacity;
+        m_size = new_size;
     }
 
 private:
@@ -108,24 +113,47 @@ private:
         if (!(value % alignment))
             return value;
 
-        return (value + alignment - 1) / alignment * alignment;
+        // original expression is (value + alignment - 1) / alignment * alignment;
+
+        size_t res = 0;
+
+        if (common::addOverflow<size_t>(value, alignment - 1, res))
+            throw Exception("value is too big to apply alignment", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+        res /= alignment;
+
+        if (common::mulOverflow<size_t>(res, alignment, res))
+            throw Exception("value is too big to apply alignment", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+        return res;
     }
 
-    void alloc()
+    static size_t alignWithPadding(const size_t value, const size_t alignment)
     {
-        if (!m_capacity)
+        size_t res = align(value, alignment);
+
+        if (common::addOverflow<size_t>(res, pad_right, res))
+            throw Exception("value is too big to apply padding 3", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+        return res;
+    }
+
+    void alloc(size_t new_size)
+    {
+        if (!new_size)
         {
             m_data = nullptr;
             return;
         }
 
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, m_capacity);
+        size_t new_capacity = alignWithPadding(new_size, alignment);
 
-        size_t new_capacity = align(m_capacity, alignment) + pad_right;
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
+        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, new_capacity);
+
         m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
         m_capacity = new_capacity;
-        m_size = m_capacity - pad_right;
+        m_size = new_size;
     }
 
     void dealloc()
