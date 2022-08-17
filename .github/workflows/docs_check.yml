@@ -31,7 +31,7 @@ jobs:
           python3 run_check.py
   DockerHubPushAarch64:
     needs: CheckLabels
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
     steps:
       - name: Clear repository
         run: |
@@ -49,7 +49,7 @@ jobs:
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
   DockerHubPushAmd64:
     needs: CheckLabels
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, builder]
     steps:
       - name: Clear repository
         run: |

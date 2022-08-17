@@ -20,7 +20,7 @@ concurrency:
   workflow_dispatch:
 jobs:
   DockerHubPushAarch64:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
     steps:
       - name: Clear repository
         run: |
@@ -37,7 +37,7 @@ jobs:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
   DockerHubPushAmd64:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, builder]
     steps:
       - name: Clear repository
         run: |
