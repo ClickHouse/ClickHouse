@@ -38,6 +38,7 @@ static void executeCreateQuery(
     ContextMutablePtr context,
     const String & database,
     const String & file_name,
+    bool create,
     bool has_force_restore_data_flag)
 {
     ParserCreateQuery parser;
@@ -49,8 +50,11 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
-    interpreter.setForceAttach(true);
-    interpreter.setForceRestoreData(has_force_restore_data_flag);
+    if (!create)
+    {
+        interpreter.setForceAttach(true);
+        interpreter.setForceRestoreData(has_force_restore_data_flag);
+    }
     interpreter.setLoadDatabaseWithoutTables(true);
     interpreter.execute();
 }
@@ -86,7 +90,7 @@ static void loadDatabase(
 
     try
     {
-        executeCreateQuery(database_attach_query, context, database, database_metadata_file, force_restore_data);
+        executeCreateQuery(database_attach_query, context, database, database_metadata_file, /* create */ true, force_restore_data);
     }
     catch (Exception & e)
     {
@@ -173,7 +177,8 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
     }
 
-    TablesLoader loader{context, std::move(loaded_databases), has_force_restore_data_flag, /* force_attach */ true};
+    auto mode = getLoadingStrictnessLevel(/* attach */ true, /* force_attach */ true, has_force_restore_data_flag);
+    TablesLoader loader{context, std::move(loaded_databases), mode};
     loader.loadTables();
     loader.startupTables();
 
@@ -207,7 +212,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
         database_create_query += database_name;
         database_create_query += " ENGINE=";
         database_create_query += default_engine;
-        executeCreateQuery(database_create_query, context, database_name, "<no file>", true);
+        executeCreateQuery(database_create_query, context, database_name, "<no file>", true, true);
     }
 }
 
@@ -315,7 +320,7 @@ void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const Datab
         {
             {DatabaseCatalog::SYSTEM_DATABASE, DatabaseCatalog::instance().getSystemDatabase()},
         };
-        TablesLoader loader{context, databases, /* force_restore */ true, /* force_attach */ true};
+        TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
         loader.loadTables();
 
         /// Will startup tables usual way
@@ -331,7 +336,7 @@ void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, const Datab
 void startupSystemTables()
 {
     ThreadPool pool;
-    DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, /* force_restore */ true, /* force_attach */ true);
+    DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, LoadingStrictnessLevel::FORCE_RESTORE);
 }
 
 void loadMetadataSystem(ContextMutablePtr context)
@@ -346,7 +351,7 @@ void loadMetadataSystem(ContextMutablePtr context)
         {DatabaseCatalog::INFORMATION_SCHEMA, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA)},
         {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
     };
-    TablesLoader loader{context, databases, /* force_restore */ true, /* force_attach */ true};
+    TablesLoader loader{context, databases, LoadingStrictnessLevel::FORCE_RESTORE};
     loader.loadTables();
     /// Will startup tables in system database after all databases are loaded.
 }

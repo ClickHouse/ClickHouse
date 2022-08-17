@@ -40,7 +40,7 @@ public:
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
-    void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) const override;
+    void removeDetachedPermanentlyFlag(ContextPtr context, const String & table_name, const String & table_metadata_path, bool attach) override;
 
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 
@@ -64,11 +64,11 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, LoadingStrictnessLevel mode, bool skip_startup_tables) override;
 
-    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
+    void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     void shutdown() override;
 
@@ -78,8 +78,9 @@ public:
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
 private:
-    void tryConnectToZooKeeperAndInitDatabase(bool force_attach);
+    void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
+    static bool looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
 
     struct
@@ -110,6 +111,9 @@ private:
         return is_recovering && typeid_cast<DatabaseAtomic *>(&to_database);
     }
 
+    UInt64 getMetadataHash(const String & table_name) const;
+    bool checkDigestValid(const ContextPtr & local_context, bool debug_check = true) const TSA_REQUIRES(metadata_mutex);
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
@@ -119,9 +123,19 @@ private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
     std::atomic_bool is_readonly = true;
+    std::atomic_bool is_probably_dropped = false;
     std::atomic_bool is_recovering = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     UInt32 max_log_ptr_at_creation = 0;
+
+    /// Usually operation with metadata are single-threaded because of the way replication works,
+    /// but StorageReplicatedMergeTree may call alterTable outside from DatabaseReplicatedDDLWorker causing race conditions.
+    std::mutex metadata_mutex;
+
+    /// Sum of hashes of pairs (table_name, table_create_statement).
+    /// We calculate this sum from local metadata files and compare it will value in ZooKeeper.
+    /// It allows to detect if metadata is broken and recover replica.
+    UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
 
     mutable ClusterPtr cluster;
 };
