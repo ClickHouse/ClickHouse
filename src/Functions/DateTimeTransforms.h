@@ -183,7 +183,7 @@ struct ToLastDayOfMonthImpl
 {
     static constexpr auto name = "toLastDayOfMonth";
 
-    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
     }
@@ -191,7 +191,7 @@ struct ToLastDayOfMonthImpl
     {
         return time_zone.toLastDayNumOfMonth(time_zone.toDayNum(t));
     }
-    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d));
     }
