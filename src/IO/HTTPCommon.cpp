@@ -74,12 +74,7 @@ namespace
         if (https)
         {
 #if USE_SSL
-            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
-            auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
-            if (resolve_host)
-                https_session->setResolvedHost(DNSResolver::instance().resolveHost(host).toString());
-
-            session = std::move(https_session);
+            session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
