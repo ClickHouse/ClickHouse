@@ -29,7 +29,7 @@ DataStream ITransformingStep::createOutputStream(
     if (stream_traits.preserves_sorting)
     {
         output_stream.sort_description = input_stream.sort_description;
-        output_stream.sort_mode = input_stream.sort_mode;
+        output_stream.sort_scope = input_stream.sort_scope;
     }
 
     return output_stream;
