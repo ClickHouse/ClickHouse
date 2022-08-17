@@ -538,11 +538,12 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(Bool, engine_file_allow_create_multiple_files, false, "Enables or disables creating a new file on each insert in file engine tables if format has suffix.", 0) \
     M(Bool, allow_experimental_database_replicated, false, "Allow to create databases with Replicated engine", 0) \
     M(UInt64, database_replicated_initial_query_timeout_sec, 300, "How long initial DDL query should wait for Replicated database to precess previous DDL queue entries", 0) \
+    M(Bool, database_replicated_enforce_synchronous_settings, false, "Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutation_sync, replication_alter_partitions_sync). Not recommended to enable these settings.", 0) \
     M(UInt64, max_distributed_depth, 5, "Maximum distributed query depth", 0) \
     M(Bool, database_replicated_always_detach_permanently, false, "Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated", 0) \
     M(Bool, database_replicated_allow_only_replicated_engine, false, "Allow to create only Replicated tables in database with engine Replicated", 0) \
     M(DistributedDDLOutputMode, distributed_ddl_output_mode, DistributedDDLOutputMode::THROW, "Format of distributed DDL query result", 0) \
-    M(UInt64, distributed_ddl_entry_format_version, 2, "Version of DDL entry to write into ZooKeeper", 0) \
+    M(UInt64, distributed_ddl_entry_format_version, 3, "Compatibility version of distributed DDL (ON CLUSTER) queries", 0) \
     \
     M(UInt64, external_storage_max_read_rows, 0, "Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled", 0) \
     M(UInt64, external_storage_max_read_bytes, 0, "Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled", 0)  \

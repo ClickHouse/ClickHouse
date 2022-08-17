@@ -55,8 +55,6 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
     "DB::Exception: New table appeared in database being dropped or detached. Try again",
     "is already started to be removing by another replica right now",
-    "DB::Exception: Cannot enqueue query",
-    "is executing longer than distributed_ddl_task_timeout",  # FIXME
 ]
 
 MAX_RETRIES = 3
