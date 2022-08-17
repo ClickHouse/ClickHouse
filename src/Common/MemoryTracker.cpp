@@ -169,12 +169,14 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
     {
+        /// Revert
+        amount.fetch_sub(size, std::memory_order_relaxed);
+
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
 
         ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
         const auto * description = description_ptr.load(std::memory_order_relaxed);
-        amount.fetch_sub(size, std::memory_order_relaxed);
         throw DB::Exception(
             DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
             "Memory tracker{}{}: fault injected. Would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
@@ -211,6 +213,9 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
 
         if (overcommit_result != OvercommitResult::MEMORY_FREED)
         {
+            /// Revert
+            amount.fetch_sub(size, std::memory_order_relaxed);
+
             /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
             ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
