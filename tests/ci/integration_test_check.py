@@ -249,7 +249,7 @@ if __name__ == "__main__":
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, check_name, test_results)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     report_url = upload_results(
         s3_helper,
         pr_info.number,
