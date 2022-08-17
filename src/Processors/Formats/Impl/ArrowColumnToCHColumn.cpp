@@ -124,7 +124,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowArray & chunk = dynamic_cast<arrow::ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
