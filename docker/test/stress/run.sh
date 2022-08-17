@@ -277,6 +277,14 @@ zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-serve
 # Remove file logical_errors.txt if it's empty
 [ -s /test_output/logical_errors.txt ] || rm /test_output/logical_errors.txt
 
+# No such key errors
+zgrep -Ea "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log > /test_output/no_such_key_errors.txt \
+    && echo -e 'S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)\tFAIL' >> /test_output/test_results.tsv \
+    || echo -e 'No lost s3 keys\tOK' >> /test_output/test_results.tsv
+
+# Remove file no_such_key_errors.txt if it's empty
+[ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
+
 # Crash
 zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server*.log > /dev/null \
     && echo -e 'Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
