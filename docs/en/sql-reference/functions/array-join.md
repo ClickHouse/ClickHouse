@@ -63,8 +63,8 @@ FROM
         ['Firefox', 'Chrome', 'Chrome'] AS browsers
 )
 GROUP BY
-    2,
-    3
+    city,
+    browser
 ```
 
 ``` text
@@ -98,8 +98,8 @@ ARRAY JOIN
     cities AS city,
     browsers AS browser
 GROUP BY
-    2,
-    3
+    city,
+    browser
 ```
 
 ``` text
@@ -126,8 +126,8 @@ FROM
         ['Firefox', 'Chrome', 'Chrome'] AS browsers
 )
 GROUP BY
-    2,
-    3
+    city,
+    browser
 ```
 
 ``` text
