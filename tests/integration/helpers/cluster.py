@@ -2040,25 +2040,6 @@ class ClickHouseCluster:
                 logging.debug("Waiting for NATS to start up")
                 time.sleep(1)
 
-    def wait_nginx_to_start(self, timeout=60):
-        self.nginx_ip = self.get_instance_ip(self.nginx_host)
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                self.exec_in_container(
-                    self.nginx_id,
-                    ["curl", "-X", "PUT", "-d", "Test", "http://test.com/test.txt"],
-                )
-                res = self.exec_in_container(
-                    self.nginx_id, ["curl", "-X", "GET", "http://test.com/test.txt"]
-                )
-                assert res == "Test"
-                print("nginx static files server is available")
-                return
-            except Exception as ex:
-                print("Can't connect to nginx: " + str(ex))
-                time.sleep(0.5)
-
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
         start = time.time()
@@ -2550,7 +2531,6 @@ class ClickHouseCluster:
                 )
                 self.up_called = True
                 self.nginx_docker_id = self.get_instance_docker_id("nginx")
-                self.wait_nginx_to_start()
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug("Setup Mongo")
