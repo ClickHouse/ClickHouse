@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS 02381_test;
 
 CREATE TABLE 02381_test (key UInt64, value String) Engine=EmbeddedRocksDB("0", "true") PRIMARY KEY(key);
