@@ -1159,13 +1159,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
             if (config->has("concurrent_threads_soft_limit_num"))
             {
-                auto value = config->getInt("concurrent_threads_soft_limit_num", 0);
+                auto value = config->getUInt64("concurrent_threads_soft_limit_num", 0);
                 if (value > 0)
                     concurrent_threads_soft_limit = std::min(concurrent_threads_soft_limit, value);
             }
             if (config->has("concurrent_threads_soft_limit_ratio_to_cores"))
             {
-                auto value = config->getInt("concurrent_threads_soft_limit_ratio_to_cores", 0) * std::thread::hardware_concurrency();
+                auto value = config->getUInt64("concurrent_threads_soft_limit_ratio_to_cores", 0) * std::thread::hardware_concurrency();
                 if (value > 0)
                     concurrent_threads_soft_limit = std::min(concurrent_threads_soft_limit, value);
             }
