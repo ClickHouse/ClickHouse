@@ -10,7 +10,7 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     const Block & header_,
     size_t num_inputs,
     SortDescription description_,
-    const String & is_deleted_column,
+    const String & sign_column,
     const String & version_column,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
@@ -18,8 +18,8 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
 {
-    if (!is_deleted_column.empty())
-        is_deleted_column_number = header_.getPositionByName(is_deleted_column);
+    if (!sign_column.empty())
+        sign_column_number = header_.getPositionByName(sign_column);
     if (!version_column.empty())
         version_column_number = header_.getPositionByName(version_column);
 }
