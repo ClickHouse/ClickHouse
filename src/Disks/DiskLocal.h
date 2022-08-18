@@ -122,6 +122,8 @@ public:
     bool canRead() const noexcept;
     bool canWrite() const noexcept;
 
+    DiskObjectStoragePtr createDiskObjectStorage() override;
+
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
 

@@ -16,6 +16,11 @@
 #include <azure/storage/blobs.hpp>
 #endif
 
+namespace Poco
+{
+class Logger;
+}
+
 namespace DB
 {
 
@@ -122,6 +127,8 @@ private:
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
+
+    Poco::Logger * log;
 };
 
 }
