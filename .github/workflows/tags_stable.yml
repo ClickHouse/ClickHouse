@@ -35,8 +35,9 @@ jobs:
         GID=$(id -g "${UID}")
         docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 \
             --volume="${GITHUB_WORKSPACE}:/ClickHouse" clickhouse/style-test \
-                /ClickHouse/utils/changelog/changelog.py -vv --gh-user-or-token="$GITHUB_TOKEN" \
-                --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" --jobs=5 "${GITHUB_TAG}"
+                /ClickHouse/utils/changelog/changelog.py -v --debug-helpers \
+                --gh-user-or-token="$GITHUB_TOKEN" --jobs=5 \
+                --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
         git add "./docs/changelogs/${GITHUB_TAG}.md"
         git diff HEAD
     - name: Create Pull Request
