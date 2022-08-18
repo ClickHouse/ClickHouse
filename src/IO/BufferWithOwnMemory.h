@@ -94,7 +94,7 @@ struct Memory : boost::noncopyable, Allocator
             return;
         }
 
-        size_t new_capacity = alignWithPadding(new_size, alignment);
+        size_t new_capacity = withPadding(new_size);
 
         size_t diff = new_capacity - m_capacity;
         ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
@@ -105,35 +105,12 @@ struct Memory : boost::noncopyable, Allocator
     }
 
 private:
-    static size_t align(const size_t value, const size_t alignment)
+    static size_t withPadding(size_t value)
     {
-        if (!alignment)
-            return value;
-
-        if (!(value % alignment))
-            return value;
-
-        // original expression is (value + alignment - 1) / alignment * alignment;
-
         size_t res = 0;
 
-        if (common::addOverflow<size_t>(value, alignment - 1, res))
-            throw Exception("value is too big to apply alignment", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-        res /= alignment;
-
-        if (common::mulOverflow<size_t>(res, alignment, res))
-            throw Exception("value is too big to apply alignment", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-        return res;
-    }
-
-    static size_t alignWithPadding(const size_t value, const size_t alignment)
-    {
-        size_t res = align(value, alignment);
-
-        if (common::addOverflow<size_t>(res, pad_right, res))
-            throw Exception("value is too big to apply padding 3", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        if (common::addOverflow<size_t>(value, pad_right, res))
+            throw Exception("value is too big to apply padding", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         return res;
     }
@@ -146,7 +123,7 @@ private:
             return;
         }
 
-        size_t new_capacity = alignWithPadding(new_size, alignment);
+        size_t new_capacity = withPadding(new_size);
 
         ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
         ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, new_capacity);
