@@ -742,7 +742,9 @@ bool CachedReadBufferFromRemoteFS::nextImpl()
     }
     catch (Exception & e)
     {
-        e.addMessage("Cache info: {}", nextimpl_step_log_info);
+        const auto & message = e.message();
+        if (message.find("file segment info") == std::string::npos)
+            e.addMessage("Cache info: {}", nextimpl_step_log_info);
         throw;
     }
 }
@@ -970,11 +972,12 @@ bool CachedReadBufferFromRemoteFS::nextImplStep()
 
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Having zero bytes, but range is not finished: file offset: {}, reading until: {}, read type: {}, cache file size: {}",
+            "Having zero bytes, but range is not finished: file offset: {}, reading until: {}, read type: {}, cache file size: {}, file segment info: {}",
             file_offset_of_buffer_end,
             read_until_position,
             toString(read_type),
-            cache_file_size ? std::to_string(*cache_file_size) : "None");
+            cache_file_size ? std::to_string(*cache_file_size) : "None",
+            file_segment->getInfoForLog());
     }
 
     return result;

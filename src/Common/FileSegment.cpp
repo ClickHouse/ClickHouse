@@ -289,6 +289,18 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
     {
         std::lock_guard segment_lock(mutex);
 
+#ifndef NDEBUG
+        String currently_downloading_str;
+        for (const auto & [download_offset, result] : async_write_state->currently_downloading)
+        {
+            if (!currently_downloading_str.empty())
+                currently_downloading_str += ", ";
+            currently_downloading_str += fmt::format("[{}:{}]", download_offset, download_offset + result.expected_size - 1);
+        }
+
+        LOG_TEST(log, "Background download ranges: {}", currently_downloading_str);
+#endif
+
         /// Get offset which corresponds to the first byte for which
         /// there is no in memory buffer in the background download queue:
         ///
@@ -494,7 +506,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         }
 
         SCOPE_EXIT({
-            assert(background_downloader_id.empty());
+            chassert(background_downloader_id != executor_id);
         });
 
         std::optional<size_t> start_offset;
@@ -533,6 +545,11 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
                         last_finished_buffer.reset();
                     }
+                    else
+                    {
+                        assert(!state.buffers.empty());
+                        assert(!state.hasException());
+                    }
 
                     if (state.buffers.empty())
                     {
@@ -542,8 +559,6 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
                         /// along with the check state.buffers.empty()
 
                         completePartAndResetDownloaderUnlocked(true, segment_lock);
-                        background_downloader_id.clear();
-
                         break;
                     }
 
@@ -568,18 +583,21 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+
             state.setExceptionIfEmpty();
-            state.currently_downloading.clear();
+
+            std::lock_guard segment_lock(file_segment->mutex);
 
             try
             {
-                std::lock_guard segment_lock(file_segment->mutex);
+                state.currently_downloading.clear();
                 state.buffers = {}; /// Clear all hold memory.
                 completePartAndResetDownloaderUnlocked(true, segment_lock);
             }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+                background_downloader_id.clear();
             }
         }
 
@@ -864,7 +882,6 @@ void FileSegment::setDownloadFailedUnlocked(std::lock_guard<std::mutex> & segmen
 
     download_state = State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
 
-    resetDownloaderUnlocked(true, segment_lock);
     resetDownloaderUnlocked(false, segment_lock);
 
     if (cache_writer)
