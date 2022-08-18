@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package substrait;
+
+import "substrait/plan.proto";
+import "substrait/algebra.proto";
+
+option java_multiple_files = true;
+option java_package = "io.substrait.proto";
+option csharp_namespace = "Substrait.Protobuf";
+
+message DllPlan {
+  oneof dll_type {
+    InsertPlan insert_plan = 1;
+  }
+}
+
+message InsertPlan {
+  Plan input = 1;
+  ReadRel.ExtensionTable output = 2;
+}
+
+message Dll {
+  repeated DllPlan dll_plan = 1;
+}

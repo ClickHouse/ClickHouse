@@ -136,7 +136,7 @@ message FunctionSignature {
       bool constant = 2;
     }
 
-    message TypeArgument { ParameterizedType type = 1; }
+    message TypeArgument {ParameterizedType type = 1;}
 
     message EnumArgument {
       repeated string options = 1;

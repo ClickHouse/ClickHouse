@@ -331,34 +331,54 @@ jboolean Java_io_glutenproject_vectorized_CHColumnVector_nativeGetBoolean(
     JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
-    return col.column->getBool(row_id);
+    ColumnPtr nested_col = col.column;
+    if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(nested_col.get()))
+    {
+        nested_col = nullable_col->getNestedColumnPtr();
+    }
+    return nested_col->getBool(row_id);
 }
 
 jbyte Java_io_glutenproject_vectorized_CHColumnVector_nativeGetByte(
     JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
-    return reinterpret_cast<const jbyte *>(col.column->getDataAt(row_id).data)[0];
+    ColumnPtr nested_col = col.column;
+    if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(nested_col.get()))
+    {
+        nested_col = nullable_col->getNestedColumnPtr();
+    }
+    return reinterpret_cast<const jbyte *>(nested_col->getDataAt(row_id).data)[0];
 }
 
 jshort Java_io_glutenproject_vectorized_CHColumnVector_nativeGetShort(
     JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
-    return reinterpret_cast<const jshort *>(col.column->getDataAt(row_id).data)[0];
+    ColumnPtr nested_col = col.column;
+    if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(nested_col.get()))
+    {
+        nested_col = nullable_col->getNestedColumnPtr();
+    }
+    return reinterpret_cast<const jshort *>(nested_col->getDataAt(row_id).data)[0];
 }
 
 jint Java_io_glutenproject_vectorized_CHColumnVector_nativeGetInt(
     JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
+    ColumnPtr nested_col = col.column;
+    if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(nested_col.get()))
+    {
+        nested_col = nullable_col->getNestedColumnPtr();
+    }
     if (col.type->getTypeId() == TypeIndex::Date)
     {
-        return col.column->getUInt(row_id);
+        return nested_col->getUInt(row_id);
     }
     else
     {
-        return col.column->getInt(row_id);
+        return nested_col->getInt(row_id);
     }
 }
 
@@ -366,28 +386,49 @@ jlong Java_io_glutenproject_vectorized_CHColumnVector_nativeGetLong(
     JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
-    return col.column->getInt(row_id);
+    ColumnPtr nested_col = col.column;
+    if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(nested_col.get()))
+    {
+        nested_col = nullable_col->getNestedColumnPtr();
+    }
+    return nested_col->getInt(row_id);
 }
 
 jfloat Java_io_glutenproject_vectorized_CHColumnVector_nativeGetFloat(
     JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
-    return col.column->getFloat32(row_id);
+    ColumnPtr nested_col = col.column;
+    if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(nested_col.get()))
+    {
+        nested_col = nullable_col->getNestedColumnPtr();
+    }
+    return nested_col->getFloat32(row_id);
 }
 
 jdouble Java_io_glutenproject_vectorized_CHColumnVector_nativeGetDouble(
     JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
     auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
-    return col.column->getFloat64(row_id);
+    ColumnPtr nested_col = col.column;
+    if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(nested_col.get()))
+    {
+        nested_col = nullable_col->getNestedColumnPtr();
+    }
+    return nested_col->getFloat64(row_id);
 }
 
 jstring Java_io_glutenproject_vectorized_CHColumnVector_nativeGetString(
     JNIEnv * env, jobject obj, jint row_id, jlong block_address, jint column_position)
 {
-    const ColumnString * col = checkAndGetColumn<ColumnString>(*getColumnFromColumnVector(env, obj, block_address, column_position).column);
-    auto result = col->getDataAt(row_id);
+    auto col = getColumnFromColumnVector(env, obj, block_address, column_position);
+    ColumnPtr nested_col = col.column;
+    if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(nested_col.get()))
+    {
+        nested_col = nullable_col->getNestedColumnPtr();
+    }
+    const ColumnString * string_col = checkAndGetColumn<ColumnString>(nested_col.get());
+    auto result = string_col->getDataAt(row_id);
     return charTojstring(env, result.toString().c_str());
 }
 

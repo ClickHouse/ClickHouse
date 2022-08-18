@@ -24,7 +24,7 @@ public:
 private:
 
     DB::Chunk generate() override;
-
+    void convertNullable(DB::Chunk & chunk);
 
     jobject java_iter;
 };

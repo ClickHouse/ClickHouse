@@ -1,0 +1,239 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+syntax = "proto2";
+package exprs;
+
+option java_package = "org.apache.arrow.gandiva.ipc";
+option java_outer_classname = "GandivaTypes";
+option optimize_for = SPEED;
+
+enum GandivaType {
+  NONE = 0;    // arrow::Type::NA
+  BOOL = 1;    // arrow::Type::BOOL
+  UINT8 = 2;   // arrow::Type::UINT8
+  INT8 = 3;    // arrow::Type::INT8
+  UINT16 = 4;  // represents arrow::Type fields in src/arrow/type.h
+  INT16 = 5;
+  UINT32 = 6;
+  INT32 = 7;
+  UINT64 = 8;
+  INT64 = 9;
+  HALF_FLOAT = 10;
+  FLOAT = 11;
+  DOUBLE = 12;
+  UTF8 = 13;
+  BINARY = 14;
+  FIXED_SIZE_BINARY = 15;
+  DATE32 = 16;
+  DATE64 = 17;
+  TIMESTAMP = 18;
+  TIME32 = 19;
+  TIME64 = 20;
+  INTERVAL = 21;
+  DECIMAL = 22;
+  LIST = 23;
+  STRUCT = 24;
+  UNION = 25;
+  DICTIONARY = 26;
+  MAP = 27;
+}
+
+enum DateUnit {
+  DAY = 0;
+  MILLI = 1;
+}
+
+enum TimeUnit {
+  SEC = 0;
+  MILLISEC = 1;
+  MICROSEC = 2;
+  NANOSEC = 3;
+}
+
+enum IntervalType {
+  YEAR_MONTH = 0;
+  DAY_TIME = 1;
+}
+
+enum SelectionVectorType {
+  SV_NONE = 0;
+  SV_INT16 = 1;
+  SV_INT32 = 2;
+}
+
+message ExtGandivaType {
+  optional GandivaType type = 1;
+  optional uint32 width = 2;               // used by FIXED_SIZE_BINARY
+  optional int32 precision = 3;            // used by DECIMAL
+  optional int32 scale = 4;                // used by DECIMAL
+  optional DateUnit dateUnit = 5;          // used by DATE32/DATE64
+  optional TimeUnit timeUnit = 6;          // used by TIME32/TIME64
+  optional string timeZone = 7;            // used by TIMESTAMP
+  optional IntervalType intervalType = 8;  // used by INTERVAL
+}
+
+message Field {
+  // name of the field
+  optional string name = 1;
+  optional ExtGandivaType type = 2;
+  optional bool nullable = 3;
+  // for complex data types like structs, unions
+  repeated Field children = 4;
+}
+
+message FieldNode {
+  optional Field field = 1;
+}
+
+message FunctionNode {
+  optional string functionName = 1;
+  repeated TreeNode inArgs = 2;
+  optional ExtGandivaType returnType = 3;
+}
+
+message IfNode {
+  optional TreeNode cond = 1;
+  optional TreeNode thenNode = 2;
+  optional TreeNode elseNode = 3;
+  optional ExtGandivaType returnType = 4;
+}
+
+message AndNode {
+  repeated TreeNode args = 1;
+}
+
+message OrNode {
+  repeated TreeNode args = 1;
+}
+
+message NullNode {
+  optional ExtGandivaType type = 1;
+}
+
+message IntNode {
+  optional int32 value = 1;
+}
+
+message FloatNode {
+  optional float value = 1;
+}
+
+message DoubleNode {
+  optional double value = 1;
+}
+
+message BooleanNode {
+  optional bool value = 1;
+}
+
+message LongNode {
+  optional int64 value = 1;
+}
+
+message StringNode {
+  optional bytes value = 1;
+}
+
+message BinaryNode {
+  optional bytes value = 1;
+}
+
+message DecimalNode {
+  optional string value = 1;
+  optional int32 precision = 2;
+  optional int32 scale = 3;
+}
+
+message TreeNode {
+  optional FieldNode fieldNode = 1;
+  optional FunctionNode fnNode = 2;
+
+  // control expressions
+  optional IfNode ifNode = 6;
+  optional AndNode andNode = 7;
+  optional OrNode orNode = 8;
+
+  // literals
+  optional NullNode nullNode = 11;
+  optional IntNode intNode = 12;
+  optional FloatNode floatNode = 13;
+  optional LongNode longNode = 14;
+  optional BooleanNode booleanNode = 15;
+  optional DoubleNode doubleNode = 16;
+  optional StringNode stringNode = 17;
+  optional BinaryNode binaryNode = 18;
+  optional DecimalNode decimalNode = 19;
+
+  // in expr
+  optional InNode inNode = 21;
+}
+
+message ExpressionRoot {
+  optional TreeNode root = 1;
+  optional Field resultType = 2;
+}
+
+message ExpressionList {
+  repeated ExpressionRoot exprs = 2;
+}
+
+message Condition {
+  optional TreeNode root = 1;
+}
+
+message Schema {
+  repeated Field columns = 1;
+}
+
+message GandivaDataTypes {
+  repeated ExtGandivaType dataType = 1;
+}
+
+message GandivaFunctions {
+  repeated FunctionSignature function = 1;
+}
+
+message FunctionSignature {
+  optional string name = 1;
+  optional ExtGandivaType returnType = 2;
+  repeated ExtGandivaType paramTypes = 3;
+}
+
+message InNode {
+  optional TreeNode node = 1;
+  optional IntConstants intValues = 2;
+  optional LongConstants longValues = 3;
+  optional StringConstants stringValues = 4;
+  optional BinaryConstants binaryValues = 5;
+}
+
+message IntConstants {
+  repeated IntNode intValues = 1;
+}
+
+message LongConstants {
+  repeated LongNode longValues = 1;
+}
+
+message StringConstants {
+  repeated StringNode stringValues = 1;
+}
+
+message BinaryConstants {
+  repeated BinaryNode binaryValues = 1;
+}

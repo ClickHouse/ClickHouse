@@ -2,6 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -19,7 +20,7 @@ namespace ErrorCodes
 }
 
 #define WRITE_VECTOR_COLUMN(TYPE, PRIME_TYPE, GETTER) \
-    const auto * type_col = checkAndGetColumn<ColumnVector<TYPE>>(*col.column); \
+    const auto * type_col = checkAndGetColumn<ColumnVector<TYPE>>(*nested_col); \
     for (auto i = 0; i < num_rows; i++) \
     { \
         bool is_null = nullable_column && nullable_column->isNullAt(i); \
@@ -49,7 +50,7 @@ int64_t calculatedFixeSizePerRow(DB::Block & header, int64_t num_cols)
     int32_t count = 0;
     for (auto i = 0; i < num_cols; i++)
     {
-        auto type = fields.getTypes()[i];
+        auto type = removeNullable(fields.getTypes()[i]);
         DB::WhichDataType which(type);
         if (which.isDecimal128())
         {
@@ -118,15 +119,15 @@ void writeValue(
     WhichDataType which(nested_col->getDataType());
     if (which.isUInt8())
     {
-        WRITE_VECTOR_COLUMN(UInt8, uint8_t, get64)
+        WRITE_VECTOR_COLUMN(UInt8, uint8_t, getInt)
     }
     else if (which.isInt8())
     {
-        WRITE_VECTOR_COLUMN(Int8, int8_t, get64)
+        WRITE_VECTOR_COLUMN(Int8, int8_t, getInt)
     }
     else if (which.isInt16())
     {
-        WRITE_VECTOR_COLUMN(Int16, int16_t, get64)
+        WRITE_VECTOR_COLUMN(Int16, int16_t, getInt)
     }
     else if (which.isUInt16())
     {
@@ -134,11 +135,11 @@ void writeValue(
     }
     else if (which.isInt32())
     {
-        WRITE_VECTOR_COLUMN(Int32, int32_t, get64)
+        WRITE_VECTOR_COLUMN(Int32, int32_t, getInt)
     }
     else if (which.isInt64())
     {
-        WRITE_VECTOR_COLUMN(Int64, int64_t, get64)
+        WRITE_VECTOR_COLUMN(Int64, int64_t, getInt)
     }
     else if (which.isUInt64())
     {
@@ -158,7 +159,7 @@ void writeValue(
     }
     else if (which.isString())
     {
-        const auto * string_col = checkAndGetColumn<ColumnString>(*col.column);
+        const auto * string_col = checkAndGetColumn<ColumnString>(*nested_col);
         for (auto i = 0; i < num_rows; i++)
         {
             bool is_null = nullable_column && nullable_column->isNullAt(i);
@@ -201,7 +202,7 @@ SparkRowInfo::SparkRowInfo(DB::Block & block)
     for (auto i = 0; i < num_cols; i++)
     {
         auto col = block.getByPosition(i);
-        if (isStringOrFixedString(col.type))
+        if (isStringOrFixedString(removeNullable(col.type)))
         {
             size_t length;
             for (auto j = 0; j < num_rows; j++)

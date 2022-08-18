@@ -21,7 +21,7 @@ message RelCommon {
   substrait.extensions.AdvancedExtension advanced_extension = 4;
 
   message Direct {}
-  message Emit { repeated int32 output_mapping = 1; }
+  message Emit {repeated int32 output_mapping = 1;}
 
   // Changes to the operation that can influence efficiency/performance but
   // should not impact correctness.
@@ -64,11 +64,11 @@ message ReadRel {
   }
 
   // a table composed of literals.
-  message VirtualTable { repeated Expression.Literal.Struct values = 1; }
+  message VirtualTable {repeated Expression.Literal.Struct values = 1;}
 
   // a stub type that can be used to extend/introduce new table types outside
   // the specification.
-  message ExtensionTable { google.protobuf.Any detail = 1; }
+  message ExtensionTable {google.protobuf.Any detail = 1;}
 
   message LocalFiles {
 
@@ -102,6 +102,8 @@ message ReadRel {
       enum FileFormat {
         FILE_FORMAT_UNSPECIFIED = 0;
         FILE_FORMAT_PARQUET = 1;
+        FILE_FORMAT_ORC = 2;
+        FILE_FORMAT_DWRF = 3;
       }
     }
   }
@@ -161,7 +163,7 @@ message AggregateRel {
 
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 
-  message Grouping { repeated Expression grouping_expressions = 1; }
+  message Grouping {repeated Expression grouping_expressions = 1;}
 
   message Measure {
     AggregateFunction measure = 1;
@@ -380,9 +382,9 @@ message Expression {
 
     message Bound {
 
-      message Preceding { int64 offset = 1; }
+      message Preceding {int64 offset = 1;}
 
-      message Following { int64 offset = 1; }
+      message Following {int64 offset = 1;}
 
       message CurrentRow {}
 
@@ -432,7 +434,7 @@ message Expression {
     repeated Expression value = 1;
     repeated Record options = 2;
 
-    message Record { repeated Expression fields = 1; }
+    message Record {repeated Expression fields = 1;}
   }
 
   message EmbeddedFunction {
@@ -516,7 +518,7 @@ message Expression {
       }
     }
 
-    message StructSelect { repeated StructItem struct_items = 1; }
+    message StructSelect {repeated StructItem struct_items = 1;}
 
     message StructItem {
       int32 field = 1;
@@ -534,7 +536,7 @@ message Expression {
           ListSlice slice = 2;
         }
 
-        message ListElement { int32 field = 1; }
+        message ListElement {int32 field = 1;}
 
         message ListSlice {
           int32 start = 1;
@@ -551,9 +553,9 @@ message Expression {
 
       Select child = 3;
 
-      message MapKey { string map_key = 1; }
+      message MapKey {string map_key = 1;}
 
-      message MapKeyExpression { string map_key_expression = 1; }
+      message MapKeyExpression {string map_key_expression = 1;}
     }
   }
 
@@ -605,7 +607,7 @@ message Expression {
 
     // A subquery with one row and one column. This is often an aggregate
     // though not required to be.
-    message Scalar { Rel input = 1; }
+    message Scalar {Rel input = 1;}
 
     // Predicate checking that the left expression is contained in the right
     // subquery

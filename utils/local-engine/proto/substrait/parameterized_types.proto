@@ -52,7 +52,7 @@ message ParameterizedType {
     NullableInteger range_end_exclusive = 3;
   }
 
-  message NullableInteger { int64 value = 1; }
+  message NullableInteger {int64 value = 1;}
 
   message ParameterizedFixedChar {
     IntegerOption length = 1;

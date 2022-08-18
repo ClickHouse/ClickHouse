@@ -42,7 +42,7 @@ void NativeSplitter::split(DB::Block & block)
         {
             buffer->add(partitions[i], 0, first_cache_count);
         }
-        if (buffer->size() == options.buffer_size)
+        if (buffer->size() >= options.buffer_size)
         {
             output_buffer.emplace(std::pair(i, new Block(buffer->releaseColumns())));
         }
@@ -178,7 +178,7 @@ void HashNativeSplitter::computePartitionId(Block & block)
     partition_ids.clear();
     for (size_t i = 0; i < block.rows(); i++)
     {
-        partition_ids.emplace_back(static_cast<UInt64>(hash_column->getUInt(i) % options.partition_nums));
+        partition_ids.emplace_back(static_cast<UInt64>(hash_column->get64(i) % options.partition_nums));
     }
 }
 void RoundRobinNativeSplitter::computePartitionId(Block & block)

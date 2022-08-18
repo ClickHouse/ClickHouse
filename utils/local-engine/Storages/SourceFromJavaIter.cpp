@@ -2,6 +2,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/DebugUtils.h>
 #include <Common/JNIUtils.h>
+#include <Columns/ColumnNullable.h>
 
 namespace local_engine
 {
@@ -14,18 +15,21 @@ DB::Chunk SourceFromJavaIter::generate()
     int attached;
     JNIEnv * env = JNIUtils::getENV(&attached);
     jboolean has_next = env->CallBooleanMethod(java_iter,serialized_record_batch_iterator_hasNext);
-    DB::Chunk result = {};
+    DB::Chunk result;
     if (has_next)
     {
         jbyteArray block = static_cast<jbyteArray>(env->CallObjectMethod(java_iter, serialized_record_batch_iterator_next));
         DB::Block * data = reinterpret_cast<DB::Block *>(byteArrayToLong(env, block));
-        size_t rows = data->rows();
-        auto chunk = DB::Chunk(data->mutateColumns(), rows);
-        auto info = std::make_shared<DB::AggregatedChunkInfo>();
-        info->is_overflows = data->info.is_overflows;
-        info->bucket_num = data->info.bucket_num;
-        chunk.setChunkInfo(info);
-        result = std::move(chunk);
+        if (data->rows() > 0)
+        {
+            size_t rows = data->rows();
+            result.setColumns(data->mutateColumns(), rows);
+            convertNullable(result);
+            auto info = std::make_shared<DB::AggregatedChunkInfo>();
+            info->is_overflows = data->info.is_overflows;
+            info->bucket_num = data->info.bucket_num;
+            result.setChunkInfo(info);
+        }
     }
     if (attached)
     {
@@ -53,5 +57,22 @@ Int64 SourceFromJavaIter::byteArrayToLong(JNIEnv* env, jbyteArray arr)
     Int64 result = reinterpret_cast<Int64 *>(c_arr)[0];
     delete[] c_arr;
     return result;
+}
+void SourceFromJavaIter::convertNullable(DB::Chunk & chunk)
+{
+    auto rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    auto output = this->getOutputs().front().getHeader();
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        DB::WhichDataType which(columns.at(i)->getDataType());
+        if (output.getByPosition(i).type->isNullable()
+            && !which.isNullable()
+            && !which.isAggregateFunction())
+        {
+            columns[i] = DB::makeNullable(columns.at(i));
+        }
+    }
+    chunk.setColumns(columns, rows);
 }
 }
