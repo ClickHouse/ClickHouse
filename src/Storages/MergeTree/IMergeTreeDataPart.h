@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -15,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
@@ -133,15 +135,18 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns);
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+    const ColumnsDescription & getColumnsDescription() const { return columns_description; }
 
-    void setSerializationInfos(const SerializationInfoByName & new_infos);
+    NameAndTypePair getColumn(const String & name) const;
+    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const;
+    SerializationPtr getSerialization(const String & column_name) const;
+    SerializationPtr tryGetSerialization(const String & column_name) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -168,8 +173,7 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinimumCompressedSize(
-        const StorageSnapshotPtr & storage_snapshot, bool with_subcolumns) const;
+    String getColumnNameWithMinimumCompressedSize(bool with_subcolumns) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
@@ -220,45 +224,22 @@ public:
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
 
-    /**
-     * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
-     * Part state should be modified under data_parts mutex.
-     *
-     * Possible state transitions:
-     * Temporary -> PreActive:       we are trying to add a fetched, inserted or merged part to active set
-     * PreActive -> Outdated:        we could not add a part to active set and are doing a rollback (for example it is duplicated part)
-     * PreActive -> Active:          we successfully added a part to active dataset
-     * PreActive -> Outdated:        a part was replaced by a covering part or DROP PARTITION
-     * Outdated -> Deleting:         a cleaner selected this part for deletion
-     * Deleting -> Outdated:         if an ZooKeeper error occurred during the deletion, we will retry deletion
-     * Active -> DeleteOnDestroy:    if part was moved to another disk
-     */
-    enum class State
-    {
-        Temporary,       /// the part is generating now, it is not in data_parts list
-        PreActive,    /// the part is in data_parts, but not used for SELECTs
-        Active,       /// active data part, used by current and upcoming SELECTs
-        Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
-        Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
-        DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
-    };
-
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
     mutable TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
-    void setState(State new_state) const;
-    State getState() const;
+    void setState(MergeTreeDataPartState new_state) const;
+    MergeTreeDataPartState getState() const;
 
-    static constexpr std::string_view stateString(State state) { return magic_enum::enum_name(state); }
+    static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
     constexpr std::string_view stateString() const { return stateString(state); }
 
     String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
 
     /// Returns true if state of part is one of affordable_states
-    bool checkState(const std::initializer_list<State> & affordable_states) const
+    bool checkState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
     {
         for (auto affordable_state : affordable_states)
         {
@@ -269,7 +250,7 @@ public:
     }
 
     /// Throws an exception if state of the part is not in affordable_states
-    void assertState(const std::initializer_list<State> & affordable_states) const;
+    void assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const;
 
     /// Primary key (correspond to primary.idx file).
     /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -527,6 +508,13 @@ private:
     /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos;
 
+    /// Serializations for every columns and subcolumns by their names.
+    SerializationByName serializations;
+
+    /// Columns description for more convenient access
+    /// to columns by name and getting subcolumns.
+    ColumnsDescription columns_description;
+
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
@@ -582,13 +570,12 @@ private:
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
-    mutable State state{State::Temporary};
+    mutable MergeTreeDataPartState state{MergeTreeDataPartState::Temporary};
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
 };
 
-using MergeTreeDataPartState = IMergeTreeDataPart::State;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 

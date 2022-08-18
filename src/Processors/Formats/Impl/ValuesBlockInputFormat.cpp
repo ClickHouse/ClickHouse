@@ -567,7 +567,7 @@ void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : IRowSchemaReader(buf, format_settings_), buf(in_), format_settings(format_settings_)
+    : IRowSchemaReader(buf, format_settings_), buf(in_)
 {
 }
 

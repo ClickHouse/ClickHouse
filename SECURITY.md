@@ -10,9 +10,10 @@ The following versions of ClickHouse server are currently being supported with s
 
 | Version | Supported |
 |:-|:-|
+| 22.7 | ✔️ |
 | 22.6 | ✔️ |
 | 22.5 | ✔️ |
-| 22.4 | ✔️ |
+| 22.4 | ❌ |
 | 22.3 | ✔️ |
 | 22.2 | ❌ |
 | 22.1 | ❌ |
@@ -57,5 +58,5 @@ As the security issue moves from triage, to identified fix, to release planning 
 
 ## Public Disclosure Timing
 
-A public disclosure date is negotiated by the ClickHouse maintainers and the bug submitter. We prefer to fully disclose the bug as soon as possible once a user mitigation is available. It is reasonable to delay disclosure when the bug or the fix is not yet fully understood, the solution is not well-tested, or for vendor coordination. The timeframe for disclosure is from immediate (especially if it's already publicly known) to 90 days. For a vulnerability with a straightforward mitigation, we expect report date to disclosure date to be on the order of 7 days. 
+A public disclosure date is negotiated by the ClickHouse maintainers and the bug submitter. We prefer to fully disclose the bug as soon as possible once a user mitigation is available. It is reasonable to delay disclosure when the bug or the fix is not yet fully understood, the solution is not well-tested, or for vendor coordination. The timeframe for disclosure is from immediate (especially if it's already publicly known) to 90 days. For a vulnerability with a straightforward mitigation, we expect the report date to disclosure date to be on the order of 7 days. 
 

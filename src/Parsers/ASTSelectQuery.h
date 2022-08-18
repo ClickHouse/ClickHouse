@@ -131,6 +131,7 @@ public:
     std::pair<ASTPtr, bool> arrayJoinExpressionList() const;
 
     const ASTTablesInSelectQueryElement * join() const;
+    bool hasJoin() const;
     bool final() const;
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);

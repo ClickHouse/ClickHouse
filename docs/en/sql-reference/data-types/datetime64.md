@@ -18,7 +18,7 @@ DateTime64(precision, [timezone])
 
 Internally, stores data as a number of ‘ticks’ since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01.000’). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](../../sql-reference/data-types/datetime.md).
 
-Supported range of values: \[1925-01-01 00:00:00, 2283-11-11 23:59:59.99999999\] (Note: The precision of the maximum value is 8).
+Supported range of values: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999\] (Note: The precision of the maximum value is 8).
 
 ## Examples
 

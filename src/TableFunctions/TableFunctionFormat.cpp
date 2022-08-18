@@ -50,7 +50,7 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
 {
-    ReadBufferIterator read_buffer_iterator = [&]()
+    ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
     {
         return std::make_unique<ReadBufferFromString>(data);
     };

@@ -20,6 +20,7 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Stopwatch.h>
 
@@ -107,8 +108,9 @@ KeeperServer::KeeperServer(
     : server_id(configuration_and_settings_->server_id)
     , coordination_settings(configuration_and_settings_->coordination_settings)
     , log(&Poco::Logger::get("KeeperServer"))
-    , is_recovering(config.has("keeper_server.force_recovery") && config.getBool("keeper_server.force_recovery"))
+    , is_recovering(config.getBool("keeper_server.force_recovery", false))
     , keeper_context{std::make_shared<KeeperContext>()}
+    , create_snapshot_on_exit(config.getBool("keeper_server.create_snapshot_on_exit", true))
 {
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
@@ -171,6 +173,17 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void forceReconfigure(const nuraft::ptr<nuraft::cluster_config> & new_config)
     {
         reconfigure(new_config);
+    }
+
+    void commit_in_bg() override
+    {
+        // For NuRaft, if any commit fails (uncaught exception) the whole server aborts as a safety
+        // This includes failed allocation which can produce an unknown state for the storage,
+        // making it impossible to handle correctly.
+        // We block the memory tracker for all the commit operations (including KeeperStateMachine::commit)
+        // assuming that the allocations are small
+        LockMemoryExceptionInThread blocker{VariableContext::Global};
+        nuraft::raft_server::commit_in_bg();
     }
 
     using nuraft::raft_server::raft_server;
@@ -367,6 +380,12 @@ void KeeperServer::shutdownRaftServer()
     }
 
     raft_instance->shutdown();
+
+    keeper_context->server_state = KeeperContext::Phase::SHUTDOWN;
+
+    if (create_snapshot_on_exit)
+        raft_instance->create_snapshot();
+
     raft_instance.reset();
 
     if (asio_listener)
@@ -571,6 +590,19 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 state_machine->preprocess(request_for_session);
                 request_for_session.digest = state_machine->getNodesDigest();
                 entry = nuraft::cs_new<nuraft::log_entry>(entry->get_term(), getZooKeeperLogEntry(request_for_session), entry->get_val_type());
+                break;
+            }
+            case nuraft::cb_func::AppendLogFailed:
+            {
+                // we are relying on the fact that request are being processed under a mutex
+                // and not a RW lock
+                auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+
+                assert(entry->get_val_type() == nuraft::app_log);
+
+                auto & entry_buf = entry->get_buf();
+                auto request_for_session = state_machine->parseRequest(entry_buf);
+                state_machine->rollbackRequest(request_for_session, true);
                 break;
             }
             default:

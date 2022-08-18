@@ -9,7 +9,7 @@
 
 #include <TableFunctions/TableFunctionMongoDB.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ColumnsDescription.h>
