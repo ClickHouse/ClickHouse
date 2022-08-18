@@ -32,14 +32,14 @@ using namespace DB;
 
 class DummyAllocator
 {
-    void * DUMMY_ADDRESS = reinterpret_cast<void *>(1);
+    void * dummy_address = reinterpret_cast<void *>(1);
 
 public:
     void * alloc(size_t size, size_t /*alignment*/ = 0)
     {
         checkSize(size);
         if (size)
-            return DUMMY_ADDRESS;
+            return dummy_address;
         else
             return nullptr;
     }
@@ -47,16 +47,16 @@ public:
     void * realloc(void * /*buf*/, size_t /*old_size*/, size_t new_size, size_t /*alignment*/ = 0)
     {
         checkSize(new_size);
-        return DUMMY_ADDRESS;
+        return dummy_address;
     }
 
     void free([[maybe_unused]] void * buf, size_t /*size*/)
     {
-        assert(buf == DUMMY_ADDRESS);
+        assert(buf == dummy_address);
     }
 
     // the same check as in Common/Allocator.h
-    void checkSize(size_t size)
+    void static checkSize(size_t size)
     {
         /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
         if (size >= 0x8000000000000000ULL)
@@ -230,7 +230,7 @@ TEST(MemoryResizeTest, BigInitAndSmallResizeOverflowWhenPadding)
     }
 }
 
-TEST(MemoryResizeTest, AlignmentInRealAllocator)
+TEST(MemoryResizeTest, AlignmentWithRealAllocator)
 {
     {
         auto memory = Memory<>(0, 3); // not the power of 2 but less than MALLOC_MIN_ALIGNMENT 8 so user-defined alignment is ignored at Allocator
@@ -240,12 +240,12 @@ TEST(MemoryResizeTest, AlignmentInRealAllocator)
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, 18);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         memory.resize(2);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, 18);
+        ASSERT_EQ(memory.m_capacity, 17);
         ASSERT_EQ(memory.m_size, 2);
 
         memory.resize(3);
@@ -255,17 +255,17 @@ TEST(MemoryResizeTest, AlignmentInRealAllocator)
 
         memory.resize(4);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, 21);
+        ASSERT_EQ(memory.m_capacity, 19);
         ASSERT_EQ(memory.m_size, 4);
 
         memory.resize(0);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, 21);
+        ASSERT_EQ(memory.m_capacity, 19);
         ASSERT_EQ(memory.m_size, 0);
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, 21);
+        ASSERT_EQ(memory.m_capacity, 19);
         ASSERT_EQ(memory.m_size, 1);
     }
 
@@ -289,7 +289,7 @@ TEST(MemoryResizeTest, AlignmentInRealAllocator)
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, 47);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         memory.resize(32);
@@ -314,12 +314,12 @@ TEST(MemoryResizeTest, SomeAlignmentOverflowWhenAlignment)
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, 46);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         EXPECT_THROW_ERROR_CODE(memory.resize(std::numeric_limits<size_t>::max()), Exception, ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         ASSERT_TRUE(memory.m_data); // state is intact after exception
-        ASSERT_EQ(memory.m_capacity, 46);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
     }
 
