@@ -1,8 +1,9 @@
 -- { echo }
 
 SET enable_filesystem_cache_on_write_operations=1;
+
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3_cache', min_bytes_for_wide_part = 10485760;
+CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='_storagePolicy', min_bytes_for_wide_part = 10485760;
 SYSTEM STOP MERGES test;
 SYSTEM DROP FILESYSTEM CACHE;
 SELECT file_segment_range_begin, file_segment_range_end, size, state
@@ -20,11 +21,12 @@ FROM
 )
 WHERE endsWith(local_path, 'data.bin')
 FORMAT Vertical;
+
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
-0
 SELECT count() FROM system.filesystem_cache;
-0
+
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
+
 SELECT file_segment_range_begin, file_segment_range_end, size, state
 FROM
 (
@@ -40,28 +42,24 @@ FROM
 )
 WHERE endsWith(local_path, 'data.bin')
 FORMAT Vertical;
-Row 1:
-──────
-file_segment_range_begin: 0
-file_segment_range_end:   745
-size:                     746
-state:                    DOWNLOADED
+
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
-7
 SELECT count() FROM system.filesystem_cache;
-7
+
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0;
-0
+
 SELECT  * FROM test FORMAT Null;
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0;
-2
+
 SELECT  * FROM test FORMAT Null;
 SELECT count() FROM system.filesystem_cache WHERE cache_hits > 0;
-2
+
 SELECT count() size FROM system.filesystem_cache;
-7
+
 SYSTEM DROP FILESYSTEM CACHE;
+
 INSERT INTO test SELECT number, toString(number) FROM numbers(100, 200);
+
 SELECT file_segment_range_begin, file_segment_range_end, size, state
 FROM
 (
@@ -77,33 +75,27 @@ FROM
 )
 WHERE endsWith(local_path, 'data.bin')
 FORMAT Vertical;
-Row 1:
-──────
-file_segment_range_begin: 0
-file_segment_range_end:   1659
-size:                     1660
-state:                    DOWNLOADED
+
 SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path;
-7
 SELECT count() FROM system.filesystem_cache;
-7
+
 SELECT count() FROM system.filesystem_cache;
-7
 INSERT INTO test SELECT number, toString(number) FROM numbers(100) SETTINGS enable_filesystem_cache_on_write_operations=0;
 SELECT count() FROM system.filesystem_cache;
-7
+
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);
 INSERT INTO test SELECT number, toString(number) FROM numbers(300, 10000);
 SELECT count() FROM system.filesystem_cache;
-21
+
 SYSTEM START MERGES test;
+
 OPTIMIZE TABLE test FINAL;
 SELECT count() FROM system.filesystem_cache;
-27
+
 SET mutations_sync=2;
 ALTER TABLE test UPDATE value = 'kek' WHERE key = 100;
 SELECT count() FROM system.filesystem_cache;
-28
+
 INSERT INTO test SELECT number, toString(number) FROM numbers(5000000);
 SYSTEM FLUSH LOGS;
 SELECT
@@ -118,7 +110,6 @@ ORDER BY
     query_start_time
     DESC
 LIMIT 1;
+
 SELECT count() FROM test;
-5010500
 SELECT count() FROM test WHERE value LIKE '%010%';
-18816
