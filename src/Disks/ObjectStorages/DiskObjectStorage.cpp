@@ -9,11 +9,9 @@
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
-#include <Common/checkStackSize.h>
-#include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/IFileCache.h>
+#include <Common/FileCache.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/FakeDiskTransaction.h>
@@ -94,6 +92,12 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
         send_metadata ? metadata_helper.get() : nullptr);
 }
 
+std::shared_ptr<Executor> DiskObjectStorage::getAsyncExecutor(const std::string & log_name, size_t size)
+{
+    static auto reader = std::make_shared<AsyncThreadPoolExecutor>(log_name, size);
+    return reader;
+}
+
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
     const String & object_storage_root_path_,
@@ -103,7 +107,7 @@ DiskObjectStorage::DiskObjectStorage(
     DiskType disk_type_,
     bool send_metadata_,
     uint64_t thread_pool_size_)
-    : IDisk(std::make_unique<AsyncThreadPoolExecutor>(log_name, thread_pool_size_))
+    : IDisk(getAsyncExecutor(log_name, thread_pool_size_))
     , name(name_)
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
@@ -261,7 +265,7 @@ bool DiskObjectStorage::checkUniqueId(const String & id) const
     if (!id.starts_with(object_storage_root_path))
         return false;
 
-    auto object = StoredObject::create(*object_storage, id, {}, true);
+    auto object = StoredObject::create(*object_storage, id, {}, {}, true);
     return object_storage->exists(object);
 }
 
@@ -377,6 +381,18 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
     return metadata_storage->getLastChanged(path);
 }
 
+struct stat DiskObjectStorage::stat(const String & path) const
+{
+    return metadata_storage->stat(path);
+}
+
+void DiskObjectStorage::chmod(const String & path, mode_t mode)
+{
+    auto transaction = createObjectStorageTransaction();
+    transaction->chmod(path, mode);
+    transaction->commit();
+}
+
 void DiskObjectStorage::shutdown()
 {
     LOG_INFO(log, "Shutting down disk {}", name);
@@ -450,17 +466,40 @@ bool DiskObjectStorage::supportsCache() const
     return object_storage->supportsCache();
 }
 
-DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage(const String & name_)
+bool DiskObjectStorage::isReadOnly() const
+{
+    return object_storage->isReadOnly();
+}
+
+DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     return std::make_shared<DiskObjectStorage>(
-        name_,
+        getName(),
         object_storage_root_path,
-        name,
+        getName(),
         metadata_storage,
         object_storage,
         disk_type,
         send_metadata,
         threadpool_size);
+}
+
+void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
+{
+    object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
+}
+
+NameSet DiskObjectStorage::getCacheLayersNames() const
+{
+    NameSet cache_layers;
+    auto current_object_storage = object_storage;
+    while (current_object_storage->supportsCache())
+    {
+        auto * cached_object_storage = assert_cast<CachedObjectStorage *>(current_object_storage.get());
+        cache_layers.insert(cached_object_storage->getCacheConfigName());
+        current_object_storage = cached_object_storage->getWrappedObjectStorage();
+    }
+    return cache_layers;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
@@ -471,7 +510,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 {
     return object_storage->readObjects(
         metadata_storage->getStorageObjects(path),
-        settings,
+        object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
         read_hint,
         file_size);
 }
@@ -485,7 +524,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     LOG_TEST(log, "Write file: {}", path);
 
     auto transaction = createObjectStorageTransaction();
-    auto result = transaction->writeFile(path, buf_size, mode, settings);
+    auto result = transaction->writeFile(
+        path,
+        buf_size,
+        mode,
+        object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
 
     return result;
 }
@@ -566,6 +609,5 @@ DiskObjectStorageReservation::~DiskObjectStorageReservation()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
-
 
 }

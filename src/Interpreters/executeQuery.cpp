@@ -180,7 +180,8 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     try
     {
@@ -863,11 +864,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.event_time_microseconds = time_in_microseconds(finish_time);
                 status_info_to_query_log(elem, info, ast, context);
 
-                auto progress_callback = context->getProgressCallback();
-
-                if (progress_callback)
-                    progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
-
                 if (pulling_pipeline)
                 {
                     query_pipeline.tryGetResultRowsAndBytes(elem.result_rows, elem.result_bytes);
@@ -877,6 +873,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto progress_out = process_list_elem->getProgressOut();
                     elem.result_rows = progress_out.written_rows;
                     elem.result_bytes = progress_out.written_bytes;
+                }
+
+                auto progress_callback = context->getProgressCallback();
+                if (progress_callback)
+                {
+                    Progress p(WriteProgress{info.written_rows, info.written_bytes});
+                    p.incrementPiecewiseAtomically(Progress{ResultProgress{elem.result_rows, elem.result_bytes}});
+                    progress_callback(p);
                 }
 
                 if (elem.read_rows != 0)
@@ -920,11 +924,20 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             processor_elem.id = get_proc_id(*processor);
                             processor_elem.parent_ids = std::move(parents);
 
+                            processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                            processor_elem.plan_group = processor->getQueryPlanStepGroup();
+
                             processor_elem.processor_name = processor->getName();
 
                             processor_elem.elapsed_us = processor->getElapsedUs();
                             processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
                             processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+
+                            auto stats = processor->getProcessorDataStats();
+                            processor_elem.input_rows = stats.input_rows;
+                            processor_elem.input_bytes = stats.input_bytes;
+                            processor_elem.output_rows = stats.output_rows;
+                            processor_elem.output_bytes = stats.output_bytes;
 
                             processors_profile_log->add(processor_elem);
                         }

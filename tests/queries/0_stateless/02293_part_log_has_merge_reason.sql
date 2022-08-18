@@ -6,10 +6,10 @@ CREATE TABLE t_part_log_has_merge_type_table
     UserID UInt64,
     Comment String
 )
-ENGINE = MergeTree() 
+ENGINE = MergeTree()
 ORDER BY tuple()
 TTL event_time + INTERVAL 3 MONTH
-SETTINGS min_bytes_for_wide_part = 0, materialize_ttl_recalculate_only = true;
+SETTINGS min_bytes_for_wide_part = 0, materialize_ttl_recalculate_only = true, max_number_of_merges_with_ttl_in_pool = 100;
 
 INSERT INTO t_part_log_has_merge_type_table VALUES (now(), 1, 'username1');
 INSERT INTO t_part_log_has_merge_type_table VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
@@ -20,7 +20,7 @@ SYSTEM FLUSH LOGS;
 
 SELECT
     event_type,
-    merge_reason 
+    merge_reason
 FROM
     system.part_log
 WHERE

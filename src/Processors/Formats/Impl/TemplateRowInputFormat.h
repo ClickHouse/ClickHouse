@@ -121,10 +121,11 @@ public:
     DataTypes readRowAndGetDataTypes() override;
 
 private:
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t column_idx) override;
+
     PeekableReadBuffer buf;
     const ParsedTemplateFormatString format;
     const ParsedTemplateFormatString row_format;
-    FormatSettings format_settings;
     TemplateFormatReader format_reader;
     bool first_row = true;
 };

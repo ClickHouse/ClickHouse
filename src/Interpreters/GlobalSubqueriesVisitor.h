@@ -8,7 +8,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
-#include <Interpreters/SubqueryForSet.h>
+#include <Interpreters/PreparedSets.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -41,7 +41,7 @@ public:
         bool is_remote;
         bool is_explain;
         TemporaryTablesMapping & external_tables;
-        SubqueriesForSets & subqueries_for_sets;
+        PreparedSetsPtr prepared_sets;
         bool & has_global_subqueries;
 
         Data(
@@ -50,14 +50,14 @@ public:
             bool is_remote_,
             bool is_explain_,
             TemporaryTablesMapping & tables,
-            SubqueriesForSets & subqueries_for_sets_,
+            PreparedSetsPtr prepared_sets_,
             bool & has_global_subqueries_)
             : WithContext(context_)
             , subquery_depth(subquery_depth_)
             , is_remote(is_remote_)
             , is_explain(is_explain_)
             , external_tables(tables)
-            , subqueries_for_sets(subqueries_for_sets_)
+            , prepared_sets(prepared_sets_)
             , has_global_subqueries(has_global_subqueries_)
         {
         }
@@ -178,9 +178,8 @@ public:
             }
             else
             {
-                subqueries_for_sets[external_table_name].source = std::make_unique<QueryPlan>();
-                interpreter->buildQueryPlan(*subqueries_for_sets[external_table_name].source);
-                subqueries_for_sets[external_table_name].table = external_storage;
+                auto & subquery_for_set = prepared_sets->getSubquery(external_table_name);
+                subquery_for_set.createSource(*interpreter, external_storage);
             }
 
             /** NOTE If it was written IN tmp_table - the existing temporary (but not external) table,
@@ -239,7 +238,7 @@ private:
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
         if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
+            && (table_elem.table_join->as<ASTTableJoin &>().locality == JoinLocality::Global
                 || data.getContext()->getSettingsRef().prefer_global_in_and_join))
         {
             data.addExternalStorage(table_elem.table_expression, true);

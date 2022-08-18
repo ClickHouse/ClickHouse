@@ -11,6 +11,7 @@
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
+(def root-path "/queue")
 (defn enqueue   [val _ _] {:type :invoke, :f :enqueue :value val})
 (defn dequeue [_ _] {:type :invoke, :f :dequeue})
 
@@ -22,18 +23,20 @@
             :conn (zk-connect node 9181 30000))
      :nodename node))
 
-  (setup! [this test])
+  (setup! [this test]
+    (exec-with-retries 30 (fn []
+      (zk-create-if-not-exists conn root-path ""))))
 
   (invoke! [this test op]
     (case (:f op)
       :enqueue (try
                  (do
-                   (zk-create-if-not-exists conn (str "/" (:value op)) "")
+                   (zk-create conn (concat-path root-path (:value op)) "")
                    (assoc op :type :ok))
                  (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :dequeue
       (try
-        (let [result (zk-multi-delete-first-child conn "/")]
+        (let [result (zk-multi-delete-first-child conn root-path)]
           (if (not (nil? result))
             (assoc op :type :ok :value result)
             (assoc op :type :fail :value result)))
@@ -42,7 +45,7 @@
       ; drain via delete is to long, just list all nodes
       (exec-with-retries 30 (fn []
                               (zk-sync conn)
-                              (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn "/"))))))))
+                              (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn root-path))))))))
 
   (teardown! [_ test])
 

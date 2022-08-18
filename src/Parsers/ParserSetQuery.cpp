@@ -5,12 +5,37 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSetQuery.h>
 
-#include <Common/typeid_cast.h>
+#include <Core/Names.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
-
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+static NameToNameMap::value_type convertToQueryParameter(SettingChange change)
+{
+    auto name = change.name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
+
+    auto value = applyVisitor(FieldVisitorToString(), change.value);
+    /// writeQuoted is not always quoted in line with SQL standard https://github.com/ClickHouse/ClickHouse/blob/master/src/IO/WriteHelpers.h
+    if (value.starts_with('\''))
+    {
+        ReadBufferFromOwnString buf(value);
+        readQuoted(value, buf);
+    }
+    return {name, value};
+}
+
 
 class ParserLiteralOrMap : public IParserBase
 {
@@ -111,16 +136,23 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     SettingsChanges changes;
+    NameToNameMap query_parameters;
 
     while (true)
     {
-        if (!changes.empty() && !s_comma.ignore(pos))
+        if ((!changes.empty() || !query_parameters.empty()) && !s_comma.ignore(pos))
             break;
 
-        changes.push_back(SettingChange{});
+        /// Either a setting or a parameter for prepared statement (if name starts with QUERY_PARAMETER_NAME_PREFIX)
+        SettingChange current;
 
-        if (!parseNameValuePair(changes.back(), pos, expected))
+        if (!parseNameValuePair(current, pos, expected))
             return false;
+
+        if (current.name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
+            query_parameters.emplace(convertToQueryParameter(std::move(current)));
+        else
+            changes.push_back(std::move(current));
     }
 
     auto query = std::make_shared<ASTSetQuery>();
@@ -128,6 +160,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->is_standalone = !parse_only_internals;
     query->changes = std::move(changes);
+    query->query_parameters = std::move(query_parameters);
 
     return true;
 }

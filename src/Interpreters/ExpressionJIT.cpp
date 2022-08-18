@@ -551,10 +551,10 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
             node_to_data[child].all_parents_compilable &= node_is_valid_for_compilation;
     }
 
-    for (const auto & node : index)
+    for (const auto & output_node : outputs)
     {
-        /// Force result nodes to compile
-        node_to_data[node].all_parents_compilable = false;
+        /// Force output nodes to compile
+        node_to_data[output_node].all_parents_compilable = false;
     }
 
     std::vector<Node *> nodes_to_compile;

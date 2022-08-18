@@ -41,24 +41,9 @@ color_good = "#b0d050"
 header_template = """
 <!DOCTYPE html>
 <html lang="en">
-<link rel="preload" as="font" href="https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2" type="font/woff2" crossorigin="anonymous"/>
 <style>
-@font-face {{
-    font-family:'Yandex Sans Display Web';
-    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
-    src:url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
-            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
-            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
-            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
-            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
-    font-weight:400;
-    font-style:normal;
-    font-stretch:normal;
-    font-display: swap;
-}}
-
 body {{
-    font-family: "Yandex Sans Display Web", Arial, sans-serif;
+    font-family: "DejaVu Sans", "Noto Sans", Arial, sans-serif;
     background: #EEE;
 }}
 

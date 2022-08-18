@@ -51,6 +51,8 @@ public:
         const NameSet & names_not_to_remove,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
+        bool is_temp,
+        MergeTreeDataPartState state,
         Poco::Logger * log) const override;
 
     std::string getRelativePathForPrefix(Poco::Logger * log, const String & prefix, bool detached) const override;
@@ -122,6 +124,8 @@ private:
         const NameSet & names_not_to_remove,
         const MergeTreeDataPartChecksums & checksums,
         const std::unordered_set<String> & skip_directories,
+        bool is_temp,
+        MergeTreeDataPartState state,
         Poco::Logger * log,
         bool is_projection) const;
 };

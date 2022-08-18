@@ -21,7 +21,7 @@ namespace
     using FunctionRadians = FunctionMathUnary<UnaryFunctionVectorized<RadiansName, radians>>;
 }
 
-void registerFunctionRadians(FunctionFactory & factory)
+REGISTER_FUNCTION(Radians)
 {
     factory.registerFunction<FunctionRadians>(FunctionFactory::CaseInsensitive);
 }

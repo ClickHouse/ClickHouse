@@ -1443,7 +1443,7 @@ public:
     }
 };
 
-void registerFunctionsJSON(FunctionFactory & factory)
+REGISTER_FUNCTION(JSON)
 {
     factory.registerFunction<JSONOverloadResolver<NameJSONHas, JSONHasImpl>>();
     factory.registerFunction<JSONOverloadResolver<NameIsValidJSON, IsValidJSONImpl>>();

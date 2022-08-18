@@ -38,6 +38,7 @@ FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_
 
 # There could be many disks declared in config
 readarray -t FILESYSTEM_CACHE_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.data_cache_path' || true)
+readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.path' || true)
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
@@ -50,12 +51,21 @@ for dir in "$DATA_DIR" \
   "$TMP_DIR" \
   "$USER_PATH" \
   "$FORMAT_SCHEMA_PATH" \
-  "${FILESYSTEM_CACHE_PATHS[@]}"
+  "${FILESYSTEM_CACHE_PATHS[@]}" \
+  "${DISKS_PATHS[@]}"
 do
     # check if variable not empty
     [ -z "$dir" ] && continue
     # ensure directories exist
-    if ! mkdir -p "$dir"; then
+    if [ "$DO_CHOWN" = "1" ]; then
+        mkdir="mkdir"
+    else
+        # if DO_CHOWN=0 it means that the system does not map root user to "admin" permissions
+        # it mainly happens on NFS mounts where root==nobody for security reasons
+        # thus mkdir MUST run with user id/gid and not from nobody that has zero permissions
+        mkdir="/usr/bin/clickhouse su "${USER}:${GROUP}" mkdir"
+    fi
+    if ! $mkdir -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"
         exit 1
     fi
