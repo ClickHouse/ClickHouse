@@ -59,6 +59,8 @@ public:
     bool supportsStat() const override { return false; }
 
     struct stat stat(const String &) const override { return {}; }
+
+    void checkAndFixMetadataHardLink(const std::string & /* path */) const override {}
 };
 
 class MetadataStorageFromStaticFilesWebServerTransaction final : public IMetadataTransaction
@@ -114,6 +116,8 @@ public:
     bool supportsChmod() const override { return false; }
 
     void chmod(const String &, mode_t) override;
+
+    void createMetadataFileFromContent(const std::string & /* path */, const std::string & /* content */) override {}
 };
 
 }
