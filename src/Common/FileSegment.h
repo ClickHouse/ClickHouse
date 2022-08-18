@@ -1,7 +1,7 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <Core/Types.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <list>
@@ -18,6 +18,7 @@ namespace DB
 {
 
 class FileCache;
+class ReadBufferFromFileBase;
 
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
@@ -113,16 +114,9 @@ public:
 
     void write(const char * from, size_t size, size_t offset_);
 
-    /**
-     * writeInMemory and finalizeWrite are used together to write a single file with delay.
-     * Both can be called only once, one after another. Used for writing cache via threadpool
-     * on wrote operations. TODO: this solution is temporary, until adding a separate cache layer.
-     */
-    void writeInMemory(const char * from, size_t size);
-
-    size_t finalizeWrite();
-
     RemoteFileReaderPtr getRemoteFileReader();
+
+    RemoteFileReaderPtr extractRemoteFileReader();
 
     void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
@@ -144,9 +138,11 @@ public:
 
     size_t getDownloadedSize() const;
 
+    size_t getRemainingSizeToDownload() const;
+
     void completeBatchAndResetDownloader();
 
-    void complete(State state);
+    void completeWithState(State state, bool auto_resize = false);
 
     String getInfoForLog() const;
 
@@ -167,6 +163,8 @@ public:
         std::lock_guard<std::mutex> & segment_lock);
 
     [[noreturn]] void throwIfDetached() const;
+
+    bool isDetached() const;
 
     String getPathInLocalCache() const;
 
@@ -197,8 +195,8 @@ private:
     /// FileSegmentsHolder. complete() might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void complete(std::lock_guard<std::mutex> & cache_lock);
-    void completeUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock);
+    void completeBasedOnCurrentStateUnlocked(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
 
     void completeImpl(
         std::lock_guard<std::mutex> & cache_lock,
@@ -206,7 +204,7 @@ private:
 
     void resetDownloaderImpl(std::lock_guard<std::mutex> & segment_lock);
 
-    const Range segment_range;
+    Range segment_range;
 
     State download_state;
 
@@ -246,23 +244,71 @@ private:
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    /// Currently no-op. (will be added in PR 36171)
-    /// Defined if a file comply by the eviction policy.
     bool is_persistent;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 };
 
 struct FileSegmentsHolder : private boost::noncopyable
 {
+    FileSegmentsHolder() = default;
+
     explicit FileSegmentsHolder(FileSegments && file_segments_) : file_segments(std::move(file_segments_)) {}
 
     FileSegmentsHolder(FileSegmentsHolder && other) noexcept : file_segments(std::move(other.file_segments)) {}
 
     ~FileSegmentsHolder();
 
-    FileSegments file_segments{};
-
     String toString();
+
+    FileSegments::iterator add(FileSegmentPtr && file_segment)
+    {
+        return file_segments.insert(file_segments.end(), file_segment);
+    }
+
+    FileSegments file_segments{};
+};
+
+/**
+  * We want to write eventually some size, which is not known until the very end.
+  * Therefore we allocate file segments lazily. Each file segment is assigned capacity
+  * of max_file_segment_size, but reserved_size remains 0, until call to tryReserve().
+  * Once current file segment is full (reached max_file_segment_size), we allocate a
+  * new file segment. All allocated file segments resize in file segments holder.
+  * If at the end of all writes, the last file segment is not full, then it is resized.
+  */
+class FileSegmentRangeWriter
+{
+public:
+    using OnCompleteFileSegmentCallback = std::function<void(const FileSegment & file_segment)>;
+
+    FileSegmentRangeWriter(
+        FileCache * cache_,
+        const FileSegment::Key & key_,
+        /// A callback which is called right after each file segment is completed.
+        /// It is used to write into filesystem cache log.
+        OnCompleteFileSegmentCallback && on_complete_file_segment_func_);
+
+    ~FileSegmentRangeWriter();
+
+    bool write(const char * data, size_t size, size_t offset, bool is_persistent);
+
+    void finalize();
+
+private:
+    FileSegments::iterator allocateFileSegment(size_t offset, bool is_persistent);
+    void completeFileSegment(FileSegment & file_segment);
+
+    FileCache * cache;
+    FileSegment::Key key;
+
+    FileSegmentsHolder file_segments_holder;
+    FileSegments::iterator current_file_segment_it;
+
+    size_t current_file_segment_write_offset = 0;
+
+    bool finalized = false;
+
+    OnCompleteFileSegmentCallback on_complete_file_segment_func;
 };
 
 }

@@ -182,6 +182,7 @@ install_packages package_folder
 
 configure
 
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateful  # to have a proper environment
 
 start
@@ -318,6 +319,11 @@ else
 
     # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
     rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
+
+    # Remove s3 related configs to avoid "there is no disk type `cache`"
+    rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
+    rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
+
     # Disable aggressive cleanup of tmp dirs (it worked incorrectly before 22.8)
     rm -f /etc/clickhouse-server/config.d/merge_tree_old_dirs_cleanup.xml ||:
 
