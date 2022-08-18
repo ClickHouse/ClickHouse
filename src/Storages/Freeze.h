@@ -6,10 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes {
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 /// Special metadata used during freeze table. Required for zero-copy
 /// replication.
 struct FreezeMetaData
