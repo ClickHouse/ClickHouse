@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 #include <sys/statvfs.h>
-#include <Disks/TemporaryFileOnDisk.h>
+#include <Common/TemporaryFile.h>
 
 namespace fs = std::filesystem;
 
