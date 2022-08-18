@@ -173,13 +173,8 @@ void ReplicatedMergeTreeAttachThread::finalizeInitialization()
 
 void ReplicatedMergeTreeAttachThread::notifyIfFirstTry()
 {
-    if (first_try)
-    {
-        first_try_done = true;
+    if (!first_try_done.exchange(true))
         first_try_done.notify_one();
-
-        first_try = false;
-    }
 }
 
 void ReplicatedMergeTreeAttachThread::tryReconnect()
