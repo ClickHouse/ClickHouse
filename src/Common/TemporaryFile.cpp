@@ -1,4 +1,4 @@
-#include <Disks/TemporaryFileOnDisk.h>
+#include <Common/TemporaryFile.h>
 #include <Disks/IDisk.h>
 #include <Poco/TemporaryFile.h>
 

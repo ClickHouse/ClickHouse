@@ -30,7 +30,7 @@
 #include <Backups/IBackupEntriesLazyBatch.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/TemporaryFileOnDisk.h>
+#include <Common/TemporaryFile.h>
 #include <IO/copyData.h>
 
 

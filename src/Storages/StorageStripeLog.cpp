@@ -34,7 +34,7 @@
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Disks/TemporaryFileOnDisk.h>
+#include <Common/TemporaryFile.h>
 
 #include <base/insertAtEnd.h>
 
