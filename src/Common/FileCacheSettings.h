@@ -19,7 +19,6 @@ struct FileCacheSettings
     bool enable_filesystem_query_cache_limit = false;
 
     bool do_not_evict_index_and_mark_files = true;
-    bool allow_to_remove_persistent_segments_from_cache_by_default = true;
 
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };

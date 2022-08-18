@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <schema_inference_cache_max_elements_for_file>2</schema_inference_cache_max_elements_for_file>
+</clickhouse>

@@ -335,31 +335,51 @@ def test_async_backups_to_same_destination(interface):
     create_and_fill_table()
     backup_name = new_backup_name()
 
-    ids = []
-    for _ in range(2):
-        if interface == "http":
-            res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
-        else:
-            res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
-        ids.append(res.split("\t")[0])
+    # The first backup.
+    if interface == "http":
+        res = instance.http_query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+    else:
+        res = instance.query(f"BACKUP TABLE test.table TO {backup_name} ASYNC")
+    id1 = res.split("\t")[0]
 
-    [id1, id2] = ids
+    # The second backup to the same destination.
+    if interface == "http":
+        res, err = instance.http_query_and_get_answer_with_error(
+            f"BACKUP TABLE test.table TO {backup_name} ASYNC"
+        )
+    else:
+        res, err = instance.query_and_get_answer_with_error(
+            f"BACKUP TABLE test.table TO {backup_name} ASYNC"
+        )
+
+    # The second backup to the same destination is expected to fail. It can either fail immediately or after a while.
+    # If it fails immediately we won't even get its ID.
+    id2 = None if err else res.split("\t")[0]
+
+    ids = [id1]
+    if id2:
+        ids.append(id2)
+    ids_for_query = "[" + ", ".join(f"'{id}'" for id in ids) + "]"
 
     assert_eq_with_retry(
         instance,
-        f"SELECT status FROM system.backups WHERE id IN ['{id1}', '{id2}'] AND status == 'CREATING_BACKUP'",
+        f"SELECT status FROM system.backups WHERE id IN {ids_for_query} AND status == 'CREATING_BACKUP'",
         "",
     )
 
+    # The first backup should succeed.
     assert instance.query(
         f"SELECT status, error FROM system.backups WHERE id='{id1}'"
     ) == TSV([["BACKUP_CREATED", ""]])
 
-    assert (
-        instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
-        == "BACKUP_FAILED\n"
-    )
+    if id2:
+        # The second backup should fail.
+        assert (
+            instance.query(f"SELECT status FROM system.backups WHERE id='{id2}'")
+            == "BACKUP_FAILED\n"
+        )
 
+    # Check that the first backup is all right.
     instance.query("DROP TABLE test.table")
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"

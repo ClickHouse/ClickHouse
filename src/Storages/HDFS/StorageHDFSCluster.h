@@ -9,6 +9,7 @@
 
 #include <Client/Connection.h>
 #include <Interpreters/Cluster.h>
+#include <Storages/IStorageCluster.h>
 #include <Storages/HDFS/StorageHDFS.h>
 
 namespace DB
@@ -16,7 +17,7 @@ namespace DB
 
 class Context;
 
-class StorageHDFSCluster : public IStorage
+class StorageHDFSCluster : public IStorageCluster
 {
 public:
     StorageHDFSCluster(
@@ -39,11 +40,20 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    ClusterPtr getCluster(ContextPtr context) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(ContextPtr context) const override;
+
 private:
     String cluster_name;
     String uri;
     String format_name;
     String compression_method;
+
+    mutable ClusterPtr cluster;
+    mutable std::shared_ptr<HDFSSource::DisclosedGlobIterator> iterator;
+    mutable std::shared_ptr<HDFSSource::IteratorWrapper> callback;
+
+    void createIteratorAndCallback(ContextPtr context) const;
 };
 
 

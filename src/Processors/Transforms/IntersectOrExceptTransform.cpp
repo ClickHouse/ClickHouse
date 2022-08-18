@@ -128,7 +128,11 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     column_ptrs.reserve(key_columns_pos.size());
 
     for (auto pos : key_columns_pos)
+    {
+        /// Hash methods expect non-const column
+        columns[pos] = columns[pos]->convertToFullColumnIfConst();
         column_ptrs.emplace_back(columns[pos].get());
+    }
 
     if (!data)
         data.emplace();
@@ -160,8 +164,11 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     column_ptrs.reserve(key_columns_pos.size());
 
     for (auto pos : key_columns_pos)
+    {
+        /// Hash methods expect non-const column
+        columns[pos] = columns[pos]->convertToFullColumnIfConst();
         column_ptrs.emplace_back(columns[pos].get());
-
+    }
     if (!data)
         data.emplace();
 
