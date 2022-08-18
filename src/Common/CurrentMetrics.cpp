@@ -92,6 +92,8 @@
     M(FilesystemCacheReadBuffers, "Number of active cache buffers") \
     M(CacheFileSegments, "Number of existing cache file segments") \
     M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
+    M(FilesystemCacheSize, "Filesystem cache size in bytes") \
+    M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
     M(S3Requests, "S3 requests") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \

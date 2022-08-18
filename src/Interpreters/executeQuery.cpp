@@ -924,11 +924,20 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             processor_elem.id = get_proc_id(*processor);
                             processor_elem.parent_ids = std::move(parents);
 
+                            processor_elem.plan_step = reinterpret_cast<std::uintptr_t>(processor->getQueryPlanStep());
+                            processor_elem.plan_group = processor->getQueryPlanStepGroup();
+
                             processor_elem.processor_name = processor->getName();
 
                             processor_elem.elapsed_us = processor->getElapsedUs();
                             processor_elem.input_wait_elapsed_us = processor->getInputWaitElapsedUs();
                             processor_elem.output_wait_elapsed_us = processor->getOutputWaitElapsedUs();
+
+                            auto stats = processor->getProcessorDataStats();
+                            processor_elem.input_rows = stats.input_rows;
+                            processor_elem.input_bytes = stats.input_bytes;
+                            processor_elem.output_rows = stats.output_rows;
+                            processor_elem.output_bytes = stats.output_bytes;
 
                             processors_profile_log->add(processor_elem);
                         }
