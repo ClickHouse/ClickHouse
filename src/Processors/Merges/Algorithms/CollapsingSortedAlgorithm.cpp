@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 /// Maximum number of messages about incorrect data in the log.
@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
-    const Block & header_,
+    const Block & header,
     size_t num_inputs,
     SortDescription description_,
     const String & sign_column,
@@ -30,9 +30,9 @@ CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     Poco::Logger * log_,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
-    , sign_column_number(header_.getPositionByName(sign_column))
+    : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
+    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
+    , sign_column_number(header.getPositionByName(sign_column))
     , only_positive_sign(only_positive_sign_)
     , log(log_)
 {

@@ -1,8 +1,0 @@
-<?xml version="1.0"?>
-<clickhouse>
-    <concurrent_threads_soft_limit>1</concurrent_threads_soft_limit>
-    <query_log>
-      <database>system</database>
-      <table>query_log</table>
-    </query_log>
-</clickhouse>

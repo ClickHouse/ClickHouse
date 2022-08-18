@@ -2,7 +2,7 @@
 
 #if USE_SSL
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>

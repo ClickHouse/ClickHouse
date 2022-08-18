@@ -1,6 +1,6 @@
 ---
-sidebar_position: 52
-sidebar_label: Array(T)
+toc_priority: 52
+toc_title: Array(T)
 ---
 
 # Array(T) {#data-type-array}

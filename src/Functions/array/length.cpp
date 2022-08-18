@@ -53,7 +53,7 @@ struct NameLength
 
 using FunctionLength = FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64, false>;
 
-REGISTER_FUNCTION(Length)
+void registerFunctionLength(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLength>(FunctionFactory::CaseInsensitive);
 }

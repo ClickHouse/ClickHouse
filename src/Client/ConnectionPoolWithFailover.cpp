@@ -30,15 +30,15 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         time_t decrease_error_period_,
         size_t max_error_cap_)
     : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, &Poco::Logger::get("ConnectionPoolWithFailover"))
-    , get_priority_load_balancing(load_balancing)
+    , default_load_balancing(load_balancing)
 {
     const std::string & local_hostname = getFQDNOrHostName();
 
-    get_priority_load_balancing.hostname_differences.resize(nested_pools.size());
+    hostname_differences.resize(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
     {
         ConnectionPool & connection_pool = dynamic_cast<ConnectionPool &>(*nested_pools[i]);
-        get_priority_load_balancing.hostname_differences[i] = getHostNameDifference(local_hostname, connection_pool.getHost());
+        hostname_differences[i] = getHostNameDifference(local_hostname, connection_pool.getHost());
     }
 }
 
@@ -55,14 +55,35 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
     };
 
     size_t offset = 0;
-    LoadBalancing load_balancing = get_priority_load_balancing.load_balancing;
     if (settings)
-    {
         offset = settings->load_balancing_first_offset % nested_pools.size();
-        load_balancing = LoadBalancing(settings->load_balancing);
+    GetPriorityFunc get_priority;
+    switch (settings ? LoadBalancing(settings->load_balancing) : default_load_balancing)
+    {
+    case LoadBalancing::NEAREST_HOSTNAME:
+        get_priority = [&](size_t i) { return hostname_differences[i]; };
+        break;
+    case LoadBalancing::IN_ORDER:
+        get_priority = [](size_t i) { return i; };
+        break;
+    case LoadBalancing::RANDOM:
+        break;
+    case LoadBalancing::FIRST_OR_RANDOM:
+        get_priority = [offset](size_t i) -> size_t { return i != offset; };
+        break;
+    case LoadBalancing::ROUND_ROBIN:
+        if (last_used >= nested_pools.size())
+            last_used = 0;
+        ++last_used;
+        /* Consider nested_pools.size() equals to 5
+         * last_used = 1 -> get_priority: 0 1 2 3 4
+         * last_used = 2 -> get_priority: 4 0 1 2 3
+         * last_used = 3 -> get_priority: 4 3 0 1 2
+         * ...
+         * */
+        get_priority = [&](size_t i) { ++i; return i < last_used ? nested_pools.size() - i : i - last_used; };
+        break;
     }
-
-    GetPriorityFunc get_priority = get_priority_load_balancing.getPriorityFunc(load_balancing, offset, nested_pools.size());
 
     UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
     bool fallback_to_stale_replicas = settings ? settings->fallback_to_stale_replicas_for_distributed_queries.value : true;
@@ -156,14 +177,38 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 ConnectionPoolWithFailover::Base::GetPriorityFunc ConnectionPoolWithFailover::makeGetPriorityFunc(const Settings * settings)
 {
     size_t offset = 0;
-    LoadBalancing load_balancing = get_priority_load_balancing.load_balancing;
     if (settings)
-    {
         offset = settings->load_balancing_first_offset % nested_pools.size();
-        load_balancing = LoadBalancing(settings->load_balancing);
+
+    GetPriorityFunc get_priority;
+    switch (settings ? LoadBalancing(settings->load_balancing) : default_load_balancing)
+    {
+        case LoadBalancing::NEAREST_HOSTNAME:
+            get_priority = [&](size_t i) { return hostname_differences[i]; };
+            break;
+        case LoadBalancing::IN_ORDER:
+            get_priority = [](size_t i) { return i; };
+            break;
+        case LoadBalancing::RANDOM:
+            break;
+        case LoadBalancing::FIRST_OR_RANDOM:
+            get_priority = [offset](size_t i) -> size_t { return i != offset; };
+            break;
+        case LoadBalancing::ROUND_ROBIN:
+            if (last_used >= nested_pools.size())
+                last_used = 0;
+            ++last_used;
+            /* Consider nested_pools.size() equals to 5
+             * last_used = 1 -> get_priority: 0 1 2 3 4
+             * last_used = 2 -> get_priority: 5 0 1 2 3
+             * last_used = 3 -> get_priority: 5 4 0 1 2
+             * ...
+             * */
+            get_priority = [&](size_t i) { ++i; return i < last_used ? nested_pools.size() - i : i - last_used; };
+            break;
     }
 
-    return get_priority_load_balancing.getPriorityFunc(load_balancing, offset, nested_pools.size());
+    return get_priority;
 }
 
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyImpl(

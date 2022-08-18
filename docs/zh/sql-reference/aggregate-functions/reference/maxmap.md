@@ -1,5 +1,5 @@
 ---
-sidebar_position: 143
+toc_priority: 143
 ---
 
 # maxMap {#agg_functions-maxmap}

@@ -5,7 +5,7 @@
 #include <pthread.h>
 #include <cstdint>
 
-#if defined(OS_FREEBSD)
+#if defined(__FreeBSD__)
 #   include <pthread_np.h>
 #endif
 
@@ -48,7 +48,7 @@ size_t getStackSize(void ** out_address)
     address = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(pthread_get_stackaddr_np(thread)) - size);
 #else
     pthread_attr_t attr;
-#   if defined(OS_FREEBSD) || defined(OS_SUNOS)
+#   if defined(__FreeBSD__) || defined(OS_SUNOS)
     pthread_attr_init(&attr);
     if (0 != pthread_attr_get_np(pthread_self(), &attr))
         throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);

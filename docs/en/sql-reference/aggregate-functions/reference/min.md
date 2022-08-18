@@ -1,8 +1,8 @@
 ---
-sidebar_position: 2
+toc_priority: 2
 ---
 
-## min
+## min {#agg_function-min}
 
 Aggregate function that calculates the minimum across a group of values.
 

@@ -88,18 +88,6 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   支持监控（处理进程、连接、查询）
 -   支持迁移数据
 
-### ClickVisual {#clickvisual}
-
-[ClickVisual](https://clickvisual.gocn.vip/) ClickVisual是一款轻量级的开源日志查询、分析、报警的可视化平台！
-
-特征：
-
-- 支持分析日志库一键创建
-- 支持日志采集配置管理
-- 支持自定义索引配置
-- 支持报警配置
-- 支持权限粒度到库和表的权限配置
-
 ## 商业 {#shang-ye}
 
 ### Holistics {#holistics-software}

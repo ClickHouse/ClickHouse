@@ -1,0 +1,31 @@
+{
+	"name": "build",
+	"version": "1.0.0",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"build": "NODE_ENV=production webpack --config webpack.config.js",
+		"watch": "NODE_ENV=development webpack --config webpack.config.js"
+	},
+	"author": "",
+	"license": "ISC",
+	"devDependencies": {
+		"@babel/core": "^7.10.2",
+		"@babel/preset-env": "^7.10.2",
+		"autoprefixer": "^9.8.0",
+		"babel-loader": "^8.1.0",
+		"cssnano": "^4.1.10",
+		"file-loader": "^6.0.0",
+		"node-sass-glob-importer": "^5.3.2",
+		"postcss-loader": "^3.0.0",
+		"sass": "^1.26.8",
+		"sass-loader": "^8.0.2",
+		"webpack": "^4.43.0",
+		"webpack-cli": "^3.3.11"
+	},
+	"dependencies": {
+		"amphtml-validator": "^1.0.35",
+		"bootstrap": "^4.4.1",
+		"purify-css": "^1.2.5"
+	}
+}

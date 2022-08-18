@@ -95,8 +95,8 @@ public:
             throw Exception("Length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
         using StringPiece = typename Regexps::Regexp::StringPieceType;
-        const Regexps::Regexp holder = Regexps::createRegexp<false, false, false>(needle);
-        const auto & regexp = holder.getRE2();
+        auto holder = Regexps::get<false, false>(needle);
+        const auto & regexp = holder->getRE2();
 
         if (!regexp)
             throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);

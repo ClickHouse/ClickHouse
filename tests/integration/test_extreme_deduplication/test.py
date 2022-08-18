@@ -40,7 +40,7 @@ def test_deduplication_window_in_seconds(started_cluster):
     node1.query(
         """
         CREATE TABLE simple ON CLUSTER test_cluster (date Date, id UInt32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id"""
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}', date, id, 8192)"""
     )
 
     node.query("INSERT INTO simple VALUES (0, 0)")
@@ -77,7 +77,7 @@ def test_deduplication_works_in_case_of_intensive_inserts(started_cluster):
     node1.query(
         """
         CREATE TABLE simple ON CLUSTER test_cluster (date Date, id UInt32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id"""
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/simple', '{replica}', date, id, 8192)"""
     )
 
     node1.query("INSERT INTO simple VALUES (0, 0)")

@@ -1,6 +1,6 @@
 ---
-sidebar_label: "合并树家族"
-sidebar_position: 28
+toc_folder_title: "合并树家族"
+toc_priority: 28
 ---
 
 

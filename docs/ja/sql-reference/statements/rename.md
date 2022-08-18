@@ -1,0 +1,1 @@
+../../../en/sql-reference/statements/rename.md

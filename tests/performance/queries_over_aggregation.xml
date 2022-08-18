@@ -1,7 +1,0 @@
-<test>
-  <query>select * from (select * from numbers_mt(1e7) group by number) group by number format Null</query>
-  <query>select * from (select * from numbers_mt(1e7) group by number) order by number format Null</query>
-  <query>select * from (select * from numbers_mt(1e7) group by number) group by number format Null settings max_bytes_before_external_group_by = 1</query>
-  <query>select * from (select * from remote('127.0.0.{{1,2}}', numbers_mt(1e7)) group by number) group by number format Null settings distributed_aggregation_memory_efficient = 1</query>
-  <query>select * from (select * from remote('127.0.0.{{1,2}}', numbers_mt(1e7)) group by number) group by number format Null settings distributed_aggregation_memory_efficient = 0</query>
-</test>

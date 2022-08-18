@@ -1,5 +1,4 @@
 #include "PostgreSQLSource.h"
-#include "Common/Exception.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
@@ -17,16 +16,12 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_COLUMNS;
-}
 
 template<typename T>
 PostgreSQLSource<T>::PostgreSQLSource(
@@ -34,7 +29,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     const std::string & query_str_,
     const Block & sample_block,
     UInt64 max_block_size_)
-    : ISource(sample_block.cloneEmpty())
+    : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)
     , max_block_size(max_block_size_)
     , connection_holder(std::move(connection_holder_))
@@ -50,7 +45,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     const Block & sample_block,
     UInt64 max_block_size_,
     bool auto_commit_)
-    : ISource(sample_block.cloneEmpty())
+    : SourceWithProgress(sample_block.cloneEmpty())
     , query_str(query_str_)
     , tx(std::move(tx_))
     , max_block_size(max_block_size_)
@@ -91,7 +86,7 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
-    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
+    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 
 template<typename T>
@@ -103,7 +98,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
         started = true;
     }
 
-    auto status = ISource::prepare();
+    auto status = SourceWithProgress::prepare();
     if (status == Status::Finished)
         onFinish();
 
@@ -127,11 +122,6 @@ Chunk PostgreSQLSource<T>::generate()
         /// row is nullptr if pqxx::stream_from is finished
         if (!row)
             break;
-
-        if (row->size() > description.sample_block.columns())
-            throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
-                            "Row has too many columns: {}, expected structure: {}",
-                            row->size(), description.sample_block.dumpStructure());
 
         for (const auto idx : collections::range(0, row->size()))
         {

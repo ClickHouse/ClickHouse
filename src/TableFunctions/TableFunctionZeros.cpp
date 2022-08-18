@@ -2,7 +2,7 @@
 #include <TableFunctions/TableFunctionZeros.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/checkAndGetLiteralArgument.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/System/StorageSystemZeros.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -39,7 +39,7 @@ StoragePtr TableFunctionZeros<multithreaded>::executeImpl(const ASTPtr & ast_fun
 
         UInt64 length = evaluateArgument(context, arguments[0]);
 
-        auto res = std::make_shared<StorageSystemZeros>(StorageID(getDatabaseName(), table_name), multithreaded, length);
+        auto res = StorageSystemZeros::create(StorageID(getDatabaseName(), table_name), multithreaded, length);
         res->startup();
         return res;
     }
@@ -55,7 +55,7 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
 template <bool multithreaded>
 UInt64 TableFunctionZeros<multithreaded>::evaluateArgument(ContextPtr context, ASTPtr & argument) const
 {
-    return checkAndGetLiteralArgument<UInt64>(evaluateConstantExpressionOrIdentifierAsLiteral(argument, context), "length");
+    return evaluateConstantExpressionOrIdentifierAsLiteral(argument, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
 }
 
 }

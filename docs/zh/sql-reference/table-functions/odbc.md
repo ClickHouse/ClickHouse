@@ -1,6 +1,6 @@
 ---
-sidebar_position: 44
-sidebar_label: odbc
+toc_priority: 44
+toc_title: odbc
 ---
 
 # odbc {#table-functions-odbc}

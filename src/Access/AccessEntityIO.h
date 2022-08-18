@@ -5,7 +5,6 @@
 
 namespace DB
 {
-
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 

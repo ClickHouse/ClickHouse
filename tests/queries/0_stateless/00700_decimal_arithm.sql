@@ -82,14 +82,4 @@ SELECT toDecimal32(0, 4) AS x, multiIf(x = 0, NULL, intDivOrZero(1, x)), multiIf
 SELECT toDecimal64(0, 8) AS x, multiIf(x = 0, NULL, intDivOrZero(1, x)), multiIf(x = 0, NULL, intDivOrZero(x, 0));
 SELECT toDecimal64(0, 18) AS x, multiIf(x = 0, NULL, intDivOrZero(1, x)), multiIf(x = 0, NULL, intDivOrZero(x, 0));
 
--- { echoOn }
-SELECT toDecimal128(1, 38) / toDecimal128(1, 0) SETTINGS decimal_check_overflow=1;
-SELECT toDecimal128(1, 38) / toDecimal128(1, 1) SETTINGS decimal_check_overflow=1; -- { serverError DECIMAL_OVERFLOW }
-SELECT toDecimal128(1, 38) / toDecimal128(1, 1) SETTINGS decimal_check_overflow=0;
-SELECT toDecimal128(1, 37) / toDecimal128(1, 1) SETTINGS decimal_check_overflow=1;
-
-SELECT toDecimal128(1, 19) / toDecimal128(1, 19) SETTINGS decimal_check_overflow=1;
-SELECT toDecimal128(1, 20) / toDecimal128(1, 19) SETTINGS decimal_check_overflow=1; -- { serverError DECIMAL_OVERFLOW }
--- { echoOff }
-
 DROP TABLE IF EXISTS decimal;

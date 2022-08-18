@@ -35,8 +35,7 @@ public:
     static Ptr create(const TupleColumns & columns);
     static Ptr create(Columns && arg) { return create(arg); }
 
-    template <typename Arg>
-    requires std::is_rvalue_reference_v<Arg &&>
+    template <typename Arg, typename = typename std::enable_if<std::is_rvalue_reference<Arg &&>::value>::type>
     static MutablePtr create(Arg && arg) { return Base::create(std::forward<Arg>(arg)); }
 
     std::string getName() const override;
@@ -102,6 +101,7 @@ public:
     ColumnPtr compress() const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
+    SerializationInfoPtr getSerializationInfo() const override;
 
     size_t tupleSize() const { return columns.size(); }
 

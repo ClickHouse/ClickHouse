@@ -60,7 +60,7 @@ public:
       * 1. \N
       * 2. empty string (without quotes)
       * 3. NULL
-      * We support all of them (however, second variant is supported by CSVRowInputFormat, not by deserializeTextCSV).
+      * We support all of them (however, second variant is supported by CSVRowInputStream, not by deserializeTextCSV).
       * (see also input_format_defaults_for_omitted_fields and input_format_csv_unquoted_null_literal_as_null settings)
       * In CSV, non-NULL string value, starting with \N characters, must be placed in quotes, to avoid ambiguity.
       */

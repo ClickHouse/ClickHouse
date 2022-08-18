@@ -9,10 +9,6 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
-    add_subdirectory (self-extracting-executable)
-endif ()
-
 # Utils used in package
 add_subdirectory (config-processor)
 add_subdirectory (report)

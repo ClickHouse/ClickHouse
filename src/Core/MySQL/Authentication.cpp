@@ -5,7 +5,7 @@
 #include <Interpreters/Session.h>
 #include <Access/Credentials.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
 
 #include <base/scope_guard.h>

@@ -1,9 +1,9 @@
 ---
-sidebar_position: 58
-sidebar_label: Permissions for Queries
+toc_priority: 58
+toc_title: Permissions for Queries
 ---
 
-# Permissions for Queries
+# Permissions for Queries {#permissions_for_queries}
 
 Queries in ClickHouse can be divided into several types:
 

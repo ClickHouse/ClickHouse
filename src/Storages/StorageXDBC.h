@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <BridgeHelper/XDBCBridgeHelper.h>
+#include <Bridge/XDBCBridgeHelper.h>
 
 namespace Poco
 {
@@ -67,7 +67,7 @@ private:
 
     Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool isColumnOriented() const override;
 };
 
 }
