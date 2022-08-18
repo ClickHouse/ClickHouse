@@ -39,10 +39,7 @@ TemporaryFileStream::Stat TemporaryFileStream::write(const std::string & path, c
         output.write(block);
 
     compressed_buf.finalize();
-    output.flush();
-    file_buf.next();
-
-    return Stat{compressed_buf.count(), file_buf.count()};
+    return Stat{compressed_buf.getCompressedBytes(), compressed_buf.getUncompressedBytes()};
 }
 
 }
