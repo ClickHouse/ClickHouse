@@ -126,13 +126,30 @@ std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String 
     return {shard, replica};
 }
 
-ClusterPtr DatabaseReplicated::getCluster() const
+ClusterPtr DatabaseReplicated::tryGetCluster() const
 {
     std::lock_guard lock{mutex};
     if (cluster)
         return cluster;
 
-    cluster = getClusterImpl();
+    /// Database is probably not created or not initialized yet, it's ok to return nullptr
+    if (is_readonly)
+        return cluster;
+
+    try
+    {
+        /// A quick fix for stateless tests with DatabaseReplicated. Its ZK
+        /// node can be destroyed at any time. If another test lists
+        /// system.clusters to get client command line suggestions, it will
+        /// get an error when trying to get the info about DB from ZK.
+        /// Just ignore these inaccessible databases. A good example of a
+        /// failing test is `01526_client_start_and_exit`.
+        cluster = getClusterImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
     return cluster;
 }
 
