@@ -345,7 +345,7 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     M(UInt64, max_temporary_non_const_columns, 0, "", 0) \
     \
     M(UInt64, max_subquery_depth, 100, "", 0) \
-    M(UInt64, max_pipeline_depth, 10000, "", 0) \
+    M(UInt64, max_analyze_depth, 10000, "", 0) \
     M(UInt64, max_ast_depth, 1000, "Maximum depth of query syntax tree. Checked after parsing.", 0) \
     M(UInt64, max_ast_elements, 50000, "Maximum size of query syntax tree in number of nodes. Checked after parsing.", 0) \
     M(UInt64, max_expanded_ast_elements, 500000, "Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.", 0) \
@@ -671,6 +671,8 @@ static constexpr UInt64 operator""_GiB(unsigned long long value)
     MAKE_OBSOLETE(M, UInt64, background_message_broker_schedule_pool_size, 16) \
     MAKE_OBSOLETE(M, UInt64, background_distributed_schedule_pool_size, 16) \
     MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
+    MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
+
     /** The section above is for obsolete settings. Do not add anything there. */
 
 
