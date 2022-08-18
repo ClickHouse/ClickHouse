@@ -24,6 +24,7 @@ NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
         {"cache_hits", std::make_shared<DataTypeUInt64>()},
         {"references", std::make_shared<DataTypeUInt64>()},
         {"downloaded_size", std::make_shared<DataTypeUInt64>()},
+        {"persistent", std::make_shared<DataTypeNumber<UInt8>>()}
     };
 }
 
@@ -55,6 +56,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[6]->insert(file_segment->getHitsCount());
             res_columns[7]->insert(file_segment->getRefCount());
             res_columns[8]->insert(file_segment->getDownloadedSize());
+            res_columns[9]->insert(file_segment->isPersistent());
         }
     }
 }
