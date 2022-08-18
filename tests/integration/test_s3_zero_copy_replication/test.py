@@ -646,7 +646,7 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     node2.query("DROP TABLE IF EXISTS zero_copy_mutation NO DELAY")
 
     node1.query(
-            """
+        """
         CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
         ORDER BY id
@@ -654,10 +654,10 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
         SETTINGS storage_policy='s3',
         old_parts_lifetime=1000
         """
-        )
+    )
 
     node2.query(
-            """
+        """
         CREATE TABLE zero_copy_mutation (id UInt64, value1 String, value2 String, value3 String)
         ENGINE=ReplicatedMergeTree('/clickhouse/tables/zero_copy_mutation', '{replica}')
         ORDER BY id
@@ -665,14 +665,14 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
         SETTINGS storage_policy='s3',
         old_parts_lifetime=1000
         """
-        )
+    )
 
     node1.query(
-            """
+        """
         INSERT INTO zero_copy_mutation
         SELECT * FROM generateRandom('id UInt64, value1 String, value2 String, value3 String') limit 1000000
         """
-        )
+    )
 
     wait_for_active_parts(node2, 4, "zero_copy_mutation")
 
@@ -680,14 +680,14 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     check_objects_exisis(cluster, objects1)
 
     node1.query(
-            """
+        """
         ALTER TABLE zero_copy_mutation
         ADD COLUMN valueX String MATERIALIZED value1
         """
     )
 
     node1.query(
-            """
+        """
         ALTER TABLE zero_copy_mutation
         MATERIALIZE COLUMN valueX
         """
@@ -696,17 +696,13 @@ def test_s3_zero_copy_keeps_data_after_mutation(cluster):
     wait_mutations(node1, "zero_copy_mutation", 10)
     wait_mutations(node2, "zero_copy_mutation", 10)
 
-    # If bug present at least one node has metadata with incorrect ref_count values
-    # But it may be any node depends on mutation execution order
+    # If bug present at least one node has metadata with incorrect ref_count values.
+    # But it may be any node depends on mutation execution order.
+    # We can try to find one, but this required knowledge about internal metadata structure.
+    # It can be change in future, so we do not find this node here.
+    # And with the bug test may be success sometimes.
     nodeX = node1
     nodeY = node2
-
-    assert node1.count_metadata_furcation_refs('s31') == 0
-    assert node2.count_metadata_furcation_refs('s31') == 0
-
-    if node2.count_metadata_furcation_refs('s31'):
-        nodeX = node2
-        nodeY = node1
 
     objectsY = nodeY.get_table_objects("zero_copy_mutation")
     check_objects_exisis(cluster, objectsY)

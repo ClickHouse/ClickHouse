@@ -4090,37 +4090,6 @@ class ClickHouseInstance:
                 objects = objects + self.get_s3_data_objects(path)
         return objects
 
-    def count_metadata_furcation_refs(self, disk, path=None):
-        if not path:
-            path = f"/var/lib/clickhouse/disks/{disk}/store"
-        command = [
-            "grep",
-            "-A",
-            "1",
-            "r00000000000000000000",
-            "-R",
-            path
-        ]
-        lines = self.exec_in_container(command).split("\n")
-        prev_line = ""
-        objects = {}
-        pattern = re.compile(".*:\d+\s+(\S+)")
-        for line in lines:
-            if line.endswith('-0'):
-                res = pattern.match(prev_line)
-                if res:
-                    object = res.group(1)
-                    if object in objects:
-                        objects[object] += 1
-                    else:
-                        objects[object] = 1
-            prev_line = line
-        count = 0
-        for object in objects:
-            if objects[object] > 1:
-                count += 1
-        return count
-
 
 class ClickHouseKiller(object):
     def __init__(self, clickhouse_node):
