@@ -337,7 +337,7 @@ public:
 
         Mode mode;
 
-        /// For Collapsing and VersionedCollapsing mode.
+        /// For Collapsing, Replacing and VersionedCollapsing mode. Can be empty for Replacing.
         String sign_column;
 
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
