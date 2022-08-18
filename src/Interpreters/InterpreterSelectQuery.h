@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <Access/EnabledRowPolicies.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -23,6 +24,7 @@ class Logger;
 
 namespace DB
 {
+
 class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
@@ -33,6 +35,9 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
+struct RowPolicy;
+using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.

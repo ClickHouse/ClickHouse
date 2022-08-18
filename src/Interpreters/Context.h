@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Access/EnabledRowPolicies.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
@@ -46,6 +45,7 @@ struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct EnabledRolesInfo;
 class EnabledRowPolicies;
+struct RowPolicyFilter;
 class EnabledQuota;
 struct QuotaUsage;
 class AccessFlags;
