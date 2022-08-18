@@ -36,6 +36,12 @@ public:
 
     String getFileName() const override { return path; }
 
+    void setReadUntilPosition(size_t position) override;
+
+    Range getRemainingReadRange() const override;
+
+    bool supportsRightBoundedReads() const override { return true; }
+
 private:
 
     void initialize();
