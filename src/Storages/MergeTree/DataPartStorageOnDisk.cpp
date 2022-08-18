@@ -208,6 +208,8 @@ void DataPartStorageOnDisk::remove(
     const NameSet & names_not_to_remove,
     const MergeTreeDataPartChecksums & checksums,
     std::list<ProjectionChecksums> projections,
+    bool is_temp,
+    MergeTreeDataPartState state,
     Poco::Logger * log) const
 {
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
@@ -276,7 +278,7 @@ void DataPartStorageOnDisk::remove(
 
         clearDirectory(
             fs::path(to) / proj_dir_name,
-            can_remove_shared_data, names_not_to_remove, projection.checksums, {}, log, true);
+            can_remove_shared_data, names_not_to_remove, projection.checksums, {}, is_temp, state, log, true);
     }
 
     /// It is possible that we are removing the part which have a written but not loaded projection.
@@ -303,7 +305,7 @@ void DataPartStorageOnDisk::remove(
 
                     clearDirectory(
                         fs::path(to) / name,
-                        can_remove_shared_data, names_not_to_remove, tmp_checksums, {}, log, true);
+                        can_remove_shared_data, names_not_to_remove, tmp_checksums, {}, is_temp, state, log, true);
                 }
                 catch (...)
                 {
@@ -313,7 +315,7 @@ void DataPartStorageOnDisk::remove(
         }
     }
 
-    clearDirectory(to, can_remove_shared_data, names_not_to_remove, checksums, projection_directories, log, false);
+    clearDirectory(to, can_remove_shared_data, names_not_to_remove, checksums, projection_directories, is_temp, state, log, false);
 }
 
 void DataPartStorageOnDisk::clearDirectory(
@@ -322,24 +324,22 @@ void DataPartStorageOnDisk::clearDirectory(
     const NameSet & names_not_to_remove,
     const MergeTreeDataPartChecksums & checksums,
     const std::unordered_set<String> & skip_directories,
+    bool is_temp,
+    MergeTreeDataPartState state,
     Poco::Logger * log,
     bool is_projection) const
 {
     auto disk = volume->getDisk();
 
-    if (checksums.empty())
+    /// It does not make sense to try fast path for incomplete temporary parts, because some files are probably absent.
+    /// Sometimes we add something to checksums.files before actually writing checksums and columns on disk.
+    /// Also sometimes we write checksums.txt and columns.txt in arbitrary order, so this check becomes complex...
+    bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
+    bool incomplete_temporary_part = is_temporary_part && (!disk->exists(fs::path(dir) / "checksums.txt") || !disk->exists(fs::path(dir) / "columns.txt"));
+    if (checksums.empty() || incomplete_temporary_part)
     {
-        if (is_projection)
-        {
-            LOG_ERROR(
-                log,
-                "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
-                fullPath(disk, dir));
-        }
-
         /// If the part is not completely written, we cannot use fast path by listing files.
         disk->removeSharedRecursive(fs::path(dir) / "", !can_remove_shared_data, names_not_to_remove);
-
         return;
     }
 

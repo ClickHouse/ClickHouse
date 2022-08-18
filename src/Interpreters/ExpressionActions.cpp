@@ -47,8 +47,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-ExpressionActions::~ExpressionActions() = default;
-
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
