@@ -78,7 +78,6 @@ private:
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat;
-    Int64 last_logged_rss_drift = 0;
 #endif
 
 #if defined(OS_LINUX)

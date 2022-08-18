@@ -14,7 +14,6 @@ from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
     REPORTS_PATH,
-    S3_URL,
     TEMP_PATH,
 )
 from report import create_build_html_report
@@ -245,7 +244,7 @@ def main():
         logging.error("No success builds, failing check")
         sys.exit(1)
 
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
 
     branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"

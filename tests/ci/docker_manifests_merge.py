@@ -11,7 +11,7 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import post_commit_status
-from env_helper import RUNNER_TEMP, S3_URL
+from env_helper import RUNNER_TEMP
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from s3_helper import S3Helper
@@ -203,7 +203,7 @@ def main():
         json.dump(changed_images, ci)
 
     pr_info = PRInfo()
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
