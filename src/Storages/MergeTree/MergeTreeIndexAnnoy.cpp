@@ -145,8 +145,8 @@ void MergeTreeIndexAggregatorAnnoy::update(const Block & block, size_t * pos, si
         size_t num_rows = column_array->size();
 
         /// All sizes are the same
-        size_t size = offsets[1] - offsets[0];
-        for (size_t i = 0; i < num_rows - 1; ++ i)
+        size_t size = offsets[0];
+        for (size_t i = 0; i < num_rows - 1; ++i)
         {
             if (offsets[i + 1] - offsets[i] != size)
             {
