@@ -58,9 +58,13 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument of function {} must be a string (passed: {})", getName(), arguments[1]->getName());
 
-        if (allow_custom_error_code_argument && number_of_arguments > 2 && !isNumber(arguments[2]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Third argument of function {} must be a number (passed: {})", getName(), arguments[2]->getName());
+        if (allow_custom_error_code_argument && number_of_arguments > 2)
+        {
+            WhichDataType which(arguments[2]);
+            if (!(which.isInt8() || which.isInt16() || which.isInt32()))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Third argument of function {} must be Int8, Int16 or Int32 (passed: {})", getName(), arguments[2]->getName());
+        }
 
 
         return std::make_shared<DataTypeUInt8>();
@@ -95,7 +99,7 @@ public:
             if (!isColumnConst(*(arguments[2].column)))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument for function {} must be constant number", getName());
 
-            custom_error_code = arguments[2].column->getUInt(0);
+            custom_error_code = arguments[2].column->getInt(0);
         }
 
         auto first_argument_column = arguments.front().column;
