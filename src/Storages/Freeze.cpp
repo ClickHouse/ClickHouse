@@ -23,7 +23,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_PARTITION_VALUE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 void FreezeMetaData::fill(const StorageReplicatedMergeTree & storage)
@@ -43,7 +43,7 @@ void FreezeMetaData::save(DiskPtr data_disk, const String & path) const
 
     writeIntText(version, buffer);
     buffer.write("\n", 1);
-    if (version == 1) 
+    if (version == 1)
     {
         /// is_replicated and is_remote are not used
         bool is_replicated = true;
@@ -80,7 +80,7 @@ bool FreezeMetaData::load(DiskPtr data_disk, const String & path)
         return false;
     }
     DB::assertChar('\n', buffer);
-    if (version == 1) 
+    if (version == 1)
     {
         /// is_replicated and is_remote are not used
         bool is_replicated;
@@ -121,7 +121,7 @@ Unfreezer::Unfreezer(ContextPtr context) : local_context(context), zookeeper()
 {
     const auto & config = local_context->getConfigRef();
     static constexpr auto config_key = "enable_system_unfreeze";
-    if (!config.getBool(config_key, false)) 
+    if (!config.getBool(config_key, false))
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting", config_key);
     }
