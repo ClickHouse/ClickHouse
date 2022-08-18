@@ -52,24 +52,26 @@ bool DatatypeDatetime::convertImpl(String &out,IParser::Pos &pos)
 
 bool DatatypeDynamic::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin, pos->end);
-    String array;
-    ++pos; //go pass "dynamic" string
-    while (pos->type != TokenType::ClosingRoundBracket)
-    {
-        if (pos->type != TokenType::OpeningSquareBracket && pos->type != TokenType::ClosingSquareBracket)
-        {
-            array += String(pos->begin, pos->end);
-        }
-        ++pos;
-    }
-    if (pos->type == TokenType::ClosingRoundBracket)
-        array += String(pos->begin, pos->end);
-    else
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
         return false;
 
-    out = "array" + array;
-    return true;
+    String array;
+    ++pos;
+    if (pos->type == TokenType::OpeningSquareBracket) 
+    {   
+        ++pos;
+        while (pos->type != TokenType::ClosingRoundBracket)
+        {
+            auto tmp_arg = getConvertedArgument(fn_name, pos);
+            array = array.empty() ? tmp_arg : array +", " + tmp_arg;
+            ++pos;
+        }
+        out = "array (" + array + ")";
+        return true;
+    }
+    else
+        return false; // should throw exception , later
 }
 
 bool DatatypeGuid::convertImpl(String &out,IParser::Pos &pos)
