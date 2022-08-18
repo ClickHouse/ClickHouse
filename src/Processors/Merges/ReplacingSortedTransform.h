@@ -13,7 +13,8 @@ class ReplacingSortedTransform final : public IMergingTransform<ReplacingSortedA
 public:
     ReplacingSortedTransform(
         const Block & header, size_t num_inputs,
-        SortDescription description_, const String & version_column,
+        SortDescription description_,
+         const String & sign_column, const String & version_column,
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
@@ -22,6 +23,7 @@ public:
             header,
             num_inputs,
             std::move(description_),
+            sign_column,
             version_column,
             max_block_size,
             out_row_sources_buf_,

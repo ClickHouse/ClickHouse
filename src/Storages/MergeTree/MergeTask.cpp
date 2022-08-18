@@ -64,8 +64,10 @@ static void extractMergingAndGatheringColumns(
         key_columns.emplace(merging_params.sign_column);
 
     /// Force version column for Replacing mode
-    if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    if (merging_params.mode == MergeTreeData::MergingParams::Replacing) {
+        key_columns.emplace(merging_params.sign_column);
         key_columns.emplace(merging_params.version_column);
+    }
 
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -887,7 +889,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
         case MergeTreeData::MergingParams::Replacing:
             merged_transform = std::make_shared<ReplacingSortedTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.version_column,
+                header, pipes.size(), sort_description, ctx->merging_params.sign_column, ctx->merging_params.version_column,
                 merge_block_size, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size);
             break;
 
