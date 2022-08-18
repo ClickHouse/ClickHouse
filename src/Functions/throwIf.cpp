@@ -28,17 +28,14 @@ namespace
 namespace ErrorCodeAlias = ErrorCodes;
 
 /// Throw an exception if the argument is non zero.
-class FunctionThrowIf : public IFunction, WithContext
+class FunctionThrowIf : public IFunction
 {
 public:
     static constexpr auto name = "throwIf";
 
-    static FunctionPtr create(ContextPtr context_)
-    {
-        return std::make_shared<FunctionThrowIf>(context_);
-    }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionThrowIf>(context); }
 
-    explicit FunctionThrowIf(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionThrowIf(ContextPtr context_) : allow_custom_error_code_argument(context_->getSettingsRef().allow_custom_error_code_in_throwif) {}
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -47,9 +44,6 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
-
-        const auto & settings = getContext()->getSettingsRef();
-        bool allow_custom_error_code_argument = settings.allow_custom_error_code_in_throwif;
 
         if (number_of_arguments < 1 || number_of_arguments > (allow_custom_error_code_argument ? 3 : 2))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -64,10 +58,9 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Second argument of function {} must be a string (passed: {})", getName(), arguments[1]->getName());
 
-        if (allow_custom_error_code_argument)
-            if (number_of_arguments > 2 && !isNumber(arguments[2]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Third argument of function {} must be a number (passed: {})", getName(), arguments[2]->getName());
+        if (allow_custom_error_code_argument && number_of_arguments > 2 && !isNumber(arguments[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Third argument of function {} must be a number (passed: {})", getName(), arguments[2]->getName());
 
 
         return std::make_shared<DataTypeUInt8>();
@@ -97,7 +90,7 @@ public:
         }
 
         std::optional<ErrorCodeAlias::ErrorCode> custom_error_code;
-        if (arguments.size() == 3)
+        if (allow_custom_error_code_argument && arguments.size() == 3)
         {
             if (!isColumnConst(*(arguments[2].column)))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument for function {} must be constant number", getName());
@@ -153,6 +146,8 @@ private:
 
         return nullptr;
     }
+
+    bool allow_custom_error_code_argument;
 };
 
 }
