@@ -1493,7 +1493,7 @@ def check_profile_event_for_query(instance, query, profile_event, amount):
     query = query.replace("'", "\\'")
     attempt = 0
     res = 0
-    while (attempt < 10):
+    while attempt < 10:
         res = int(
             instance.query(
                 f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by event_time desc limit 1"
@@ -1501,7 +1501,7 @@ def check_profile_event_for_query(instance, query, profile_event, amount):
         )
         if res == amount:
             break
-    assert(res == amount)
+    assert res == amount
 
 
 def check_cache_misses(instance, file, storage_name, started_cluster, bucket, amount=1):
@@ -1518,14 +1518,18 @@ def check_cache_invalidations(
     instance, file, storage_name, started_cluster, bucket, amount=1
 ):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(instance, query, "SchemaInferenceCacheInvalidations", amount)
+    check_profile_event_for_query(
+        instance, query, "SchemaInferenceCacheInvalidations", amount
+    )
 
 
 def check_cache_evictions(
     instance, file, storage_name, started_cluster, bucket, amount=1
 ):
     query = f"desc {storage_name}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file}')"
-    check_profile_event_for_query(instance, query, "SchemaInferenceCacheEvictions", amount)
+    check_profile_event_for_query(
+        instance, query, "SchemaInferenceCacheEvictions", amount
+    )
 
 
 def run_describe_query(instance, file, storage_name, started_cluster, bucket):
