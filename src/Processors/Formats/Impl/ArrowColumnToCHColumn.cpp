@@ -504,8 +504,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             DataTypePtr nested_type_hint;
             if (type_hint)
             {
-                auto nested_array_type = assert_cast<const DataTypeMap *>(type_hint.get())->getNestedType();
-                nested_type_hint = assert_cast<const DataTypeArray *>(nested_array_type.get())->getNestedType();
+                const auto * map_type_hint = typeid_cast<const DataTypeMap *>(type_hint.get());
+                if (map_type_hint)
+                    nested_type_hint = assert_cast<const DataTypeArray *>(map_type_hint->getNestedType().get())->getNestedType();
             }
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_infos, allow_null_type, skip_columns_with_unsupported_types, skipped, nested_type_hint);
@@ -522,7 +523,13 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         }
         case arrow::Type::LIST:
         {
-            DataTypePtr nested_type_hint = type_hint ? assert_cast<const DataTypeArray *>(type_hint.get())->getNestedType() : nullptr;
+            DataTypePtr nested_type_hint;
+            if (type_hint)
+            {
+                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(type_hint.get());
+                if (array_type_hint)
+                    nested_type_hint = array_type_hint->getNestedType();
+            }
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_infos, allow_null_type, skip_columns_with_unsupported_types, skipped, nested_type_hint);
             if (skipped)
@@ -547,7 +554,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             Columns tuple_elements;
             DataTypes tuple_types;
             std::vector<String> tuple_names;
-            const auto * tuple_type_hint = type_hint ? assert_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
+            const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
 
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
             {
