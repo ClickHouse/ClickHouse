@@ -1,5 +1,38 @@
 ## KQL implemented features
 
+# August XX, 2022
+
+## Aggregate Functions
+- [stdev](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdev-aggfunction)  
+   `Customers | summarize t = stdev(Age) by FirstName`  
+
+- [stdevif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/stdevif-aggfunction)  
+   `Customers | summarize t = stdevif(Age, Age < 10) by FirstName`  
+
+- [binary_all_and](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-and-aggfunction)  
+   `Customers | summarize t = binary_all_and(Age) by FirstName`  
+
+- [binary_all_or](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-or-aggfunction)  
+   `Customers | summarize t = binary_all_or(Age) by FirstName`  
+
+- [binary_all_xor](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-all-xor-aggfunction)  
+   `Customers | summarize t = binary_all_xor(Age) by FirstName`  
+
+- [percentiles](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   `Customers | summarize percentiles(Age, 30, 40, 50, 60, 70) by FirstName`  
+
+- [percentiles_array](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   **do not support `range()` now**  
+   `Customers | summarize t = percentiles_array(Age, 10, 20, 30, 50) by FirstName`  
+   `Customers | summarize t = percentiles_array(Age, dynamic([10, 20, 30, 50])) by FirstName`
+
+- [percentilesw](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   `DataTable | summarize t = percentilesw(Bucket, Frequency, 50, 75, 99.9)`  
+
+- [percentilesw_array](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   **do not support `range()` now**  
+   `DataTable| summarize t = percentilesw_array(Bucket, Frequency, dynamic([10, 50, 30]))`  
+
 # August 15, 2022
 
 ## DateTpye
