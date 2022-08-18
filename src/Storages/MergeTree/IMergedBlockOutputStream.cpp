@@ -84,6 +84,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         if (checksums.files.contains(*itr))
         {
             checksums.files.erase(*itr);
+            ++itr;
         }
         else /// If we have no file in checksums it doesn't exist on disk
         {
