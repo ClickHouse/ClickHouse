@@ -14,6 +14,7 @@
 #include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -221,8 +222,8 @@ bool Percentiles::convertImpl(String &out,IParser::Pos &pos)
     
     ++pos;
     String column_name = getConvertedArgument(fn_name,pos);
-    column_name.pop_back();
-    String expr = "";
+    trim(column_name);
+    String expr;
     String value;
     String value_in_column;
     while(pos->type != TokenType::ClosingRoundBracket)
@@ -259,7 +260,7 @@ bool PercentilesArray::convertImpl(String &out,IParser::Pos &pos)
 
     ++pos;
     String column_name = getConvertedArgument(fn_name,pos);
-    column_name.pop_back();
+    trim(column_name);
     String expr = "quantiles(";
     String value;
     while(pos->type != TokenType::ClosingRoundBracket)
@@ -308,7 +309,7 @@ bool Percentilesw::convertImpl(String &out,IParser::Pos &pos)
     String frequency_column = getConvertedArgument(fn_name,pos);
     frequency_column.pop_back();
 
-    String expr = "";
+    String expr;
     String value;
     String value_in_column;
 
