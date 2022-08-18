@@ -37,7 +37,6 @@ private:
     std::string log_name;
     Poco::Logger * log;
 
-    bool first_try{true};
     std::atomic<bool> first_try_done{false};
 
     std::atomic<bool> shutdown_called{false};
@@ -69,7 +68,7 @@ private:
             {
                 if (e.code == Coordination::Error::ZCONNECTIONLOSS || e.code == Coordination::Error::ZSESSIONEXPIRED)
                 {
-                    if (first_try)
+                    if (!first_try_done)
                         resetCurrentZooKeeper();
 
                     LOG_TRACE(log, "Lost connection to ZooKeeper, will try to reconnect");
