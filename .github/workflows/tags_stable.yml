@@ -17,7 +17,7 @@ on: # yamllint disable-line rule:truthy
     inputs:
       tag:
         description: 'Test tag'
-        required: true 
+        required: true
         type: string
 
 
