@@ -6,7 +6,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 namespace DB
 {
