@@ -2668,7 +2668,9 @@ DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock *
         constexpr auto config_name = "storage_configuration.disks";
         const auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, shared_from_this());
+        auto disk_selector = std::make_shared<DiskSelector>();
+        disk_selector->initialize(config, config_name, shared_from_this());
+        shared->merge_tree_disk_selector = disk_selector;
     }
     return shared->merge_tree_disk_selector;
 }
@@ -3452,6 +3454,7 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_max_wait_sec = settings.filesystem_cache_max_wait_sec;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
+    res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
     res.max_query_cache_size = settings.max_query_cache_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
@@ -3481,6 +3484,7 @@ WriteSettings Context::getWriteSettings() const
     WriteSettings res;
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
+    res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
 
     res.remote_throttler = getRemoteWriteThrottler();
 
