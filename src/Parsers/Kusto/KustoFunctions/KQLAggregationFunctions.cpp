@@ -40,23 +40,17 @@ bool AvgIf::convertImpl(String &out,IParser::Pos &pos)
 
 bool BinaryAllAnd::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out,pos,"groupBitAnd");
 }
 
 bool BinaryAllOr::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out,pos,"groupBitOr");
 }
 
 bool BinaryAllXor::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    return directMapping(out,pos,"groupBitXor");
 }
 
 bool BuildSchema::convertImpl(String &out,IParser::Pos &pos)
@@ -220,44 +214,205 @@ bool MinIf::convertImpl(String &out,IParser::Pos &pos)
 
 bool Percentiles::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    
+    ++pos;
+    String column_name = getConvertedArgument(fn_name,pos);
+    column_name.pop_back();
+    String expr = "";
+    String value;
+    String value_in_column;
+    while(pos->type != TokenType::ClosingRoundBracket)
+    {
+        if(pos->type != TokenType::Comma){
+            value = String(pos->begin, pos->end);
+            value_in_column = "";
+
+            for(size_t i = 0; i < value.size(); i++)
+            {
+                if(value[i] == '.')
+                    value_in_column += '_';
+                else
+                    value_in_column += value[i];
+            }
+            expr = expr + "quantile( " + value + "/100)(" + column_name + ") AS percentile_" + column_name + "_" + value_in_column;
+            ++pos;
+            if(pos->type != TokenType::ClosingRoundBracket)
+                expr += ", ";
+        }
+        else
+            ++pos;
+    }
+    out = expr;
+    return true;
 }
 
 bool PercentilesArray::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String column_name = getConvertedArgument(fn_name,pos);
+    column_name.pop_back();
+    String expr = "quantiles(";
+    String value;
+    while(pos->type != TokenType::ClosingRoundBracket)
+    {
+        if(pos->type != TokenType::Comma && String(pos->begin, pos->end) != "dynamic" 
+            && pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::OpeningSquareBracket
+            && pos->type != TokenType::ClosingSquareBracket){
+            
+            value = String(pos->begin, pos->end);
+            expr = expr + value + "/100";
+
+            if(pos->type != TokenType::Comma && pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::OpeningSquareBracket
+            && pos->type != TokenType::ClosingSquareBracket)
+                expr += ", ";
+            ++pos;
+        }
+        else
+        {
+            ++pos;
+        }
+
+    }
+    ++pos;
+    if(pos->type != TokenType::ClosingRoundBracket)
+        --pos;
+
+    expr.pop_back();
+    expr.pop_back();
+    expr = expr + ")(" + column_name + ")";
+    out = expr;
+    return true;
 }
 
 bool Percentilesw::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String bucket_column = getConvertedArgument(fn_name,pos);
+    bucket_column.pop_back();
+
+    ++pos;
+    String frequency_column = getConvertedArgument(fn_name,pos);
+    frequency_column.pop_back();
+
+    String expr = "";
+    String value;
+    String value_in_column;
+
+    while(pos->type != TokenType::ClosingRoundBracket)
+    {
+        if(pos->type != TokenType::Comma){
+            value = String(pos->begin, pos->end);
+            value_in_column = "";
+
+            for(size_t i = 0; i < value.size(); i++)
+            {
+                if(value[i] == '.')
+                    value_in_column += '_';
+                else
+                    value_in_column += value[i];
+            }
+
+            expr = expr + "quantileExactWeighted( " + value + "/100)(" + bucket_column + ","+frequency_column + ") AS percentile_" + bucket_column + "_" + value_in_column;
+            ++pos;
+            if(pos->type != TokenType::ClosingRoundBracket)
+                expr += ", ";
+        }
+        else
+            ++pos;
+    }
+    out = expr;
+    return true;
 }
 
 bool PercentileswArray::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String bucket_column = getConvertedArgument(fn_name,pos);
+    bucket_column.pop_back();
+
+    ++pos;
+    String frequency_column = getConvertedArgument(fn_name,pos);
+    frequency_column.pop_back();
+
+    String expr = "quantilesExactWeighted(";
+    String value;
+    while(pos->type != TokenType::ClosingRoundBracket)
+    {
+        if(pos->type != TokenType::Comma && String(pos->begin, pos->end) != "dynamic" 
+            && pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::OpeningSquareBracket
+            && pos->type != TokenType::ClosingSquareBracket){
+            
+            value = String(pos->begin, pos->end);
+            expr = expr + value + "/100";
+
+            if(pos->type != TokenType::Comma && pos->type != TokenType::OpeningRoundBracket && pos->type != TokenType::OpeningSquareBracket
+            && pos->type != TokenType::ClosingSquareBracket)
+                expr += ", ";
+            ++pos;
+        }
+        else
+        {
+            ++pos;
+        }
+
+    }
+    ++pos;
+    if(pos->type != TokenType::ClosingRoundBracket)
+        --pos;
+
+    expr.pop_back();
+    expr.pop_back();
+    expr = expr + ")("  + bucket_column + ","+frequency_column +  ")";
+    out = expr;
+    return true;
 }
 
 bool Stdev::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    ++pos;
+    const auto expr = getConvertedArgument(fn_name,pos);
+    out = "sqrt(varSamp(" + expr + "))";
+    return true;
 }
 
 bool StdevIf::convertImpl(String &out,IParser::Pos &pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    ++pos;
+    const auto expr = getConvertedArgument(fn_name,pos);
+    if (pos->type != TokenType::Comma)
+        return false;
+
+    ++pos;
+    const auto predicate = getConvertedArgument(fn_name,pos);
+    out = "sqrt(varSampIf(" + expr + ", " + predicate + "))";
+    return true;
 }
 
 bool Sum::convertImpl(String &out,IParser::Pos &pos)
