@@ -3095,14 +3095,14 @@ Exception: Total regexp lengths too large.
 
 ## enable_positional_arguments {#enable-positional-arguments}
 
-Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements. When you want to use column numbers instead of column names in these clauses, set `enable_positional_arguments = 1`.
+Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
 
 Possible values:
 
 -   0 — Positional arguments aren't supported.
 -   1 — Positional arguments are supported: column numbers can use instead of column names.
 
-Default value: `0`.
+Default value: `1`.
 
 **Example**
 
@@ -3112,8 +3112,6 @@ Query:
 CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
 
 INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SET enable_positional_arguments = 1;
 
 SELECT * FROM positional_arguments ORDER BY 2,3;
 ```
@@ -3469,6 +3467,24 @@ Default value: `25'000`.
 ## column_names_for_schema_inference {#column_names_for_schema_inference}
 
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
+
+## schema_inference_hints {#schema_inference_hints}
+
+The list of column names and types to use as hints in schema inference for formats without schema.
+
+Example:
+
+Query:
+```sql
+desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings schema_inference_hints='x UInt8, z IPv4';
+```
+
+Result:
+```sql
+x	UInt8					
+y	Nullable(String)					
+z	IPv4
+```
 
 ## date_time_input_format {#date_time_input_format}
 

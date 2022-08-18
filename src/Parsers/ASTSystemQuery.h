@@ -94,6 +94,7 @@ public:
     UInt64 seconds{};
 
     String filesystem_cache_path;
+
     String backup_name;
 
     String getID(char) const override { return "SYSTEM query"; }
