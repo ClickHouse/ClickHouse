@@ -98,7 +98,7 @@ class Packages:
 
 class S3:
     template = (
-        f"{S3_DOWNLOAD}"
+        f"{S3_DOWNLOAD}/"
         # "clickhouse-builds/"
         f"{S3_BUILDS_BUCKET}/"
         # "33333/" or "21.11/" from --release, if pull request is omitted
