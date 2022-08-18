@@ -8,7 +8,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionViewIfPermitted.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include "registerTableFunctions.h"
 

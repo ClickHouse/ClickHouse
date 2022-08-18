@@ -15,7 +15,7 @@ from env_helper import (
     IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
-    S3_URL,
+    S3_DOWNLOAD,
     TEMP_PATH,
 )
 from s3_helper import S3Helper
@@ -143,9 +143,9 @@ def check_for_success_run(
     for url in build_results:
         url_escaped = url.replace("+", "%2B").replace(" ", "%20")
         if BUILD_LOG_NAME in url:
-            log_url = f"{S3_URL}/{S3_BUILDS_BUCKET}/{url_escaped}"
+            log_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}"
         else:
-            build_urls.append(f"{S3_URL}/{S3_BUILDS_BUCKET}/{url_escaped}")
+            build_urls.append(f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}")
     if not log_url:
         # log is uploaded the last, so if there's no log we need to rerun the build
         return
@@ -249,7 +249,7 @@ def main():
 
     logging.info("Repo copy path %s", REPO_COPY)
 
-    s3_helper = S3Helper(S3_URL)
+    s3_helper = S3Helper()
 
     version = get_version_from_repo(git=Git(True))
     release_or_pr, performance_pr = get_release_or_pr(pr_info, version)

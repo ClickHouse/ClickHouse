@@ -854,6 +854,7 @@ static NameSet getAllSubexpressionNames(const ExpressionActions & key_expr)
 
 KeyCondition::KeyCondition(
     const ASTPtr & query,
+    const ASTs & additional_filter_asts,
     TreeRewriterResultPtr syntax_analyzer_result,
     PreparedSetsPtr prepared_sets_,
     ContextPtr context,
@@ -883,13 +884,35 @@ KeyCondition::KeyCondition(
         array_joined_columns.insert(name);
 
     const ASTSelectQuery & select = query->as<ASTSelectQuery &>();
-    if (select.where() || select.prewhere())
+
+    ASTs filters;
+    if (select.where())
+        filters.push_back(select.where());
+
+    if (select.prewhere())
+        filters.push_back(select.prewhere());
+
+    for (const auto & filter_ast : additional_filter_asts)
+        filters.push_back(filter_ast);
+
+    if (!filters.empty())
     {
         ASTPtr filter_query;
-        if (select.where() && select.prewhere())
-            filter_query = makeASTFunction("and", select.where(), select.prewhere());
+        if (filters.size() == 1)
+        {
+            filter_query = filters.front();
+        }
         else
-            filter_query = select.where() ? select.where() : select.prewhere();
+        {
+            auto function = std::make_shared<ASTFunction>();
+
+            function->name = "and";
+            function->arguments = std::make_shared<ASTExpressionList>();
+            function->children.push_back(function->arguments);
+            function->arguments->children = std::move(filters);
+
+            filter_query = function;
+        }
 
         /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
           * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
