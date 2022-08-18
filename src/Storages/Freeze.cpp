@@ -6,7 +6,7 @@
 #include <Common/logger_useful.h>
 
 /**
- * When ClickHouse has frozen data on remote storage it requred 'smart' data removing during UNFREEZE.
+ * When ClickHouse has frozen data on remote storage it required 'smart' data removing during UNFREEZE.
  * For remote storage actually frozen not remote data but local metadata with referrers on remote data.
  * So remote data can be referred from working and frozen data sets (or two frozen) at same time.
  * In this case during UNFREEZE ClickHouse should remove only local metadata and keep remote data.
@@ -20,10 +20,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int INVALID_PARTITION_VALUE;
-}
 
 void FreezeMetaData::fill(const StorageReplicatedMergeTree & storage)
 {
@@ -112,6 +108,17 @@ void FreezeMetaData::clean(DiskPtr data_disk, const String & path)
 String FreezeMetaData::getFileName(const String & path)
 {
     return fs::path(path) / "frozen_metadata.txt";
+}
+
+Unfreezer::Unfreezer(ContextPtr context) : local_context(context), zookeeper()
+{
+    const auto & config = local_context->getConfigRef();
+    static constexpr auto config_key = "enable_system_unfreeze";
+    if (!config.getBool(config_key, false)) {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting", config_key);
+    }
+    if (local_context->hasZooKeeper())
+        zookeeper = local_context->getZooKeeper();
 }
 
 BlockIO Unfreezer::unfreeze(const String & backup_name)

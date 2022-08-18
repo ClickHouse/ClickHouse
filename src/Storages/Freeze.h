@@ -36,14 +36,7 @@ public:
 class Unfreezer
 {
 public:
-    Unfreezer(ContextPtr context) : local_context(context), zookeeper() { 
-        const auto & config = local_context->getConfigRef();
-        static constexpr auto config_key = "enable_system_unfreeze";
-        if (!config.getBool(config_key, false)) {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting", config_key);
-        }
-        zookeeper = this->local_context->getZooKeeper(); 
-    }
+    Unfreezer(ContextPtr context);
     PartitionCommandsResultInfo unfreezePartitionsFromTableDirectory(MergeTreeData::MatcherFn matcher, const String & backup_name, const Disks & disks, const fs::path & table_directory);
     BlockIO unfreeze(const String & backup_name);
 private:
@@ -51,7 +44,7 @@ private:
     zkutil::ZooKeeperPtr zookeeper;
     Poco::Logger * log = &Poco::Logger::get("Unfreezer");
     static constexpr std::string_view backup_directory_prefix = "shadow";
-    static bool removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context,  zkutil::ZooKeeperPtr zookeeper);
+    static bool removeFreezedPart(DiskPtr disk, const String & path, const String & part_name, ContextPtr local_context, zkutil::ZooKeeperPtr zookeeper);
 };
 
 }
