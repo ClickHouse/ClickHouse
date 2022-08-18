@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Common/FileCache.h>
+#include <Common/logger_useful.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <Common/logger_useful.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Common/FileSegment.h>
 
@@ -17,20 +18,25 @@ extern const Metric FilesystemCacheReadBuffers;
 namespace DB
 {
 
-class CachedReadBufferFromRemoteFS : public SeekableReadBuffer
+class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
-    using RemoteFSFileReaderCreator = std::function<FileSegment::RemoteFileReaderPtr()>;
+    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
+    using ImplementationBufferCreator = std::function<ImplementationBufferPtr()>;
 
-    CachedReadBufferFromRemoteFS(
-        const String & remote_fs_object_path_,
+    CachedOnDiskReadBufferFromFile(
+        const String & source_file_path_,
+        const FileCache::Key & cache_key_,
         FileCachePtr cache_,
-        RemoteFSFileReaderCreator remote_file_reader_creator_,
+        ImplementationBufferCreator implementation_buffer_creator_,
         const ReadSettings & settings_,
         const String & query_id_,
-        size_t read_until_position_);
+        size_t file_size_,
+        bool allow_seeks_after_first_read_,
+        bool use_external_buffer_,
+        std::optional<size_t> read_until_position_ = std::nullopt);
 
-    ~CachedReadBufferFromRemoteFS() override;
+    ~CachedOnDiskReadBufferFromFile() override;
 
     bool nextImpl() override;
 
@@ -44,6 +50,10 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
+    void setReadUntilEnd() override;
+
+    String getFileName() const override { return source_file_path; }
+
     enum class ReadType
     {
         CACHED,
@@ -54,11 +64,11 @@ public:
 private:
     void initialize(size_t offset, size_t size);
 
-    SeekableReadBufferPtr getImplementationBuffer(FileSegmentPtr & file_segment);
+    ImplementationBufferPtr getImplementationBuffer(FileSegmentPtr & file_segment);
 
-    SeekableReadBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
+    ImplementationBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
 
-    SeekableReadBufferPtr getCacheReadBuffer(size_t offset) const;
+    ImplementationBufferPtr getCacheReadBuffer(size_t offset) const;
 
     std::optional<size_t> getLastNonDownloadedOffset() const;
 
@@ -70,7 +80,7 @@ private:
 
     void assertCorrectness() const;
 
-    SeekableReadBufferPtr getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_);
+    std::shared_ptr<ReadBufferFromFileBase> getRemoteFSReadBuffer(FileSegmentPtr & file_segment, ReadType read_type_);
 
     size_t getTotalSizeToRead();
 
@@ -82,7 +92,8 @@ private:
 
     Poco::Logger * log;
     FileCache::Key cache_key;
-    String remote_fs_object_path;
+    String source_file_path;
+
     FileCachePtr cache;
     ReadSettings settings;
 
@@ -90,7 +101,7 @@ private:
     size_t file_offset_of_buffer_end = 0;
     size_t bytes_to_predownload = 0;
 
-    RemoteFSFileReaderCreator remote_file_reader_creator;
+    ImplementationBufferCreator implementation_buffer_creator;
 
     /// Remote read buffer, which can only be owned by current buffer.
     FileSegment::RemoteFileReaderPtr remote_file_reader;
@@ -98,7 +109,7 @@ private:
     std::optional<FileSegmentsHolder> file_segments_holder;
     FileSegments::iterator current_file_segment_it;
 
-    SeekableReadBufferPtr implementation_buffer;
+    ImplementationBufferPtr implementation_buffer;
     bool initialized = false;
 
     ReadType read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
@@ -125,6 +136,8 @@ private:
     bool enable_logging = false;
     String current_buffer_id;
 
+    bool allow_seeks_after_first_read;
+    [[maybe_unused]]bool use_external_buffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
     ProfileEvents::Counters current_file_segment_counters;
 
