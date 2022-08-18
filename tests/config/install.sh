@@ -105,7 +105,17 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 fi
 
+ARM="aarch64"
+OS="$(uname -m)"
 if [[ -n "$EXPORT_S3_STORAGE_POLICIES" ]]; then
+    echo "$OS"
+    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]] || [[ "$OS" == "$ARM" ]]; then
+        echo "Azure configuration will not be added"
+    else
+        echo "Adding azure configuration"
+        ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
+    fi
+
     ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
 fi
