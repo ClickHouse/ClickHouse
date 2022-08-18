@@ -1,13 +1,12 @@
-DROP TABLE IF EXISTS test;
-CREATE TABLE test (uid String, version UInt32, is_deleted UInt8) ENGINE = ReplacingMergeTree(version, is_deleted) Order by (uid);
+CREATE TABLE test (uid String, sign Int8, version UInt32) ENGINE = ReplacingMergeTree(sign, version) Order by (uid);
 
-INSERT INTO test (*) VALUES ('d1', 1, 0), ('d2', 1, 0), ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 0), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0);
+INSERT INTO test (*) VALUES ('d1', 1, 1), ('d2', 1, 1), ('d6', 1, 1), ('d4', 1, 1), ('d6', -1, 2), ('d3', 1, 1), ('d1', -1, 2), ('d5', 1, 1), ('d4', -1, 2), ('d1', 1, 3), ('d1', -1, 4), ('d4', 1, 3), ('d1', 1, 5);
 select * from test FINAL;
 
 -- Test inserting Backup
-INSERT INTO test (*) VALUES ('d6', 1, 0), ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1);
+INSERT INTO test (*) VALUES ('d6', 1, 1), ('d4', 1, 1), ('d6', -1, 2), ('d3', 1, 1), ('d1', -1, 2), ('d5', 1, 1), ('d4', -1, 2);
 select * from test FINAL;
 
 -- test insert second batch with overlaping data
-INSERT INTO test (*) VALUES ('d4', 1, 0), ('d6', 2, 1), ('d3', 1, 0), ('d1', 2, 1), ('d5', 1, 0), ('d4', 2, 1), ('d1', 3, 1), ('d1', 4, 1), ('d4', 3, 0), ('d1', 5, 0), ('d2', 2, 1), ('d2', 3, 0), ('d3', 2, 1), ('d3', 3, 0);
+INSERT INTO test (*) VALUES ('d4', 1, 1), ('d6', -1, 2), ('d3', 1, 1), ('d1', -1, 2), ('d5', 1, 1), ('d4', -1, 2), ('d1', 1, 3), ('d1', -1, 4), ('d4', 1, 3), ('d1', 1, 5), ('d2', -1, 2), ('d2', 1, 3), ('d3', -1, 2), ('d3', 1, 3);
 select * from test FINAL;
