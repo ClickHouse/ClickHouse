@@ -208,6 +208,8 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         allocation_traced = true;
     }
 
+    Int64 limit_to_check = current_hard_limit;
+
 #if USE_JEMALLOC
     if (level == VariableContext::Global)
     {
@@ -217,17 +219,19 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
         /// This is needed to avoid OOM, because some allocations are directly done with mmap.
         Int64 current_free_memory_in_allocator_arenas = free_memory_in_allocator_arenas.load(std::memory_order_relaxed);
 
-        if (current_free_memory_in_allocator_arenas && current_hard_limit && current_free_memory_in_allocator_arenas + will_be > current_hard_limit)
+        if (current_free_memory_in_allocator_arenas > 0 && current_hard_limit && current_free_memory_in_allocator_arenas + will_be > current_hard_limit)
         {
-            if (free_memory_in_allocator_arenas.exchange(0))
+            if (free_memory_in_allocator_arenas.exchange(-current_free_memory_in_allocator_arenas))
             {
                 mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
             }
         }
+
+        limit_to_check += abs(current_free_memory_in_allocator_arenas);
     }
 #endif
 
-    if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
+    if (unlikely(current_hard_limit && will_be > limit_to_check) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
         OvercommitResult overcommit_result = OvercommitResult::NONE;
         if (auto * overcommit_tracker_ptr = overcommit_tracker.load(std::memory_order_relaxed); overcommit_tracker_ptr != nullptr && query_tracker != nullptr)
@@ -411,7 +415,7 @@ void MemoryTracker::reset()
 
 void MemoryTracker::setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_)
 {
-    Int64 new_amount = rss_ - free_memory_in_allocator_arenas_;
+    Int64 new_amount = rss_; // - free_memory_in_allocator_arenas_;
     total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
     free_memory_in_allocator_arenas.store(free_memory_in_allocator_arenas_, std::memory_order_relaxed);
 
