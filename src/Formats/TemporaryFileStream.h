@@ -14,8 +14,8 @@ struct TemporaryFileStream
 {
     struct Stat
     {
-        size_t uncompressed_bytes = 0;
         size_t compressed_bytes = 0;
+        size_t uncompressed_bytes = 0;
     };
 
     ReadBufferFromFile file_in;

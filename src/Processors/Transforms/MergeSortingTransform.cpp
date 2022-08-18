@@ -63,7 +63,7 @@ public:
             compressed_buf_out.next();
             file_buf_out.next();
 
-            updateStat();
+            auto stat = updateWriteStat();
 
             LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
                 path, ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
@@ -90,16 +90,22 @@ public:
     }
 
 private:
-    void updateStat()
+    struct Stat
     {
-        stat.compressed_size = file_buf_out.count();
-        stat.uncompressed_size = compressed_buf_out.count();
+        size_t compressed_size = 0;
+        size_t uncompressed_size = 0;
+    };
 
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
+    Stat updateWriteStat()
+    {
+        Stat res{compressed_buf_out.getCompressedBytes(), compressed_buf_out.getUncompressedBytes()};
 
-        ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, stat.compressed_size);
-        ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, stat.uncompressed_size);
+        ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, res.compressed_size);
+        ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, res.uncompressed_size);
+
+        ProfileEvents::increment(ProfileEvents::ExternalSortCompressedBytes, res.compressed_size);
+        ProfileEvents::increment(ProfileEvents::ExternalSortUncompressedBytes, res.uncompressed_size);
+        return res;
     }
 
     Poco::Logger * log;
@@ -111,12 +117,6 @@ private:
     std::unique_ptr<ReadBufferFromFile> file_in;
     std::unique_ptr<CompressedReadBuffer> compressed_in;
     std::unique_ptr<NativeReader> block_in;
-
-    struct
-    {
-        size_t compressed_size = 0;
-        size_t uncompressed_size = 0;
-    } stat;
 };
 
 MergeSortingTransform::MergeSortingTransform(
