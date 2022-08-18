@@ -54,9 +54,6 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
         const auto & host = endpoint.getHost();
         auto resolved_hosts = DNSResolver::instance().resolveHostAll(host);
 
-        if (resolved_hosts.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver cannot resolve host {}", host);
-
         HTTPSessionPtr session;
 
         for (size_t i = 0; i < resolved_hosts.size(); ++i)
@@ -68,6 +65,7 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
             try
             {
                 session->sendRequest(request);
+                break;
             }
             catch (...)
             {
