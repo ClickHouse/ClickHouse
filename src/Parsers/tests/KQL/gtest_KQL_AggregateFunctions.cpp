@@ -109,5 +109,13 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserAggregateFuncTest,
         {
             "DataTable| summarize t = percentilesw_array(Bucket, Frequency, dynamic([10, 50, 30]))",
             "SELECT quantilesExactWeighted(10 / 100, 50 / 100, 30 / 100)(Bucket, Frequency) AS t\nFROM DataTable"
+        },
+        {
+            "Customers | summarize t = percentile(Age, 50) by FirstName",
+            "SELECT\n    FirstName,\n    quantile(50 / 100)(Age) AS t\nFROM Customers\nGROUP BY FirstName"
+        },
+        {
+            "DataTable | summarize t = percentilew(Bucket, Frequency, 50)",
+            "SELECT quantileExactWeighted(50 / 100)(Bucket, Frequency) AS t\nFROM DataTable"
         }
 })));
