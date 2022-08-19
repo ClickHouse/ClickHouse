@@ -386,16 +386,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (attach)
     {
         LOG_INFO(log, "Table will be in readonly mode until initialization is finished");
-
-        bool connected_to_zk = current_zookeeper != nullptr;
-
         attach_thread.setSkipSanityChecks(skip_sanity_checks);
         attach_thread.start();
-
-        // if it's first try and we already failed to connect to ZK
-        // we don't want to wait two connection timeouts
-        if (connected_to_zk)
-            attach_thread.waitFirstTry();
+        attach_thread.waitFirstTry();
 
         return;
     }
@@ -5089,7 +5082,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     using enum InitializationPhase;
     {
         std::lock_guard lock(initialization_mutex);
-        if (init_phase == INITIALIZING || init_phase == STARTUP_IN_PROGRESS)
+        if (init_phase == INITIALIZING)
             throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
     }
 

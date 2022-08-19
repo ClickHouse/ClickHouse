@@ -33,12 +33,19 @@ void ReplicatedMergeTreeAttachThread::shutdown()
 
 void ReplicatedMergeTreeAttachThread::run()
 {
-
     bool needs_retry{false};
     try
     {
-        runImpl();
-        finalizeInitialization();
+        // we delay the first reconnect if the storage failed to connect to ZK initially
+        if (!first_try_done && !storage.current_zookeeper)
+        {
+            needs_retry = true;
+        }
+        else
+        {
+            runImpl();
+            finalizeInitialization();
+        }
     }
     catch (const Exception & e)
     {
@@ -78,8 +85,7 @@ void ReplicatedMergeTreeAttachThread::run()
 
 void ReplicatedMergeTreeAttachThread::runImpl()
 {
-    if (first_try_done || !storage.current_zookeeper)
-        storage.setZooKeeper();
+    storage.setZooKeeper();
 
     auto zookeeper = storage.getZooKeeper();
     const auto & zookeeper_path = storage.zookeeper_path;
