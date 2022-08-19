@@ -539,6 +539,10 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<MsgPackSchemaReader>(buf, settings);
     });
+    factory.registerAdditionalInfoForSchemaCacheGetter("MsgPack", [](const FormatSettings & settings)
+    {
+        return fmt::format("number_of_columns={}", settings.msgpack.number_of_columns);
+    });
 }
 
 }
