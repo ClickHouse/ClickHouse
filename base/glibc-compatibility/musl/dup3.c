@@ -20,5 +20,3 @@ int __dup3(int old, int new, int flags)
 #endif
 	return __syscall_ret(r);
 }
-
-weak_alias(__dup3, dup3);
