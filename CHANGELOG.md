@@ -397,7 +397,7 @@
 * Allows providing `NULL`/`NOT NULL` right after type in column declaration. [#37337](https://github.com/ClickHouse/ClickHouse/pull/37337) ([Igor Nikonov](https://github.com/devcrafter)).
 * optimize file segment PARTIALLY_DOWNLOADED get read buffer. [#37338](https://github.com/ClickHouse/ClickHouse/pull/37338) ([xiedeyantu](https://github.com/xiedeyantu)).
 * Try to improve short circuit functions processing to fix problems with stress tests. [#37384](https://github.com/ClickHouse/ClickHouse/pull/37384) ([Kruglov Pavel](https://github.com/Avogar)).
-* Closes [#37395](https://github.com/ClickHouse/ClickHouse/issues/37395). [#37415](https://github.com/ClickHouse/ClickHouse/pull/37415) ([Memo](https://github.com/Joeywzr)).
+* Generate multiple columns with UUID (generateUUIDv4(1), generateUUIDv4(2)) [#37395](https://github.com/ClickHouse/ClickHouse/issues/37395). [#37415](https://github.com/ClickHouse/ClickHouse/pull/37415) ([Memo](https://github.com/Joeywzr)).
 * Fix extremely rare deadlock during part fetch in zero-copy replication. Fixes [#37423](https://github.com/ClickHouse/ClickHouse/issues/37423). [#37424](https://github.com/ClickHouse/ClickHouse/pull/37424) ([metahys](https://github.com/metahys)).
 * Don't allow to create storage with unknown data format. [#37450](https://github.com/ClickHouse/ClickHouse/pull/37450) ([Kruglov Pavel](https://github.com/Avogar)).
 * Set `global_memory_usage_overcommit_max_wait_microseconds` default value to 5 seconds. Add info about `OvercommitTracker` to OOM exception message. Add `MemoryOvercommitWaitTimeMicroseconds` profile event. [#37460](https://github.com/ClickHouse/ClickHouse/pull/37460) ([Dmitry Novik](https://github.com/novikd)).
