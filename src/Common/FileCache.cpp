@@ -319,7 +319,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         {
             auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY, settings);
             {
-                std::lock_guard segment_lock(file_segment->mutex);
+                std::unique_lock segment_lock(file_segment->mutex);
                 file_segment->markAsDetached(segment_lock);
             }
             file_segments.insert(it, file_segment);
@@ -346,7 +346,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
         {
             auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY, settings);
             {
-                std::lock_guard segment_lock(file_segment->mutex);
+                std::unique_lock segment_lock(file_segment->mutex);
                 file_segment->markAsDetached(segment_lock);
             }
             file_segments.insert(file_segments.end(), file_segment);
@@ -408,7 +408,7 @@ FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
         auto file_segment = std::make_shared<FileSegment>(
             offset, size, key, this, FileSegment::State::EMPTY, CreateFileSegmentSettings{});
         {
-            std::lock_guard segment_lock(file_segment->mutex);
+            std::unique_lock segment_lock(file_segment->mutex);
             file_segment->markAsDetached(segment_lock);
         }
         file_segments = { file_segment };
@@ -628,7 +628,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
         {
             query_context->remove(file_segment->key(), file_segment->offset(), file_segment_size, cache_lock);
 
-            std::lock_guard segment_lock(file_segment->mutex);
+            std::unique_lock segment_lock(file_segment->mutex);
             remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
         };
 
@@ -748,7 +748,7 @@ bool FileCache::tryReserveForMainList(
 
     auto remove_file_segment = [&](FileSegmentPtr file_segment)
     {
-        std::lock_guard segment_lock(file_segment->mutex);
+        std::unique_lock segment_lock(file_segment->mutex);
         remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
     };
 
@@ -826,7 +826,7 @@ void FileCache::removeIfExists(const Key & key)
         auto file_segment = cell->file_segment;
         if (file_segment)
         {
-            std::lock_guard<std::mutex> segment_lock(file_segment->mutex);
+            std::unique_lock<std::mutex> segment_lock(file_segment->mutex);
             file_segment->detach(cache_lock, segment_lock);
             remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
         }
@@ -877,7 +877,7 @@ void FileCache::removeIfReleasable()
 
     for (auto & file_segment : to_remove)
     {
-        std::lock_guard segment_lock(file_segment->mutex);
+        std::unique_lock segment_lock(file_segment->mutex);
         file_segment->detach(cache_lock, segment_lock);
         remove(file_segment->key(), file_segment->offset(), cache_lock, segment_lock);
     }
@@ -893,7 +893,7 @@ void FileCache::removeIfReleasable()
 
 void FileCache::remove(
     Key key, size_t offset,
-    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
+    std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & /* segment_lock */)
 {
     LOG_TEST(log, "Remove. Key: {}, offset: {}", key.toString(), offset);
 
@@ -1036,7 +1036,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
 
 void FileCache::reduceSizeToDownloaded(
     const Key & key, size_t offset,
-    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock)
+    std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock)
 {
     /**
      * In case file was partially downloaded and it's download cannot be continued
@@ -1076,7 +1076,7 @@ void FileCache::reduceSizeToDownloaded(
 
 bool FileCache::isLastFileSegmentHolder(
     const Key & key, size_t offset,
-    std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & /* segment_lock */)
+    std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & /* segment_lock */)
 {
     auto * cell = getCell(key, offset, cache_lock);
 

@@ -154,19 +154,19 @@ private:
         Key key,
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
+        std::unique_lock<std::mutex> & segment_lock);
 
     bool isLastFileSegmentHolder(
         const Key & key,
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
+        std::unique_lock<std::mutex> & segment_lock);
 
     void reduceSizeToDownloaded(
         const Key & key,
         size_t offset,
         std::lock_guard<std::mutex> & cache_lock,
-        std::lock_guard<std::mutex> & segment_lock);
+        std::unique_lock<std::mutex> & segment_lock);
 
     ThreadPool & getThreadPoolForAsyncWrite();
 

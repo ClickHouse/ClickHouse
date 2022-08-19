@@ -297,7 +297,6 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                 }
                 else
                 {
-                    /// FIXME: !!!
                     LOG_DEBUG(log, "Retries to wait for file segment download exceeded ({})", wait_download_tries);
                     download_state = FileSegment::State::SKIP_CACHE;
                 }

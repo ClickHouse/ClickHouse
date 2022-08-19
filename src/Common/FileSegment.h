@@ -146,9 +146,9 @@ public:
     /// Wait for the change of state from DOWNLOADING to any other.
     State wait();
 
-    void waitBackgroundDownloadIfExists(size_t offset) const;
-
     bool isDownloaded() const { return is_downloaded.load(); }
+
+    void waitBackgroundDownloadIfExists(size_t offset) const;
 
     size_t getHitsCount() const { return hits_count; }
 
@@ -162,7 +162,21 @@ public:
 
     size_t getDownloadedSize() const;
 
-    void detach(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+    /// Now detached status can be used in the following cases:
+    /// 1. there is only 1 remaining file segment holder
+    ///    && it does not need this segment anymore
+    ///    && this file segment was in cache and needs to be removed
+    /// 2. in read_from_cache_if_exists_otherwise_bypass_cache case to create NOOP file segments.
+    /// 3. removeIfExists - method which removes file segments from cache even though
+    ///    it might be used at the moment.
+
+    /// If file segment is detached it means the following:
+    /// 1. It is not present in FileCache, e.g. will not be visible to any cache user apart from
+    /// those who acquired shared pointer to this file segment before it was detached.
+    /// 2. Detached file segment can still be hold by some cache users, but it's state became
+    /// immutable at the point it was detached, any non-const / stateful method will throw an
+    /// exception.
+    void detach(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
@@ -207,44 +221,44 @@ public:
     /// [[noreturn]] void throwIfDetached() const;
 
 private:
-    size_t availableSizeUnlocked(std::lock_guard<std::mutex> & /* segment_lock */) const { return reserved_size - downloaded_size; }
-    String getInfoForLogUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    size_t availableSizeUnlocked(std::unique_lock<std::mutex> & /* segment_lock */) const { return reserved_size - downloaded_size; }
+    String getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    void setDownloadedUnlocked(std::lock_guard<std::mutex> & segment_lock);
-    void setDownloadFailedUnlocked(std::lock_guard<std::mutex> & segment_lock);
-    void setInternalDownloaderUnlocked(const DownloaderId & new_downloader_id, std::lock_guard<std::mutex> & /* download_lock */);
+    void setDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void setDownloadFailedUnlocked(std::unique_lock<std::mutex> & segment_lock);
+    void setInternalDownloaderUnlocked(const DownloaderId & new_downloader_id, std::unique_lock<std::mutex> & /* download_lock */);
 
     bool lastFileSegmentHolder() const;
-    void resetDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock);
+    void resetDownloaderUnlocked(bool is_internal, std::unique_lock<std::mutex> & segment_lock);
 
-    bool hasFinalizedStateUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    bool isDetached(std::lock_guard<std::mutex> & /* segment_lock */) const { return is_detached; }
-    void markAsDetached(std::lock_guard<std::mutex> & segment_lock);
-    [[noreturn]] void throwIfDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    bool isDetached(std::unique_lock<std::mutex> & /* segment_lock */) const { return is_detached; }
+    void markAsDetached(std::unique_lock<std::mutex> & segment_lock);
+    [[noreturn]] void throwIfDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    void assertDetachedStatus(std::lock_guard<std::mutex> & segment_lock) const;
+    void assertDetachedStatus(std::unique_lock<std::mutex> & segment_lock) const;
     void assertNotDetached() const;
-    void assertNotDetachedUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
-    void assertIsDownloaderUnlocked(bool is_internal, const std::string & operation, std::lock_guard<std::mutex> & segment_lock) const;
-    void assertCorrectnessUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    void assertNotDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    void assertIsDownloaderUnlocked(bool is_internal, const std::string & operation, std::unique_lock<std::mutex> & segment_lock) const;
+    void assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
-    size_t getDownloadedSizeUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
-    bool isDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock) const;
-    String getDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock) const;
-    size_t getCurrentWriteOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
-    size_t getFirstNonDownloadedOffsetUnlocked(std::lock_guard<std::mutex> & segment_lock) const;
+    size_t getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    bool isDownloaderUnlocked(bool is_internal, std::unique_lock<std::mutex> & segment_lock) const;
+    String getDownloaderUnlocked(bool is_internal, std::unique_lock<std::mutex> & segment_lock) const;
+    size_t getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     /// complete() without any completion state is called from destructor of
     /// FileSegmentsHolder. complete() might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, complete() and destruction
     /// of the file segment pointer must be done under the same cache mutex.
     void completeWithoutState(std::lock_guard<std::mutex> & cache_lock);
-    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::lock_guard<std::mutex> & segment_lock);
+    void completeBasedOnCurrentState(std::lock_guard<std::mutex> & cache_lock, std::unique_lock<std::mutex> & segment_lock);
 
-    void completePartAndResetDownloaderUnlocked(bool is_internal, std::lock_guard<std::mutex> & segment_lock);
+    void completePartAndResetDownloaderUnlocked(bool is_internal, std::unique_lock<std::mutex> & segment_lock);
 
-    void wrapWithCacheInfo(Exception & e, const String & message, std::lock_guard<std::mutex> & segment_lock) const;
+    void wrapWithCacheInfo(Exception & e, const String & message, std::unique_lock<std::mutex> & segment_lock) const;
 
     Range segment_range;
 
@@ -289,14 +303,17 @@ private:
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
     bool is_persistent;
-    /// Should the file segment be downloaded into cache synchronously or asynchronously?
-    bool is_async_download;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 
-    class WriteState
+    class AsynchronousWriteState
     {
     public:
+
+        /// Size in bytes - total size of buffers (contiguous file segment ranges of buffers)
+        /// which were submitted for download.
+        size_t getFutureDownloadedSize() const { return future_downloaded_size; }
+
         struct Buffer
         {
             Buffer() = default;
@@ -310,44 +327,28 @@ private:
             /// Buffer data.
             Memory<> memory;
 
-            /// Offset within a file segment
-            /// where current buffer needs to be written.
+            /// Offset within a file segment where current buffer needs to be written.
             size_t offset;
         };
 
         using Buffers = std::queue<Buffer>;
 
-        size_t getDownloadedSize() const { return downloaded_size; }
-
-        size_t getFutureDownloadedSize() const { return future_downloaded_size; }
-
-        void throwIfException()
-        {
-            std::lock_guard lock(exception_mutex);
-            if (exception)
-                std::rethrow_exception(exception);
-        }
-
-        void setExceptionIfEmpty()
-        {
-            std::lock_guard lock(exception_mutex);
-            if (!exception)
-                exception = std::current_exception();
-        }
-
-        bool hasException() const
-        {
-            std::lock_guard lock(exception_mutex);
-            return exception != nullptr;
-        }
-
-        /// A list of buffers which are waiting to be written
-        /// into cache within current write state.
-        /// Each buffer can be written one after another in direct order.
+        /// A list of buffers which are waiting to be written into cache within current
+        /// write state. Each buffer can be written one after another in direct order.
         std::queue<Buffer> buffers;
 
-        int64_t last_added_offset = -1;
-        std::atomic<size_t> downloaded_size = 0;
+        struct SizeAndOffset
+        {
+            size_t size;
+            size_t offset;
+        };
+        /// Keep track of the last added buffer info to ba able to assert correctness of
+        /// the newly added buffer. (It is not enough to check just last buffer within the
+        /// wait list because previous buffer could be popped any time by the download thread.)
+        std::optional<SizeAndOffset> last_added_buffer_info;
+
+        /// Downloaded size as it would be at the point when all currently submitted download
+        /// tasks would be finished.
         std::atomic<size_t> future_downloaded_size = 0;
 
         struct BackgroundDownloadResult
@@ -358,27 +359,49 @@ private:
             BackgroundDownloadResult(std::shared_future<void> && shared_future_, size_t expected_size_)
                 : shared_future(std::move(shared_future_)), expected_size(expected_size_) {}
         };
-        /// Ordered.
+        /// Order is important.
         std::map<size_t, BackgroundDownloadResult> currently_downloading;
 
-    private:
         /// Contains the first exception happened when writing data
         /// from `buffers`. No further buffer can be written, if there
         /// was exception while writing previous buffer.
-        std::exception_ptr exception TSA_GUARDED_BY(exception_mutex);
-        mutable std::mutex exception_mutex;
-        // std::string toString() const
-        // {
-        //     WriteBufferFromOwnString wb;
-        //     wb << "buffers number: " << buffers.size() << ", ";
-        //     wb << "download offset: " << download_offset.load() << ",";
-        //     wb << "last added offset: " << last_added_offset;
-        //     return wb.str();
-        // }
+        std::exception_ptr exception;
+
+        /// Whether the download was cancelled. For example because file segment was removed from cache.
+        size_t is_cancelled = false;
+
+        /// The following is_executing, execution_end_cv, ExecutinoHolder are needed for
+        /// only one purpose: to be able to cancel background download.
+        bool is_executing = false;
+        std::condition_variable execution_end_cv;
+
+        struct ExecutionHolder
+        {
+            explicit ExecutionHolder(AsynchronousWriteState & state_, std::mutex & file_segment_mutex)
+                : state(state_), execution_end_lock(file_segment_mutex, std::defer_lock)
+            {
+                state.is_executing = true;
+            }
+
+            ~ExecutionHolder()
+            {
+                state.is_executing = false;
+                state.execution_end_cv.notify_all();
+            }
+
+            AsynchronousWriteState & state;
+            std::unique_lock<std::mutex> execution_end_lock;
+        };
+        std::optional<ExecutionHolder> execution_holder;
     };
 
-    mutable std::optional<WriteState> async_write_state;
-    bool isBackgroundDownloader(std::lock_guard<std::mutex> & segment_lock) const;
+    mutable std::optional<AsynchronousWriteState> async_write_state;
+
+    void assertAsyncWriteStateInitialized() const;
+
+    void cancelBackgroundDownloadIfExists(std::unique_lock<std::mutex> & segment_lock);
+
+    bool isBackgroundDownloader(std::unique_lock<std::mutex> & segment_lock) const;
 };
 
 struct FileSegmentsHolder : private boost::noncopyable
