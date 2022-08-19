@@ -304,7 +304,7 @@ NamesAndTypesList CapnProtoSchemaReader::readSchema()
 
     auto schema_parser = CapnProtoSchemaParser();
     auto schema = schema_parser.getMessageSchema(schema_info);
-    return capnProtoSchemaToCHSchema(schema, format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
+    return capnProtoSchemaToCHSchema(schema);
 }
 
 void registerInputFormatCapnProto(FormatFactory & factory)
@@ -318,8 +318,6 @@ void registerInputFormatCapnProto(FormatFactory & factory)
         });
     factory.markFormatSupportsSubsetOfColumns("CapnProto");
     factory.registerFileExtension("capnp", "CapnProto");
-    factory.registerAdditionalInfoForSchemaCacheGetter(
-        "CapnProto", [](const FormatSettings & settings) { return "Format schema: " + settings.schema.format_schema; });
 }
 
 void registerCapnProtoSchemaReader(FormatFactory & factory)

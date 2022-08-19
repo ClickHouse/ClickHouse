@@ -132,7 +132,7 @@ struct ExtractNetloc
 struct NameNetloc { static constexpr auto name = "netloc"; };
 using FunctionNetloc = FunctionStringToString<ExtractSubstringImpl<ExtractNetloc>, NameNetloc>;
 
-REGISTER_FUNCTION(Netloc)
+void registerFunctionNetloc(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionNetloc>();
 }

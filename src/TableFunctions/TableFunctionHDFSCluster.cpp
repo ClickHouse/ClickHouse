@@ -13,7 +13,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
 #include <TableFunctions/TableFunctionHDFSCluster.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST_fwd.h>
 

@@ -9,7 +9,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Coordination/KeeperContext.h>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -73,11 +72,10 @@ public:
     enum DigestVersion : uint8_t
     {
         NO_DIGEST = 0,
-        V1 = 1,
-        V2 = 2  // added system nodes that modify the digest on startup so digest from V0 is invalid
+        V0 = 1
     };
 
-    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
+    static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V0;
 
     struct ResponseForSession
     {
@@ -338,15 +336,11 @@ public:
 
     Digest getNodesDigest(bool committed) const;
 
-    KeeperContextPtr keeper_context;
+    const bool digest_enabled;
 
     const String superdigest;
 
-    bool initialized{false};
-
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
-
-    void initializeSystemNodes();
+    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, bool digest_enabled_);
 
     /// Allocate new session id with the specified timeouts
     int64_t getSessionID(int64_t session_timeout_ms)
@@ -381,7 +375,7 @@ public:
         int64_t new_last_zxid,
         bool check_acl = true,
         std::optional<Digest> digest = std::nullopt);
-    void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
+    void rollbackRequest(int64_t rollback_zxid);
 
     void finalize();
 

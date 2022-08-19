@@ -9,6 +9,7 @@
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
+#include <base/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -538,7 +539,6 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
             address.default_database,
             address.user,
             address.password,
-            address.quota_key,
             address.cluster,
             address.cluster_secret,
             storage.getName() + '_' + address.user, /* client */
@@ -619,14 +619,11 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
-
-        LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
-            file_path,
-            connection->getDescription(),
+        LOG_DEBUG(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
             formatReadableQuantity(distributed_header.rows),
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
+        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         RemoteInserter remote{*connection, timeouts,
             distributed_header.insert_query,
             distributed_header.insert_settings,
@@ -721,6 +718,10 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         Stopwatch watch;
 
+        LOG_DEBUG(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
+            formatReadableQuantity(total_rows),
+            formatReadableSizeWithBinarySuffix(total_bytes));
+
         if (!recovered)
         {
             /// For deduplication in Replicated tables to work, in case of error
@@ -748,12 +749,6 @@ struct StorageDistributedDirectoryMonitor::Batch
         }
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.getContext()->getSettingsRef());
         auto connection = parent.pool->get(timeouts);
-
-        LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
-            file_indices.size(),
-            connection->getDescription(),
-            formatReadableQuantity(total_rows),
-            formatReadableSizeWithBinarySuffix(total_bytes));
 
         bool batch_broken = false;
         bool batch_marked_as_broken = false;

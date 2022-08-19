@@ -14,7 +14,7 @@ public:
     /// Full
     SortingStep(
         const DataStream & input_stream,
-        SortDescription description_,
+        const SortDescription & description_,
         size_t max_block_size_,
         UInt64 limit_,
         SizeLimits size_limits_,
@@ -22,8 +22,7 @@ public:
         double remerge_lowered_memory_bytes_ratio_,
         size_t max_bytes_before_external_sort_,
         VolumePtr tmp_volume_,
-        size_t min_free_disk_space_,
-        bool optimize_sorting_by_input_stream_properties_);
+        size_t min_free_disk_space_);
 
     /// FinishSorting
     SortingStep(
@@ -50,22 +49,12 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const { return result_description; }
+    SortDescription getSortDescription() const { return result_description; }
 
     void convertToFinishSorting(SortDescription prefix_description);
 
 private:
     void updateOutputStream() override;
-
-    void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
-    void mergeSorting(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
-    void finishSorting(
-        QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, UInt64 limit_);
-    void fullSort(
-        QueryPipelineBuilder & pipeline,
-        const SortDescription & result_sort_desc,
-        UInt64 limit_,
-        bool skip_partial_sort = false);
 
     enum class Type
     {
@@ -77,8 +66,8 @@ private:
     Type type;
 
     SortDescription prefix_description;
-    const SortDescription result_description;
-    const size_t max_block_size;
+    SortDescription result_description;
+    size_t max_block_size;
     UInt64 limit;
     SizeLimits size_limits;
 
@@ -87,7 +76,6 @@ private:
     size_t max_bytes_before_external_sort = 0;
     VolumePtr tmp_volume;
     size_t min_free_disk_space = 0;
-    const bool optimize_sorting_by_input_stream_properties = false;
 };
 
 }

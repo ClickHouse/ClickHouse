@@ -79,7 +79,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(IsNotNull)
+void registerFunctionIsNotNull(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIsNotNull>();
 }

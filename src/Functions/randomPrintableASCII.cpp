@@ -113,7 +113,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(RandomPrintableASCII)
+void registerFunctionRandomPrintableASCII(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRandomPrintableASCII>();
 }

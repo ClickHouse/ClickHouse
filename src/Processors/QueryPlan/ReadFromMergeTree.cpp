@@ -63,7 +63,6 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
         .read_in_order = query_info.input_order_info != nullptr,
-        .apply_deleted_mask = context->applyDeletedMask(),
     };
 }
 
@@ -71,6 +70,18 @@ static const PrewhereInfoPtr & getPrewhereInfo(const SelectQueryInfo & query_inf
 {
     return query_info.projection ? query_info.projection->prewhere_info
                                  : query_info.prewhere_info;
+}
+
+static int getSortDirection(const SelectQueryInfo & query_info)
+{
+    const InputOrderInfoPtr & order_info = query_info.input_order_info
+        ? query_info.input_order_info
+        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+
+    if (!order_info)
+        return 1;
+
+    return order_info->direction;
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
@@ -131,7 +142,7 @@ ReadFromMergeTree::ReadFromMergeTree(
         SortDescription sort_description;
         const Names & sorting_key_columns = storage_snapshot->getMetadataForQuery()->getSortingKeyColumns();
         const Block & header = output_stream->header;
-        const int sort_direction = getSortDirection();
+        const int sort_direction = getSortDirection(query_info);
         for (const auto & column_name : sorting_key_columns)
         {
             if (std::find_if(header.begin(), header.end(), [&](ColumnWithTypeAndName const & col) { return col.name == column_name; })
@@ -139,17 +150,8 @@ ReadFromMergeTree::ReadFromMergeTree(
                 break;
             sort_description.emplace_back(column_name, sort_direction);
         }
-        if (!sort_description.empty())
-        {
-            auto const & settings = context->getSettingsRef();
-            if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && query_info.getInputOrderInfo())
-                output_stream->sort_mode = DataStream::SortMode::Port;
-            else
-                output_stream->sort_mode = DataStream::SortMode::Chunk;
-        }
-
         output_stream->sort_description = std::move(sort_description);
-
+        output_stream->sort_mode = DataStream::SortMode::Chunk;
     }
 }
 
@@ -183,7 +185,6 @@ Pipe ReadFromMergeTree::readFromPool(
         storage_snapshot,
         prewhere_info,
         required_columns,
-        virt_column_names,
         backoff_settings,
         settings.preferred_block_size_bytes,
         false);
@@ -831,8 +832,6 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
 {
     return selectRangesToRead(
         std::move(parts),
-        prewhere_info,
-        added_filter_nodes,
         storage_snapshot->metadata,
         storage_snapshot->getMetadataForQuery(),
         query_info,
@@ -847,8 +846,6 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
 
 MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
-    const PrewhereInfoPtr & prewhere_info,
-    const ActionDAGNodes & added_filter_nodes,
     const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
@@ -883,37 +880,9 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
-    std::optional<KeyCondition> key_condition;
+    KeyCondition key_condition(query_info, context, primary_key_columns, primary_key.expression);
 
-    if (settings.query_plan_optimize_primary_key)
-    {
-        ActionDAGNodes nodes;
-        if (prewhere_info)
-        {
-            {
-                const auto & node = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
-                nodes.nodes.push_back(&node);
-            }
-
-            if (prewhere_info->row_level_filter)
-            {
-                const auto & node = prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name);
-                nodes.nodes.push_back(&node);
-            }
-        }
-
-        for (const auto & node : added_filter_nodes.nodes)
-            nodes.nodes.push_back(node);
-
-        key_condition.emplace(
-            std::move(nodes), query_info.syntax_analyzer_result, query_info.prepared_sets, context, primary_key_columns, primary_key.expression);
-    }
-    else
-    {
-        key_condition.emplace(query_info, context, primary_key_columns, primary_key.expression);
-    }
-
-    if (settings.force_primary_key && key_condition->alwaysUnknownOrTrue())
+    if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
         return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{
             .result = std::make_exception_ptr(Exception(
@@ -921,7 +890,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 "Primary key ({}) is not used and setting 'force_primary_key' is set",
                 fmt::join(primary_key_columns, ", ")))});
     }
-    LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
+    LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
@@ -944,7 +913,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             select,
             metadata_snapshot->getColumns().getAllPhysical(),
             parts,
-            *key_condition,
+            key_condition,
             data,
             metadata_snapshot,
             context,
@@ -969,7 +938,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             metadata_snapshot,
             query_info,
             context,
-            *key_condition,
+            key_condition,
             reader_settings,
             log,
             num_streams,
@@ -1006,7 +975,10 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     result.total_marks_pk = total_marks_pk;
     result.selected_rows = sum_rows;
 
-    const auto & input_order_info = query_info.getInputOrderInfo();
+    const auto & input_order_info = query_info.input_order_info
+        ? query_info.input_order_info
+        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+
     if ((settings.optimize_read_in_order || settings.optimize_aggregation_in_order) && input_order_info)
         result.read_type = (input_order_info->direction > 0) ? ReadType::InOrder
                                                              : ReadType::InReverseOrder;
@@ -1094,10 +1066,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                                    column_names_to_read.end());
     }
 
+    const auto & input_order_info = query_info.input_order_info
+        ? query_info.input_order_info
+        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+
     Pipe pipe;
 
     const auto & settings = context->getSettingsRef();
-    const auto & input_order_info = query_info.getInputOrderInfo();
 
     if (select.final())
     {

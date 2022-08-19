@@ -9,7 +9,6 @@
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/Keeper4LWInfo.h>
-#include <Coordination/KeeperContext.h>
 
 namespace DB
 {
@@ -61,10 +60,6 @@ private:
     void enterRecoveryMode(nuraft::raft_params & params);
 
     std::atomic_bool is_recovering = false;
-
-    std::shared_ptr<KeeperContext> keeper_context;
-
-    const bool create_snapshot_on_exit;
 
 public:
     KeeperServer(

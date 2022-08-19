@@ -219,7 +219,10 @@ void BackupImpl::open(const ContextPtr & context)
 void BackupImpl::close()
 {
     std::lock_guard lock{mutex};
-    closeArchives();
+
+    archive_readers.clear();
+    for (auto & archive_writer : archive_writers)
+        archive_writer = {"", nullptr};
 
     if (!is_internal_backup && writer && !writing_finalized)
         removeAllFilesAfterFailure();
@@ -229,29 +232,10 @@ void BackupImpl::close()
     coordination.reset();
 }
 
-void BackupImpl::closeArchives()
-{
-    archive_readers.clear();
-    for (auto & archive_writer : archive_writers)
-        archive_writer = {"", nullptr};
-}
-
-size_t BackupImpl::getNumFiles() const
+time_t BackupImpl::getTimestamp() const
 {
     std::lock_guard lock{mutex};
-    return num_files;
-}
-
-UInt64 BackupImpl::getUncompressedSize() const
-{
-    std::lock_guard lock{mutex};
-    return uncompressed_size;
-}
-
-UInt64 BackupImpl::getCompressedSize() const
-{
-    std::lock_guard lock{mutex};
-    return compressed_size;
+    return timestamp;
 }
 
 void BackupImpl::writeBackupMetadata()
@@ -306,7 +290,6 @@ void BackupImpl::writeBackupMetadata()
             if (info.pos_in_archive != static_cast<size_t>(-1))
                 config->setUInt64(prefix + "pos_in_archive", info.pos_in_archive);
         }
-        increaseUncompressedSize(info);
         ++index;
     }
 
@@ -323,8 +306,6 @@ void BackupImpl::writeBackupMetadata()
         out = writer->writeFile(".backup");
     out->write(str.data(), str.size());
     out->finalize();
-
-    increaseUncompressedSize(str.size());
 }
 
 void BackupImpl::readBackupMetadata()
@@ -334,7 +315,6 @@ void BackupImpl::readBackupMetadata()
     {
         if (!reader->fileExists(archive_params.archive_name))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name);
-        setCompressedSize();
         in = getArchiveReader("")->readFile(".backup");
     }
     else
@@ -346,7 +326,6 @@ void BackupImpl::readBackupMetadata()
 
     String str;
     readStringUntilEOF(str, *in);
-    increaseUncompressedSize(str.size());
     std::istringstream stream(str); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->load(stream);
@@ -403,12 +382,8 @@ void BackupImpl::readBackupMetadata()
             }
 
             coordination->addFileInfo(info);
-            increaseUncompressedSize(info);
         }
     }
-
-    if (!use_archives)
-        setCompressedSize();
 }
 
 void BackupImpl::checkBackupDoesntExist() const
@@ -775,8 +750,6 @@ void BackupImpl::finalizeWriting()
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name);
         writeBackupMetadata();
-        closeArchives();
-        setCompressedSize();
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name);
     }
@@ -785,31 +758,11 @@ void BackupImpl::finalizeWriting()
 }
 
 
-void BackupImpl::increaseUncompressedSize(UInt64 file_size)
-{
-    uncompressed_size += file_size;
-    ++num_files;
-}
-
-void BackupImpl::increaseUncompressedSize(const FileInfo & info)
-{
-    if ((info.size > info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)))
-        increaseUncompressedSize(info.size - info.base_size);
-}
-
-void BackupImpl::setCompressedSize()
-{
-    if (use_archives)
-        compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
-    else
-        compressed_size = uncompressed_size;
-}
-
-
 String BackupImpl::getArchiveNameWithSuffix(const String & suffix) const
 {
     return archive_params.archive_name + (suffix.empty() ? "" : ".") + suffix;
 }
+
 
 std::shared_ptr<IArchiveReader> BackupImpl::getArchiveReader(const String & suffix) const
 {
@@ -842,7 +795,6 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
 
     return new_archive_writer;
 }
-
 
 void BackupImpl::removeAllFilesAfterFailure()
 {

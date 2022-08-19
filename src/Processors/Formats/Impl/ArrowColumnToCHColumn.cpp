@@ -99,7 +99,6 @@ static ColumnWithTypeAndName readColumnWithNumericData(std::shared_ptr<arrow::Ch
 /// Inserts chars and offsets right into internal column data to reduce an overhead.
 /// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
 /// Also internal strings are null terminated.
-template <typename ArrowArray>
 static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeString>();
@@ -110,7 +109,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
     size_t chars_t_size = 0;
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         const size_t chunk_length = chunk.length();
 
         if (chunk_length > 0)
@@ -125,7 +124,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
@@ -470,10 +469,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::STRING:
         case arrow::Type::BINARY:
             //case arrow::Type::FIXED_SIZE_BINARY:
-            return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
-        case arrow::Type::LARGE_BINARY:
-        case arrow::Type::LARGE_STRING:
-            return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
+            return readColumnWithStringData(arrow_column, column_name);
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
         case arrow::Type::DATE32:

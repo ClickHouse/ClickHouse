@@ -50,7 +50,6 @@ public:
 
 private:
     const FormatSchemaInfo schema_info;
-    bool skip_unsopported_fields;
 };
 
 }

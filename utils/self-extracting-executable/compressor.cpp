@@ -9,17 +9,17 @@
 #include <cerrno>
 #include <memory>
 #include <iostream>
-
-#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
-#   include <machine/endian.h>
-#else
-#   include <endian.h>
-#endif
-
 #if defined OS_DARWIN
-#   include <libkern/OSByteOrder.h>
-    // define 64 bit macros
-#   define htole64(x) OSSwapHostToLittleInt64(x)
+
+// dependencies
+#include <machine/endian.h>
+#include <libkern/OSByteOrder.h>
+
+// define 64 bit macros
+#define htole64(x) OSSwapHostToLittleInt64(x)
+
+#else
+#include <endian.h>
 #endif
 
 #include "types.h"
@@ -103,14 +103,12 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     if (ZSTD_isError(check_result))
     {
         std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
     check_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 1);
     if (ZSTD_isError(check_result))
     {
         std::cerr << "Error (ZSTD): " << check_result << " " << ZSTD_getErrorName(check_result) << std::endl;
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
 
@@ -131,13 +129,11 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     if (output == MAP_FAILED)
     {
         perror(nullptr);
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
     if (-1 == lseek(out_fd, 0, SEEK_END))
     {
         perror(nullptr);
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
 
@@ -158,7 +154,6 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
                 perror(nullptr);
             if (0 != munmap(output, 2 * max_block_size))
                 perror(nullptr);
-            ZSTD_freeCCtx(cctx);
             return 1;
         }
 
@@ -166,7 +161,6 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         if (current_block_size != write_data(out_fd, output, current_block_size))
         {
             perror(nullptr);
-            ZSTD_freeCCtx(cctx);
             return 1;
         }
         pointer += current_block_size;
@@ -178,11 +172,8 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         0 != munmap(output, 2 * max_block_size))
     {
         perror(nullptr);
-        ZSTD_freeCCtx(cctx);
         return 1;
     }
-
-    ZSTD_freeCCtx(cctx);
     return 0;
 }
 
@@ -372,14 +363,7 @@ int copy_decompressor_self(const char *self, int output_fd)
         return 1;
     }
 
-    char * end = nullptr;
-    int decompressor_size = strtol(size_str, &end, 10);
-    if (*end != 0)
-    {
-        std::cerr << "Error: unable to extract decompressor" << std::endl;
-        close(input_fd);
-        return 1;
-    }
+    int decompressor_size = atoi(size_str);
 
     if (-1 == lseek(input_fd, -(decompressor_size + 15), SEEK_END))
     {
@@ -423,7 +407,7 @@ int copy_decompressor_file(const char *path, int output_fd)
 
 inline void usage(FILE * out, const char * name)
 {
-    (void)fprintf(out,
+    fprintf(out,
         "%s [--level=<level>] [--decompressor=<path>] <output_file> <input_file> [... <input_file>]\n"
         "\t--level - compression level, max is %d, negative - prefer speed over compression\n"
         "\t          default is 5\n"

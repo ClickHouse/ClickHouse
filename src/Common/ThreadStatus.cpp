@@ -24,7 +24,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-thread_local ThreadStatus constinit * current_thread = nullptr;
+
+thread_local ThreadStatus * current_thread = nullptr;
+thread_local ThreadStatus * main_thread = nullptr;
 
 #if !defined(SANITIZER)
 namespace

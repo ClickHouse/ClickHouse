@@ -153,7 +153,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(DateTrunc)
+void registerFunctionDateTrunc(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDateTrunc>(FunctionFactory::CaseInsensitive);
 

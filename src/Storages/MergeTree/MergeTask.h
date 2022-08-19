@@ -178,8 +178,6 @@ private:
         IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns{};
 
         MergeTreeTransactionPtr txn;
-
-        scope_guard temporary_directory_lock;
     };
 
     using GlobalRuntimeContextPtr = std::shared_ptr<GlobalRuntimeContext>;

@@ -86,8 +86,7 @@ private:
 
     void createServers(
         Poco::Util::AbstractConfiguration & config,
-        const Strings & listen_hosts,
-        const Strings & interserver_listen_hosts,
+        const std::vector<std::string> & listen_hosts,
         bool listen_try,
         Poco::ThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,

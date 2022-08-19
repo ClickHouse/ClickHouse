@@ -109,6 +109,7 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
             if (hardlink_count == 0)
             {
                 objects_to_remove = objects;
+                remove_from_cache = true;
             }
         }
         catch (const Exception & e)
@@ -135,6 +136,12 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
     {
         if (!delete_metadata_only && !objects_to_remove.empty())
             object_storage.removeObjects(objects_to_remove);
+
+        if (remove_from_cache)
+        {
+            for (const auto & object : objects_to_remove)
+                object_storage.removeCacheIfExists(object.getPathKeyForCache());
+        }
     }
 };
 
@@ -179,7 +186,9 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
                 if (hardlink_count == 0)
                 {
                     objects_to_remove[path_to_remove] = objects_paths;
+                    objects_to_remove_from_cache.insert(objects_to_remove_from_cache.end(), objects_paths.begin(), objects_paths.end());
                 }
+
             }
             catch (const Exception & e)
             {
@@ -228,6 +237,9 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
             }
             object_storage.removeObjects(remove_from_remote);
         }
+
+        for (const auto & object : objects_to_remove_from_cache)
+            object_storage.removeCacheIfExists(object.getPathKeyForCache());
     }
 };
 
@@ -598,15 +610,6 @@ void DiskObjectStorageTransaction::setLastModified(const std::string & path, con
         std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path, timestamp](MetadataTransactionPtr tx)
         {
             tx->setLastModified(path, timestamp);
-        }));
-}
-
-void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
-{
-    operations_to_execute.emplace_back(
-        std::make_unique<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path, mode](MetadataTransactionPtr tx)
-        {
-            tx->chmod(path, mode);
         }));
 }
 

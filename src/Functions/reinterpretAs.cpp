@@ -471,7 +471,7 @@ using FunctionReinterpretAsFixedString = FunctionReinterpretAs<DataTypeFixedStri
 
 }
 
-REGISTER_FUNCTION(ReinterpretAs)
+void registerFunctionsReinterpretAs(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReinterpretAsUInt8>();
     factory.registerFunction<FunctionReinterpretAsUInt16>();

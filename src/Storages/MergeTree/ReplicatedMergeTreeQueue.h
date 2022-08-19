@@ -96,7 +96,7 @@ private:
     FuturePartsSet future_parts;
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
-    std::set<MergeTreePartInfo> currently_executing_drop_replace_ranges;
+    bool currently_executing_drop_or_replace_range = false;
 
     /** What will be the set of active parts after executing all log entries up to log_pointer.
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeMergePredicate)

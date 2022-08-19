@@ -31,8 +31,6 @@ SET allow_experimental_projection_optimization=1, optimize_aggregation_in_order=
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM normal WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
 
-DROP TABLE normal;
-
 DROP TABLE IF EXISTS agg;
 
 CREATE TABLE agg
@@ -62,5 +60,3 @@ SET allow_experimental_projection_optimization=1, optimize_aggregation_in_order=
 
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY a ORDER BY v LIMIT 5;
 WITH toStartOfHour(ts) AS a SELECT sum(value) v FROM agg WHERE ts > '2021-12-06 22:00:00' GROUP BY toStartOfHour(ts), a ORDER BY v LIMIT 5;
-
-DROP TABLE agg;

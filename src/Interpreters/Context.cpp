@@ -73,7 +73,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/StackTrace.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -1658,14 +1657,14 @@ ProcessList::Element * Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy)
+void Context::setUncompressedCache(size_t max_size_in_bytes)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes, uncompressed_cache_policy);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
 }
 
 
@@ -1684,14 +1683,14 @@ void Context::dropUncompressedCache() const
 }
 
 
-void Context::setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy)
+void Context::setMarkCache(size_t cache_size_in_bytes)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, mark_cache_policy);
+    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -2403,7 +2402,7 @@ void Context::startClusterDiscovery()
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
     std::lock_guard lock(shared->clusters_mutex);
-    if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
+    if (config->getBool("allow_experimental_cluster_discovery", false) && enable_discovery && !shared->cluster_discovery)
     {
         shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext());
     }
@@ -2668,9 +2667,7 @@ DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock *
         constexpr auto config_name = "storage_configuration.disks";
         const auto & config = getConfigRef();
 
-        auto disk_selector = std::make_shared<DiskSelector>();
-        disk_selector->initialize(config, config_name, shared_from_this());
-        shared->merge_tree_disk_selector = disk_selector;
+        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, shared_from_this());
     }
     return shared->merge_tree_disk_selector;
 }
@@ -2968,11 +2965,6 @@ void Context::setQueryParameter(const String & name, const String & value)
         throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
 
-void Context::addQueryParameters(const NameToNameMap & parameters)
-{
-    for (const auto & [name, value] : parameters)
-        query_parameters.insert_or_assign(name, value);
-}
 
 void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
 {
@@ -3454,7 +3446,6 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_max_wait_sec = settings.filesystem_cache_max_wait_sec;
     res.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
-    res.enable_filesystem_cache_on_lower_level = settings.enable_filesystem_cache_on_lower_level;
 
     res.max_query_cache_size = settings.max_query_cache_size;
     res.skip_download_if_exceeds_query_cache = settings.skip_download_if_exceeds_query_cache;
@@ -3484,7 +3475,6 @@ WriteSettings Context::getWriteSettings() const
     WriteSettings res;
 
     res.enable_filesystem_cache_on_write_operations = settings.enable_filesystem_cache_on_write_operations;
-    res.enable_filesystem_cache_log = settings.enable_filesystem_cache_log;
 
     res.remote_throttler = getRemoteWriteThrottler();
 

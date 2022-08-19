@@ -38,16 +38,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     , mark_cache(mark_cache_)
     , save_marks_in_cache(settings.save_marks_in_cache)
     , index_granularity_info(index_granularity_info_)
-    , marks_loader(
-        data_part_storage,
-        mark_cache,
-        index_granularity_info->getMarksFilePath(path_prefix),
-        marks_count,
-        *index_granularity_info,
-        save_marks_in_cache,
-        settings.read_settings)
-{
-}
+    , marks_loader(data_part_storage, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),
+        marks_count, *index_granularity_info, save_marks_in_cache) {}
 
 void MergeTreeReaderStream::init()
 {

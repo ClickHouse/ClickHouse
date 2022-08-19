@@ -3,7 +3,6 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/ClickHouse/ClickHouse/programs/diagnostics/internal/platform/data"
@@ -18,7 +17,7 @@ type ClickhouseNativeClient struct {
 
 func NewNativeClient(host string, port uint16, username string, password string) (*ClickhouseNativeClient, error) {
 	// debug output ?debug=true
-	connection, err := sql.Open("clickhouse", fmt.Sprintf("clickhouse://%s:%s@%s:%d/", url.QueryEscape(username), url.QueryEscape(password), host, port))
+	connection, err := sql.Open("clickhouse", fmt.Sprintf("clickhouse://%s:%s@%s:%d/", username, password, host, port))
 	if err != nil {
 		return &ClickhouseNativeClient{}, err
 	}

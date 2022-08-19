@@ -122,7 +122,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
-        using State = MergeTreeDataPartState;
+        using State = IMergeTreeDataPart::State;
 
         size_t column_position = 0;
         auto & columns_info = projection_columns_info[part->name];

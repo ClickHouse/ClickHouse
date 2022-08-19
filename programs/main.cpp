@@ -345,7 +345,6 @@ struct Checker
 ;
 
 
-#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -397,7 +396,6 @@ void checkHarmfulEnvironmentVariables(char ** argv)
         _exit(error);
     }
 }
-#endif
 
 }
 
@@ -424,9 +422,7 @@ int main(int argc_, char ** argv_)
     ///  will work only after additional call of this function.
     updatePHDRCache();
 
-#ifndef DISABLE_HARMFUL_ENV_VAR_CHECK
     checkHarmfulEnvironmentVariables(argv_);
-#endif
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

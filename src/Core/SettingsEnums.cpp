@@ -26,13 +26,12 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
 
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
     {{"",    JoinStrictness::Unspecified},
-     {"ALL", JoinStrictness::All},
-     {"ANY", JoinStrictness::Any}})
+     {"ALL", JoinStrictness::ALL},
+     {"ANY", JoinStrictness::ANY}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
-    {{"default",              JoinAlgorithm::DEFAULT},
-     {"auto",                 JoinAlgorithm::AUTO},
+    {{"auto",                 JoinAlgorithm::AUTO},
      {"hash",                 JoinAlgorithm::HASH},
      {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
      {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},

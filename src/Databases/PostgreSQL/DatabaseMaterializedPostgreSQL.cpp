@@ -125,9 +125,9 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
 }
 
 
-void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
+void DatabaseMaterializedPostgreSQL::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
 {
-    DatabaseAtomic::startupTables(thread_pool, mode);
+    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
     startup_task->activateAndSchedule();
 }
 

@@ -9,6 +9,7 @@
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <base/StringRef.h>
 #include <base/unaligned.h>
 
 /** Search for a substring in a string by Volnitsky's algorithm

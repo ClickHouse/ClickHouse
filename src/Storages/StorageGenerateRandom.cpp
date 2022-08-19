@@ -220,10 +220,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnInt32::create();
             column->getData().resize(limit);
-
-            for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = (rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH;
-
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int32), rng);
             return column;
         }
         case TypeIndex::UInt32: [[fallthrough]];

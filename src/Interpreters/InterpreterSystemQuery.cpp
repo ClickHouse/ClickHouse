@@ -8,7 +8,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/ShellCommand.h>
 #include <Common/FileCacheFactory.h>
-#include <Common/FileCache.h>
+#include <Common/IFileCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -45,10 +45,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Freeze.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageFile.h>
-#include <Storages/StorageS3.h>
-#include <Storages/StorageURL.h>
-#include <Storages/HDFS/StorageHDFS.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -321,36 +317,13 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeIfReleasable();
+                    cache_data->cache->removeIfReleasable(/* remove_persistent_files */false);
             }
             else
             {
                 auto cache = FileCacheFactory::instance().get(query.filesystem_cache_path);
-                cache->removeIfReleasable();
+                cache->removeIfReleasable(/* remove_persistent_files */false);
             }
-            break;
-        }
-        case Type::DROP_SCHEMA_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
-            std::unordered_set<String> caches_to_drop;
-            if (query.schema_cache_storage.empty())
-                caches_to_drop = {"FILE", "S3", "HDFS", "URL"};
-            else
-                caches_to_drop = {query.schema_cache_storage};
-
-            if (caches_to_drop.contains("FILE"))
-                StorageFile::getSchemaCache(getContext()).clear();
-#if USE_AWS_S3
-            if (caches_to_drop.contains("S3"))
-                StorageS3::getSchemaCache(getContext()).clear();
-#endif
-#if USE_HDFS
-            if (caches_to_drop.contains("HDFS"))
-                StorageHDFS::getSchemaCache(getContext()).clear();
-#endif
-            if (caches_to_drop.contains("URL"))
-                StorageURL::getSchemaCache(getContext()).clear();
             break;
         }
         case Type::RELOAD_DICTIONARY:
@@ -787,7 +760,6 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -795,7 +767,8 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
         if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
         {
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
+            LOG_ERROR(log, "SYNC DATABASE REPLICA {}: Timed out!", database_name);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: command timed out. " \
                     "See the 'receive_timeout' setting", database_name);
         }
         LOG_TRACE(log, "SYNC DATABASE REPLICA {}: OK", database_name);
@@ -860,7 +833,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_SCHEMA_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;

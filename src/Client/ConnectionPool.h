@@ -54,7 +54,6 @@ public:
             const String & default_database_,
             const String & user_,
             const String & password_,
-            const String & quota_key_,
             const String & cluster_,
             const String & cluster_secret_,
             const String & client_name_,
@@ -68,7 +67,6 @@ public:
         default_database(default_database_),
         user(user_),
         password(password_),
-        quota_key(quota_key_),
         cluster(cluster_),
         cluster_secret(cluster_secret_),
         client_name(client_name_),
@@ -114,7 +112,7 @@ protected:
     {
         return std::make_shared<Connection>(
             host, port,
-            default_database, user, password, quota_key,
+            default_database, user, password,
             cluster, cluster_secret,
             client_name, compression, secure);
     }
@@ -125,7 +123,6 @@ private:
     String default_database;
     String user;
     String password;
-    String quota_key;
 
     /// For inter-server authorization
     String cluster;
@@ -152,7 +149,6 @@ public:
         String default_database;
         String user;
         String password;
-        String quota_key;
         String cluster;
         String cluster_secret;
         String client_name;
@@ -175,7 +171,6 @@ public:
         String default_database,
         String user,
         String password,
-        String quota_key,
         String cluster,
         String cluster_secret,
         String client_name,

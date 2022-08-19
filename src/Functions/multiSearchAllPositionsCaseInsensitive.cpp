@@ -19,7 +19,7 @@ using FunctionMultiSearchAllPositionsCaseInsensitive
 
 }
 
-REGISTER_FUNCTION(MultiSearchAllPositionsCaseInsensitive)
+void registerFunctionMultiSearchAllPositionsCaseInsensitive(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearchAllPositionsCaseInsensitive>();
 }

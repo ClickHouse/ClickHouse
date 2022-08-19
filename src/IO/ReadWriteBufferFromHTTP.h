@@ -44,7 +44,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int UNKNOWN_FILE_SIZE;
 }
 
 template <typename SessionPtr>
@@ -120,7 +119,6 @@ namespace detail
 
         size_t offset_from_begin_pos = 0;
         Range read_range;
-        std::optional<size_t> file_size;
 
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
@@ -203,29 +201,33 @@ namespace detail
 
         size_t getFileSize() override
         {
-            if (file_size)
-                return *file_size;
+            if (read_range.end)
+                return *read_range.end - getRangeBegin();
 
             Poco::Net::HTTPResponse response;
-            getHeadResponse(response);
-
-            if (response.hasContentLength())
+            for (size_t i = 0; i < 10; ++i)
             {
-                if (!read_range.end)
-                    read_range.end = getRangeBegin() + response.getContentLength();
-
-                file_size = response.getContentLength();
-                return *file_size;
+                try
+                {
+                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
+                    break;
+                }
+                catch (const Poco::Exception & e)
+                {
+                    LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
+                }
             }
 
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
+            if (response.hasContentLength())
+                read_range.end = getRangeBegin() + response.getContentLength();
+
+            return *read_range.end;
         }
 
         String getFileName() const override { return uri.toString(); }
 
         enum class InitializeError
         {
-            RETRIABLE_ERROR,
             /// If error is not retriable, `exception` variable must be set.
             NON_RETRIABLE_ERROR,
             /// Allows to skip not found urls for globs
@@ -236,25 +238,6 @@ namespace detail
         InitializeError initialization_error = InitializeError::NONE;
 
     private:
-        void getHeadResponse(Poco::Net::HTTPResponse & response)
-        {
-            for (size_t i = 0; i < settings.http_max_tries; ++i)
-            {
-                try
-                {
-                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
-                    break;
-                }
-                catch (const Poco::Exception & e)
-                {
-                    if (i == settings.http_max_tries - 1)
-                        throw;
-
-                    LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
-                }
-            }
-        }
-
         void setupExternalBuffer()
         {
             /**
@@ -418,30 +401,19 @@ namespace detail
                 saved_uri_redirect = uri_redirect;
             }
 
-            if (response.hasContentLength())
-                LOG_DEBUG(log, "Received response with content length: {}", response.getContentLength());
-
             if (withPartialContent() && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
             {
                 /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
                 if (read_range.begin && *read_range.begin != 0)
                 {
                     if (!exception)
-                    {
                         exception = std::make_exception_ptr(Exception(
                             ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                            "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
+                            "Cannot read with range: [{}, {}]",
                             *read_range.begin,
-                            read_range.end ? toString(*read_range.end) : "-",
-                            toString(response.getStatus()), response.getReason()));
-                    }
+                            read_range.end ? *read_range.end : '-'));
 
-                    /// Retry 200OK
-                    if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
-                        initialization_error = InitializeError::RETRIABLE_ERROR;
-                    else
-                        initialization_error = InitializeError::NON_RETRIABLE_ERROR;
-
+                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
                     return;
                 }
                 else if (read_range.end)
@@ -509,25 +481,13 @@ namespace detail
             bool result = false;
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
 
-            auto on_retriable_error = [&]()
-            {
-                    retry_with_range_header = true;
-                    impl.reset();
-                    auto http_session = session->getSession();
-                    http_session->reset();
-                    sleepForMilliseconds(milliseconds_to_wait);
-            };
-
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
-                exception = nullptr;
-
                 try
                 {
                     if (!impl)
                     {
                         initialize();
-
                         if (initialization_error == InitializeError::NON_RETRIABLE_ERROR)
                         {
                             assert(exception);
@@ -537,22 +497,6 @@ namespace detail
                         {
                             return false;
                         }
-                        else if (initialization_error == InitializeError::RETRIABLE_ERROR)
-                        {
-                            LOG_ERROR(
-                                log,
-                                "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
-                                "(Current backoff wait is {}/{} ms)",
-                                uri.toString(), i + 1, settings.http_max_tries, getOffset(),
-                                read_range.end ? toString(*read_range.end) : "unknown",
-                                milliseconds_to_wait, settings.http_retry_max_backoff_ms);
-
-                            assert(exception);
-                            on_retriable_error();
-                            continue;
-                        }
-
-                        assert(!exception);
 
                         if (use_external_buffer)
                         {
@@ -587,8 +531,12 @@ namespace detail
                         milliseconds_to_wait,
                         settings.http_retry_max_backoff_ms);
 
-                    on_retriable_error();
+                    retry_with_range_header = true;
                     exception = std::current_exception();
+                    impl.reset();
+                    auto http_session = session->getSession();
+                    http_session->reset();
+                    sleepForMilliseconds(milliseconds_to_wait);
                 }
 
                 milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
@@ -674,22 +622,6 @@ namespace detail
         }
 
         const std::string & getCompressionMethod() const { return content_encoding; }
-
-        std::optional<time_t> getLastModificationTime()
-        {
-            Poco::Net::HTTPResponse response;
-            getHeadResponse(response);
-            if (!response.has("Last-Modified"))
-                return std::nullopt;
-
-            String date_str = response.get("Last-Modified");
-            struct tm info;
-            char * res = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
-            if (!res || res != date_str.data() + date_str.size())
-                return std::nullopt;
-
-            return timegm(&info);
-        }
     };
 }
 

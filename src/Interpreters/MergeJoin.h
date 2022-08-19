@@ -2,7 +2,7 @@
 
 #include <shared_mutex>
 
-#include <Common/CacheBase.h>
+#include <Common/LRUCache.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
@@ -37,8 +37,6 @@ public:
 
     std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
-    static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
-
 private:
     friend class NotJoinedMerge;
 
@@ -69,7 +67,7 @@ private:
         size_t operator()(const Block & block) const { return block.bytes(); }
     };
 
-    using Cache = CacheBase<size_t, Block, std::hash<size_t>, BlockByteWeight>;
+    using Cache = LRUCache<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
     mutable std::shared_mutex rwlock;
     std::shared_ptr<TableJoin> table_join;

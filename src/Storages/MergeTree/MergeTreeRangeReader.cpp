@@ -8,7 +8,6 @@
 #include <base/range.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <bit>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -474,7 +473,7 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
             count += 64;
         else
         {
-            count += std::countl_zero(val);
+            count += __builtin_clzll(val);
             return count;
         }
     }
@@ -508,7 +507,7 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
             count += 64;
         else
         {
-            count += std::countl_zero(val);
+            count += __builtin_clzll(val);
             return count;
         }
     }
@@ -532,7 +531,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 
     size_t count = 0;
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) && defined(__POPCNT__)
     const __m128i zero16 = _mm_setzero_si128();
     while (end - begin >= 64)
     {
@@ -556,7 +555,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
             count += 64;
         else
         {
-            count += std::countl_zero(val);
+            count += __builtin_clzll(val);
             return count;
         }
     }
@@ -584,7 +583,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
             count += 64;
         else
         {
-            count += std::countl_zero(val);
+            count += __builtin_clzll(val);
             return count;
         }
     }
@@ -657,6 +656,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
+    , non_const_virtual_column_names(non_const_virtual_column_names_)
 {
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();
@@ -664,12 +664,10 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     for (const auto & name_and_type : merge_tree_reader->getColumns())
         sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
 
-    for (const auto & column_name : non_const_virtual_column_names_)
+    for (const auto & column_name : non_const_virtual_column_names)
     {
         if (sample_block.has(column_name))
             continue;
-
-        non_const_virtual_column_names.push_back(column_name);
 
         if (column_name == "_part_offset")
             sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
@@ -857,8 +855,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         if (read_result.num_rows)
         {
             /// Physical columns go first and then some virtual columns follow
-            /// TODO: is there a better way to account for virtual columns that were filled by previous readers?
-            size_t physical_columns_count = read_result.columns.size() - read_result.extra_columns_filled.size();
+            const size_t physical_columns_count = read_result.columns.size() - non_const_virtual_column_names.size();
             Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
 
             bool should_evaluate_missing_defaults;
@@ -982,7 +979,6 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
     }
 
     result.columns.emplace_back(std::move(column));
-    result.extra_columns_filled.push_back("_part_offset");
 }
 
 Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, size_t & num_rows)
@@ -1108,7 +1104,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     size_t num_columns = header.size();
 
     /// Check that we have columns from previous steps and newly read required columns
-    if (result.columns.size() < num_columns + result.extra_columns_filled.size())
+    if (result.columns.size() < num_columns + non_const_virtual_column_names.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Invalid number of columns passed to MergeTreeRangeReader. Expected {}, got {}",
                         num_columns, result.columns.size());
@@ -1150,10 +1146,6 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
                                     num_columns, result.columns.size());
 
                 block.insert({result.columns[pos], std::make_shared<DataTypeUInt64>(), column_name});
-            }
-            else if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
-            {
-                /// Do nothing, it will be added later
             }
             else
                 throw Exception("Unexpected non-const virtual column: " + column_name, ErrorCodes::LOGICAL_ERROR);

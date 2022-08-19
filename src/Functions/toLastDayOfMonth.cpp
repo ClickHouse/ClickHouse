@@ -8,7 +8,7 @@ namespace DB
 
 using FunctionToLastDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate, ToLastDayOfMonthImpl>;
 
-REGISTER_FUNCTION(ToLastDayOfMonth)
+void registerFunctionToLastDayOfMonth(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToLastDayOfMonth>();
 
