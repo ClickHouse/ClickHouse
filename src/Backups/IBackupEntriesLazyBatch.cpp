@@ -20,6 +20,10 @@ public:
     UInt64 getSize() const override { return getInternalBackupEntry()->getSize(); }
     std::optional<UInt128> getChecksum() const override { return getInternalBackupEntry()->getChecksum(); }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override { return getInternalBackupEntry()->getReadBuffer(); }
+    String getFilePath() const override
+    {
+        return getInternalBackupEntry()->getFilePath();
+    }
 
 private:
     BackupEntryPtr getInternalBackupEntry() const

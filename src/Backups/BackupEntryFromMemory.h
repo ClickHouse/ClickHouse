@@ -19,6 +19,11 @@ public:
     std::optional<UInt128> getChecksum() const override { return checksum; }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
 
+    String getFilePath() const override
+    {
+        return "";
+    }
+
 private:
     const String data;
     const std::optional<UInt128> checksum;

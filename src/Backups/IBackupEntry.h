@@ -24,6 +24,8 @@ public:
 
     /// Returns a read buffer for reading the data.
     virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer() const = 0;
+
+    virtual String getFilePath() const = 0;
 };
 
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
