@@ -174,12 +174,13 @@ void PocoHTTPClient::makeRequestInternal(
     ProfileEvents::increment(select_metric(S3MetricType::Count));
     CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
 
+    HTTPSessionPtr session;
+
     try
     {
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-            HTTPSessionPtr session;
             auto request_configuration = per_request_configuration(request);
 
             if (!request_configuration.proxy_host.empty())
@@ -201,6 +202,10 @@ void PocoHTTPClient::makeRequestInternal(
                 session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ true);
             }
 
+            LOG_TRACE((&Poco::Logger::get("PocoHTTPClient")), "PocoHTTPClient session uri {} use host {}", uri, session->getHost());
+
+            Poco::Net::SocketAddress socket(target_uri.getHost(), target_uri.getPort());
+            LOG_TRACE((&Poco::Logger::get("PocoHTTPClient")), "PocoHTTPClient session uri {} socket resolved into {}", uri, socket.host().toString());
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -336,7 +341,12 @@ void PocoHTTPClient::makeRequestInternal(
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));
+        std::string host = session ? session->getHost() : "";
+        if (!host.empty())
+            tryLogCurrentException(log, fmt::format("Failed to make request to: {} using host {}", uri, host));
+        else
+            tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));
+
         response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
         response->SetClientErrorMessage(getCurrentExceptionMessage(false));
 

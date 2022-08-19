@@ -27,6 +27,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <sstream>
+#include <boost/algorithm/string/join.hpp>
 
 
 namespace ProfileEvents
@@ -74,11 +75,22 @@ namespace
         if (https)
         {
 #if USE_SSL
-            String resolved_host = resolve_host ? DNSResolver::instance().resolveHost(host).toString() : host;
-            auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(host, port);
+            String resolved_host = host;
             if (resolve_host)
-                https_session->setResolvedHost(DNSResolver::instance().resolveHost(host).toString());
+            {
+                auto hosts_addresses = DNSResolver::instance().resolveHostAll(host);
+                Strings resolved_hosts;
 
+                for (auto & host_address : hosts_addresses)
+                    resolved_hosts.push_back(host_address.toString());
+
+                LOG_TRACE((&Poco::Logger::get("HTTPCommon")), "Resolved host {} into {}", host, boost::join(resolved_hosts, ", "));
+
+                if (!resolved_hosts.front().empty())
+                    resolved_host = resolved_hosts.front();
+            }
+
+            auto https_session = std::make_shared<Poco::Net::HTTPSClientSession>(resolved_host, port);
             session = std::move(https_session);
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);

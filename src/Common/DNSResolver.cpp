@@ -12,6 +12,7 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
+#include <boost/algorithm/string/join.hpp>
 #include "DNSPTRResolverProvider.h"
 
 namespace ProfileEvents
@@ -99,6 +100,13 @@ static DNSResolver::IPAddresses hostByName(const std::string & host)
     try
     {
         addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
+
+        Strings addreses_strings;
+
+        for (auto & address : addresses)
+            addreses_strings.push_back(address.toString());
+
+        LOG_TRACE(&Poco::Logger::get("DNSResolver"), "Resolved host ({}), into addresses {}", host, boost::join(addreses_strings, ", "));
     }
     catch (const Poco::Net::DNSException & e)
     {
