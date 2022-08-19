@@ -116,6 +116,7 @@ void writeValue(
     {
         nested_col = nullable_column->getNestedColumnPtr();
     }
+    nested_col = nested_col->convertToFullColumnIfConst();
     WhichDataType which(nested_col->getDataType());
     if (which.isUInt8())
     {
