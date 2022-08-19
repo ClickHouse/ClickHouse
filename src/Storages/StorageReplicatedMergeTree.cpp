@@ -385,9 +385,17 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     if (attach)
     {
+        LOG_INFO(log, "Table will be in readonly mode until initialization is finished");
+
+        bool connected_to_zk = current_zookeeper != nullptr;
+
         attach_thread.setSkipSanityChecks(skip_sanity_checks);
         attach_thread.start();
-        attach_thread.waitFirstTry();
+
+        // if it's first try and we already failed to connect to ZK
+        // we don't want to wait two connection timeouts
+        if (connected_to_zk)
+            attach_thread.waitFirstTry();
 
         return;
     }
@@ -413,9 +421,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             /// We have to check granularity on other replicas. If it's fixed we
             /// must create our new replica with fixed granularity and store this
             /// information in /replica/metadata.
-            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper(getZooKeeper());
+            other_replicas_fixed_granularity = checkFixedGranularityInZookeeper();
 
-            checkTableStructure(getZooKeeper(), zookeeper_path, metadata_snapshot);
+            checkTableStructure(zookeeper_path, metadata_snapshot);
 
             Coordination::Stat metadata_stat;
             current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
@@ -439,10 +447,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         throw;
     }
 
-    createNewZooKeeperNodes(getZooKeeper());
-    syncPinnedPartUUIDs(getZooKeeper());
+    createNewZooKeeperNodes();
+    syncPinnedPartUUIDs();
 
-    createTableSharedID(getZooKeeper());
+    createTableSharedID();
 
     init_phase = InitializationPhase::INITIALIZATION_DONE;
 }
@@ -460,8 +468,9 @@ String StorageReplicatedMergeTree::getDefaultReplicaName(const Poco::Util::Abstr
 }
 
 
-bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(zkutil::ZooKeeperPtr zookeeper)
+bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper()
 {
+    auto zookeeper = getZooKeeper();
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
     auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
     return metadata_from_zk.index_granularity_bytes == 0;
@@ -571,8 +580,9 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     }
 }
 
-void StorageReplicatedMergeTree::createNewZooKeeperNodes(zkutil::ZooKeeperPtr zookeeper)
+void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 {
+    auto zookeeper = getZooKeeper();
     std::vector<zkutil::ZooKeeper::FutureCreate> futures;
 
     /// These 4 nodes used to be created in createNewZookeeperNodes() and they were moved to createTable()
@@ -1051,8 +1061,9 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 /** Verify that list of columns and table storage_settings_ptr match those specified in ZK (/metadata).
   * If not, throw an exception.
   */
-void StorageReplicatedMergeTree::checkTableStructure(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
+void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot)
 {
+    auto zookeeper = getZooKeeper();
     ReplicatedMergeTreeTableMetadata old_metadata(*this, metadata_snapshot);
 
     Coordination::Stat metadata_stat;
@@ -1107,8 +1118,9 @@ static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const Strin
 }
 
 
-void StorageReplicatedMergeTree::checkParts(zkutil::ZooKeeperPtr zookeeper, bool skip_sanity_checks)
+void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 {
+    auto zookeeper = getZooKeeper();
     Strings expected_parts_vec = zookeeper->getChildren(fs::path(replica_path) / "parts");
 
     /// Parts in ZK.
@@ -1245,8 +1257,9 @@ void StorageReplicatedMergeTree::checkParts(zkutil::ZooKeeperPtr zookeeper, bool
 }
 
 
-void StorageReplicatedMergeTree::syncPinnedPartUUIDs(zkutil::ZooKeeperPtr zookeeper)
+void StorageReplicatedMergeTree::syncPinnedPartUUIDs()
 {
+    auto zookeeper = getZooKeeper();
     Coordination::Stat stat;
     String s = zookeeper->get(zookeeper_path + "/pinned_part_uuids", &stat);
 
@@ -1569,7 +1582,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         case LogEntry::ALTER_METADATA:
             return executeMetadataAlter(entry);
         case LogEntry::SYNC_PINNED_PART_UUIDS:
-            syncPinnedPartUUIDs(getZooKeeper());
+            syncPinnedPartUUIDs();
             return true;
         case LogEntry::CLONE_PART_FROM_SHARD:
             executeClonePartFromShard(entry);
@@ -3440,8 +3453,9 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::startBeingLeader(zkutil::ZooKeeperPtr zookeeper)
+void StorageReplicatedMergeTree::startBeingLeader()
 {
+    auto zookeeper = getZooKeeper();
     assert(zookeeper);
     if (!getSettings()->replicated_can_become_leader)
     {
@@ -4177,10 +4191,10 @@ void StorageReplicatedMergeTree::startup()
         init_phase = STARTUP_IN_PROGRESS;
     }
 
-    startupImpl(getZooKeeper());
+    startupImpl();
 }
 
-void StorageReplicatedMergeTree::startupImpl(zkutil::ZooKeeperPtr zookeeper)
+void StorageReplicatedMergeTree::startupImpl()
 {
     auto has_metadata_in_zk = hasMetadataInZooKeeper();
 
@@ -4196,12 +4210,13 @@ void StorageReplicatedMergeTree::startupImpl(zkutil::ZooKeeperPtr zookeeper)
 
     try
     {
+        auto zookeeper = getZooKeeper();
         InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
         [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
         assert(prev_ptr == nullptr);
         getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
-        startBeingLeader(zookeeper);
+        startBeingLeader();
 
         /// In this thread replica will be activated.
         restarting_thread.start();
@@ -5122,7 +5137,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     if (!is_first_replica)
         createReplica(metadata_snapshot);
 
-    createNewZooKeeperNodes(getZooKeeper());
+    createNewZooKeeperNodes();
 
     LOG_INFO(log, "Created ZK nodes for table");
 
@@ -5134,7 +5149,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 
     LOG_INFO(log, "Attached all partitions, starting table");
 
-    startupImpl(getZooKeeper());
+    startupImpl();
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
@@ -6981,7 +6996,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
     {
         /// Optimistic check that for compatible destination table structure.
-        checkTableStructure(getZooKeeper(), to, getInMemoryMetadataPtr());
+        checkTableStructure(to, getInMemoryMetadataPtr());
     }
 
     PinnedPartUUIDs src_pins;
@@ -7502,11 +7517,12 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 }
 
 
-void StorageReplicatedMergeTree::createTableSharedID(zkutil::ZooKeeperPtr zookeeper)
+void StorageReplicatedMergeTree::createTableSharedID()
 {
     if (table_shared_id != UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
 
+    auto zookeeper = getZooKeeper();
     String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
     String id;
     if (!zookeeper->tryGet(zookeeper_table_id_path, id))
