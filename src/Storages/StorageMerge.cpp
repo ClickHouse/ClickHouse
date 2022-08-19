@@ -542,7 +542,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             return {};
 
         if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-            read_from_merge_tree->addFilter(added_filter, added_filter_column_name);
+            read_from_merge_tree->addFilterNodes(added_filter_nodes);
 
         builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),

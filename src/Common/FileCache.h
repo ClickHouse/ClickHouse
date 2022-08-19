@@ -71,8 +71,6 @@ public:
      */
     FileSegmentsHolder get(const Key & key, size_t offset, size_t size);
 
-    FileSegmentsHolder setDownloading(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
-
     /// Remove files by `key`. Removes files which might be used at the moment.
     void removeIfExists(const Key & key);
 
@@ -94,6 +92,19 @@ public:
     size_t getFileSegmentsNum() const;
 
     static bool isReadOnly();
+
+    /**
+     * Create a file segment of exactly requested size with EMPTY state.
+     * Throw exception if requested size exceeds max allowed file segment size.
+     * This method is for protected usage: file segment range writer uses it
+     * to dynamically allocate file segments.
+     */
+    FileSegmentPtr createFileSegmentForDownload(
+         const Key & key,
+         size_t offset,
+         size_t size,
+         const CreateFileSegmentSettings & create_settings,
+         std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments getSnapshot() const;
 
@@ -128,6 +139,8 @@ private:
     bool is_initialized = false;
 
     mutable std::mutex mutex;
+
+    bool allow_persistent_files;
 
     size_t background_download_max_memory_usage;
     std::optional<ThreadPool> async_write_threadpool;

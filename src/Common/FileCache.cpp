@@ -31,11 +31,12 @@ FileCache::FileCache(
     , max_file_segment_size(cache_settings_.max_file_segment_size)
     , log(&Poco::Logger::get("FileCache"))
     , background_download_max_memory_usage(cache_settings_.background_download_max_memory_usage)
+    , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
+    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
     , max_stash_element_size(cache_settings_.max_elements)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
-    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
 {
 }
 
@@ -493,17 +494,19 @@ FileCache::FileSegmentCell * FileCache::addCell(
     return &(it->second);
 }
 
-FileSegmentsHolder FileCache::setDownloading(
+FileSegmentPtr FileCache::createFileSegmentForDownload(
     const Key & key,
     size_t offset,
     size_t size,
-    const CreateFileSegmentSettings & settings)
+    const CreateFileSegmentSettings & settings,
+    std::lock_guard<std::mutex> & cache_lock)
 {
-    std::lock_guard cache_lock(mutex);
-
 #ifndef NDEBUG
     assertCacheCorrectness(key, cache_lock);
 #endif
+
+    if (size > max_file_segment_size)
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Requested size exceeds max file segment size");
 
     auto * cell = getCell(key, offset, cache_lock);
     if (cell)
@@ -512,8 +515,12 @@ FileSegmentsHolder FileCache::setDownloading(
             "Cache cell already exists for key `{}` and offset {}",
             key.toString(), offset);
 
-    auto file_segments = splitRangeIntoCells(key, offset, size, FileSegment::State::DOWNLOADING, settings, cache_lock);
-    return FileSegmentsHolder(std::move(file_segments));
+    cell = addCell(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock);
+
+    if (!cell)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a new cell for download");
+
+    return cell->file_segment;
 }
 
 bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)
@@ -587,6 +594,13 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, std::loc
                 if (cell->releasable())
                 {
                     auto & file_segment = cell->file_segment;
+
+                    if (file_segment->isPersistent() && allow_persistent_files)
+                    {
+                        LOG_DEBUG(log, "File segment will not be removed, because it is persistent: {}", file_segment->getInfoForLog());
+                        continue;
+                    }
+
                     std::lock_guard segment_lock(file_segment->mutex);
 
                     switch (file_segment->download_state)
@@ -701,6 +715,12 @@ bool FileCache::tryReserveForMainList(
         if (cell->releasable())
         {
             auto & file_segment = cell->file_segment;
+
+            if (file_segment->isPersistent() && allow_persistent_files)
+            {
+                LOG_DEBUG(log, "File segment will not be removed, because it is persistent: {}", file_segment->getInfoForLog());
+                continue;
+            }
 
             std::lock_guard segment_lock(file_segment->mutex);
 
@@ -823,7 +843,7 @@ void FileCache::removeIfExists(const Key & key)
     }
 }
 
-void FileCache::removeIfReleasable(bool remove_persistent_files)
+void FileCache::removeIfReleasable()
 {
     /// Try remove all cached files by cache_base_path.
     /// Only releasable file segments are evicted.
@@ -847,7 +867,8 @@ void FileCache::removeIfReleasable(bool remove_persistent_files)
         if (cell->releasable())
         {
             auto file_segment = cell->file_segment;
-            if (file_segment && (!file_segment->isPersistent() || remove_persistent_files))
+
+            if (file_segment)
             {
                 to_remove.emplace_back(file_segment);
             }
@@ -937,8 +958,13 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
         fs::directory_iterator key_it{key_prefix_it->path()};
         for (; key_it != fs::directory_iterator(); ++key_it)
         {
-            key = Key(unhexUInt<UInt128>(key_it->path().filename().string().data()));
+            if (!key_it->is_directory())
+            {
+                LOG_WARNING(log, "Unexpected file: {}. Expected a directory", key_it->path().string());
+                continue;
+            }
 
+            key = Key(unhexUInt<UInt128>(key_it->path().filename().string().data()));
             fs::directory_iterator offset_it{key_it->path()};
             for (; offset_it != fs::directory_iterator(); ++offset_it)
             {
@@ -957,7 +983,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
 
                 if (!parsed)
                 {
-                    LOG_WARNING(log, "Unexpected file: ", offset_it->path().string());
+                    LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
                     continue; /// Or just remove? Some unexpected file.
                 }
 

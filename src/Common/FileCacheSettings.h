@@ -19,7 +19,6 @@ struct FileCacheSettings
     bool enable_filesystem_query_cache_limit = false;
 
     bool do_not_evict_index_and_mark_files = true;
-    bool allow_to_remove_persistent_segments_from_cache_by_default = true;
 
     /// In bytes.
     size_t background_download_max_memory_usage = REMOTE_FS_OBJECTS_CACHE_BACKGROUND_DOWNLOAD_MEMORY_USAGE;

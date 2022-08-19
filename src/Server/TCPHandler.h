@@ -102,6 +102,8 @@ struct QueryState
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
+    Stopwatch watch;
+    UInt64 prev_elapsed_ns = 0;
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
