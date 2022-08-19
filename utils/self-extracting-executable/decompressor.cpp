@@ -226,8 +226,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         file_info = *reinterpret_cast<FileData*>(input + files_pointer);
         files_pointer += sizeof(FileData);
 
-        size_t file_name_len =
-            (strcmp(input + files_pointer, name) ? le64toh(file_info.name_length) : le64toh(file_info.name_length) + 13 + 7);
+        size_t file_name_len = file_info.exec ? strlen(name) + 13 + 7 : le64toh(file_info.name_length);
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
 
@@ -238,9 +237,9 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             strcat(file_name, path);
             strcat(file_name, "/");
         }
-        strcat(file_name, input + files_pointer);
+        strcat(file_name, file_info.exec ? name : input + files_pointer);
         files_pointer += le64toh(file_info.name_length);
-        if (file_name_len != le64toh(file_info.name_length))
+        if (file_info.exec)
         {
             strcat(file_name, ".decompressed.XXXXXX");
             int fd = mkstemp(file_name);
