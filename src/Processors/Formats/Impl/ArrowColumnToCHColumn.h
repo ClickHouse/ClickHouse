@@ -36,6 +36,14 @@ public:
 
     static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name);
 
+    struct DictionaryInfo
+    {
+        std::shared_ptr<ColumnWithTypeAndName> values;
+        Int64 default_value_index = -1;
+        UInt64 dictionary_size;
+    };
+
+
 private:
     const Block & header;
     const std::string format_name;
@@ -46,7 +54,7 @@ private:
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
-    std::unordered_map<std::string, std::shared_ptr<ColumnWithTypeAndName>> dictionary_values;
+    std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
 };
 
 }
