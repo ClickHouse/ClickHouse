@@ -10,7 +10,7 @@ namespace QueryPlanOptimizations
 {
 
 /// This is the main function which optimizes the whole QueryPlan tree.
-void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, std::function<void(size_t)> callback = {});
 
 void optimizePrimaryKeyCondition(QueryPlan::Node & root);
 

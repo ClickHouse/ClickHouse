@@ -14,7 +14,7 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, std::function<void(size_t)> callback)
 {
     if (!settings.optimize_plan)
         return;
@@ -38,6 +38,9 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
 
     size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
+
+    if (callback)
+        callback(0);
 
     while (!stack.empty())
     {
@@ -81,7 +84,11 @@ void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Nod
             /// Try to apply optimization.
             auto update_depth = optimization.apply(frame.node, nodes);
             if (update_depth)
+            {
                 ++total_applied_optimizations;
+                if (callback)
+                    callback(total_applied_optimizations);
+            }
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);
         }
 

@@ -448,16 +448,24 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
+
+    WriteBufferFromOwnString buf;
+
     try
     {
-        QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
+        auto callback = [&buf, this](size_t i)
+        {
+            buf << "\n================= " << i << "\n";
+            explainPlan(buf, {.header=true, .actions=true});
+            buf << "\n----------------- ";
+        };
+        QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes, std::move(callback));
     }
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::ILLEGAL_COLUMN)
         {
             tryLogCurrentException("QueryPlan");
-            WriteBufferFromOwnString buf;
             explainPlan(buf, {.header=true, .actions=true});
             LOG_TRACE(&Poco::Logger::get("QueryPlan"), "{}", buf.str());
             throw Exception(ErrorCodes::LOGICAL_ERROR, e.message());
