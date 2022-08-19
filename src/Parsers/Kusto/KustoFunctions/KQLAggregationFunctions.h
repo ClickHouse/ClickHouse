@@ -165,6 +165,20 @@ protected:
     bool convertImpl(String &out,IParser::Pos &pos) override;
 };
 
+class Percentile : public IParserKQLFunction
+{
+protected:
+    const char * getName() const override { return "percentile()"; }
+    bool convertImpl(String &out,IParser::Pos &pos) override;
+};
+
+class Percentilew : public IParserKQLFunction
+{
+protected:
+    const char * getName() const override { return "percentilew()"; }
+    bool convertImpl(String &out,IParser::Pos &pos) override;
+};
+
 class Percentiles : public IParserKQLFunction
 {
 protected:

@@ -33,6 +33,12 @@
    **do not support `range()` now**  
    `DataTable| summarize t = percentilesw_array(Bucket, Frequency, dynamic([10, 50, 30]))`  
 
+- [percentile](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   `Customers | summarize t = percentile(Age, 50) by FirstName`  
+
+- [percentilew](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/percentiles-aggfunction)  
+   `DataTable | summarize t = percentilew(Bucket, Frequency, 50)`  
+
 # August 15, 2022
 
 ## DateTpye

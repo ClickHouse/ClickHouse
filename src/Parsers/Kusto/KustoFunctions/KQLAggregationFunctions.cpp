@@ -213,6 +213,51 @@ bool MinIf::convertImpl(String &out,IParser::Pos &pos)
     return directMapping(out,pos,"minIf");
 }
 
+bool Percentile::convertImpl(String &out,IParser::Pos &pos)
+{
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+    
+    ++pos;
+    String column_name = getConvertedArgument(fn_name,pos);
+    trim(column_name);
+    
+    if(pos->type != TokenType::Comma)
+        return false;
+    ++pos;
+    String value = getConvertedArgument(fn_name,pos);
+    trim(value);
+
+    out = "quantile(" + value + "/100)(" + column_name + ")";
+    std::cout << "Mallik: " << out << std::endl;
+    return true;
+}
+
+bool Percentilew::convertImpl(String &out,IParser::Pos &pos)
+{
+    String fn_name = getKQLFunctionName(pos);
+
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String bucket_column = getConvertedArgument(fn_name,pos);
+    trim(bucket_column);
+
+    ++pos;
+    String frequency_column = getConvertedArgument(fn_name,pos);
+    trim(frequency_column);
+
+    ++pos;
+    String value = getConvertedArgument(fn_name,pos);
+    trim(value);
+
+    out = "quantileExactWeighted( " + value + "/100)(" + bucket_column + ","+frequency_column + ")";
+    return true;
+}
+
 bool Percentiles::convertImpl(String &out,IParser::Pos &pos)
 {
     String fn_name = getKQLFunctionName(pos);
@@ -303,11 +348,11 @@ bool Percentilesw::convertImpl(String &out,IParser::Pos &pos)
 
     ++pos;
     String bucket_column = getConvertedArgument(fn_name,pos);
-    bucket_column.pop_back();
+    trim(bucket_column);
 
     ++pos;
     String frequency_column = getConvertedArgument(fn_name,pos);
-    frequency_column.pop_back();
+    trim(frequency_column);
 
     String expr;
     String value;
@@ -348,11 +393,11 @@ bool PercentileswArray::convertImpl(String &out,IParser::Pos &pos)
 
     ++pos;
     String bucket_column = getConvertedArgument(fn_name,pos);
-    bucket_column.pop_back();
+    trim(bucket_column);
 
     ++pos;
     String frequency_column = getConvertedArgument(fn_name,pos);
-    frequency_column.pop_back();
+    trim(frequency_column);
 
     String expr = "quantilesExactWeighted(";
     String value;

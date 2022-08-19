@@ -136,6 +136,8 @@ namespace DB
         maxif,
         min,
         minif,
+        percentile,
+        percentilew,
         percentiles,
         percentiles_array,
         percentilesw,

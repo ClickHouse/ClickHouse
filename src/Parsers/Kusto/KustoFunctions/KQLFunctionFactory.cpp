@@ -152,6 +152,8 @@ namespace DB
         {"maxif", KQLFunctionValue::maxif},
         {"min", KQLFunctionValue::min},
         {"minif", KQLFunctionValue::minif},
+        {"percentile", KQLFunctionValue::percentile},
+        {"percentilew", KQLFunctionValue::percentilew},
         {"percentiles", KQLFunctionValue::percentiles},
         {"percentiles_array", KQLFunctionValue::percentiles_array},
         {"percentilesw", KQLFunctionValue::percentilesw},
@@ -608,6 +610,12 @@ std::unique_ptr<IParserKQLFunction> KQLFunctionFactory::get(String &kql_function
 
         case KQLFunctionValue::minif:
             return std::make_unique<MinIf>();
+
+        case KQLFunctionValue::percentile:
+            return std::make_unique<Percentile>();
+
+        case KQLFunctionValue::percentilew:
+            return std::make_unique<Percentilew>();
 
         case KQLFunctionValue::percentiles:
             return std::make_unique<Percentiles>();
