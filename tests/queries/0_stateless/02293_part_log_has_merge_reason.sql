@@ -1,3 +1,5 @@
+-- Tags: disabled
+
 DROP TABLE IF EXISTS t_part_log_has_merge_type_table;
 
 CREATE TABLE t_part_log_has_merge_type_table

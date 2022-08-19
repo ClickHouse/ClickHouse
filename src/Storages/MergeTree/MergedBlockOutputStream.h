@@ -58,8 +58,7 @@ public:
             MergeTreeData::MutableDataPartPtr & new_part,
             bool sync,
             const NamesAndTypesList * total_columns_list = nullptr,
-            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
-            const WriteSettings & settings = {});
+            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
     void finalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
@@ -76,13 +75,13 @@ private:
     using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
     WrittenFiles finalizePartOnDisk(
             const MergeTreeData::DataPartPtr & new_part,
-            MergeTreeData::DataPart::Checksums & checksums,
-            const WriteSettings & write_settings);
+            MergeTreeData::DataPart::Checksums & checksums);
 
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
+    WriteSettings write_settings;
 };
 
 using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;
