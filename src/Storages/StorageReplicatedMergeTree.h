@@ -501,9 +501,9 @@ private:
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */
-    void createNewZooKeeperNodes(zkutil::ZooKeeperPtr zookeeper);
+    void createNewZooKeeperNodes();
 
-    void checkTableStructure(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
+    void checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
@@ -514,11 +514,11 @@ private:
       * If any local parts are not mentioned in ZK, remove them.
       *  But if there are too many, throw an exception just in case - it's probably a configuration error.
       */
-    void checkParts(zkutil::ZooKeeperPtr zookeeper, bool skip_sanity_checks);
+    void checkParts(bool skip_sanity_checks);
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.
-    void syncPinnedPartUUIDs(zkutil::ZooKeeperPtr zookeeper);
+    void syncPinnedPartUUIDs();
 
     /** Check that the part's checksum is the same as the checksum of the same part on some other replica.
       * If no one has such a part, nothing checks.
@@ -610,7 +610,7 @@ private:
 
     /// Start being leader (if not disabled by setting).
     /// Since multi-leaders are allowed, it just sets is_leader flag.
-    void startBeingLeader(zkutil::ZooKeeperPtr zookeeper);
+    void startBeingLeader();
     void stopBeingLeader();
 
     /** Selects the parts to merge and writes to the log.
@@ -813,7 +813,7 @@ private:
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
-    bool checkFixedGranularityInZookeeper(zkutil::ZooKeeperPtr zookeeper);
+    bool checkFixedGranularityInZookeeper();
 
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(
@@ -845,7 +845,7 @@ private:
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
     // Create table id if needed
-    void createTableSharedID(zkutil::ZooKeeperPtr zookeeper);
+    void createTableSharedID();
 
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
@@ -856,7 +856,7 @@ private:
     /// If somebody already holding the lock -- return std::nullopt.
     std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
 
-    void startupImpl(zkutil::ZooKeeperPtr zookeeper);
+    void startupImpl();
 
     std::optional<bool> hasMetadataInZooKeeper() const;
 };

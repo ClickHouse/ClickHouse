@@ -41,8 +41,6 @@ private:
 
     std::atomic<bool> shutdown_called{false};
 
-    zkutil::ZooKeeperPtr zookeeper;
-
     UInt64 retry_period;
 
     bool skip_sanity_checks{false};

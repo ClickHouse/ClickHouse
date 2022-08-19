@@ -33,6 +33,7 @@ void ReplicatedMergeTreeAttachThread::shutdown()
 
 void ReplicatedMergeTreeAttachThread::run()
 {
+
     bool needs_retry{false};
     try
     {
@@ -69,16 +70,18 @@ void ReplicatedMergeTreeAttachThread::run()
     }
 
     if (needs_retry)
+    {
+        LOG_INFO(log, "Will retry initialization in {}s", retry_period);
         task->scheduleAfter(retry_period * 1000);
+    }
 }
 
 void ReplicatedMergeTreeAttachThread::runImpl()
 {
-    LOG_INFO(log, "Table will be in readonly mode until initialization is finished");
-
-    if (first_try_done || !zookeeper)
+    if (first_try_done || !storage.current_zookeeper)
         storage.setZooKeeper();
 
+    auto zookeeper = storage.getZooKeeper();
     const auto & zookeeper_path = storage.zookeeper_path;
     bool metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
     if (!metadata_exists)
@@ -111,15 +114,15 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     if (!replica_metadata_exists || replica_metadata.empty())
     {
         /// We have to check shared node granularity before we create ours.
-        storage.other_replicas_fixed_granularity = storage.checkFixedGranularityInZookeeper(zookeeper);
+        storage.other_replicas_fixed_granularity = storage.checkFixedGranularityInZookeeper();
 
         ReplicatedMergeTreeTableMetadata current_metadata(storage, metadata_snapshot);
 
         zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(), zkutil::CreateMode::Persistent);
     }
 
-    storage.checkTableStructure(zookeeper, replica_path, metadata_snapshot);
-    storage.checkParts(zookeeper, skip_sanity_checks);
+    storage.checkTableStructure(replica_path, metadata_snapshot);
+    storage.checkParts(skip_sanity_checks);
 
     if (zookeeper->exists(replica_path + "/metadata_version"))
     {
@@ -144,10 +147,10 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
         storage.clearOldBrokenPartsFromDetachedDirecory();
 
-    storage.createNewZooKeeperNodes(zookeeper);
-    storage.syncPinnedPartUUIDs(zookeeper);
+    storage.createNewZooKeeperNodes();
+    storage.syncPinnedPartUUIDs();
 
-    storage.createTableSharedID(zookeeper);
+    storage.createTableSharedID();
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization()
@@ -165,7 +168,7 @@ void ReplicatedMergeTreeAttachThread::finalizeInitialization()
         storage.init_phase = STARTUP_IN_PROGRESS;
     }
 
-    storage.startupImpl(std::move(zookeeper));
+    storage.startupImpl();
 }
 
 void ReplicatedMergeTreeAttachThread::setSkipSanityChecks(bool skip_sanity_checks_)
