@@ -24,6 +24,7 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
@@ -88,7 +89,6 @@
 
 #include <base/scope_guard.h>
 #include <Common/scope_guard_safe.h>
-#include "Storages/MergeTree/ReplicatedMergeTreeAttachThread.h"
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -4153,7 +4153,7 @@ std::optional<bool> StorageReplicatedMergeTree::hasMetadataInZooKeeper() const
     {
         std::lock_guard lock(initialization_mutex);
         if (init_phase == InitializationPhase::INITIALIZING)
-            throw Exception(ErrorCodes::NOT_INITIALIZED, "Table {} is not initialized yet", getStorageID().getFullTableName());
+            return std::nullopt;
     }
 
     return has_metadata_in_zookeeper;

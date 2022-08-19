@@ -48,45 +48,9 @@ private:
     bool skip_sanity_checks{false};
 
     void run();
-
-    void tryReconnect();
-
-    void resetCurrentZooKeeper();
+    void runImpl();
 
     void finalizeInitialization();
-
-    template <typename Function>
-    decltype(auto) withRetries(Function && fn)
-    {
-        while (true)
-        {
-            try
-            {
-                return fn();
-            }
-            catch (const Coordination::Exception & e)
-            {
-                if (e.code == Coordination::Error::ZCONNECTIONLOSS || e.code == Coordination::Error::ZSESSIONEXPIRED)
-                {
-                    if (!first_try_done)
-                        resetCurrentZooKeeper();
-
-                    LOG_TRACE(log, "Lost connection to ZooKeeper, will try to reconnect");
-                    notifyIfFirstTry();
-                    tryReconnect();
-                }
-                else if (e.code == Coordination::Error::ZOPERATIONTIMEOUT)
-                    LOG_TRACE(log, "Operation timeout, will retry again");
-                else
-                    throw;
-
-                if (shutdown_called)
-                    throw Exception(ErrorCodes::ABORTED, "Shutdown called");
-            }
-        }
-    }
-
-    void notifyIfFirstTry();
 };
 
 }
