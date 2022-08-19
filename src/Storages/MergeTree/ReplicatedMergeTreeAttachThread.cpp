@@ -23,7 +23,10 @@ ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
 void ReplicatedMergeTreeAttachThread::shutdown()
 {
     if (!shutdown_called.exchange(true))
+    {
         task->deactivate();
+        LOG_INFO(log, "Attach thread finished");
+    }
 }
 
 void ReplicatedMergeTreeAttachThread::run()
@@ -158,12 +161,12 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     std::unique_lock lock(storage.initialization_mutex);
-    if (!storage.startup_called)
-        return;
-
-    lock.unlock();
-    storage.startupImpl();
-    lock.lock();
+    if (storage.startup_called)
+    {
+        lock.unlock();
+        storage.startupImpl();
+        lock.lock();
+    }
 
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
