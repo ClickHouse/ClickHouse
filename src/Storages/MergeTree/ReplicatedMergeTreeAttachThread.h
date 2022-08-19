@@ -8,13 +8,11 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ABORTED;
-}
-
 class StorageReplicatedMergeTree;
 
+// Attach table to the existing data.
+// Initialize the table by creating all the necessary nodes and do the required checks.
+// Initialization is repeated if an operation fails because of a ZK request or connection loss.
 class ReplicatedMergeTreeAttachThread
 {
 public:

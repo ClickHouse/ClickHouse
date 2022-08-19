@@ -60,10 +60,12 @@ void ReplicatedMergeTreeAttachThread::run()
         if (!needs_retry)
         {
             LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", e.message());
-            {
-                std::lock_guard lock(storage.initialization_mutex);
-                storage.init_phase = StorageReplicatedMergeTree::InitializationPhase::INITIALIZATION_DONE;
-            }
+            std::lock_guard lock(storage.initialization_mutex);
+            storage.initialization_done = true;
+        }
+        else
+        {
+            LOG_ERROR(log, "Initialization failed. Error: {}", e.message());
         }
     }
 
@@ -94,7 +96,6 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode.", zookeeper_path);
         storage.has_metadata_in_zookeeper = false;
-        finalizeInitialization();
         return;
     }
 
@@ -159,22 +160,18 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     storage.createTableSharedID();
 };
 
-void ReplicatedMergeTreeAttachThread::finalizeInitialization()
+void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    LOG_INFO(log, "Table is initialized");
-    using enum StorageReplicatedMergeTree::InitializationPhase;
-    {
-        std::lock_guard lock(storage.initialization_mutex);
-        if (!storage.startup_called)
-        {
-            storage.init_phase = INITIALIZATION_DONE;
-            return;
-        }
+    std::unique_lock lock(storage.initialization_mutex);
+    if (!storage.startup_called)
+        return;
 
-        storage.init_phase = STARTUP_IN_PROGRESS;
-    }
-
+    lock.unlock();
     storage.startupImpl();
+    lock.lock();
+
+    storage.initialization_done = true;
+    LOG_INFO(log, "Table is initialized");
 }
 
 void ReplicatedMergeTreeAttachThread::setSkipSanityChecks(bool skip_sanity_checks_)

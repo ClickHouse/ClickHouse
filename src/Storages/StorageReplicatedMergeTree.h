@@ -454,15 +454,8 @@ private:
 
     PartMovesBetweenShardsOrchestrator part_moves_between_shards_orchestrator;
 
-    enum class InitializationPhase : uint8_t
-    {
-        INITIALIZING,
-        INITIALIZATION_DONE,
-        STARTUP_IN_PROGRESS,
-        STARTUP_DONE
-    };
     mutable std::mutex initialization_mutex;
-    TSA_GUARDED_BY(initialization_mutex) InitializationPhase init_phase{InitializationPhase::INITIALIZING};
+    TSA_GUARDED_BY(initialization_mutex) bool initialization_done{false};
     TSA_GUARDED_BY(initialization_mutex) bool startup_called{false};
 
     /// True if replica was created for existing table with fixed granularity
@@ -858,8 +851,6 @@ private:
     std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
 
     void startupImpl();
-
-    std::optional<bool> hasMetadataInZooKeeper() const;
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

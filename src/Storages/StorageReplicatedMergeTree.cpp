@@ -446,7 +446,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     createTableSharedID();
 
-    init_phase = InitializationPhase::INITIALIZATION_DONE;
+    initialization_done = true;
 }
 
 
@@ -828,8 +828,12 @@ void StorageReplicatedMergeTree::drop()
     /// or metadata of staled replica were removed manually,
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
 
-    const auto has_metadata_in_zk = hasMetadataInZooKeeper();
-    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zk.has_value() || *has_metadata_in_zk;
+    bool maybe_has_metadata_in_zookeeper = false;
+    {
+        std::lock_guard lock{initialization_mutex};
+        maybe_has_metadata_in_zookeeper = !initialization_done || !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
+    }
+
     if (maybe_has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
@@ -4155,33 +4159,15 @@ DataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
     return part->data_part_storage;
 }
 
-std::optional<bool> StorageReplicatedMergeTree::hasMetadataInZooKeeper() const
-{
-    {
-        std::lock_guard lock(initialization_mutex);
-        if (init_phase == InitializationPhase::INITIALIZING)
-            return std::nullopt;
-    }
-
-    return has_metadata_in_zookeeper;
-}
-
 void StorageReplicatedMergeTree::startup()
 {
-    using enum InitializationPhase;
     {
         std::lock_guard lock(initialization_mutex);
-        if (init_phase == INITIALIZING)
+        if (!initialization_done)
         {
             startup_called = true;
             return;
         }
-        else if (init_phase == STARTUP_IN_PROGRESS || init_phase == STARTUP_DONE)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Startup called twice");
-        }
-
-        init_phase = STARTUP_IN_PROGRESS;
     }
 
     startupImpl();
@@ -4189,16 +4175,8 @@ void StorageReplicatedMergeTree::startup()
 
 void StorageReplicatedMergeTree::startupImpl()
 {
-    auto has_metadata_in_zk = hasMetadataInZooKeeper();
-
-    SCOPE_EXIT({
-        std::lock_guard lock(initialization_mutex);
-        init_phase = InitializationPhase::STARTUP_DONE;
-        LOG_INFO(log, "Startup is done");
-    });
-
     /// Do not start replication if ZooKeeper is not configured or there is no metadata in zookeeper
-    if (!has_metadata_in_zk.has_value() || !*has_metadata_in_zk)
+    if (!has_metadata_in_zookeeper.has_value() || !*has_metadata_in_zookeeper)
         return;
 
     try
@@ -5104,10 +5082,9 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 {
     LOG_INFO(log, "Restoring replica metadata");
 
-    using enum InitializationPhase;
     {
         std::lock_guard lock(initialization_mutex);
-        if (init_phase == INITIALIZING)
+        if (!initialization_done)
             throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
     }
 
@@ -5121,8 +5098,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
                         "If you are sure that metadata is lost and that replica path contains some garbage, "
                         "then use SYSTEM DROP REPLICA query first.", replica_path);
 
-    const auto has_metadata_in_zk = hasMetadataInZooKeeper();
-    if (has_metadata_in_zk.has_value() && *has_metadata_in_zk)
+    if (has_metadata_in_zookeeper.has_value() && *has_metadata_in_zookeeper)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica has metadata in ZooKeeper: "
                                                    "it's either a bug or it's a result of manual intervention to ZooKeeper");
 
