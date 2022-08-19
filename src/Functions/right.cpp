@@ -4,7 +4,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(Right)
+void registerFunctionRight(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLeftRight<false, SubstringDirection::Right>>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionLeftRight<true, SubstringDirection::Right>>(FunctionFactory::CaseSensitive);

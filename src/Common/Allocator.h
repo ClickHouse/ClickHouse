@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstring>
+#include <string.h>
 
 #ifdef NDEBUG
     #define ALLOCATOR_ASLR 0
@@ -11,7 +11,7 @@
 #include <pcg_random.hpp>
 #include <Common/thread_local_rng.h>
 
-#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+#if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
 

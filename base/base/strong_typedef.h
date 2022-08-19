@@ -23,10 +23,10 @@ public:
     constexpr StrongTypedef(): t() {}
 
     constexpr StrongTypedef(const Self &) = default;
-    constexpr StrongTypedef(Self &&) noexcept(std::is_nothrow_move_constructible_v<T>) = default;
+    constexpr StrongTypedef(Self &&) = default;
 
     Self & operator=(const Self &) = default;
-    Self & operator=(Self &&) noexcept(std::is_nothrow_move_assignable_v<T>)= default;
+    Self & operator=(Self &&) = default;
 
     template <class Enable = typename std::is_copy_assignable<T>::type>
     Self & operator=(const T & rhs) { t = rhs; return *this;}

@@ -22,7 +22,7 @@ using FunctionVisitParamExtractBool = FunctionsStringSearch<ExtractParamImpl<Nam
 struct NameSimpleJSONExtractBool   { static constexpr auto name = "simpleJSONExtractBool"; };
 using FunctionSimpleJSONExtractBool = FunctionsStringSearch<ExtractParamImpl<NameSimpleJSONExtractBool, ExtractBool>>;
 
-REGISTER_FUNCTION(VisitParamExtractBool)
+void registerFunctionVisitParamExtractBool(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVisitParamExtractBool>();
     factory.registerFunction<FunctionSimpleJSONExtractBool>();

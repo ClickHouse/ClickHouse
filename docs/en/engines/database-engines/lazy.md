@@ -1,9 +1,9 @@
 ---
-sidebar_label: Lazy
-sidebar_position: 20
+toc_priority: 31
+toc_title: Lazy
 ---
 
-# Lazy
+# Lazy {#lazy}
 
 Keeps tables in RAM only `expiration_time_in_seconds` seconds after last access. Can be used only with \*Log tables.
 

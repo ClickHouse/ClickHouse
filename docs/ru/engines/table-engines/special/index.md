@@ -1,6 +1,6 @@
 ---
-sidebar_label: "Специальные движки таблиц"
-sidebar_position: 31
+toc_folder_title: "Специальные движки таблиц"
+toc_priority: 31
 ---
 
 # Специальные движки таблиц {#special-table-engines}

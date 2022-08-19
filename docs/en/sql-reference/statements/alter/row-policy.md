@@ -1,9 +1,9 @@
 ---
-sidebar_position: 47
-sidebar_label: ROW POLICY
+toc_priority: 47
+toc_title: ROW POLICY
 ---
 
-# ALTER ROW POLICY
+# ALTER ROW POLICY {#alter-row-policy-statement}
 
 Changes row policy.
 

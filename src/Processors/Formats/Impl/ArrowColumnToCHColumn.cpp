@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <Common/DateLUTImpl.h>
 #include <base/types.h>
 #include <Processors/Chunk.h>
@@ -27,14 +26,11 @@
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
-#include <boost/algorithm/string.hpp>
-#include <boost/algorithm/string/case_conv.hpp>
 
 /// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
@@ -99,7 +95,6 @@ static ColumnWithTypeAndName readColumnWithNumericData(std::shared_ptr<arrow::Ch
 /// Inserts chars and offsets right into internal column data to reduce an overhead.
 /// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
 /// Also internal strings are null terminated.
-template <typename ArrowArray>
 static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     auto internal_type = std::make_shared<DataTypeString>();
@@ -110,7 +105,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
     size_t chars_t_size = 0;
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         const size_t chunk_length = chunk.length();
 
         if (chunk_length > 0)
@@ -125,7 +120,7 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
@@ -470,10 +465,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::STRING:
         case arrow::Type::BINARY:
             //case arrow::Type::FIXED_SIZE_BINARY:
-            return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
-        case arrow::Type::LARGE_BINARY:
-        case arrow::Type::LARGE_STRING:
-            return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);
+            return readColumnWithStringData(arrow_column, column_name);
         case arrow::Type::BOOL:
             return readColumnWithBooleanData(arrow_column, column_name);
         case arrow::Type::DATE32:
@@ -538,6 +530,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column, column_name, format_name, false, dictionary_infos, allow_null_type, skip_columns_with_unsupported_types, skipped, nested_type_hint);
             if (skipped)
                 return {};
+
             auto offsets_column = readOffsetsFromArrowListColumn(arrow_column);
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
             auto array_type = std::make_shared<DataTypeArray>(nested_column.type);
@@ -641,33 +634,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 #    undef DISPATCH
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
-        case arrow::Type::NA:
-        {
-            if (allow_null_type)
-            {
-                auto type = std::make_shared<DataTypeNothing>();
-                auto column = ColumnNothing::create(arrow_column->length());
-                return {std::move(column), type, column_name};
-            }
-            [[fallthrough]];
-        }
         default:
-        {
-            if (skip_columns_with_unsupported_types)
-            {
-                skipped = true;
-                return {};
-            }
-
-            throw Exception(
-                ErrorCodes::UNKNOWN_TYPE,
-                "Unsupported {} type '{}' of an input column '{}'. If it happens during schema inference and you want to skip columns with "
-                "unsupported types, you can enable setting input_format_{}_skip_columns_with_unsupported_types_in_schema_inference",
-                format_name,
-                arrow_column->type()->name(),
-                column_name,
-                boost::algorithm::to_lower_copy(format_name));
-        }
+            throw Exception(ErrorCodes::UNKNOWN_TYPE,
+                    "Unsupported {} type '{}' of an input column '{}'.", format_name, arrow_column->type()->name(), column_name);
     }
 }
 
@@ -681,23 +650,13 @@ static void checkStatus(const arrow::Status & status, const String & column_name
         throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
-
-Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
-    const arrow::Schema & schema, const std::string & format_name, bool skip_columns_with_unsupported_types, const Block * hint_header, bool ignore_case)
+Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name)
 {
     ColumnsWithTypeAndName sample_columns;
-    std::unordered_set<String> nested_table_names;
-    if (hint_header)
-        nested_table_names = Nested::getAllTableNames(*hint_header, ignore_case);
-
     for (const auto & field : schema.fields())
     {
-        if (hint_header && !hint_header->has(field->name(), ignore_case)
-            && !nested_table_names.contains(ignore_case ? boost::to_lower_copy(field->name()) : field->name()))
-            continue;
-
         /// Create empty arrow column by it's type and convert it to ClickHouse column.
-        arrow::MemoryPool * pool = arrow::default_memory_pool();
+        arrow::MemoryPool* pool = arrow::default_memory_pool();
         std::unique_ptr<arrow::ArrayBuilder> array_builder;
         arrow::Status status = MakeBuilder(pool, field->type(), &array_builder);
         checkStatus(status, field->name(), format_name);
@@ -722,31 +681,20 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 }
 
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-    const Block & header_,
-    const std::string & format_name_,
-    bool import_nested_,
-    bool allow_missing_columns_,
-    bool case_insensitive_matching_)
-    : header(header_)
-    , format_name(format_name_)
-    , import_nested(import_nested_)
-    , allow_missing_columns(allow_missing_columns_)
-    , case_insensitive_matching(case_insensitive_matching_)
+    const Block & header_, const std::string & format_name_, bool import_nested_, bool allow_missing_columns_)
+    : header(header_), format_name(format_name_), import_nested(import_nested_), allow_missing_columns(allow_missing_columns_)
 {
 }
 
 void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
     NameToColumnPtr name_to_column_ptr;
-    for (auto column_name : table->ColumnNames())
+    for (const auto & column_name : table->ColumnNames())
     {
         std::shared_ptr<arrow::ChunkedArray> arrow_column = table->GetColumnByName(column_name);
         if (!arrow_column)
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
-
-        if (case_insensitive_matching)
-            boost::to_lower(column_name);
-        name_to_column_ptr[std::move(column_name)] = arrow_column;
+        name_to_column_ptr[column_name] = arrow_column;
     }
 
     arrowColumnsToCHChunk(res, name_to_column_ptr);
@@ -759,71 +707,55 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 
     Columns columns_list;
     UInt64 num_rows = name_to_column_ptr.begin()->second->length();
-    columns_list.reserve(header.columns());
-    std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
-    bool skipped = false;
+    columns_list.reserve(header.rows());
+    std::unordered_map<String, BlockPtr> nested_tables;
     for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
 
-        auto search_column_name = header_column.name;
-        if (case_insensitive_matching)
-            boost::to_lower(search_column_name);
-
-        ColumnWithTypeAndName column;
-        if (!name_to_column_ptr.contains(search_column_name))
+        bool read_from_nested = false;
+        String nested_table_name = Nested::extractTableName(header_column.name);
+        if (!name_to_column_ptr.contains(header_column.name))
         {
-            bool read_from_nested = false;
             /// Check if it's a column from nested table.
-            if (import_nested)
+            if (import_nested && name_to_column_ptr.contains(nested_table_name))
             {
-                String nested_table_name = Nested::extractTableName(header_column.name);
-                String search_nested_table_name = nested_table_name;
-                if (case_insensitive_matching)
-                    boost::to_lower(search_nested_table_name);
-                if (name_to_column_ptr.contains(search_nested_table_name))
+                if (!nested_tables.contains(nested_table_name))
                 {
-                    if (!nested_tables.contains(search_nested_table_name))
+                    NamesAndTypesList nested_columns;
+                    for (const auto & name_and_type : header.getNamesAndTypesList())
                     {
-                        NamesAndTypesList nested_columns;
-                        for (const auto & name_and_type : header.getNamesAndTypesList())
-                        {
-                            if (name_and_type.name.starts_with(nested_table_name + "."))
-                                nested_columns.push_back(name_and_type);
-                        }
-                        auto nested_table_type = Nested::collect(nested_columns).front().type;
-
-                        std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[search_nested_table_name];
-                        ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(
-                            arrow_column, nested_table_name, format_name, false, dictionary_infos, true, false, skipped, nested_table_type)};
-                        BlockPtr block_ptr = std::make_shared<Block>(cols);
-                        auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
-                        nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
+                        if (name_and_type.name.starts_with(nested_table_name + "."))
+                            nested_columns.push_back(name_and_type);
                     }
-                    auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
-                    if (nested_column)
-                    {
-                        column = *nested_column;
-                        if (case_insensitive_matching)
-                            column.name = header_column.name;
-                        read_from_nested = true;
-                    }
+                    auto nested_table_type = Nested::collect(nested_columns).front().type;
+                    std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[nested_table_name];
+                    ColumnsWithTypeAndName cols = {readColumnFromArrowColumn(
+                        arrow_column, nested_table_name, format_name, false, dictionary_infos, true, false, skipped, nested_table_type)};
+                    Block block(cols);
+                    nested_tables[nested_table_name] = std::make_shared<Block>(Nested::flatten(block));
                 }
+
+                read_from_nested = nested_tables[nested_table_name]->has(header_column.name);
             }
+
             if (!read_from_nested)
             {
                 if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-                else
-                {
-                    column.name = header_column.name;
-                    column.type = header_column.type;
-                    column.column = header_column.column->cloneResized(num_rows);
-                    columns_list.push_back(std::move(column.column));
-                    continue;
-                }
+
+                ColumnWithTypeAndName column;
+                column.name = header_column.name;
+                column.type = header_column.type;
+                column.column = header_column.column->cloneResized(num_rows);
+                columns_list.push_back(std::move(column.column));
+                continue;
             }
         }
+
+        ColumnWithTypeAndName column;
+        if (read_from_nested)
+            column = nested_tables[nested_table_name]->getByName(header_column.name);
         else
         {
             auto arrow_column = name_to_column_ptr[search_column_name];
@@ -837,11 +769,8 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
         }
         catch (Exception & e)
         {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name),
-                column.type->getName(),
-                header_column.type->getName()));
+            e.addMessage(fmt::format("while converting column {} from type {} to type {}",
+                backQuote(header_column.name), column.type->getName(), header_column.type->getName()));
             throw;
         }
 
@@ -855,18 +784,23 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
 {
     std::vector<size_t> missing_columns;
-    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name, false, &header, case_insensitive_matching);
-    NestedColumnExtractHelper nested_columns_extractor(block_from_arrow, case_insensitive_matching);
-
+    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name);
+    auto flatten_block_from_arrow = Nested::flatten(block_from_arrow);
     for (size_t i = 0, columns = header.columns(); i < columns; ++i)
     {
-        const auto & header_column = header.getByPosition(i);
-        if (!block_from_arrow.has(header_column.name, case_insensitive_matching))
+        const auto & column = header.getByPosition(i);
+        bool read_from_nested = false;
+        String nested_table_name = Nested::extractTableName(column.name);
+        if (!block_from_arrow.has(column.name))
         {
-            if (!import_nested || !nested_columns_extractor.extractColumn(header_column.name))
+            if (import_nested && block_from_arrow.has(nested_table_name))
+                read_from_nested = flatten_block_from_arrow.has(column.name);
+
+            if (!read_from_nested)
             {
                 if (!allow_missing_columns)
-                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
+                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", column.name};
+
                 missing_columns.push_back(i);
             }
         }

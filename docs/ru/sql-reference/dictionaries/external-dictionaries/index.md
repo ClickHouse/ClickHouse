@@ -1,6 +1,6 @@
 ---
-sidebar_label: "Внешние словари"
-sidebar_position: 37
+toc_folder_title: "Внешние словари"
+toc_priority: 37
 ---
 
 

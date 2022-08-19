@@ -1,6 +1,6 @@
 ---
-sidebar_position: 27
-sidebar_label: 第三方集成库
+toc_priority: 27
+toc_title: 第三方集成库
 ---
 
 # 第三方集成库 {#integration-libraries-from-third-party-developers}

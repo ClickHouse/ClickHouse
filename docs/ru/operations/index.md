@@ -1,6 +1,7 @@
 ---
-sidebar_position: 41
-sidebar_label: "Эксплуатация"
+toc_folder_title: "Эксплуатация"
+toc_priority: 41
+toc_title: "Эксплуатация"
 ---
 
 # Эксплуатация {#operations}

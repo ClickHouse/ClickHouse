@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToISOYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToISOYearImpl>;
 
-REGISTER_FUNCTION(ToISOYear)
+void registerFunctionToISOYear(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToISOYear>();
 }

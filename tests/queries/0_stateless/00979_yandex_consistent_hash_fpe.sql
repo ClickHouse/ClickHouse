@@ -1,1 +1,1 @@
-SELECT kostikConsistentHash(-1, 40000); -- { serverError 36 }
+SELECT yandexConsistentHash(-1, 40000); -- { serverError 36 }

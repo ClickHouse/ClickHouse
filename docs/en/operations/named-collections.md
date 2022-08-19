@@ -1,9 +1,9 @@
 ---
-sidebar_position: 69
-sidebar_label: "Named connections"
+toc_priority: 69
+toc_title: "Named connections"
 ---
 
-# Storing details for connecting to external sources in configuration files
+# Storing details for connecting to external sources in configuration files  {#named-collections}
 
 Details for connecting to external sources (dictionaries, tables, table functions) can be saved
 in configuration files and thus simplify the creation of objects and hide credentials
@@ -34,9 +34,8 @@ Example of configuration:
     <named_collections>
         <s3_mydata>
             <access_key_id>AKIAIOSFODNN7EXAMPLE</access_key_id>
-            <secret_access_key>wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</secret_access_key>
+            <secret_access_key> wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</secret_access_key>
             <format>CSV</format>
-            <url>https://s3.us-east-1.amazonaws.com/yourbucket/mydata/</url>
         </s3_mydata>
     </named_collections>
 </clickhouse>
@@ -45,12 +44,12 @@ Example of configuration:
 ### Example of using named connections with the s3 function
 
 ```sql
-INSERT INTO FUNCTION s3(s3_mydata, filename = 'test_file.tsv.gz',
+INSERT INTO FUNCTION s3(s3_mydata, url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/test_file.tsv.gz',
    format = 'TSV', structure = 'number UInt64', compression_method = 'gzip')
 SELECT * FROM numbers(10000);
 
 SELECT count()
-FROM s3(s3_mydata, filename = 'test_file.tsv.gz')
+FROM s3(s3_mydata, url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/test_file.tsv.gz')
 
 ┌─count()─┐
 │   10000 │

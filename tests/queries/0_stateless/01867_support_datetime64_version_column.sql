@@ -1,5 +1,5 @@
 drop table if exists replacing;
-create table replacing(    `A` Int64,    `D` DateTime64(9, 'Asia/Istanbul'),    `S` String)    ENGINE = ReplacingMergeTree(D) ORDER BY A;
+create table replacing(    `A` Int64,    `D` DateTime64(9, 'Europe/Moscow'),    `S` String)    ENGINE = ReplacingMergeTree(D) ORDER BY A;
 
 insert into replacing values (1,'1970-01-01 08:25:46.300800000','a');
 insert into replacing values (2,'1970-01-01 08:25:46.300800002','b');

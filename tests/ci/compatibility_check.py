@@ -28,7 +28,7 @@ IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
 MAX_GLIBC_VERSION = "2.4"
 DOWNLOAD_RETRIES_COUNT = 5
-CHECK_NAME = "Compatibility check"
+CHECK_NAME = "Compatibility check (actions)"
 
 
 def process_os_check(log_path):
@@ -119,7 +119,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
 
     rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -169,7 +169,7 @@ if __name__ == "__main__":
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
     state, description, test_results, additional_logs = process_result(
         result_path, server_log_path
     )
@@ -197,8 +197,4 @@ if __name__ == "__main__":
         report_url,
         CHECK_NAME,
     )
-
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-
-    if state == "error":
-        sys.exit(1)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)

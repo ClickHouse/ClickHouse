@@ -1,0 +1,1 @@
+../../../en/operations/system-tables/replicated_fetches.md

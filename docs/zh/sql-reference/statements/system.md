@@ -1,6 +1,6 @@
 ---
-sidebar_position: 37
-sidebar_label: SYSTEM
+toc_priority: 37
+toc_title: SYSTEM
 ---
 
 # SYSTEM Queries {#query-language-system}
@@ -26,7 +26,6 @@ sidebar_label: SYSTEM
 -   [START TTL MERGES](#query_language-start-ttl-merges)
 -   [STOP MOVES](#query_language-stop-moves)
 -   [START MOVES](#query_language-start-moves)
--   [SYSTEM UNFREEZE](#query_language-system-unfreeze)
 -   [STOP FETCHES](#query_language-system-stop-fetches)
 -   [START FETCHES](#query_language-system-start-fetches)
 -   [STOP REPLICATED SENDS](#query_language-system-start-replicated-sends)
@@ -202,14 +201,6 @@ SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 
 ``` sql
 SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
-```
-
-### SYSTEM UNFREEZE {#query_language-system-unfreeze}
-
-从所有磁盘中清除具有指定名称的冻结备份。 查看更多关于解冻单独部分的信息 [ALTER TABLE table_name UNFREEZE WITH NAME ](alter/partition.md#alter_unfreeze-partition)
-
-``` sql
-SYSTEM UNFREEZE WITH NAME <backup_name>
 ```
 
 ## Managing ReplicatedMergeTree Tables {#query-language-system-replicated}

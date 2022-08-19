@@ -1,6 +1,6 @@
 ---
-sidebar_position: 51
-sidebar_label: COMMENT
+toc_priority: 51
+toc_title: COMMENT
 ---
 
 # ALTER TABLE … MODIFY COMMENT {#alter-modify-comment}

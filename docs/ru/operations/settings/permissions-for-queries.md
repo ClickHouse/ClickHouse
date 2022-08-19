@@ -1,6 +1,6 @@
 ---
-sidebar_position: 58
-sidebar_label: "Разрешения для запросов"
+toc_priority: 58
+toc_title: "Разрешения для запросов"
 ---
 
 # Разрешения для запросов {#permissions_for_queries}

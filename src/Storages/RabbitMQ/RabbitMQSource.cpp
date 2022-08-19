@@ -52,7 +52,7 @@ RabbitMQSource::RabbitMQSource(
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
-    : ISource(getSampleBlock(headers.first, headers.second))
+    : SourceWithProgress(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -106,19 +106,6 @@ Chunk RabbitMQSource::generate()
     return chunk;
 }
 
-bool RabbitMQSource::checkTimeLimit() const
-{
-    if (max_execution_time != 0)
-    {
-        auto elapsed_ns = total_stopwatch.elapsed();
-
-        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
-            return false;
-    }
-
-    return true;
-}
-
 Chunk RabbitMQSource::generateImpl()
 {
     if (!buffer)
@@ -142,7 +129,7 @@ Chunk RabbitMQSource::generateImpl()
 
     while (true)
     {
-        if (buffer->queueEmpty())
+        if (buffer->eof())
             break;
 
         auto new_rows = executor.execute();
