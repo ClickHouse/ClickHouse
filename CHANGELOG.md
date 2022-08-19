@@ -31,6 +31,8 @@
 * Implemented automatic conversion of database engine from `Ordinary` to `Atomic`. Create empty `convert_ordinary_to_atomic` file in `flags` directory and all `Ordinary` databases will be converted automatically on next server start. Resolves [#39546](https://github.com/ClickHouse/ClickHouse/issues/39546). [#39933](https://github.com/ClickHouse/ClickHouse/pull/39933) ([Alexander Tokmakov](https://github.com/tavplubix)).
 * Support `SELECT ... INTO OUTFILE '...' AND STDOUT`. [#37490](https://github.com/ClickHouse/ClickHouse/issues/37490). [#39054](https://github.com/ClickHouse/ClickHouse/pull/39054) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
 * Add formats `PrettyMonoBlock`, `PrettyNoEscapesMonoBlock`, `PrettyCompactNoEscapes`, `PrettyCompactNoEscapesMonoBlock`, `PrettySpaceNoEscapes`, `PrettySpaceMonoBlock`, `PrettySpaceNoEscapesMonoBlock`. [#39646](https://github.com/ClickHouse/ClickHouse/pull/39646) ([Kruglov Pavel](https://github.com/Avogar)).
+* Add new setting schema_inference_hints that allows to specify structure hints in schema inference for specific columns. Closes [#39569](https://github.com/ClickHouse/ClickHouse/issues/39569). [#40068](https://github.com/ClickHouse/ClickHouse/pull/40068) ([Kruglov Pavel](https://github.com/Avogar)).
+
 
 #### Performance Improvement
 * Improved memory usage during memory efficient merging of aggregation results. [#39429](https://github.com/ClickHouse/ClickHouse/pull/39429) ([Nikita Taranov](https://github.com/nickitat)).
@@ -80,6 +82,8 @@
 * Add metrics for filesystem cache: `FilesystemCacheSize` and `FilesystemCacheElements`. [#40260](https://github.com/ClickHouse/ClickHouse/pull/40260) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Support hadoop secure RPC transfer (hadoop.rpc.protection=privacy and hadoop.rpc.protection=integrity). [#39411](https://github.com/ClickHouse/ClickHouse/pull/39411) ([michael1589](https://github.com/michael1589)).
 * Avoid continuously growing memory consumption of pattern cache when using functions multi(Fuzzy)Match(Any|AllIndices|AnyIndex)(). [#40264](https://github.com/ClickHouse/ClickHouse/pull/40264) ([Robert Schulze](https://github.com/rschu1ze)).
+* Add cache for schema inference for file/s3/hdfs/url table functions. Now, schema inference will be performed only on the first query to the file, all subsequent queries to the same file will use the schema from cache if data wasn't changed. Add system table system.schema_inference_cache with all current schemas in cache and system queries SYSTEM DROP SCHEMA CACHE [FOR FILE/S3/HDFS/URL] to drop schemas from cache. [#38286](https://github.com/ClickHouse/ClickHouse/pull/38286) ([Kruglov Pavel](https://github.com/Avogar)).
+* Add support for LARGE_BINARY/LARGE_STRING with Arrow (Closes [#32401](https://github.com/ClickHouse/ClickHouse/issues/32401)). [#40293](https://github.com/ClickHouse/ClickHouse/pull/40293) ([Josh Taylor](https://github.com/joshuataylor)).
 
 #### Build/Testing/Packaging Improvement
 * [ClickFiddle](https://fiddle.clickhouse.com/): A new tool for testing ClickHouse versions in read/write mode (**Igor Baliuk**).
