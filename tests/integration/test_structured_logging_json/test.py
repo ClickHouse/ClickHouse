@@ -82,7 +82,8 @@ def valiade_everything(config, node, config_type):
         config, logs, config_type
     )
 
-def test_structured_logging_json_format2(start_cluster):
+
+def test_structured_logging_json_format(start_cluster):
     config_all_keys = node_all_keys.exec_in_container(
         ["cat", "/etc/clickhouse-server/config.d/config_all_keys_json.xml"]
     )
