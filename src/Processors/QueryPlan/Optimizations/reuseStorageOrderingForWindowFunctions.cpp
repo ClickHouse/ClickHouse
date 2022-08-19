@@ -21,6 +21,7 @@
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/IColumn.h>
+#include <stack>
 
 
 namespace DB::QueryPlanOptimizations
@@ -41,21 +42,60 @@ ReadFromMergeTree * findReadingStep(QueryPlan::Node * node)
     return nullptr;
 }
 
-void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression, NameSet & filter_columns)
-{
-    /// Expression may replace a column. Check it.
-    /// TODO: there may possibly be a chain of aliases, we may check it and update filter names
-    for (auto & output : expression->getOutputs())
-        if (filter_columns.contains(output->result_name) && output->type != ActionsDAG::ActionType::INPUT)
-            filter_columns.erase(output->result_name);
+/// FixedColumns are columns which values become constants after filtering.
+/// In a query "SELECT x, y, z FROM table WHERE x = 1 AND y = 'a' ORDER BY x, y, z"
+/// Fixed columns are 'x' and 'y'.
+using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
+/// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
+void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fiexd_columns)
+{
+    std::stack<const ActionsDAG::Node *> stack;
+    stack.push(&filter_expression);
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (name == "and")
+            {
+                for (const auto * arg : node->children)
+                    stack.push(arg);
+            }
+            else if (name == "equals")
+            {
+                const ActionsDAG::Node * maybe_fixed_column = nullptr;
+                bool is_singe = true;
+                for (const auto & child : node->children)
+                {
+                    if (!child->column)
+                    {
+                        if (maybe_fixed_column)
+                            maybe_fixed_column = child;
+                        else
+                            is_singe = false;
+                    }
+                }
+
+                if (maybe_fixed_column && is_singe)
+                    fiexd_columns.insert(maybe_fixed_column);
+            }
+        }
+    }
+}
+
+void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expression)
+{
     if (dag)
-        dag = ActionsDAG::merge(std::move(*dag), std::move(*expression->clone()));
+        dag->mergeInplace(std::move(*expression->clone()));
     else
         dag = expression->clone();
 }
 
-void buildSortingDAG(QueryPlan::Node * node, ActionsDAGPtr & dag, NameSet & filter_columns)
+void buildSortingDAG(QueryPlan::Node * node, ActionsDAGPtr & dag, FixedColumns & fixed_columns)
 {
     IQueryPlanStep * step = node->step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -64,27 +104,21 @@ void buildSortingDAG(QueryPlan::Node * node, ActionsDAGPtr & dag, NameSet & filt
     if (node->children.size() != 1)
         return;
 
-    buildSortingDAG(node->children.front(), dag, filter_columns);
+    buildSortingDAG(node->children.front(), dag, fixed_columns);
 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
-        appendExpression(dag, expression->getExpression(), filter_columns);
+        appendExpression(dag, expression->getExpression());
 
     if (auto * filter = typeid_cast<FilterStep *>(step))
     {
-        appendExpression(dag, filter->getExpression(), filter_columns);
-        filter_columns.insert(filter->getFilterColumnName());
+        appendExpression(dag, filter->getExpression());
+        if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
+            appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
     }
 
     if (auto * array_join = typeid_cast<ArrayJoinStep *>(step))
     {
         const auto & array_joined_columns = array_join->arrayJoin()->columns;
-
-        /// Can't use filter whihc happened before ARRAY JOIN.
-        /// If there were a condition on const array, after ARRAY JOIN it can be broken.
-        /// Example : 'SELECT y FROM (select y from table where x = 1) ARRAY JOIN [1, 2] as x ORDER BY x'
-        /// where 'table' has it's own column 'x' in sorting key 'ORDER BY x'.
-        for (const auto & column : array_joined_columns)
-            filter_columns.erase(column);
 
         /// Remove array joined columns from outputs.
         /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
@@ -99,49 +133,184 @@ void buildSortingDAG(QueryPlan::Node * node, ActionsDAGPtr & dag, NameSet & filt
     }
 }
 
-size_t calculateFixedPrefixSize(const ActionsDAG & dag, NameSet & filter_columns, const Names & sorting_key_columns)
+/// Here we try to find inner DAG inside outer DAG.
+/// Build a map: inner.nodes -> outer.nodes.
+// using NodesMap = std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
+int isMonotonicSubtree(const ActionsDAG::Node * inner, const ActionsDAG::Node * outer)
 {
-    NameSet fiexd_columns;
-    std::vector<const ActionsDAG::Node *> stack;
-    for (const auto * output : dag.getOutputs())
+    using Parents = std::set<const ActionsDAG::Node *>;
+    std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inner_inputs;
+
     {
-        if (auto it = filter_columns.find(output->result_name); it != filter_columns.end())
+        std::stack<const ActionsDAG::Node *> stack;
+        stack.push(inner);
+        inner_parents.emplace(inner, Parents());
+        while (!stack.empty())
         {
-            filter_columns.erase(it);
-            stack.clear();
-            stack.push_back(output);
-            while (!stack.empty())
+            const auto * node = stack.top();
+            stack.pop();
+
+            if (node->type == ActionsDAG::ActionType::INPUT)
+                inner_inputs.emplace(node->result_name, node);
+
+            for (const auto * child : node->children)
             {
-                const auto * node = stack.back();
-                stack.pop_back();
-                if (node->type == ActionsDAG::ActionType::FUNCTION)
-                {
-                    const auto & name = node->function_base->getName();
-                    if (name == "and")
-                    {
-                        for (const auto * arg : node->children)
-                            stack.push_back(arg);
-                    }
-                    else if (name == "equals")
-                    {
-                        fiexd_columns.insert(node->result_name);
-                    }
-                }
+                auto [it, inserted] = inner_parents.emplace(child, Parents());
+                it->second.emplace(node);
+
+                if (inserted)
+                    stack.push(child);
             }
         }
     }
 
-    size_t prefix_size = 0;
-    for (const auto & name : sorting_key_columns)
-    {
-        if (!fiexd_columns.contains(name))
-            break;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> outer_to_inner;
+    std::unordered_map<const ActionsDAG::Node *, int> direction;
 
-        ++prefix_size;
+    {
+        struct Frame
+        {
+            const ActionsDAG::Node * node;
+            ActionsDAG::NodeRawConstPtrs mapped_children;
+            int direction = 1;
+        };
+
+        std::stack<Frame> stack;
+        stack.push(Frame{outer, {}});
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+            frame.mapped_children.reserve(frame.node->children.size());
+
+            while (frame.mapped_children.size() < frame.node->children.size())
+            {
+                const auto * child = frame.node->children[frame.mapped_children.size()];
+                auto it = outer_to_inner.find(child);
+                if (it == outer_to_inner.end())
+                {
+                    stack.push(Frame{child, {}});
+                    break;
+                }
+                frame.mapped_children.push_back(it->second);
+            }
+
+            if (frame.mapped_children.size() < frame.node->children.size())
+                continue;
+
+            if (frame.node->type == ActionsDAG::ActionType::INPUT)
+            {
+                const ActionsDAG::Node * mapped = nullptr;
+                if (auto it = inner_inputs.find(frame.node->result_name); it != inner_inputs.end())
+                    mapped = it->second;
+
+                outer_to_inner.emplace(frame.node, mapped);
+            }
+            else if (frame.node->type == ActionsDAG::ActionType::ALIAS)
+            {
+                outer_to_inner.emplace(frame.node, frame.mapped_children.at(0));
+            }
+            else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                bool found_all_children = true;
+                size_t num_found_inner_roots = 0;
+                for (const auto * child : frame.mapped_children)
+                {
+                    if (!child)
+                        found_all_children = false;
+                    else if (child == inner)
+                        ++num_found_inner_roots;
+                }
+
+                bool found_monotonic_wrapper = false;
+                if (num_found_inner_roots == 1)
+                {
+                    if (frame.node->function_base->hasInformationAboutMonotonicity())
+                    {
+                        size_t num_const_args = 0;
+                        const ActionsDAG::Node * monotonic_child = nullptr;
+                        for (const auto * child : frame.node->children)
+                        {
+                            if (child->column)
+                                ++num_const_args;
+                            else
+                                monotonic_child = child;
+                        }
+
+                        if (monotonic_child && num_const_args + 1 == frame.node->children.size())
+                        {
+                            auto info = frame.node->function_base->getMonotonicityForRange(*monotonic_child->result_type, {}, {});
+                            if (info.is_always_monotonic)
+                            {
+                                found_monotonic_wrapper = true;
+                                outer_to_inner[frame.node] = inner;
+
+                                int cur_direction = info.is_positive ? 1 : -1;
+                                auto it = direction.find(monotonic_child);
+                                if (it != direction.end())
+                                    cur_direction *= it->second;
+
+                                direction[frame.node] = cur_direction;
+                            }
+                        }
+                    }
+                }
+
+                if (!found_monotonic_wrapper && found_all_children && !frame.mapped_children.empty())
+                {
+                    Parents container;
+                    Parents * intersection = &inner_parents[frame.mapped_children[0]];
+
+                    if (frame.mapped_children.size() > 1)
+                    {
+                        std::vector<Parents *> other_parents;
+                        other_parents.reserve(frame.mapped_children.size());
+                        for (size_t i = 1; i < frame.mapped_children.size(); ++i)
+                            other_parents.push_back(&inner_parents[frame.mapped_children[i]]);
+
+                        for (const auto * parent : *intersection)
+                        {
+                            bool is_common = true;
+                            for (const auto * set : other_parents)
+                            {
+                                if (!set->contains(parent))
+                                {
+                                    is_common = false;
+                                    break;
+                                }
+                            }
+
+                            if (is_common)
+                                container.insert(parent);
+                        }
+
+                        intersection = &container;
+                    }
+
+                    if (!intersection->empty())
+                    {
+                        auto func_name = frame.node->function_base->getName();
+                        for (const auto * parent : *intersection)
+                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
+                                outer_to_inner[frame.node] = parent;
+                    }
+                }
+            }
+
+            stack.pop();
+        }
     }
 
-    return prefix_size;
+    if (outer_to_inner[outer] != inner)
+        return 0;
+
+    int res = 1;
+    if (auto it = direction.find(outer); it != direction.end())
+        res = it->second;
+
+    return res;
 }
+
 
 /// Optimize in case of exact match with order key element
 /// or in some simple cases when order key element is wrapped into monotonic function.
@@ -149,6 +318,7 @@ size_t calculateFixedPrefixSize(const ActionsDAG & dag, NameSet & filter_columns
 int matchSortDescriptionAndKey(
     const ActionsDAGPtr & dag,
     const SortColumnDescription & sort_column,
+    const ActionsDAG & sort_column_dag,
     const std::string & sorting_key_column)
 {
     /// If required order depend on collation, it cannot be matched with primary key order.
@@ -156,51 +326,28 @@ int matchSortDescriptionAndKey(
     if (sort_column.collator)
         return 0;
 
-    int current_direction = sort_column.direction;
     /// For the path: order by (sort_column, ...)
-    bool exact_match = sort_column.column_name == sorting_key_column;
-    if (exact_match && !dag)
-        return current_direction;
+    if (!dag && sort_column.column_name == sorting_key_column)
+        return sort_column.direction;
 
-    const auto * node = dag->tryFindInOutputs(sort_column.column_name);
+    const auto * outer = dag->tryFindInOutputs(sort_column.column_name);
     /// It is possible when e.g. sort by array joined column.
-    if (!node)
+    if (!outer)
         return 0;
 
-    if (exact_match && node->type == ActionsDAG::ActionType::INPUT)
-        return current_direction;
+    const auto * inner = sort_column_dag.tryFindInOutputs(sorting_key_column);
+    /// This should not happen.
+    if (!inner)
+        return 0;
 
-    while (node->children.size() == 1)
-    {
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            const auto & func = *node->function_base;
-            if (!func.hasInformationAboutMonotonicity())
-                return 0;
-
-            auto monotonicity = func.getMonotonicityForRange(*func.getArgumentTypes().at(0), {}, {});
-            if (!monotonicity.is_monotonic)
-                return 0;
-
-            if (!monotonicity.is_positive)
-                current_direction *= -1;
-
-        }
-        else if (node->type != ActionsDAG::ActionType::ALIAS)
-            return 0;
-
-        node = node->children.front();
-        if (node->result_name == sorting_key_column)
-            return current_direction;
-    }
-
-    return 0;
+    return isMonotonicSubtree(inner, outer) * sort_column.direction;
 }
 
 SortDescription buildPrefixSortDescription(
     size_t fixed_prefix_size,
     const ActionsDAGPtr & dag,
     const SortDescription & description,
+    const ActionsDAG & sorting_key_dag,
     const Names & sorting_key_columns)
 {
     size_t descr_prefix_size = std::min(description.size(), sorting_key_columns.size() - fixed_prefix_size);
@@ -216,7 +363,7 @@ SortDescription buildPrefixSortDescription(
     for (size_t i = 0; i < descr_prefix_size; ++i)
     {
         int current_direction = matchSortDescriptionAndKey(
-            dag, description[i], sorting_key_columns[i + fixed_prefix_size]);
+            dag, description[i], sorting_key_dag, sorting_key_columns[i + fixed_prefix_size]);
 
         if (!current_direction || (i > 0 && current_direction != read_direction))
             break;
@@ -248,17 +395,18 @@ void optimizeReadInOrder(QueryPlan::Node & node)
         return;
 
     ActionsDAGPtr dag;
-    NameSet filter_columns;
-    buildSortingDAG(node.children.front(), dag, filter_columns);
+    FixedColumns fixed_columns;
+    buildSortingDAG(node.children.front(), dag, fixed_columns);
 
     const auto & description = sorting->getSortDescription();
     const auto & sorting_key_columns = sorting_key.column_names;
 
     size_t fixed_prefix_size = 0;
-    if (dag)
-        calculateFixedPrefixSize(*dag, filter_columns, sorting_key_columns);
 
-    auto prefix_description = buildPrefixSortDescription(fixed_prefix_size, dag, description, sorting_key_columns);
+    auto prefix_description = buildPrefixSortDescription(
+        fixed_prefix_size,
+        dag, description,
+        sorting_key.expression->getActionsDAG(), sorting_key_columns);
 }
 
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
