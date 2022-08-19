@@ -4,9 +4,15 @@ import json
 from xml.etree import ElementTree as ET
 
 cluster = ClickHouseCluster(__file__)
-node_all_keys = cluster.add_instance("node_all_keys", main_configs=["configs/config_all_keys_json.xml"])
-node_some_keys = cluster.add_instance("node_some_keys", main_configs=["configs/config_some_keys_json.xml"])
-node_no_keys = cluster.add_instance("node_no_keys", main_configs=["configs/config_no_keys_json.xml"])
+node_all_keys = cluster.add_instance(
+    "node_all_keys", main_configs=["configs/config_all_keys_json.xml"]
+)
+node_some_keys = cluster.add_instance(
+    "node_some_keys", main_configs=["configs/config_some_keys_json.xml"]
+)
+node_no_keys = cluster.add_instance(
+    "node_no_keys", main_configs=["configs/config_no_keys_json.xml"]
+)
 
 
 @pytest.fixture(scope="module")
@@ -25,6 +31,7 @@ def is_json(log_json):
         return False
     return True
 
+
 def validate_log_config_relation(config, logs, config_type):
     root = ET.fromstring(config)
     keys_in_config = set()
@@ -40,7 +47,7 @@ def validate_log_config_relation(config, logs, config_type):
         keys_in_config.add("source_file")
         keys_in_config.add("source_line")
     else:
-        for child in root.findall('.//names/*'):
+        for child in root.findall(".//names/*"):
             keys_in_config.add(child.text)
 
     try:
@@ -59,6 +66,7 @@ def validate_log_config_relation(config, logs, config_type):
         return False
     return True
 
+
 def validate_logs(logs):
     length = min(10, len(logs))
     result = True
@@ -66,14 +74,27 @@ def validate_logs(logs):
         result = result and is_json(logs[i])
     return result
 
+
 def valiade_everything(config, node, config_type):
     node.query("SELECT 1")
     logs = node.grep_in_log("").split("\n")
-    return validate_logs(logs) and validate_log_config_relation(config, logs, config_type)
+    return validate_logs(logs) and validate_log_config_relation(
+        config, logs, config_type
+    )
 
 def test_structured_logging_json_format2(start_cluster):
-    config_all_keys = node_all_keys.exec_in_container(["cat", "/etc/clickhouse-server/config.d/config_all_keys_json.xml"])
-    config_some_keys = node_some_keys.exec_in_container(["cat", "/etc/clickhouse-server/config.d/config_some_keys_json.xml"])
-    config_no_keys = node_no_keys.exec_in_container(["cat", "/etc/clickhouse-server/config.d/config_no_keys_json.xml"])
-    
-    assert valiade_everything(config_all_keys, node_all_keys, "config_all_keys") and valiade_everything(config_some_keys, node_some_keys, "config_some_keys") and valiade_everything(config_no_keys, node_no_keys, "config_no_keys")
+    config_all_keys = node_all_keys.exec_in_container(
+        ["cat", "/etc/clickhouse-server/config.d/config_all_keys_json.xml"]
+    )
+    config_some_keys = node_some_keys.exec_in_container(
+        ["cat", "/etc/clickhouse-server/config.d/config_some_keys_json.xml"]
+    )
+    config_no_keys = node_no_keys.exec_in_container(
+        ["cat", "/etc/clickhouse-server/config.d/config_no_keys_json.xml"]
+    )
+
+    assert (
+        valiade_everything(config_all_keys, node_all_keys, "config_all_keys")
+        and valiade_everything(config_some_keys, node_some_keys, "config_some_keys")
+        and valiade_everything(config_no_keys, node_no_keys, "config_no_keys")
+    )
