@@ -9,6 +9,51 @@
    `print array_iif(dynamic([true, false, true, false]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, null])`
    `print array_iif(dynamic([1, 0, -1, 44, 0]), dynamic([1, 2, 3, 4]), dynamic([4, 5, 6])) == dynamic([1, 5, 3, 4, null])`
 
+
+## DateTimeFunctions
+
+- [ago](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/agofunction)
+   `print ago(2h)`
+
+- [endofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofdayfunction)
+   `print endofday(datetime(2017-01-01 10:10:17), -1)`
+   `print endofday(datetime(2017-01-01 10:10:17), 1)`
+   `print endofday(datetime(2017-01-01 10:10:17))`
+
+- [endofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofmonthfunction)
+   `print endofmonth(datetime(2017-01-01 10:10:17), -1)`
+   `print endofmonth(datetime(2017-01-01 10:10:17), 1)`
+   `print endofmonth(datetime(2017-01-01 10:10:17))`
+
+- [endofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofweekfunction)
+   `print endofweek(datetime(2017-01-01 10:10:17), 1)`
+   `print endofweek(datetime(2017-01-01 10:10:17), -1)`
+   `print endofweek(datetime(2017-01-01 10:10:17))` 
+
+- [endofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofyearfunction)
+   `print endofyear(datetime(2017-01-01 10:10:17), -1)`
+   `print endofyear(datetime(2017-01-01 10:10:17), 1)`
+   `print endofyear(datetime(2017-01-01 10:10:17))`
+
+- [make_datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-datetimefunction)
+   `print make_datetime(2017,10,01)`
+   `print make_datetime(2017,10,01,12,10)`
+   `print make_datetime(2017,10,01,12,11,0.1234567)`
+
+-  [datetime_diff](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-difffunction)
+   `print datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31))`
+   `print datetime_diff('quarter',datetime(2017-07-01),datetime(2017-03-30))`
+   `print datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59))` 
+
+- [unixtime_microseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-microseconds-todatetimefunction)
+   `print unixtime_microseconds_todatetime(1546300800000000)`    
+
+- [unixtime_milliseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-milliseconds-todatetimefunction)
+   `print unixtime_milliseconds_todatetime(1546300800000)`
+
+- [unixtime_nanoseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-nanoseconds-todatetimefunction)
+   `print unixtime_nanoseconds_todatetime(1546300800000000000)`
+
 # August 15, 2022
    **double quote support**  
    ``print res = strcat("double ","quote")``  
@@ -162,15 +207,6 @@
 
 - [unixtime_seconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-seconds-todatetimefunction)  
    `print unixtime_seconds_todatetime(1546300800)`  
-   
-- [unixtime_microseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-microseconds-todatetimefunction)
-   `print unixtime_microseconds_todatetime(1546300800000000)`    
-
-- [unixtime_milliseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-milliseconds-todatetimefunction)
-   `print unixtime_milliseconds_todatetime(1546300800000)`
-
-- [unixtime_nanoseconds_todatetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/unixtime-nanoseconds-todatetimefunction)
-   `print unixtime_nanoseconds_todatetime(1546300800000000000)`
 
 - [dayofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/dayofweekfunction)  
    `print dayofweek(datetime(2015-12-20))`  
@@ -185,38 +221,6 @@
    `print now(-2d) `  
    `print now(time(1d))`  
 
-- [ago](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/agofunction)
-   `print ago(2h)`
-
-- [endofday](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofdayfunction)
-   `print endofday(datetime(2017-01-01 10:10:17), -1)`
-   `print endofday(datetime(2017-01-01 10:10:17), 1)`
-   `print endofday(datetime(2017-01-01 10:10:17))`
-
-- [endofmonth](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofmonthfunction)
-   `print endofmonth(datetime(2017-01-01 10:10:17), -1)`
-   `print endofmonth(datetime(2017-01-01 10:10:17), 1)`
-   `print endofmonth(datetime(2017-01-01 10:10:17))`
-
-- [endofweek](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofweekfunction)
-   `print endofweek(datetime(2017-01-01 10:10:17), 1)`
-   `print endofweek(datetime(2017-01-01 10:10:17), -1)`
-   `print endofweek(datetime(2017-01-01 10:10:17))` 
-
-- [endofyear](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/endofyearfunction)
-   `print endofyear(datetime(2017-01-01 10:10:17), -1)`
-   `print endofyear(datetime(2017-01-01 10:10:17), 1)`
-   `print endofyear(datetime(2017-01-01 10:10:17))`
-
-- [make_datetime](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/make-datetimefunction)
-   `print make_datetime(2017,10,01)`
-   `print make_datetime(2017,10,01,12,10)`
-   `print make_datetime(2017,10,01,12,11,0.1234567)`
-
--  [datetime_diff](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/datetime-difffunction)
-   `print datetime_diff('year',datetime(2017-01-01),datetime(2000-12-31))`
-   `print datetime_diff('quarter',datetime(2017-07-01),datetime(2017-03-30))`
-   `print datetime_diff('minute',datetime(2017-10-30 23:05:01),datetime(2017-10-30 23:00:59))` 
 
 ## Binary functions
 - [binary_and](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/binary-andfunction)  
