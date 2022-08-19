@@ -204,6 +204,12 @@ void DataPartStorageOnDisk::checkAndFixMetadataConsistency() const
     if (!isStoredOnRemoteDisk())
         return;
 
+    // TODO: Fix it for encrypted disk
+    // Now metadata_storage for encrypted disk is delegated from base disk
+    // So metadata_storage->disk return base disk with wrong path
+    if (volume->getDisk()->isEncrypted())
+        return;
+
     auto metadata_storage = volume->getDisk()->getMetadataStorage();
 
     fs::path reative_path = getRelativePath();

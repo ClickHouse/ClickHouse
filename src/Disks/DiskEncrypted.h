@@ -259,6 +259,8 @@ public:
         return std::make_shared<FakeDiskTransaction>(*this);
     }
 
+    bool isEncrypted() const override { return true; }
+
 private:
     String wrappedPath(const String & path) const
     {

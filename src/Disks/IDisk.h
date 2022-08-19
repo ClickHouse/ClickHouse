@@ -372,6 +372,8 @@ public:
     virtual bool supportsChmod() const { return false; }
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
+    virtual bool isEncrypted() const { return false; }
+
 protected:
     friend class DiskDecorator;
 
