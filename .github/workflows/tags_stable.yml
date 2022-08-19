@@ -13,13 +13,24 @@ on: # yamllint disable-line rule:truthy
     - 'v*-prestable'
     - 'v*-stable'
     - 'v*-lts'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Test tag'
+        required: true
+        type: string
 
 
 jobs:
   UpdateVersions:
     runs-on: [self-hosted, style-checker]
     steps:
+    - name: Set test tag
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        echo "GITHUB_TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_ENV"
     - name: Get tag name
+      if: github.event_name != 'workflow_dispatch'
       run: |
         echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
     - name: Check out repository code
@@ -42,6 +53,8 @@ jobs:
         git diff HEAD
     - name: Create Pull Request
       uses: peter-evans/create-pull-request@v3
+      env:
+        GITHUB_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
       with:
         author: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
         committer: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
@@ -49,6 +62,7 @@ jobs:
         branch: auto/${{ env.GITHUB_TAG }}
         delete-branch: true
         title: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
+        labels: do not test
         body: |
           Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
 
