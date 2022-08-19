@@ -1984,7 +1984,7 @@ void ClientBase::runInteractive()
     }
 
     LineReader::Patterns query_extenders = {"\\"};
-    LineReader::Patterns query_delimiters = {";", "\\G", "\\G;"};
+    LineReader::Patterns query_delimiters = {";", "\\G", "\\G;", "\\l", "\\d", "\\q", "\\Q"};
 
 #if USE_REPLXX
     replxx::Replxx::highlighter_callback_t highlight_callback{};
