@@ -36,7 +36,7 @@ public:
     std::optional<UInt128> getChecksum() const override { return checksum; }
     std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override;
 
-    String getFilePath() const { return file_path; }
+    String getFilePath() const override { return file_path; }
     DiskPtr getDisk() const { return disk; }
 
 private:

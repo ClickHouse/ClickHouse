@@ -9,7 +9,7 @@ namespace DB
 class BackupReaderFile : public IBackupReader
 {
 public:
-    BackupReaderFile(const String & path_);
+    explicit BackupReaderFile(const String & path_);
     ~BackupReaderFile() override;
 
     bool fileExists(const String & file_name) override;
@@ -23,7 +23,7 @@ private:
 class BackupWriterFile : public IBackupWriter
 {
 public:
-    BackupWriterFile(const String & path_);
+    explicit BackupWriterFile(const String & path_);
     ~BackupWriterFile() override;
 
     bool fileExists(const String & file_name) override;
@@ -31,7 +31,6 @@ public:
     bool fileContentsEqual(const String & file_name, const String & expected_file_contents) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
-
 private:
     std::filesystem::path path;
 };

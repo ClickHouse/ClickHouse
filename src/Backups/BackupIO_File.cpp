@@ -1,6 +1,7 @@
 #include <Backups/BackupIO_File.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
 
 namespace fs = std::filesystem;
 
