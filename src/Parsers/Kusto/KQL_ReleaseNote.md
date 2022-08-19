@@ -1,7 +1,7 @@
 
 ## KQL implemented features
 
-# August XX, 2022
+# August 29, 2022
 ## Dynamic functions
 - [array_iff / array_iif](https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/arrayifffunction)
    `print array_iif(dynamic([true, false, true]), dynamic([1, 2, 3]), dynamic([4, 5, 6])) == dynamic([1, 5, 3])`
