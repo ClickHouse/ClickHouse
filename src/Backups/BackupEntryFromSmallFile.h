@@ -25,7 +25,6 @@ public:
 
     String getFilePath() const override { return file_path; }
     DiskPtr getDisk() const { return disk; }
-
 private:
     const DiskPtr disk;
     const String file_path;

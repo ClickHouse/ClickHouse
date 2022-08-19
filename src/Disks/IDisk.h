@@ -227,7 +227,7 @@ public:
 
     virtual NameSet getCacheLayersNames() const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getCacheLayersNames()` is not implemented for disk: {}", getDataSourceDescription().type);
     }
 
     /// Returns a list of storage objects (contains path, size, ...).
@@ -235,7 +235,7 @@ public:
     /// be multiple files in remote fs for single clickhouse file.
     virtual StoredObjects getStorageObjects(const String &) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getStorageObjects() not implemented for disk: {}`", getDataSourceDescription().type);
     }
 
     /// For one local path there might be multiple remote paths in case of Log family engines.
@@ -243,7 +243,7 @@ public:
 
     virtual void getRemotePathsRecursive(const String &, std::vector<LocalPathWithObjectStoragePaths> &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `getRemotePathsRecursive() not implemented for disk: {}`", getDataSourceDescription().type);
     }
 
     /// Batch request to remove multiple files.
@@ -271,8 +271,8 @@ public:
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
-    /// Return disk type - "local", "s3", etc.
-    virtual DiskType getType() const = 0;
+    /// Return data source description
+    virtual DataSourceDescription getDataSourceDescription() const = 0;
 
     /// Involves network interaction.
     virtual bool isRemote() const = 0;
@@ -357,7 +357,7 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method createDiskObjectStorage() is not implemented for disk type: {}",
-            getType());
+            getDataSourceDescription().type);
     }
 
     virtual bool supportsStat() const { return false; }

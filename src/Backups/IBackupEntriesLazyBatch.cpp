@@ -25,6 +25,12 @@ public:
         return getInternalBackupEntry()->getFilePath();
     }
 
+
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return getInternalBackupEntry()->getDataSourceDescription();
+    }
+
 private:
     BackupEntryPtr getInternalBackupEntry() const
     {

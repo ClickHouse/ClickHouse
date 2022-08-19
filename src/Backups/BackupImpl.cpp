@@ -116,6 +116,12 @@ public:
         return data_file_name;
     }
 
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return backup->reader->getDataSourceDescription();
+    }
+
+
 private:
     const std::shared_ptr<const BackupImpl> backup;
     const String archive_suffix;
@@ -776,40 +782,52 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     if (!is_data_file_required)
         return; /// We copy data only if it's a new combination of size & checksum.
 
-    auto read_buffer = entry->getReadBuffer();
-
-    /// If we have prefix in base we will seek to the start of the suffix which differs
-    if (info.base_size != 0)
-        read_buffer->seek(info.base_size, SEEK_SET);
-
-    if (!num_files_written)
-        checkLockFile(true);
-
-    std::unique_ptr<WriteBuffer> out;
-    if (use_archives)
+    /// We need to copy whole file without archive, we can do it faster
+    /// if source and destination are compatible
+    if (!use_archives && info.base_size == 0)
     {
-        String archive_suffix = current_archive_suffix;
-        bool next_suffix = false;
-        if (current_archive_suffix.empty() && is_internal_backup)
-            next_suffix = true;
-        /*if (archive_params.max_volume_size && current_archive_writer
-            && (current_archive_writer->getTotalSize() + size - base_size > archive_params.max_volume_size))
-            next_suffix = true;*/
-        if (next_suffix)
-            current_archive_suffix = coordination->getNextArchiveSuffix();
-
-        if (info.archive_suffix != current_archive_suffix)
-        {
-            info.archive_suffix = current_archive_suffix;
-            coordination->updateFileInfo(info);
-        }
-        out = getArchiveWriter(current_archive_suffix)->writeFile(info.data_file_name);
-        copyData(*read_buffer, *out);
-        out->finalize();
+        auto writer_description = writer->getDataSourceDescription();
+        auto reader_description = entry->getDataSourceDescription();
+        /// Should be much faster than writing data through server
+        if (writer->supportNativeCopy(reader_description))
+            writer->copyFileNative(entry->getFilePath(), info.data_file_name);
     }
     else
     {
-        writer->copyFileThroughBuffer(std::move(read_buffer), info.data_file_name);
+        auto read_buffer = entry->getReadBuffer();
+
+        /// If we have prefix in base we will seek to the start of the suffix which differs
+        if (info.base_size != 0)
+            read_buffer->seek(info.base_size, SEEK_SET);
+
+        if (!num_files_written)
+            checkLockFile(true);
+
+        if (use_archives)
+        {
+            String archive_suffix = current_archive_suffix;
+            bool next_suffix = false;
+            if (current_archive_suffix.empty() && is_internal_backup)
+                next_suffix = true;
+            /*if (archive_params.max_volume_size && current_archive_writer
+                && (current_archive_writer->getTotalSize() + size - base_size > archive_params.max_volume_size))
+                next_suffix = true;*/
+            if (next_suffix)
+                current_archive_suffix = coordination->getNextArchiveSuffix();
+
+            if (info.archive_suffix != current_archive_suffix)
+            {
+                info.archive_suffix = current_archive_suffix;
+                coordination->updateFileInfo(info);
+            }
+            auto out = getArchiveWriter(current_archive_suffix)->writeFile(info.data_file_name);
+            copyData(*read_buffer, *out);
+            out->finalize();
+        }
+        else
+        {
+            writer->copyFileThroughBuffer(std::move(read_buffer), info.data_file_name);
+        }
     }
 
     ++num_files_written;

@@ -77,4 +77,26 @@ void BackupWriterDisk::removeFiles(const Strings & file_names)
         disk->removeDirectory(path);
 }
 
+DataSourceDescription BackupWriterDisk::getDataSourceDescription() const
+{
+    return disk->getDataSourceDescription();
+}
+
+DataSourceDescription BackupReaderDisk::getDataSourceDescription() const
+{
+    return disk->getDataSourceDescription();
+}
+
+bool BackupWriterDisk::supportNativeCopy(DataSourceDescription data_source_description) const
+{
+    return data_source_description == disk->getDataSourceDescription();
+}
+
+void BackupWriterDisk::copyFileNative(const String & file_name_from, const String & file_name_to)
+{
+    auto file_path = path / file_name_to;
+    disk->createDirectories(file_path.parent_path());
+    disk->copyFile(file_name_from, *disk, file_path);
+}
+
 }
