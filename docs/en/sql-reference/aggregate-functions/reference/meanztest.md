@@ -66,3 +66,5 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/meanZTest/) <!--hide-->

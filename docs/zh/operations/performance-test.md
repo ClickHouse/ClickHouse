@@ -14,7 +14,7 @@ sidebar_label: "\u6D4B\u8BD5\u786C\u4EF6"
 
 1. 下载脚本
 ```
-wget https://raw.githubusercontent.com/ClickHouse/ClickBench/main/hardware/hardware.sh
+wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware.sh
 ```
 
 2. 运行脚本
@@ -54,9 +54,9 @@ chmod a+x clickhouse
 
 2. 下载基准文件
 ```bash
-wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware/benchmark-new.sh
+wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/benchmark-new.sh
 chmod a+x benchmark-new.sh
-wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/hardware/queries.sql
+wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 ```
 
 3.  根据 [Yandex.Metrica 数据集](../getting-started/example-datasets/metrica.md) 中的说明下载测试数据（“ hits ” 数据表包含 1 亿行记录）。

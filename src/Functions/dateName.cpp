@@ -343,7 +343,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(DateName)
+void registerFunctionDateName(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDateNameImpl>(FunctionFactory::CaseInsensitive);
 }

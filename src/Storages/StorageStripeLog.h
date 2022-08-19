@@ -14,16 +14,15 @@
 namespace DB
 {
 struct IndexForNativeFormat;
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
 
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
-class StorageStripeLog final : public IStorage, public WithMutableContext
+class StorageStripeLog final : public IStorage
 {
 friend class StripeLogSource;
 friend class StripeLogSink;
+friend class StripeLogRestoreTask;
 
 public:
     StorageStripeLog(
@@ -34,7 +33,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         bool attach,
-        ContextMutablePtr context_);
+        size_t max_compress_block_size_);
 
     ~StorageStripeLog() override;
 
@@ -44,16 +43,16 @@ public:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr local_context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr ocal_context) override;
+    CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
@@ -63,8 +62,9 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    bool hasDataToBackup() const override { return true; }
+    BackupEntries backupData(ContextPtr context, const ASTs & partitions) override;
+    RestoreTaskPtr restoreData(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings & restore_settings, const std::shared_ptr<IRestoreCoordination> & restore_coordination) override;
 
 private:
     using ReadLock = std::shared_lock<std::shared_timed_mutex>;
@@ -86,9 +86,6 @@ private:
 
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);
-
-    /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
 
     const DiskPtr disk;
     String table_path;

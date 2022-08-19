@@ -78,15 +78,15 @@ ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_setting
           format_settings.schema.format_schema,
           "Protobuf",
           true,
-          format_settings.schema.is_server, format_settings.schema.format_schema_path)
-    , skip_unsupported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
+          format_settings.schema.is_server,
+          format_settings.schema.format_schema_path)
 {
 }
 
 NamesAndTypesList ProtobufSchemaReader::readSchema()
 {
     const auto * message_descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::No);
-    return protobufSchemaToCHSchema(message_descriptor, skip_unsupported_fields);
+    return protobufSchemaToCHSchema(message_descriptor);
 }
 
 void registerProtobufSchemaReader(FormatFactory & factory)
@@ -101,10 +101,6 @@ void registerProtobufSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<ProtobufSchemaReader>(settings);
     });
-
-    for (const auto & name : {"Protobuf", "ProtobufSingle"})
-        factory.registerAdditionalInfoForSchemaCacheGetter(
-            name, [](const FormatSettings & settings) { return "Format schema: " + settings.schema.format_schema; });
 }
 
 }

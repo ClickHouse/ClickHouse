@@ -47,6 +47,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+ExpressionActions::~ExpressionActions() = default;
+
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
 ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_)
@@ -299,7 +301,7 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     if (short_circuit_nodes.empty())
         return {};
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getOutputs());
+    auto reverse_info = getActionsDAGReverseInfo(nodes, actions_dag.getIndex());
 
     /// For each node we fill LazyExecutionInfo.
     std::unordered_map<const ActionsDAG::Node *, LazyExecutionInfo> lazy_execution_infos;
@@ -333,10 +335,10 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & outputs = actions_dag->getOutputs();
+    const auto & index = actions_dag->getIndex();
     const auto & inputs = actions_dag->getInputs();
 
-    auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
+    auto reverse_info = getActionsDAGReverseInfo(nodes, index);
     std::vector<Data> data;
     for (const auto & node : nodes)
         data.push_back({.node = &node});
@@ -426,9 +428,9 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         }
     }
 
-    result_positions.reserve(outputs.size());
+    result_positions.reserve(index.size());
 
-    for (const auto & node : outputs)
+    for (const auto & node : index)
     {
         auto pos = data[reverse_info.reverse_index[node]].position;
 

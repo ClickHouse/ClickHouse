@@ -26,20 +26,6 @@ query
     | truncateStmt  // DDL
     | useStmt
     | watchStmt
-    | ctes? selectStmt
-    ;
-
-// CTE statement
-ctes
-    : WITH namedQuery (',' namedQuery)*
-    ;
-
-namedQuery
-    : name=identifier (columnAliases)? AS '(' query ')'
-    ;
-
-columnAliases
-    : '(' identifier (',' identifier)* ')'
     ;
 
 // ALTER statement

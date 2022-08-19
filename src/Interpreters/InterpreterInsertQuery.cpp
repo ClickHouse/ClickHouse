@@ -162,7 +162,7 @@ Block InterpreterInsertQuery::getSampleBlock(
 static bool hasAggregateFunctions(const IAST * ast)
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast))
-        if (AggregateUtils::isAggregateFunction(*func))
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
             return true;
 
     for (const auto & child : ast->children)
@@ -326,7 +326,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function)
         getContext()->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
-    if (query.select && settings.parallel_distributed_insert_select)
+    if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
         // Distributed INSERT SELECT
         distributed_pipeline = table->distributedWrite(query, getContext());
 

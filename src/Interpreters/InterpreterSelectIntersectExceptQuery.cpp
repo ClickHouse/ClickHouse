@@ -138,7 +138,6 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
     auto step = std::make_unique<IntersectOrExceptStep>(std::move(data_streams), final_operator, max_threads);
     query_plan.unitePlans(std::move(step), std::move(plans));
 
-    addAdditionalPostFilter(query_plan);
     query_plan.addInterpreterContext(context);
 }
 

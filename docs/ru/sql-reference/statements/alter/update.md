@@ -6,7 +6,7 @@ sidebar_label: UPDATE
 # ALTER TABLE … UPDATE {#alter-table-update-statements}
 
 ``` sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] WHERE filter_expr
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
 Манипулирует данными, соответствующими заданному выражению фильтрации. Реализовано как [мутация](../../../sql-reference/statements/alter/index.md#mutations).

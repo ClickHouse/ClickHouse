@@ -154,7 +154,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(S2CapContains)
+void registerFunctionS2CapContains(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionS2CapContains>();
 }

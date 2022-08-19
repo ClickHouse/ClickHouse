@@ -458,6 +458,7 @@ TemplateSchemaReader::TemplateSchemaReader(
     , buf(in_)
     , format(format_)
     , row_format(row_format_)
+    , format_settings(format_settings_)
     , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
 {
     setColumnNames(row_format.column_names);
@@ -491,11 +492,6 @@ DataTypes TemplateSchemaReader::readRowAndGetDataTypes()
 
     format_reader.skipRowEndDelimiter();
     return data_types;
-}
-
-void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t column_idx)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings, row_format.escaping_rules[column_idx]);
 }
 
 static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings)

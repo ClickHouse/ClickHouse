@@ -5,8 +5,6 @@ sidebar_label: Command-Line Client
 
 # Command-line Client
 
-## clickhouse-client
-
 ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
 
 [Install](../getting-started/install.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
@@ -22,9 +20,7 @@ Connected to ClickHouse server version 20.13.1 revision 54442.
 
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version of the client as the server app. When you try to use a client of the older version, then the server, `clickhouse-client` displays the message:
 
-```response
-ClickHouse client version is older than ClickHouse server. It may lack support for new features.
-```
+      ClickHouse client version is older than ClickHouse server. It may lack support for new features.
 
 ## Usage {#cli_usage}
 
@@ -82,13 +78,6 @@ You can create a query with parameters and pass values to them from client appli
 $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
-It is also possible to set parameters from within an interactive session:
-``` bash
-$ clickhouse-client -nq "
-  SET param_parName='[1, 2]';
-  SELECT {parName:Array(UInt16)}"
-```
-
 #### Query Syntax {#cli-queries-with-parameters-syntax}
 
 Format a query as usual, then place the values that you want to pass from the app parameters to the query in braces in the following format:
@@ -125,9 +114,8 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
 -   `--user, -u` – The username. Default value: default.
 -   `--password` – The password. Default value: empty string.
--   `--ask-password` - Prompt the user to enter a password.
 -   `--query, -q` – The query to process when using non-interactive mode. You must specify either `query` or `queries-file` option.
--   `--queries-file` – file path with queries to execute. You must specify either `query` or `queries-file` option.
+-   `--queries-file, -qf` – file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 -   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 -   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
@@ -192,6 +180,7 @@ This feature can be used to generate URLs to facilitate profiling of queries.
 
 If the configuration above is applied, the ID of a query is shown in the following format:
 
-```response
+``` text
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
+

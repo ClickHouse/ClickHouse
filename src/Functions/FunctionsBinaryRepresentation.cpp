@@ -621,7 +621,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(BinaryRepr)
+void registerFunctionsBinaryRepr(FunctionFactory & factory)
 {
     factory.registerFunction<EncodeToBinaryRepresentation<HexImpl>>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<DecodeFromBinaryRepresentation<UnhexImpl>>(FunctionFactory::CaseInsensitive);

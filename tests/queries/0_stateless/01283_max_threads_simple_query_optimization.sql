@@ -1,7 +1,6 @@
 DROP TABLE IF EXISTS data_01283;
 
-set remote_filesystem_read_method = 'read';
-set local_filesystem_read_method = 'pread';
+set remote_filesystem_read_method='read';
 
 CREATE TABLE data_01283 engine=MergeTree()
 ORDER BY key

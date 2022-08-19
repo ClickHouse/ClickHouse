@@ -254,7 +254,7 @@ void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeepe
 
         try
         {
-            commitPart(zookeeper, part, partition.block_id, partition.temp_part.builder);
+            commitPart(zookeeper, part, partition.block_id);
 
             last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
 
@@ -289,7 +289,7 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     try
     {
         part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
-        commitPart(zookeeper, part, "", part->data_part_storage->getBuilder());
+        commitPart(zookeeper, part, "");
         PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
     }
     catch (...)
@@ -301,15 +301,12 @@ void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
 
 void ReplicatedMergeTreeSink::commitPart(
-    zkutil::ZooKeeperPtr & zookeeper,
-    MergeTreeData::MutableDataPartPtr & part,
-    const String & block_id,
-    DataPartStorageBuilderPtr builder)
+    zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id)
 {
     metadata_snapshot->check(part->getColumns());
     assertSessionIsNotExpired(zookeeper);
 
-    String temporary_part_relative_path = part->data_part_storage->getPartDirectory();
+    String temporary_part_relative_path = part->relative_path;
 
     /// There is one case when we need to retry transaction in a loop.
     /// But don't do it too many times - just as defensive measure.
@@ -474,15 +471,12 @@ void ReplicatedMergeTreeSink::commitPart(
         /// Information about the part.
         storage.getCommitPartOps(ops, part, block_id_path);
 
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(storage, NO_TRANSACTION_RAW); /// If you can not add a part to ZK, we'll remove it back from the working set.
         bool renamed = false;
 
         try
         {
-            auto lock = storage.lockParts();
-            renamed = storage.renameTempPartAndAdd(part, transaction, builder, lock);
+            renamed = storage.renameTempPartAndAdd(part, NO_TRANSACTION_RAW, nullptr, &transaction);
         }
         catch (const Exception & e)
         {
@@ -546,8 +540,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 transaction.rollbackPartsToTemporaryState();
 
                 part->is_temp = true;
-                part->renameTo(temporary_part_relative_path, false, builder);
-                builder->commit();
+                part->renameTo(temporary_part_relative_path, false);
 
                 /// If this part appeared on other replica than it's better to try to write it locally one more time. If it's our part
                 /// than it will be ignored on the next itration.

@@ -158,7 +158,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Now64)
+void registerFunctionNow64(FunctionFactory & factory)
 {
     factory.registerFunction<Now64OverloadResolver>(FunctionFactory::CaseInsensitive);
 }

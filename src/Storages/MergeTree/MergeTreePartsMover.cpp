@@ -100,7 +100,6 @@ bool MergeTreePartsMover::selectPartsForMove(
         return false;
 
     std::unordered_map<DiskPtr, LargestPartsWithRequiredSize> need_to_move;
-    std::unordered_set<DiskPtr> need_to_move_disks;
     const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
@@ -115,10 +114,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 UInt64 unreserved_space = disk->getUnreservedSpace();
 
                 if (unreserved_space < required_maximum_available_space && !disk->isBroken())
-                {
                     need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
-                    need_to_move_disks.emplace(disk);
-                }
             }
         }
     }
@@ -139,10 +135,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
         auto ttl_entry = selectTTLDescriptionForTTLInfos(metadata_snapshot->getMoveTTLs(), part->ttl_infos.moves_ttl, time_of_move, true);
 
-        auto to_insert = need_to_move.end();
-        if (auto disk_it = part->data_part_storage->isStoredOnDisk(need_to_move_disks); disk_it != need_to_move_disks.end())
-            to_insert = need_to_move.find(*disk_it);
-
+        auto to_insert = need_to_move.find(part->volume->getDisk());
         ReservationPtr reservation;
         if (ttl_entry)
         {
@@ -207,9 +200,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     auto settings = data->getSettings();
     auto part = moving_part.part;
     auto disk = moving_part.reserved_space->getDisk();
-    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->data_part_storage->getDiskName(), disk->getName());
-
-    DataPartStoragePtr cloned_part_storage;
+    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->volume->getDisk()->getName(), disk->getName());
 
     const String directory_to_move = "moving";
     if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
@@ -217,7 +208,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         /// Try zero-copy replication and fallback to default copy if it's not possible
         moving_part.part->assertOnDisk();
         String path_to_clone = fs::path(data->getRelativeDataPath()) / directory_to_move / "";
-        String relative_path = part->data_part_storage->getPartDirectory();
+        String relative_path = part->relative_path;
         if (disk->exists(path_to_clone + relative_path))
         {
             LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
@@ -225,26 +216,27 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         }
 
         disk->createDirectories(path_to_clone);
-
-        cloned_part_storage = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
-
-        if (!cloned_part_storage)
+        bool is_fetched = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+        if (!is_fetched)
         {
             LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
-            cloned_part_storage = part->data_part_storage->clone(path_to_clone, part->data_part_storage->getPartDirectory(), disk, log);
+            part->volume->getDisk()->copy(fs::path(data->getRelativeDataPath()) / relative_path / "", disk, path_to_clone);
         }
+        part->volume->getDisk()->removeFileIfExists(fs::path(path_to_clone) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
     }
     else
     {
-        cloned_part_storage = part->makeCloneOnDisk(disk, directory_to_move);
+        part->makeCloneOnDisk(disk, directory_to_move);
     }
 
-    MergeTreeData::MutableDataPartPtr cloned_part = data->createPart(part->name, cloned_part_storage);
-    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->data_part_storage->getFullPath());
+    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part->name, moving_part.reserved_space->getDisk(), 0);
+    MergeTreeData::MutableDataPartPtr cloned_part =
+        data->createPart(part->name, single_disk_volume, fs::path(directory_to_move) / part->name);
+    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
     cloned_part->loadVersionMetadata();
-    cloned_part->modification_time = cloned_part->data_part_storage->getLastModified().epochTime();
+    cloned_part->modification_time = disk->getLastModified(cloned_part->getFullRelativePath()).epochTime();
     return cloned_part;
 
 }
@@ -260,20 +252,17 @@ void MergeTreePartsMover::swapClonedPart(const MergeTreeData::DataPartPtr & clon
     /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part->name)
     {
-        LOG_INFO(log, "Failed to swap {}. Active part doesn't exist. Possible it was merged or mutated. Will remove copy on path '{}'.", cloned_part->name, cloned_part->data_part_storage->getFullPath());
+        LOG_INFO(log, "Failed to swap {}. Active part doesn't exist. Possible it was merged or mutated. Will remove copy on path '{}'.", cloned_part->name, cloned_part->getFullPath());
         return;
     }
 
-    auto builder = cloned_part->data_part_storage->getBuilder();
     /// Don't remove new directory but throw an error because it may contain part which is currently in use.
-    cloned_part->renameTo(active_part->name, false, builder);
-
-    builder->commit();
+    cloned_part->renameTo(active_part->name, false);
 
     /// TODO what happen if server goes down here?
     data->swapActivePart(cloned_part);
 
-    LOG_TRACE(log, "Part {} was moved to {}", cloned_part->name, cloned_part->data_part_storage->getFullPath());
+    LOG_TRACE(log, "Part {} was moved to {}", cloned_part->name, cloned_part->getFullPath());
 }
 
 }

@@ -53,7 +53,7 @@ public:
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    size_t getFileSize() override { return remote_file_size; }
+    std::optional<size_t> getFileSize() override { return remote_file_size; }
 
 private:
     std::unique_ptr<LocalFileHolder> local_file_holder;

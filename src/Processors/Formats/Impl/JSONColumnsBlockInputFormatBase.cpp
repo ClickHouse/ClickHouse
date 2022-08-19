@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Formats/JSONUtils.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <IO/ReadHelpers.h>
 #include <base/find_symbols.h>
 
@@ -182,14 +181,13 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
 {
 }
 
-void JSONColumnsSchemaReaderBase::chooseResulType(DataTypePtr & type, DataTypePtr & new_type, const String & column_name, size_t row) const
+void JSONColumnsSchemaReaderBase::chooseResulType(DataTypePtr & type, const DataTypePtr & new_type, const String & column_name, size_t row) const
 {
-    auto convert_types_if_needed = [&](DataTypePtr & first, DataTypePtr & second)
+    auto common_type_checker = [&](const DataTypePtr & first, const DataTypePtr & second)
     {
-        DataTypes types = {first, second};
-        transformInferredJSONTypesIfNeeded(types, format_settings);
+        return JSONUtils::getCommonTypeForJSONFormats(first, second, format_settings.json.read_bools_as_numbers);
     };
-    chooseResultColumnType(type, new_type, convert_types_if_needed, nullptr, column_name, row);
+    chooseResultColumnType(type, new_type, common_type_checker, nullptr, column_name, row);
 }
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
@@ -262,7 +260,7 @@ DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String &
         }
 
         readJSONField(field, in);
-        DataTypePtr field_type = JSONUtils::getDataTypeFromField(field, format_settings);
+        DataTypePtr field_type = JSONUtils::getDataTypeFromField(field);
         chooseResulType(column_type, field_type, column_name, rows_read);
         ++rows_read;
     }

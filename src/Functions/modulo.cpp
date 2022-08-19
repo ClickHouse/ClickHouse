@@ -162,7 +162,7 @@ template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> :
 struct NameModulo { static constexpr auto name = "modulo"; };
 using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, false>;
 
-REGISTER_FUNCTION(Modulo)
+void registerFunctionModulo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModulo>();
     factory.registerAlias("mod", "modulo", FunctionFactory::CaseInsensitive);
@@ -171,7 +171,7 @@ REGISTER_FUNCTION(Modulo)
 struct NameModuloLegacy { static constexpr auto name = "moduloLegacy"; };
 using FunctionModuloLegacy = BinaryArithmeticOverloadResolver<ModuloLegacyImpl, NameModuloLegacy, false>;
 
-REGISTER_FUNCTION(ModuloLegacy)
+void registerFunctionModuloLegacy(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionModuloLegacy>();
 }

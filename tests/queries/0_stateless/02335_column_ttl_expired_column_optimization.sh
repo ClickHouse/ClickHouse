@@ -4,9 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-data_path="$CLICKHOUSE_TMP/local"
-
-$CLICKHOUSE_LOCAL --path "$data_path" -nm -q "
+$CLICKHOUSE_LOCAL --path "$CLICKHOUSE_TEST_UNIQUE_NAME" -nm -q "
     create table ttl_02335 (
         date Date,
         key Int,
@@ -27,5 +25,5 @@ $CLICKHOUSE_LOCAL --path "$data_path" -nm -q "
     optimize table ttl_02335 final;
 "
 
-test -f "$data_path"/data/_local/ttl_02335/all_1_1_3/value.bin && echo "[FAIL] value column should not exist"
-rm -fr "${data_path:?}"
+test -f "$CLICKHOUSE_TEST_UNIQUE_NAME"/data/_local/ttl_02335/all_1_1_3/value.bin && echo "[FAIL] value column should not exist"
+exit 0

@@ -2,7 +2,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/OvercommitTracker.h>
 #include <Core/Block.h>
-#include <re2/re2.h>
+
 
 namespace DB
 {
@@ -15,8 +15,6 @@ public:
 
     InternalTextLogsQueue();
 
-    bool isNeeded(int priority, const String & source) const;
-
     static Block getSampleBlock();
     static MutableColumns getSampleColumns();
 
@@ -25,11 +23,6 @@ public:
 
     /// Converts priority from Poco::Message::Priority to a string
     static const char * getPriorityName(int priority);
-
-    void setSourceRegexp(const String & regexp);
-private:
-    /// If not null, you should only push logs which are matched with this regexp
-    std::unique_ptr<re2::RE2> source_regexp;
 };
 
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;

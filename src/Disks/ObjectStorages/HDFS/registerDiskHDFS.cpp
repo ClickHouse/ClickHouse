@@ -3,7 +3,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/DiskFactory.h>
-#include <Disks/DiskRestartProxy.h>
 #include <Storages/HDFS/HDFSCommon.h>
 
 namespace DB
@@ -36,14 +35,13 @@ void registerDiskHDFS(DiskFactory & factory)
 
 
         /// FIXME Cache currently unsupported :(
-        ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(uri, std::move(settings), config);
+        ObjectStoragePtr hdfs_storage = std::make_unique<HDFSObjectStorage>(nullptr, uri, std::move(settings), config);
 
-        auto [_, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context_);
-
+        auto metadata_disk = prepareForLocalMetadata(name, config, config_prefix, context_).second;
         auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri);
         uint64_t copy_thread_pool_size = config.getUInt(config_prefix + ".thread_pool_size", 16);
 
-        DiskPtr disk_result = std::make_shared<DiskObjectStorage>(
+        return std::make_shared<DiskObjectStorage>(
             name,
             uri,
             "DiskHDFS",
@@ -52,8 +50,6 @@ void registerDiskHDFS(DiskFactory & factory)
             DiskType::HDFS,
             /* send_metadata = */ false,
             copy_thread_pool_size);
-
-        return std::make_shared<DiskRestartProxy>(disk_result);
     };
 
     factory.registerDiskType("hdfs", creator);

@@ -1,5 +1,11 @@
 #include "WriteIndirectBufferFromRemoteFS.h"
 
+#include <IO/WriteBufferFromS3.h>
+#include <IO/WriteBufferFromAzureBlobStorage.h>
+#include <Storages/HDFS/WriteBufferFromHDFS.h>
+#include <IO/WriteBufferFromHTTP.h>
+
+
 namespace DB
 {
 
@@ -25,6 +31,7 @@ WriteIndirectBufferFromRemoteFS::~WriteIndirectBufferFromRemoteFS()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
+
 
 void WriteIndirectBufferFromRemoteFS::finalizeImpl()
 {

@@ -325,22 +325,8 @@ static void explainStep(
                 elem.dumpNameAndType(settings.out);
             }
         }
+
         settings.out.write('\n');
-
-    }
-
-    if (options.sorting)
-    {
-        if (step.hasOutputStream())
-        {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_mode << ")";
-            if (step.getOutputStream().sort_mode != DataStream::SortMode::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
-            settings.out.write('\n');
-        }
     }
 
     if (options.actions)
@@ -448,7 +434,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

@@ -11,7 +11,7 @@ using FunctionSin = FunctionMathUnary<UnaryFunctionVectorized<SinName, sin>>;
 
 }
 
-REGISTER_FUNCTION(Sin)
+void registerFunctionSin(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSin>(FunctionFactory::CaseInsensitive);
 }

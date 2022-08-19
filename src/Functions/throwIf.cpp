@@ -143,7 +143,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(ThrowIf)
+void registerFunctionThrowIf(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionThrowIf>();
 }

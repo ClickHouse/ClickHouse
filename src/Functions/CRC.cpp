@@ -143,7 +143,7 @@ void registerFunctionCRCImpl(FunctionFactory & factory)
     factory.registerFunction<T>(T::name, FunctionFactory::CaseInsensitive);
 }
 
-REGISTER_FUNCTION(CRC)
+void registerFunctionCRC(FunctionFactory & factory)
 {
     registerFunctionCRCImpl<FunctionCRC32ZLIB>(factory);
     registerFunctionCRCImpl<FunctionCRC32IEEE>(factory);

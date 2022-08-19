@@ -252,7 +252,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Repeat)
+void registerFunctionRepeat(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionRepeat>(FunctionFactory::CaseInsensitive);
 }

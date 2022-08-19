@@ -55,7 +55,6 @@ public:
     /// tuple(..., Nothing, ...) -> Tuple(..., Nothing, ...)
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -83,7 +82,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(Tuple)
+void registerFunctionTuple(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTuple>();
 }

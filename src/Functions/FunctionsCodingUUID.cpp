@@ -229,7 +229,7 @@ public:
     }
 };
 
-REGISTER_FUNCTION(CodingUUID)
+void registerFunctionsCodingUUID(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionUUIDNumToString>();
     factory.registerFunction<FunctionUUIDStringToNum>();

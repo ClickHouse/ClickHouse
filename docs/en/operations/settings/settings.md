@@ -302,34 +302,18 @@ Default value: `ALL`.
 
 Specifies [JOIN](../../sql-reference/statements/select/join.md) algorithm.
 
-Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
-
 Possible values:
 
-- `default` — `hash` or `direct`, if possible (same as `direct,hash`)
+- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used.
+- `partial_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) is used.
+- `prefer_partial_merge` — ClickHouse always tries to use `merge` join if possible.
+- `auto` — ClickHouse tries to change `hash` join to `merge` join on the fly to avoid out of memory.
 
-- `hash` — [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
+Default value: `hash`.
 
-- `parallel_hash` - a variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
+When using `hash` algorithm the right part of `JOIN` is uploaded into RAM.
 
-When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
-
-- `partial_merge` — a variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
-
-The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
-
-When using `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
-
-- `direct` - can be applied when the right storage supports key-value requests.
-
-The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](../../engines/table-engines/special/dictionary.md#dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
-
-- `auto` — try `hash` join and switch on the fly to another algorithm if the memory limit is violated.
-
-- `full_sorting_merge` — [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
-
-- `prefer_partial_merge` — ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
-
+When using `partial_merge` algorithm ClickHouse sorts the data and dumps it to the disk. The `merge` algorithm in ClickHouse differs a bit from the classic realization. First ClickHouse sorts the right table by [join key](../../sql-reference/statements/select/join.md#select-join) in blocks and creates min-max index for sorted blocks. Then it sorts parts of left table by `join key` and joins them over right table. The min-max index is also used to skip unneeded right table blocks.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -747,14 +731,7 @@ Default value: 268435456.
 
 Disables lagging replicas for distributed queries. See [Replication](../../engines/table-engines/mergetree-family/replication.md).
 
-Sets the time in seconds. If a replica's lag is greater than or equal to the set value, this replica is not used.
-
-Possible values:
-
--   Positive integer.
--   0 — Replica lags are not checked.
-
-To prevent the use of any replica with a non-zero lag, set this parameter to 1.
+Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
 Default value: 300.
 
@@ -1296,14 +1273,14 @@ ENGINE = MergeTree
 ORDER BY A
 SETTINGS non_replicated_deduplication_window = 100;
 
-INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (1);
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (1);
 
 -- the next insert won't be deduplicated because insert_deduplication_token is different
-INSERT INTO test_table SETTINGS insert_deduplication_token = 'test1' VALUES (1);
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test1' (1);
 
 -- the next insert will be deduplicated because insert_deduplication_token
 -- is the same as one of the previous
-INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (2);
+INSERT INTO test_table Values SETTINGS insert_deduplication_token = 'test' (2);
 
 SELECT * FROM test_table
 
@@ -2649,7 +2626,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 1800.
 
 ## http_receive_timeout {#http_receive_timeout}
 
@@ -2660,7 +2637,7 @@ Possible values:
 -   Any positive integer.
 -   0 - Disabled (infinite timeout).
 
-Default value: 180.
+Default value: 1800.
 
 ## check_query_single_value_result {#check_query_single_value_result}
 
@@ -3102,14 +3079,14 @@ Exception: Total regexp lengths too large.
 
 ## enable_positional_arguments {#enable-positional-arguments}
 
-Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
+Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements. When you want to use column numbers instead of column names in these clauses, set `enable_positional_arguments = 1`.
 
 Possible values:
 
 -   0 — Positional arguments aren't supported.
 -   1 — Positional arguments are supported: column numbers can use instead of column names.
 
-Default value: `1`.
+Default value: `0`.
 
 **Example**
 
@@ -3119,6 +3096,8 @@ Query:
 CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
 
 INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
+
+SET enable_positional_arguments = 1;
 
 SELECT * FROM positional_arguments ORDER BY 2,3;
 ```
@@ -3307,7 +3286,7 @@ Possible values:
 
 Default value: `0`.
 
-## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
+## shutdown_wait_unfinished_queries
 
 Enables or disables waiting unfinished queries when shutdown server.
 
@@ -3318,13 +3297,13 @@ Possible values:
 
 Default value: 0.
 
-## shutdown_wait_unfinished {#shutdown_wait_unfinished}
+## shutdown_wait_unfinished
 
 The waiting time in seconds for currently handled connections when shutdown server.
 
 Default Value: 5.
 
-## memory_overcommit_ratio_denominator {#memory_overcommit_ratio_denominator}
+## memory_overcommit_ratio_denominator
 
 It represents soft memory limit in case when hard limit is reached on user level.
 This value is used to compute overcommit ratio for the query.
@@ -3333,7 +3312,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
 
-## memory_usage_overcommit_max_wait_microseconds {#memory_usage_overcommit_max_wait_microseconds}
+## memory_usage_overcommit_max_wait_microseconds
 
 Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
 If the timeout is reached and memory is not freed, an exception is thrown.
@@ -3341,7 +3320,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `5000000`.
 
-## memory_overcommit_ratio_denominator_for_user {#memory_overcommit_ratio_denominator_for_user}
+## memory_overcommit_ratio_denominator_for_user
 
 It represents soft memory limit in case when hard limit is reached on global level.
 This value is used to compute overcommit ratio for the query.
@@ -3349,45 +3328,6 @@ Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 
 Default value: `1GiB`.
-
-## schema_inference_use_cache_for_file {schema_inference_use_cache_for_file}
-
-Enable schemas cache for schema inference in `file` table function.
-
-Default value: `true`.
-
-## schema_inference_use_cache_for_s3 {schema_inference_use_cache_for_s3}
-
-Enable schemas cache for schema inference in `s3` table function.
-
-Default value: `true`.
-
-## schema_inference_use_cache_for_url {schema_inference_use_cache_for_url}
-
-Enable schemas cache for schema inference in `url` table function.
-
-Default value: `true`.
-
-## schema_inference_use_cache_for_hdfs {schema_inference_use_cache_for_hdfs}
-
-Enable schemas cache for schema inference in `hdfs` table function.
-
-Default value: `true`.
-
-## schema_inference_cache_require_modification_time_for_url {#schema_inference_cache_require_modification_time_for_url}
-
-Use schema from cache for URL with last modification time validation (for urls with Last-Modified header). If this setting is enabled and URL doesn't have Last-Modified header, schema from cache won't be used.
-
-Default value: `true`.
-
-## compatibility {#compatibility}
-
-This setting changes other settings according to provided ClickHouse version.
-If a behaviour in ClickHouse was changed by using a different default value for some setting, this compatibility setting allows you to use default values from previous versions for all the settings that were not set by the user.
-
-This setting takes ClickHouse version number as a string, like `21.3`, `21.8`. Empty value means that this setting is disabled.
-
-Disabled by default.
 
 # Format settings {#format-settings}
 
@@ -3504,24 +3444,6 @@ Default value: `25'000`.
 ## column_names_for_schema_inference {#column_names_for_schema_inference}
 
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
-
-## schema_inference_hints {#schema_inference_hints}
-
-The list of column names and types to use as hints in schema inference for formats without schema.
-
-Example:
-
-Query:
-```sql
-desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings schema_inference_hints='x UInt8, z IPv4';
-```
-
-Result:
-```sql
-x	UInt8					
-y	Nullable(String)					
-z	IPv4
-```
 
 ## date_time_input_format {#date_time_input_format}
 
@@ -4715,35 +4637,3 @@ Possible values:
 - 1 — Enabled.
 
 Default value: 1.
-
-## SQLInsert format settings {$sqlinsert-format-settings}
-
-### output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
-
-The maximum number of rows in one INSERT statement.
-
-Default value: `65505`.
-
-### output_format_sql_insert_table_name {#output_format_sql_insert_table_name}
-
-The name of table that will be used in the output INSERT statement.
-
-Default value: `'table''`.
-
-### output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
-
-Include column names in INSERT statement.
-
-Default value: `true`.
-
-### output_format_sql_insert_use_replace {#output_format_sql_insert_use_replace}
-
-Use REPLACE keyword instead of INSERT.
-
-Default value: `false`.
-
-### output_format_sql_insert_quote_names {#output_format_sql_insert_quote_names}
-
-Quote column names with "`" characters
-
-Default value: `true`.

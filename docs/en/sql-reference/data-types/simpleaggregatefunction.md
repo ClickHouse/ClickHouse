@@ -39,3 +39,4 @@ Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way
 CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
 ```
 
+[Original article](https://clickhouse.com/docs/en/data_types/simpleaggregatefunction/) <!--hide-->

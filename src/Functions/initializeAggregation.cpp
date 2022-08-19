@@ -160,7 +160,7 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
 
 }
 
-REGISTER_FUNCTION(InitializeAggregation)
+void registerFunctionInitializeAggregation(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionInitializeAggregation>();
 }
