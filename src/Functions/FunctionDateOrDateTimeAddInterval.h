@@ -611,7 +611,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!isNativeNumber(arguments[1].type))
-            throw Exception("Second argument for function " + getName() + " (delta) must be number",
+            throw Exception("Second argument for function " + getName() + " (delta) must be a number",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2)
@@ -627,7 +627,7 @@ public:
             {
                 throw Exception(
                     "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
-                    "must be of type Date or DateTime. The 2nd argument must be number. "
+                    "must be of type Date or DateTime. The 2nd argument must be a number. "
                     "The 3rd argument (optional) must be "
                     "a constant string with timezone name. The timezone argument is allowed "
                     "only when the 1st argument has the type DateTime",

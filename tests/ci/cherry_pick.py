@@ -211,7 +211,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
                 "Assing to assignees of the original PR: %s",
                 ", ".join(user.login for user in self.pr.assignees),
             )
-            self.cherrypick_pr.add_to_assignees(self.pr.assignees)
+            self.cherrypick_pr.add_to_assignees(*self.pr.assignees)
         logging.info("Assign to the author of the original PR: %s", self.pr.user.login)
         self.cherrypick_pr.add_to_assignees(self.pr.user)
 
@@ -249,7 +249,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
                 "Assing to assignees of the original PR: %s",
                 ", ".join(user.login for user in self.pr.assignees),
             )
-            self.cherrypick_pr.add_to_assignees(self.pr.assignees)
+            self.cherrypick_pr.add_to_assignees(*self.pr.assignees)
         logging.info("Assign to the author of the original PR: %s", self.pr.user.login)
         self.backport_pr.add_to_assignees(self.pr.user)
 

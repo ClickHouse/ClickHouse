@@ -8,6 +8,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/Cache/SchemaCache.h>
 
 
 namespace DB
@@ -47,6 +48,8 @@ public:
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context);
+
+    static SchemaCache & getSchemaCache(const ContextPtr & context);
 
 protected:
     IStorageURLBase(
@@ -97,6 +100,27 @@ protected:
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
+
+    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
+        const Strings & urls,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const Poco::Net::HTTPBasicCredentials & credentials,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
+
+    static void addColumnsToCache(
+        const Strings & urls,
+        const ColumnsDescription & columns,
+        const String & format_name,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
+
+    static std::optional<time_t> getLastModificationTime(
+        const String & url,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const Poco::Net::HTTPBasicCredentials & credentials,
+        const ContextPtr & context);
 };
 
 class StorageURLSink : public SinkToStorage
