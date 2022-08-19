@@ -30,13 +30,13 @@ FileCache::FileCache(
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
     , log(&Poco::Logger::get("FileCache"))
-    , background_download_max_memory_usage(cache_settings_.background_download_max_memory_usage)
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
-    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
+    , background_download_max_memory_usage(cache_settings_.background_download_max_memory_usage)
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
     , max_stash_element_size(cache_settings_.max_elements)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
+    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
 {
 }
 

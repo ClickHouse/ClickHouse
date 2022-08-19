@@ -166,6 +166,8 @@ public:
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment, std::lock_guard<std::mutex> & cache_lock);
 
+    bool isDetached() const;
+
     /**
      * ========== Methods for _only_ file segment's `writer` ======================
      */
@@ -185,7 +187,7 @@ public:
     void write(const char * from, size_t size, size_t offset);
 
     /// Complete file segment with a certain state.
-    void completeWithState(State state, bool auto_resize = false);
+    void completeWithState(State state);
 
     /// Complete file segment's part which was last written.
     void completePartAndResetDownloader();
@@ -203,8 +205,6 @@ public:
     size_t getRemainingSizeToDownload() const;
 
     /// [[noreturn]] void throwIfDetached() const;
-
-    ///bool isDetached() const;
 
 private:
     size_t availableSizeUnlocked(std::lock_guard<std::mutex> & /* segment_lock */) const { return reserved_size - downloaded_size; }

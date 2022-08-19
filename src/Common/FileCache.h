@@ -75,7 +75,7 @@ public:
     void removeIfExists(const Key & key);
 
     /// Remove files by `key`. Will not remove files which are used at the moment.
-    void removeIfReleasable(bool remove_persistent_files);
+    void removeIfReleasable();
 
     static Key hash(const String & path);
 
@@ -141,8 +141,8 @@ private:
     mutable std::mutex mutex;
 
     bool allow_persistent_files;
-
     size_t background_download_max_memory_usage;
+
     std::optional<ThreadPool> async_write_threadpool;
     size_t current_background_download_memory_usage = 0;
 

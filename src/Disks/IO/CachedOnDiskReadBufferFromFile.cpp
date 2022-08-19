@@ -221,7 +221,7 @@ CachedOnDiskReadBufferFromFile::getRemoteFSReadBuffer(FileSegmentPtr & file_segm
     }
 }
 
-bool CachedReadBufferFromRemoteFS::canStartFromCache(size_t current_offset, const FileSegment & file_segment) const
+bool CachedOnDiskReadBufferFromFile::canStartFromCache(size_t current_offset, const FileSegment & file_segment) const
 {
     if (settings.filesystem_cache_asynchronous_write)
     {
@@ -477,13 +477,10 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_se
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Buffer's offsets mismatch; cached buffer offset: {}, current_write_offset: {}, position: {}, "
-                    "implementation buffer offset: {}, implementation buffer reading until: {}, file segment info: {}",
-                    file_offset_of_buffer_end,
-                    current_write_offset,
-                    read_buffer_for_file_segment->getPosition(),
-                    read_buffer_for_file_segment->getRemainingReadRange().toString(),
-                    file_segment->getInfoForLog());
+                    "Buffer's offsets mismatch. Cached buffer offset: {}, current_write_offset: {} implementation buffer offset: {}, "
+                    "implementation buffer remaining range: {}, file segment info: {}",
+                    file_offset_of_buffer_end, current_write_offset, read_buffer_for_file_segment->getPosition(),
+                    read_buffer_for_file_segment->getRemainingReadRange().toString(), file_segment->getInfoForLog());
             }
 
             break;
@@ -719,6 +716,9 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         ///                     ^
         ///                     file_offset_of_buffer_end
 
+        auto current_write_offset = file_segment->getCurrentWriteOffset();
+        bool cached_part_is_finished = current_write_offset == file_offset_of_buffer_end;
+
 #ifndef NDEBUG
         size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
         size_t cache_file_read_offset = implementation_buffer->getFileOffsetOfBufferEnd();
@@ -728,15 +728,14 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Incorrect state of buffers. Current download offset: {}, file offset of buffer end: {}, "
+                "Incorrect state of buffers. Current write offset: {}, file offset of buffer end: {}, "
                 "cache file size: {}, cache file offset: {}, file segment info: {}",
-                download_offset, file_offset_of_buffer_end, cache_file_size, cache_file_read_offset,
+                current_write_offset, file_offset_of_buffer_end, cache_file_size, cache_file_read_offset,
                 file_segment->getInfoForLog());
         }
 #endif
 
-        auto current_write_offset = file_segment->getCurrentWriteOffset();
-        if (current_write_offset == file_offset_of_buffer_end)
+        if (cached_part_is_finished)
         {
             /// TODO: makes sense to reuse local file reader if we return here with CACHED read type again?
             implementation_buffer = getImplementationBuffer(*current_file_segment_it);
@@ -1042,7 +1041,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         log,
         "Key: {}. Returning with {} bytes, buffer position: {} (offset: {}, predownloaded: {}), "
         "buffer available: {}, current range: {}, current offset: {}, file segment state: {}, "
-        "download offset: {}, read_type: {}, reading until position: {}, started with offset: {}, "
+        "current write offset: {}, read_type: {}, reading until position: {}, started with offset: {}, "
         "remaining ranges: {}",
         getHexUIntLowercase(cache_key),
         working_buffer.size(),
