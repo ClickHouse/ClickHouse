@@ -1068,7 +1068,10 @@ Query:
 
 ```sql
 WITH toDateTime('2021-04-14 11:22:33') AS date_value
-SELECT dateName('year', date_value), dateName('month', date_value), dateName('day', date_value);
+SELECT
+    dateName('year', date_value),
+    dateName('month', date_value),
+    dateName('day', date_value);
 ```
 
 Result:
@@ -1076,7 +1079,44 @@ Result:
 ```text
 ┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
 │ 2021                         │ April                         │ 14                          │
-└──────────────────────────────┴───────────────────────────────┴─────────────────────────────
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────┘
+```
+
+## monthName
+
+Returns name of the month.
+
+**Syntax**
+
+``` sql
+monthName(date)
+```
+
+**Arguments**
+
+-   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Returned value**
+
+-   The name of the month.
+
+Type: [String](../../sql-reference/data-types/string.md#string)
+
+**Example**
+
+Query:
+
+```sql
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT monthName(date_value);
+```
+
+Result:
+
+```text
+┌─monthName(date_value)─┐
+│ April                 │
+└───────────────────────┘
 ```
 
 ## FROM\_UNIXTIME
