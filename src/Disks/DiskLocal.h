@@ -101,7 +101,8 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType getType() const override { return DiskType::Local; }
+    DataSourceDescription getDataSourceDescription() const override;
+
     bool isRemote() const override { return false; }
 
     bool supportZeroCopyReplication() const override { return false; }
@@ -145,13 +146,12 @@ private:
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;
     Poco::Logger * logger;
+    DataSourceDescription data_source_description;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
 
     static std::mutex reservation_mutex;
-
-    Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 
     std::atomic<bool> broken{false};
     std::atomic<bool> readonly{false};

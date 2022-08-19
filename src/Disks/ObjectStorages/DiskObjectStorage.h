@@ -34,14 +34,13 @@ public:
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
-        DiskType disk_type_,
         bool send_metadata_,
         uint64_t thread_pool_size_);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    DiskType getType() const override { return disk_type; }
+    DataSourceDescription getDataSourceDescription() const override { return object_storage->getDataSourceDescription(); }
 
     bool supportZeroCopyReplication() const override { return true; }
 
@@ -206,7 +205,6 @@ private:
     const String object_storage_root_path;
     Poco::Logger * log;
 
-    const DiskType disk_type;
     MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
 

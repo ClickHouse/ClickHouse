@@ -24,6 +24,11 @@ public:
         return "";
     }
 
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return DataSourceDescription{DataSourceType::RAM, "", false, false};
+    }
+
 private:
     const String data;
     const std::optional<UInt128> checksum;

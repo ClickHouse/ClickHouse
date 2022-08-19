@@ -2,6 +2,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Poco/File.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace DB
@@ -42,6 +43,26 @@ std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer(
         return disk->readFile(file_path);
     else
         return createReadBufferFromFileBase(file_path, /* settings= */ {});
+}
+
+
+DataSourceDescription BackupEntryFromImmutableFile::getDataSourceDescription() const
+{
+    if (disk)
+        return disk->getDataSourceDescription();
+
+    DataSourceDescription result{
+        .type = DataSourceType::Local,
+        .is_encrypted = false,
+        .is_cached = false,
+    };
+
+    if (auto block_device_id = tryGetBlockDeviceId(file_path); block_device_id.has_value())
+        result.description = *block_device_id;
+    else
+        result.description = file_path;
+
+    return result;
 }
 
 }
