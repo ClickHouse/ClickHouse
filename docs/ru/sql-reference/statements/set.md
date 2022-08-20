@@ -1,6 +1,6 @@
 ---
-toc_priority: 49
-toc_title: SET
+sidebar_position: 49
+sidebar_label: SET
 ---
 
 # SET {#query-set}

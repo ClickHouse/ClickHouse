@@ -41,16 +41,16 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM file('data_02118', 'CSV', 'x IPv4')" 2>&1 |
 echo "[\"255.255.255.255trash\"]" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('data_02118', 'JSONCompactEachRow', 'x IPv4')" 2>&1 | grep -F -q "UNEXPECTED_DATA_AFTER_PARSED_VALUE" && echo 'OK' || echo 'FAIL'
 
-echo "[\"2a02:6ba8:2da1:40cd:31db:f9f1:fc3d:80b1trash\"]" > $DATA_FILE
+echo "[\"0000:0000:0000:0000:0000:ffff:192.168.100.228b1trash\"]" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('data_02118', 'JSONCompactStringsEachRow', 'x IPv6')" 2>&1 | grep -F -q "UNEXPECTED_DATA_AFTER_PARSED_VALUE" && echo 'OK' || echo 'FAIL'
 
-echo "2a02:6ba8:2da1:40cd:31db:f9f1:fc3d:80b1trash" > $DATA_FILE
+echo "0000:0000:0000:0000:0000:ffff:192.168.100.228b1trash" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('data_02118', 'TSV', 'x IPv6')" 2>&1 | grep -F -q "UNEXPECTED_DATA_AFTER_PARSED_VALUE" && echo 'OK' || echo 'FAIL'
 
-echo "2a02:6ba8:2da1:40cd:31db:f9f1:fc3d:80b1trash" > $DATA_FILE
+echo "0000:0000:0000:0000:0000:ffff:192.168.100.228b1trash" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('data_02118', 'CSV', 'x IPv6')" 2>&1 | grep -F -q "UNEXPECTED_DATA_AFTER_PARSED_VALUE" && echo 'OK' || echo 'FAIL'
 
-echo "[\"2a02:6ba8:2da1:40cd:31db:f9f1:fc3d:80b1trash\"]" > $DATA_FILE
+echo "[\"0000:0000:0000:0000:0000:ffff:192.168.100.228b1trash\"]" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "SELECT * FROM file('data_02118', 'JSONCompactEachRow', 'x IPv6')" 2>&1 | grep -F -q "UNEXPECTED_DATA_AFTER_PARSED_VALUE" && echo 'OK' || echo 'FAIL'
 
 echo "[\"{1:2, 2:3}trash\"]" > $DATA_FILE

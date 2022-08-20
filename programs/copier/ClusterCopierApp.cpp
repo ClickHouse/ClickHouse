@@ -3,7 +3,7 @@
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <unistd.h>
 #include <filesystem>
 

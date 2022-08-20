@@ -14,7 +14,9 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/config.d/storage_configuration.xml",],
+    main_configs=[
+        "configs/config.d/storage_configuration.xml",
+    ],
     with_zookeeper=True,
     stay_alive=True,
     tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],

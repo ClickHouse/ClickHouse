@@ -43,7 +43,7 @@ void SerializationNumber<T>::serializeTextJSON(const IColumn & column, size_t ro
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     bool has_quote = false;
     if (!istr.eof() && *istr.position() == '"')        /// We understand the number both in quotes and without.
@@ -67,7 +67,7 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
         static constexpr bool is_uint8 = std::is_same_v<T, UInt8>;
         static constexpr bool is_int8 = std::is_same_v<T, Int8>;
 
-        if (is_uint8 || is_int8)
+        if (settings.json.read_bools_as_numbers || is_uint8 || is_int8)
         {
             // extra conditions to parse true/false strings into 1/0
             if (istr.eof())

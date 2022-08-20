@@ -1,5 +1,5 @@
 ---
-toc_priority: 130
+sidebar_position: 130
 ---
 
 # groupBitmapOr {#groupbitmapor}

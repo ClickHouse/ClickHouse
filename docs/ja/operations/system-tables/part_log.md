@@ -1,1 +1,0 @@
-../../../en/operations/system-tables/part_log.md

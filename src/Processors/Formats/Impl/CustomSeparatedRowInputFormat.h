@@ -92,14 +92,15 @@ private:
 class CustomSeparatedSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
-    CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_, ContextPtr context_);
+    CustomSeparatedSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_setting_);
 
 private:
     DataTypes readRowAndGetDataTypes() override;
 
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
+
     PeekableReadBuffer buf;
     CustomSeparatedFormatReader reader;
-    ContextPtr context;
     bool first_row = true;
 };
 

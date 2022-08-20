@@ -1,5 +1,10 @@
 -- Tags: long
 
+SET max_threads=0;
+
+DROP TABLE IF EXISTS left;
+DROP TABLE IF EXISTS right;
+
 CREATE TABLE left ( key UInt32, value String ) ENGINE = MergeTree ORDER BY key;
 CREATE TABLE right (  key UInt32, value String ) ENGINE = MergeTree ORDER BY tuple();
 

@@ -4,7 +4,7 @@
 
 #if USE_LIBPQXX
 #include <Core/Block.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
@@ -16,7 +16,7 @@ namespace DB
 {
 
 template <typename T = pqxx::ReadTransaction>
-class PostgreSQLSource : public SourceWithProgress
+class PostgreSQLSource : public ISource
 {
 
 public:

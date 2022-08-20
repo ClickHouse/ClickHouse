@@ -8,6 +8,7 @@ SELECT NULL + NULL;
 SELECT '----- MergeTree engine -----';
 
 DROP TABLE IF EXISTS test1_00395;
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE test1_00395(
 col1 UInt64, col2 Nullable(UInt64),
 col3 String, col4 Nullable(String),

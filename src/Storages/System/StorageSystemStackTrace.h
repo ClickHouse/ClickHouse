@@ -3,8 +3,7 @@
 #ifdef OS_LINUX /// Because of 'sigqueue' functions and RT signals.
 
 #include <mutex>
-#include <base/shared_ptr_helper.h>
-#include <Storages/System/IStorageSystemOneBlock.h>
+#include <Storages/IStorage.h>
 
 namespace Poco
 {
@@ -20,21 +19,26 @@ class Context;
 /// Allows to introspect stack trace of all server threads.
 /// It acts like an embedded debugger.
 /// More than one instance of this table cannot be used.
-class StorageSystemStackTrace final : public shared_ptr_helper<StorageSystemStackTrace>, public IStorageSystemOneBlock<StorageSystemStackTrace>
+class StorageSystemStackTrace final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemStackTrace>;
 public:
-    String getName() const override { return "SystemStackTrace"; }
-    static NamesAndTypesList getNamesAndTypes();
-
     explicit StorageSystemStackTrace(const StorageID & table_id_);
 
+    String getName() const override { return "SystemStackTrace"; }
+
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+    bool isSystemStorage() const override { return true; }
+
 protected:
-    using IStorageSystemOneBlock::IStorageSystemOneBlock;
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
-
     mutable std::mutex mutex;
-
     Poco::Logger * log;
 };
 

@@ -514,7 +514,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     else
     {
         /// These embedded files added during build with some cmake magic.
-        /// Look at the end of programs/sever/CMakeLists.txt.
+        /// Look at the end of programs/server/CMakeLists.txt.
         std::string embedded_name;
         if (path == "config.xml")
             embedded_name = "embedded.xml";

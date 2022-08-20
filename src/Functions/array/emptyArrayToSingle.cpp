@@ -417,7 +417,7 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
 }
 
 
-void registerFunctionEmptyArrayToSingle(FunctionFactory & factory)
+REGISTER_FUNCTION(EmptyArrayToSingle)
 {
     factory.registerFunction<FunctionEmptyArrayToSingle>();
 }

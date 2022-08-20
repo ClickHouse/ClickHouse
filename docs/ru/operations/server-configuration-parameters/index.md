@@ -1,7 +1,6 @@
 ---
-toc_folder_title: "Конфигурационные параметры сервера"
-toc_priority: 54
-toc_title: "Введение"
+sidebar_label: "Конфигурационные параметры сервера"
+sidebar_position: 54
 ---
 
 # Конфигурационные параметры сервера {#server-settings}

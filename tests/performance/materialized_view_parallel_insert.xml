@@ -1,8 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>hits_10m_single</table_exists>
-    </preconditions>
-
     <create_query>
         CREATE MATERIALIZED VIEW hits_mv ENGINE MergeTree
         PARTITION BY toYYYYMM(EventDate)

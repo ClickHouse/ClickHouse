@@ -39,7 +39,7 @@ void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
 {
     for (auto & current : sample)
     {
-        if (columns.count(current.name) == 0)
+        if (!columns.contains(current.name))
             continue;
 
         const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*current.type);
@@ -116,7 +116,7 @@ void ArrayJoinAction::execute(Block & block)
     {
         ColumnWithTypeAndName & current = block.safeGetByPosition(i);
 
-        if (columns.count(current.name))
+        if (columns.contains(current.name))
         {
             if (!typeid_cast<const DataTypeArray *>(&*current.type))
                 throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);

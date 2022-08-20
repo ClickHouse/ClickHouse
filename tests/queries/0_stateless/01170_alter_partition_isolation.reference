@@ -1,0 +1,30 @@
+tx1	1	1
+tx1	2	3
+tx2	3	2
+tx2	3	4
+tx1	4	3
+
+5	3
+5	5
+
+tx4	6	3
+tx4	6	5
+tx4	6	6
+tx4	7	8
+tx3	8	3
+tx3	8	5
+tx3	8	7
+tx3	8	9
+SERIALIZATION_ERROR
+INVALID_TRANSACTION
+tx4	9	8
+
+10	8
+
+11	8
+11	11
+11	12
+12	8
+12	8
+12	11
+12	12

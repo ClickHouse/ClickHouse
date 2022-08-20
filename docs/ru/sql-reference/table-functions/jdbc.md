@@ -1,6 +1,6 @@
 ---
-toc_priority: 43
-toc_title: jdbc
+sidebar_position: 43
+sidebar_label: jdbc
 ---
 
 # jdbc {#jdbc}

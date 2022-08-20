@@ -15,29 +15,69 @@ FileCacheFactory & FileCacheFactory::instance()
     return ret;
 }
 
-FileCachePtr FileCacheFactory::getImpl(const std::string & cache_base_path, std::lock_guard<std::mutex> &)
+FileCacheFactory::CacheByBasePath FileCacheFactory::getAll()
 {
-    auto it = caches.find(cache_base_path);
-    if (it == caches.end())
-        return nullptr;
-    return it->second;
+    std::lock_guard lock(mutex);
+    return caches_by_path;
+}
+
+const FileCacheSettings & FileCacheFactory::getSettings(const std::string & cache_base_path)
+{
+    std::lock_guard lock(mutex);
+    auto it = caches_by_path.find(cache_base_path);
+    if (it == caches_by_path.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache found by path: {}", cache_base_path);
+    return it->second->settings;
+
+}
+
+FileCachePtr FileCacheFactory::get(const std::string & cache_base_path)
+{
+    std::lock_guard lock(mutex);
+    auto it = caches_by_path.find(cache_base_path);
+    if (it == caches_by_path.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache found by path: {}", cache_base_path);
+    return it->second->cache;
+
 }
 
 FileCachePtr FileCacheFactory::getOrCreate(
-    const std::string & cache_base_path, size_t max_size, size_t max_elements_size, size_t max_file_segment_size)
+    const std::string & cache_base_path, const FileCacheSettings & file_cache_settings, const std::string & name)
 {
     std::lock_guard lock(mutex);
-    auto cache = getImpl(cache_base_path, lock);
-    if (cache)
+
+    auto it = caches_by_path.find(cache_base_path);
+    if (it != caches_by_path.end())
     {
-        if (cache->capacity() != max_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache with path `{}` already exists, but has different max size", cache_base_path);
-        return cache;
+        caches_by_name.emplace(name, it->second);
+        return it->second->cache;
     }
 
-    cache = std::make_shared<LRUFileCache>(cache_base_path, max_size, max_elements_size, max_file_segment_size);
-    caches.emplace(cache_base_path, cache);
+    auto cache = std::make_shared<FileCache>(cache_base_path, file_cache_settings);
+    FileCacheData result{cache, file_cache_settings};
+
+    auto cache_it = caches.insert(caches.end(), std::move(result));
+    caches_by_name.emplace(name, cache_it);
+    caches_by_path.emplace(cache_base_path, cache_it);
+
     return cache;
+}
+
+FileCacheFactory::FileCacheData FileCacheFactory::getByName(const std::string & name)
+{
+    std::lock_guard lock(mutex);
+
+    auto it = caches_by_name.find(name);
+    if (it == caches_by_name.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No cache found by name: {}", name);
+
+    return *it->second;
+}
+
+FileCacheFactory::CacheByName FileCacheFactory::getAllByName()
+{
+    std::lock_guard lock(mutex);
+    return caches_by_name;
 }
 
 }

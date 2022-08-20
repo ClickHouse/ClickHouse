@@ -60,21 +60,21 @@ public:
     ColumnWithTypeAndName & safeGetByPosition(size_t position);
     const ColumnWithTypeAndName & safeGetByPosition(size_t position) const;
 
-    ColumnWithTypeAndName* findByName(const std::string & name)
+    ColumnWithTypeAndName* findByName(const std::string & name, bool case_insensitive = false)
     {
         return const_cast<ColumnWithTypeAndName *>(
-            const_cast<const Block *>(this)->findByName(name));
+            const_cast<const Block *>(this)->findByName(name, case_insensitive));
     }
 
-    const ColumnWithTypeAndName * findByName(const std::string & name) const;
+    const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
 
-    ColumnWithTypeAndName & getByName(const std::string & name)
+    ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false)
     {
         return const_cast<ColumnWithTypeAndName &>(
-            const_cast<const Block *>(this)->getByName(name));
+            const_cast<const Block *>(this)->getByName(name, case_insensitive));
     }
 
-    const ColumnWithTypeAndName & getByName(const std::string & name) const;
+    const ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false) const;
 
     Container::iterator begin() { return data.begin(); }
     Container::iterator end() { return data.end(); }
@@ -83,15 +83,19 @@ public:
     Container::const_iterator cbegin() const { return data.cbegin(); }
     Container::const_iterator cend() const { return data.cend(); }
 
-    bool has(const std::string & name) const;
+    bool has(const std::string & name, bool case_insensitive = false) const;
 
     size_t getPositionByName(const std::string & name) const;
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;
+    NamesAndTypes getNamesAndTypes() const;
     Names getNames() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
+    std::unordered_map<String, size_t> getNamesToIndexesMap() const;
+
+    Serializations getSerializations() const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -107,7 +111,7 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    operator bool() const { return !!columns(); } /// NOLINT
+    explicit operator bool() const { return !!columns(); }
     bool operator!() const { return !this->operator bool(); } /// NOLINT
 
     /** Get a list of column names separated by commas. */

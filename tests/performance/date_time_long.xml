@@ -16,7 +16,7 @@
                <value>toISOYear</value>
 
                <value>toStartOfMinute</value>
-               <value>toStartOfFiveMinute</value>
+               <value>toStartOfFiveMinutes</value>
                <value>toStartOfFifteenMinutes</value>
                <value>toStartOfHour</value>
                <value>toStartOfDay</value>

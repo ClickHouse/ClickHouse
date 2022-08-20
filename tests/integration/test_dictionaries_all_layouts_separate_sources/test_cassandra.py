@@ -16,6 +16,7 @@ complex_tester = None
 ranged_tester = None
 test_name = "cassandra"
 
+
 def setup_module(module):
     global cluster
     global node
@@ -23,9 +24,17 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    cluster = ClickHouseCluster(__file__, name=test_name)
+    cluster = ClickHouseCluster(__file__)
 
-    SOURCE = SourceCassandra("Cassandra", None, cluster.cassandra_port, cluster.cassandra_host, cluster.cassandra_port, "", "")
+    SOURCE = SourceCassandra(
+        "Cassandra",
+        None,
+        cluster.cassandra_port,
+        cluster.cassandra_host,
+        cluster.cassandra_port,
+        "",
+        "",
+    )
 
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()
@@ -39,15 +48,21 @@ def setup_module(module):
     # Since that all .xml configs were created
 
     main_configs = []
-    main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
+    main_configs.append(os.path.join("configs", "disable_ssl_verification.xml"))
 
     dictionaries = simple_tester.list_dictionaries()
 
-    node = cluster.add_instance('cass_node', main_configs=main_configs, dictionaries=dictionaries, with_cassandra=True)
+    node = cluster.add_instance(
+        "cass_node",
+        main_configs=main_configs,
+        dictionaries=dictionaries,
+        with_cassandra=True,
+    )
 
 
 def teardown_module(module):
     simple_tester.cleanup()
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -63,13 +78,16 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
 def test_simple(started_cluster, layout_name):
     simple_tester.execute(layout_name, node)
 
+
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_COMPLEX))
 def test_complex(started_cluster, layout_name):
     complex_tester.execute(layout_name, node)
+
 
 @pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
 def test_ranged(started_cluster, layout_name):

@@ -21,19 +21,38 @@ CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-TRIES_COUNT = 10
+FLAKY_TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60  # 8 hours
+
+NO_CHANGES_MSG = "Nothing to run"
 
 
 def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
 
 
-def get_tests_to_run(pr_info):
-    result = set([])
+# Search test by the common prefix.
+# This is accept tests w/o parameters in skip list.
+#
+# Examples:
+# - has_test(['foobar'], 'foobar[param]') == True
+# - has_test(['foobar[param]'], 'foobar') == True
+def has_test(tests, test_to_match):
+    for test in tests:
+        if len(test_to_match) < len(test):
+            if test[0 : len(test_to_match)] == test_to_match:
+                return True
+        else:
+            if test_to_match[0 : len(test)] == test:
+                return True
+    return False
+
+
+def get_changed_tests_to_run(pr_info, repo_path):
+    result = set()
     changed_files = pr_info["changed_files"]
 
     if changed_files is None:
@@ -43,7 +62,7 @@ def get_tests_to_run(pr_info):
         if "tests/integration/test_" in fpath:
             logging.info("File %s changed and seems like integration test", fpath)
             result.add(fpath.split("/")[2])
-    return list(result)
+    return filter_existing_tests(result, repo_path)
 
 
 def filter_existing_tests(tests_to_run, repo_path):
@@ -98,6 +117,7 @@ def get_counters(fname):
 
             # Lines like:
             #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            #     [gw3] [ 40%] PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
             state = line_arr[-2]
             test_name = line_arr[-1]
 
@@ -143,7 +163,7 @@ def get_test_times(output):
 def clear_ip_tables_and_restart_daemons():
     logging.info(
         "Dump iptables after run %s",
-        subprocess.check_output("sudo iptables -L", shell=True),
+        subprocess.check_output("sudo iptables -nvL", shell=True),
     )
     try:
         logging.info("Killing all alive docker containers")
@@ -207,6 +227,9 @@ class ClickhouseIntegrationTestsRunner:
         self.image_versions = self.params["docker_images_with_versions"]
         self.shuffle_groups = self.params["shuffle_test_groups"]
         self.flaky_check = "flaky check" in self.params["context_name"]
+        self.bugfix_validate_check = (
+            "bugfix validate check" in self.params["context_name"]
+        )
         # if use_tmpfs is not set we assume it to be true, otherwise check
         self.use_tmpfs = "use_tmpfs" not in self.params or self.params["use_tmpfs"]
         self.disable_net_host = (
@@ -241,8 +264,7 @@ class ClickhouseIntegrationTestsRunner:
             return name + ":latest"
         return name
 
-    def get_single_image_version(self):
-        name = self.get_images_names()[0]
+    def get_image_version(self, name: str):
         if name in self.image_versions:
             return self.image_versions[name]
         logging.warn(
@@ -345,7 +367,7 @@ class ClickhouseIntegrationTestsRunner:
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
         out_file = "all_tests.txt"
-        out_file_full = "all_tests_full.txt"
+        out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
         cmd = (
             "cd {repo_path}/tests/integration && "
             "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' "
@@ -371,21 +393,16 @@ class ClickhouseIntegrationTestsRunner:
             not os.path.isfile(all_tests_file_path)
             or os.path.getsize(all_tests_file_path) == 0
         ):
-            all_tests_full_file_path = (
-                "{repo_path}/tests/integration/{out_file}".format(
-                    repo_path=repo_path, out_file=out_file_full
-                )
-            )
-            if os.path.isfile(all_tests_full_file_path):
+            if os.path.isfile(out_file_full):
                 # log runner output
                 logging.info("runner output:")
-                with open(all_tests_full_file_path, "r") as all_tests_full_file:
+                with open(out_file_full, "r") as all_tests_full_file:
                     for line in all_tests_full_file:
                         line = line.rstrip()
                         if line:
                             logging.info("runner output: %s", line)
             else:
-                logging.info("runner output '%s' is empty", all_tests_full_file_path)
+                logging.info("runner output '%s' is empty", out_file_full)
 
             raise Exception(
                 "There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(
@@ -456,6 +473,10 @@ class ClickhouseIntegrationTestsRunner:
                 if test not in main_counters[state]:
                     main_counters[state].append(test)
 
+        for state in ("SKIPPED",):
+            for test in current_counters[state]:
+                main_counters[state].append(test)
+
     def _get_runner_image_cmd(self, repo_path):
         image_cmd = ""
         if self._can_run_with(
@@ -464,7 +485,7 @@ class ClickhouseIntegrationTestsRunner:
         ):
             for img in self.get_images_names():
                 if img == "clickhouse/integration-tests-runner":
-                    runner_version = self.get_single_image_version()
+                    runner_version = self.get_image_version(img)
                     logging.info(
                         "Can run with custom docker image version %s", runner_version
                     )
@@ -703,14 +724,13 @@ class ClickhouseIntegrationTestsRunner:
 
         return counters, tests_times, log_paths
 
-    def run_flaky_check(self, repo_path, build_path):
+    def run_flaky_check(self, repo_path, build_path, should_fail=False):
         pr_info = self.params["pr_info"]
 
-        # pytest swears, if we require to run some tests which was renamed or deleted
-        tests_to_run = filter_existing_tests(get_tests_to_run(pr_info), repo_path)
+        tests_to_run = get_changed_tests_to_run(pr_info, repo_path)
         if not tests_to_run:
             logging.info("No tests to run found")
-            return "success", "Nothing to run", [("Nothing to run", "OK")], ""
+            return "success", NO_CHANGES_MSG, [(NO_CHANGES_MSG, "OK")], ""
 
         self._install_clickhouse(build_path)
         logging.info("Found '%s' tests to run", " ".join(tests_to_run))
@@ -720,26 +740,29 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Starting check with retries")
         final_retry = 0
         logs = []
-        for i in range(TRIES_COUNT):
+        tires_num = 1 if should_fail else FLAKY_TRIES_COUNT
+        for i in range(tires_num):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(
-                repo_path, "flaky", tests_to_run, 1, 1
+                repo_path, "bugfix" if should_fail else "flaky", tests_to_run, 1, 1
             )
             logs += log_paths
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
-                description_prefix = "Flaky tests found: "
+                description_prefix = "Failed tests found: "
                 result_state = "failure"
-                break
+                if not should_fail:
+                    break
             if counters["ERROR"]:
-                description_prefix = "Flaky tests found: "
+                description_prefix = "Failed tests found: "
                 logging.info("Found error tests: %s", " ".join(counters["ERROR"]))
                 # NOTE "error" result state will restart the whole test task,
                 # so we use "failure" here
                 result_state = "failure"
-                break
-            assert len(counters["FLAKY"]) == 0
+                if not should_fail:
+                    break
+            assert len(counters["FLAKY"]) == 0 or should_fail
             logging.info("Try is OK, all tests passed, going to clear env")
             clear_ip_tables_and_restart_daemons()
             logging.info("And going to sleep for some time")
@@ -774,13 +797,15 @@ class ClickhouseIntegrationTestsRunner:
         return result_state, status_text, test_result, logs
 
     def run_impl(self, repo_path, build_path):
-        if self.flaky_check:
-            return self.run_flaky_check(repo_path, build_path)
+        if self.flaky_check or self.bugfix_validate_check:
+            return self.run_flaky_check(
+                repo_path, build_path, should_fail=self.bugfix_validate_check
+            )
 
         self._install_clickhouse(build_path)
         logging.info(
             "Dump iptables before run %s",
-            subprocess.check_output("sudo iptables -L", shell=True),
+            subprocess.check_output("sudo iptables -nvL", shell=True),
         )
         all_tests = self._get_all_tests(repo_path)
 
@@ -797,13 +822,19 @@ class ClickhouseIntegrationTestsRunner:
             "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
         )
         filtered_sequential_tests = list(
-            filter(lambda test: test in all_tests, parallel_skip_tests)
+            filter(lambda test: has_test(all_tests, test), parallel_skip_tests)
         )
         filtered_parallel_tests = list(
-            filter(lambda test: test not in parallel_skip_tests, all_tests)
+            filter(
+                lambda test: not has_test(parallel_skip_tests, test),
+                all_tests,
+            )
         )
         not_found_tests = list(
-            filter(lambda test: test not in all_tests, parallel_skip_tests)
+            filter(
+                lambda test: not has_test(all_tests, test),
+                parallel_skip_tests,
+            )
         )
         logging.info(
             "Found %s tests first 3 %s, parallel %s, other %s",
@@ -905,6 +936,16 @@ class ClickhouseIntegrationTestsRunner:
 
         if "(memory)" in self.params["context_name"]:
             result_state = "success"
+
+        for res in test_result:
+            # It's not easy to parse output of pytest
+            # Especially when test names may contain spaces
+            # Do not allow it to avoid obscure failures
+            if " " not in res[0]:
+                continue
+            logging.warning("Found invalid test name with space: %s", res[0])
+            status_text = "Found test with invalid name, see main log"
+            result_state = "failure"
 
         return result_state, status_text, test_result, []
 

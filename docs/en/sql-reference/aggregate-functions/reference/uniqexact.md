@@ -1,8 +1,8 @@
 ---
-toc_priority: 191
+sidebar_position: 191
 ---
 
-# uniqExact {#agg_function-uniqexact}
+# uniqExact
 
 Calculates the exact number of different argument values.
 

@@ -1,12 +1,13 @@
 ---
-toc_priority: 27
-toc_title: Integrations
+sidebar_position: 27
+sidebar_label: Integrations
 ---
 
-# Integration Libraries from Third-party Developers {#integration-libraries-from-third-party-developers}
+# Integration Libraries from Third-party Developers
 
-!!! warning "Disclaimer"
-    ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven’t done extensive testing to ensure their quality.
+:::warning Disclaimer
+ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven’t done extensive testing to ensure their quality.
+:::
 
 ## Infrastructure Products {#infrastructure-products}
 
@@ -27,6 +28,9 @@ toc_title: Integrations
     -   [Kafka](https://kafka.apache.org)
         -   [clickhouse_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
         -   [stream-loader-clickhouse](https://github.com/adform/stream-loader)
+-   Batch processing
+    -   [Spark](https://spark.apache.org)
+        -   [spark-clickhouse-connector](https://github.com/housepower/spark-clickhouse-connector)
 -   Stream processing
     -   [Flink](https://flink.apache.org)
         -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)

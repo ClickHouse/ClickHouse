@@ -1,6 +1,6 @@
 ---
-toc_priority: 55
-toc_title: "Функции для работы с IP-адресами"
+sidebar_position: 55
+sidebar_label: "Функции для работы с IP-адресами"
 ---
 
 # Функции для работы с IP-адресами {#funktsii-dlia-raboty-s-ip-adresami}
@@ -445,4 +445,18 @@ SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
 ┌─isIPAddressInRange('127.0.0.1', 'ffff::/16')─┐
 │                                            0 │
 └──────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128');
+```
+
+Результат:
+
+``` text
+┌─isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')─┐
+│                                                                  0 │
+└────────────────────────────────────────────────────────────────────┘
 ```

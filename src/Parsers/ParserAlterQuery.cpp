@@ -840,7 +840,6 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
-
 bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto query = std::make_shared<ASTAlterQuery>();

@@ -91,8 +91,8 @@ SHOW CREATE TABLE table_for_reset_setting;
 
 ALTER TABLE table_for_reset_setting RESET SETTING index_granularity; -- { serverError 472 }
 
--- ignore undefined setting
-ALTER TABLE table_for_reset_setting RESET SETTING merge_with_ttl_timeout, unknown_setting;
+-- don't execute alter with incorrect setting
+ALTER TABLE table_for_reset_setting RESET SETTING merge_with_ttl_timeout, unknown_setting; -- { serverError 36 }
 
 ALTER TABLE table_for_reset_setting MODIFY SETTING merge_with_ttl_timeout = 300, max_concurrent_queries = 1;
 

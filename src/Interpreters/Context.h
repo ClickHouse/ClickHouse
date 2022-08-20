@@ -7,6 +7,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/MultiVersion.h>
@@ -15,6 +16,8 @@
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Storages/ColumnsDescription.h>
+
 
 #include "config_core.h"
 
@@ -23,6 +26,8 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+
+#include <thread>
 #include <exception>
 
 
@@ -78,6 +83,10 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
+class BackupsWorker;
+class TransactionsInfoLog;
+class ProcessorsProfileLog;
+class FilesystemCacheLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -116,6 +125,7 @@ struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
+struct WriteSettings;
 
 class IInputFormat;
 class IOutputFormat;
@@ -152,6 +162,12 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+
+#if USE_ROCKSDB
+class MergeTreeMetadataCache;
+using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
+#endif
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -178,6 +194,7 @@ struct SharedContextHolder
 private:
     std::unique_ptr<ContextSharedPart> shared;
 };
+
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -218,7 +235,8 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
-    Scalars local_scalars;
+    /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
+    Scalars special_scalars;
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
@@ -273,6 +291,43 @@ private:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
+        QueryFactoriesInfo() = default;
+
+        QueryFactoriesInfo(const QueryFactoriesInfo & rhs)
+        {
+            std::lock_guard<std::mutex> lock(rhs.mutex);
+            aggregate_functions = rhs.aggregate_functions;
+            aggregate_function_combinators = rhs.aggregate_function_combinators;
+            database_engines = rhs.database_engines;
+            data_type_families = rhs.data_type_families;
+            dictionaries = rhs.dictionaries;
+            formats = rhs.formats;
+            functions = rhs.functions;
+            storages = rhs.storages;
+            table_functions = rhs.table_functions;
+        }
+
+        QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
+
+        QueryFactoriesInfo & operator=(QueryFactoriesInfo rhs)
+        {
+            swap(rhs);
+            return *this;
+        }
+
+        void swap(QueryFactoriesInfo & rhs)
+        {
+            std::swap(aggregate_functions, rhs.aggregate_functions);
+            std::swap(aggregate_function_combinators, rhs.aggregate_function_combinators);
+            std::swap(database_engines, rhs.database_engines);
+            std::swap(data_type_families, rhs.data_type_families);
+            std::swap(dictionaries, rhs.dictionaries);
+            std::swap(formats, rhs.formats);
+            std::swap(functions, rhs.functions);
+            std::swap(storages, rhs.storages);
+            std::swap(table_functions, rhs.table_functions);
+        }
+
         std::unordered_set<std::string> aggregate_functions;
         std::unordered_set<std::string> aggregate_function_combinators;
         std::unordered_set<std::string> database_engines;
@@ -282,9 +337,11 @@ private:
         std::unordered_set<std::string> functions;
         std::unordered_set<std::string> storages;
         std::unordered_set<std::string> table_functions;
+
+        mutable std::mutex mutex;
     };
 
-    /// Needs to be chandged while having const context in factories methods
+    /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
     /// TODO: maybe replace with temporary tables?
@@ -301,6 +358,10 @@ private:
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
+    inline static ContextPtr global_context_instance;
+
+    /// A flag, used to mark if reader needs to apply deleted rows mask.
+    bool apply_deleted_mask = true;
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
@@ -328,6 +389,11 @@ private:
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
+    MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
+                                                        /// It's shared with all children contexts.
+    MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
+
+    /// Use copy constructor or createGlobal() instead
     Context();
     Context(const Context &);
     Context & operator=(const Context &);
@@ -347,6 +413,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getUserDefinedPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -358,8 +425,9 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+    void setUserDefinedPath(const String & path);
 
-    void addWarningMessage(const String & msg);
+    void addWarningMessage(const String & msg) const;
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
@@ -409,13 +477,13 @@ public:
     /// Checks access rights.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id) const;
-    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const;
     void checkAccess(const AccessRightsElement & element) const;
@@ -478,8 +546,8 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
-    const Block * tryGetLocalScalar(const String & name) const;
-    void addLocalScalar(const String & name, const Block & block);
+    const Block * tryGetSpecialScalar(const String & name) const;
+    void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(
@@ -542,8 +610,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(const StringRef & name, const String & value);
-    void setSetting(const StringRef & name, const Field & value);
+    void setSetting(std::string_view name, const String & value);
+    void setSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -577,6 +645,8 @@ public:
     Lemmatizers & getLemmatizers() const;
 #endif
 
+    BackupsWorker & getBackupsWorker() const;
+
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
@@ -584,6 +654,7 @@ public:
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
+    const InterserverIOHandler & getInterserverIOHandler() const;
 
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
@@ -591,7 +662,7 @@ public:
 
     /// Credentials which server will use to communicate with others
     void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
-    InterserverCredentialsPtr getInterserverCredentials();
+    InterserverCredentialsPtr getInterserverCredentials() const;
 
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
@@ -621,6 +692,8 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
+
+    static ContextPtr getGlobalContextInstance() { return global_context_instance; }
 
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
@@ -680,8 +753,14 @@ public:
 
     UInt32 getZooKeeperSessionUptime() const;
 
+#if USE_ROCKSDB
+    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
+    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
+#endif
+
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -701,12 +780,12 @@ public:
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes);
+    void setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void dropUncompressedCache() const;
 
     /// Create a cache of marks of specified size. This can be done only once.
-    void setMarkCache(size_t cache_size_in_bytes);
+    void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
 
@@ -744,6 +823,8 @@ public:
 
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
+    ThrottlerPtr getRemoteReadThrottler() const;
+    ThrottlerPtr getRemoteWriteThrottler() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -769,6 +850,10 @@ public:
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
+#if USE_ROCKSDB
+    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
+#endif
+
     bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
@@ -782,6 +867,10 @@ public:
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
     std::shared_ptr<SessionLog> getSessionLog() const;
+    std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
+    std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
+
+    std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -826,6 +915,9 @@ public:
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
 
+    bool applyDeletedMask() const { return apply_deleted_mask; }
+    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
+
     ActionLocksManagerPtr getActionLocksManager();
 
     enum class ApplicationType
@@ -834,6 +926,7 @@ public:
         CLIENT,         /// clickhouse-client
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
+        DISKS,          /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;
@@ -853,8 +946,13 @@ public:
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
+
+    /// Throws if parameter with the given name already set.
     void setQueryParameter(const String & name, const String & value);
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
+
+    /// Overrides values of existing parameters.
+    void addQueryParameters(const NameToNameMap & parameters);
 
     /// Add started bridge command. It will be killed after context destruction
     void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
@@ -868,6 +966,14 @@ public:
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
     /// Removes context of current distributed DDL.
     void resetZooKeeperMetadataTransaction();
+
+    void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
+    void initCurrentTransaction(MergeTreeTransactionPtr txn);
+    void setCurrentTransaction(MergeTreeTransactionPtr txn);
+    MergeTreeTransactionPtr getCurrentTransaction() const;
+
+    bool isServerCompletelyStarted() const;
+    void setServerCompletelyStarted();
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
@@ -883,6 +989,7 @@ public:
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
+    bool areBackgroundExecutorsInitialized();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
@@ -891,6 +998,9 @@ public:
 
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
+
+    /** Get settings for writing to filesystem. */
+    WriteSettings getWriteSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;

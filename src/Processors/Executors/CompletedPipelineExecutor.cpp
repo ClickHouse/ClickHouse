@@ -1,6 +1,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
@@ -32,7 +33,7 @@ struct CompletedPipelineExecutor::Data
 
 static void threadFunction(CompletedPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    setThreadName("QueryPipelineEx");
+    setThreadName("QueryCompPipeEx");
 
     try
     {
@@ -65,16 +66,17 @@ void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cance
 
 void CompletedPipelineExecutor::execute()
 {
-    PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-
     if (interactive_timeout_ms)
     {
         data = std::make_unique<Data>();
         data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
-        auto func = [&, thread_group = CurrentThread::getGroup()]()
+        /// Avoid passing this to labmda, copy ptr to data instead.
+        /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
+        auto func = [data_ptr = data.get(), num_threads = pipeline.getNumThreads(), thread_group = CurrentThread::getGroup()]()
         {
-            threadFunction(*data, thread_group, pipeline.getNumThreads());
+            threadFunction(*data_ptr, thread_group, num_threads);
         };
 
         data->thread = ThreadFromGlobalPool(std::move(func));
@@ -92,7 +94,11 @@ void CompletedPipelineExecutor::execute()
             std::rethrow_exception(data->exception);
     }
     else
+    {
+        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+        executor.setReadProgressCallback(pipeline.getReadProgressCallback());
         executor.execute(pipeline.getNumThreads());
+    }
 }
 
 CompletedPipelineExecutor::~CompletedPipelineExecutor()

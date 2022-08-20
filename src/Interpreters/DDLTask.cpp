@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Poco/Net/NetException.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
+    extern const int DNS_ERROR;
 }
 
 HostID HostID::fromString(const String & host_port_str)
@@ -58,7 +59,12 @@ void DDLLogEntry::assertVersion() const
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
     version = context->getSettingsRef().distributed_ddl_entry_format_version;
-    if (version == 2)
+
+    /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
+    if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        version = SETTINGS_IN_ZK_VERSION;
+
+    if (version == SETTINGS_IN_ZK_VERSION)
         settings.emplace(context->getSettingsRef().changes());
 }
 
@@ -69,7 +75,7 @@ String DDLLogEntry::toString() const
     wb << "version: " << version << "\n";
     wb << "query: " << escape << query << "\n";
 
-    bool write_hosts = version == 1 || !hosts.empty();
+    bool write_hosts = version == OLDEST_VERSION || !hosts.empty();
     if (write_hosts)
     {
         Strings host_id_strings(hosts.size());
@@ -79,7 +85,7 @@ String DDLLogEntry::toString() const
 
     wb << "initiator: " << initiator << "\n";
 
-    bool write_settings = 1 <= version && settings && !settings->empty();
+    bool write_settings = SETTINGS_IN_ZK_VERSION <= version && settings && !settings->empty();
     if (write_settings)
     {
         ASTSetQuery ast;
@@ -142,10 +148,11 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 {
     const char * begin = entry.query.data();
     const char * end = begin + entry.query.size();
+    const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end);
+    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, context->getSettingsRef().max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -163,17 +170,33 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
 {
     bool host_in_hostlist = false;
+    std::exception_ptr first_exception = nullptr;
 
     for (const HostID & host : entry.hosts)
     {
         auto maybe_secure_port = global_context->getTCPPortSecure();
 
-        /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
-        bool is_local_port = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port))
-                             || host.isLocalAddress(global_context->getTCPPort());
+        try
+        {
+            /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
+            bool is_local_port
+                = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(global_context->getTCPPort());
 
-        if (!is_local_port)
+            if (!is_local_port)
+                continue;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DNS_ERROR)
+                throw;
+
+            if (!first_exception)
+                first_exception = std::current_exception();
+
+            /// Ignore unknown hosts (in case DNS record was removed)
+            /// We will rethrow exception if we don't find local host in the list.
             continue;
+        }
 
         if (host_in_hostlist)
         {
@@ -187,6 +210,12 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
             host_id = host;
             host_id_str = host.toString();
         }
+    }
+
+    if (!host_in_hostlist && first_exception)
+    {
+        /// We don't know for sure if we should process task or not
+        std::rethrow_exception(first_exception);
     }
 
     return host_in_hostlist;
@@ -223,7 +252,10 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
                  host_id.readableString(), entry_name, address_in_cluster.readableString(), cluster_name);
     }
 
-    query = query_on_cluster->getRewrittenASTWithoutOnCluster(address_in_cluster.default_database);
+    WithoutOnClusterASTRewriteParams params;
+    params.default_database = address_in_cluster.default_database;
+    params.host_id = address_in_cluster.toString();
+    query = query_on_cluster->getRewrittenASTWithoutOnCluster(params);
     query_on_cluster = nullptr;
 }
 
@@ -357,7 +389,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
         /// Update database name with actual name of local database
-        assert(!ddl_query->database);
+        chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
     }
 }
@@ -379,7 +411,7 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
     }
 
-    txn->addOp(zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+    txn->addOp(getOpToUpdateLogPointer());
 
     for (auto & op : ops)
         txn->addOp(std::move(op));
@@ -388,14 +420,32 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     return query_context;
 }
 
+Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
+{
+    return zkutil::makeSetRequest(database->replica_path + "/log_ptr", toString(getLogEntryNumber(entry_name)), -1);
+}
+
+void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
+{
+    assert(!completely_processed);
+    if (!entry.settings)
+        return;
+
+    Field value;
+    if (!entry.settings->tryGet("database_replicated_enforce_synchronous_settings", value))
+        return;
+
+    /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
+    assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
+    if (!value.get<UInt64>())
+        return;
+
+    zookeeper->createIfNotExists(getSyncedNodePath(), "");
+}
+
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 {
-    /// Sequential counter in ZooKeeper is Int32.
-    assert(log_entry_number < std::numeric_limits<Int32>::max());
-    constexpr size_t seq_node_digits = 10;
-    String number = toString(log_entry_number);
-    String name = "query-" + String(seq_node_digits - number.size(), '0') + number;
-    return name;
+    return zkutil::getSequentialNodeName("query-", log_entry_number);
 }
 
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
@@ -419,7 +469,7 @@ void ZooKeeperMetadataTransaction::commit()
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
     if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(cluster_name).get()))
-        return replicated_db->getCluster();
+        return replicated_db->tryGetCluster();
     return {};
 }
 

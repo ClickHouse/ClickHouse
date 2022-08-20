@@ -1,6 +1,6 @@
 ---
-toc_priority: 43
-toc_title: 约束
+sidebar_position: 43
+sidebar_label: 约束
 ---
 
 # 操作约束 {#manipulations-with-constraints}

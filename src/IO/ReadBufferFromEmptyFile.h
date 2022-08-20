@@ -19,6 +19,7 @@ private:
     std::string getFileName() const override { return "<empty>"; }
     off_t seek(off_t /*off*/, int /*whence*/) override { return 0; }
     off_t getPosition() override { return 0; }
+    size_t getFileSize() override { return 0; }
 };
 
 }

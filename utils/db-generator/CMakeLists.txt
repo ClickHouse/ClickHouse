@@ -1,2 +1,2 @@
-add_executable (query_db_generator query_db_generator.cpp)
+clickhouse_add_executable (query_db_generator query_db_generator.cpp)
 target_link_libraries(query_db_generator PRIVATE clickhouse_parsers boost::program_options)

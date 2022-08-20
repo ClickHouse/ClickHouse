@@ -96,7 +96,7 @@ private:
     FuturePartsSet future_parts;
 
     /// Avoid parallel execution of queue enties, which may remove other entries from the queue.
-    bool currently_executing_drop_or_replace_range = false;
+    std::set<MergeTreePartInfo> currently_executing_drop_replace_ranges;
 
     /** What will be the set of active parts after executing all log entries up to log_pointer.
       * Used to determine which merges can be assigned (see ReplicatedMergeTreeMergePredicate)
@@ -202,17 +202,18 @@ private:
     bool shouldExecuteLogEntry(
         const LogEntry & entry, String & out_postpone_reason,
         MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
-        std::lock_guard<std::mutex> & state_lock) const;
+        std::unique_lock<std::mutex> & state_lock) const;
 
     Int64 getCurrentMutationVersionImpl(const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
       * Should be called under state_mutex.
       */
-    bool isNotCoveredByFuturePartsImpl(
+    bool isCoveredByFuturePartsImpl(
         const LogEntry & entry,
         const String & new_part_name, String & out_reason,
-        std::lock_guard<std::mutex> & state_lock) const;
+        std::unique_lock<std::mutex> & state_lock,
+        std::vector<LogEntryPtr> * covered_entries_to_wait) const;
 
     /// After removing the queue element, update the insertion times in the RAM. Running under state_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
@@ -254,14 +255,15 @@ private:
         CurrentlyExecuting(
             const ReplicatedMergeTreeQueue::LogEntryPtr & entry_,
             ReplicatedMergeTreeQueue & queue_,
-            std::lock_guard<std::mutex> & state_lock);
+            std::unique_lock<std::mutex> & state_lock);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
         static void setActualPartName(
             ReplicatedMergeTreeQueue::LogEntry & entry,
             const String & actual_part_name,
             ReplicatedMergeTreeQueue & queue,
-            std::lock_guard<std::mutex> & state_lock);
+            std::unique_lock<std::mutex> & state_lock,
+            std::vector<LogEntryPtr> & covered_entries_to_wait);
 
     public:
         ~CurrentlyExecuting();
@@ -400,6 +402,9 @@ public:
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
+    /// Returns true if part_info is covered by some DROP_RANGE
+    bool hasDropRange(const MergeTreePartInfo & part_info, MergeTreePartInfo * out_drop_range_info = nullptr) const;
+
     /// Check that part produced by some entry in queue and get source parts for it.
     /// If there are several entries return largest source_parts set. This rarely possible
     /// for example after replica clone.
@@ -483,6 +488,7 @@ public:
     /// Depending on the existence of left part checks a merge predicate for two parts or for single part.
     bool operator()(const MergeTreeData::DataPartPtr & left,
                     const MergeTreeData::DataPartPtr & right,
+                    const MergeTreeTransaction * txn,
                     String * out_reason = nullptr) const;
 
     /// Can we assign a merge with these two parts?
@@ -497,6 +503,10 @@ public:
     /// This predicate is checked for the first part of each range.
     bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
 
+    /// Returns true if part is needed for some REPLACE_RANGE entry.
+    /// We should not drop part in this case, because replication queue may stuck without that part.
+    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible
     /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with
@@ -509,7 +519,11 @@ public:
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
 
+    /// Returns true if there's a drop range covering new_drop_range_info
     bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
+
+    /// Returns virtual part covering part_name (if any) or empty string
+    String getCoveringVirtualPart(const String & part_name) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

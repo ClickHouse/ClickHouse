@@ -1,4 +1,4 @@
-NativeBlockInputStream
+NativeReader
 LowCardinality(String)	123_a	2	
 LowCardinality(String)	123_bb	3	123_
 LowCardinality(String)	123_	1	123_a

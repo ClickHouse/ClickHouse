@@ -1,11 +1,11 @@
 ---
-toc_priority: 46
-toc_title: Working with maps
+sidebar_position: 46
+sidebar_label: Working with maps
 ---
 
-# Functions for maps {#functions-for-working-with-tuple-maps}
+# Functions for maps
 
-## map {#function-map}
+## map
 
 Arranges `key:value` pairs into [Map(key, value)](../../sql-reference/data-types/map.md) data type.
 
@@ -17,8 +17,8 @@ map(key1, value1[, key2, value2, ...])
 
 **Arguments**
 
--   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md) or [Integer](../../sql-reference/data-types/int-uint.md).
--   `value` — The value part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md) or [Array](../../sql-reference/data-types/array.md).
+-   `key` — The key part of the pair. [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md).
+-   `value` — The value part of the pair. Arbitrary type, including [Map](../../sql-reference/data-types/map.md) and [Array](../../sql-reference/data-types/array.md).
 
 **Returned value**
 
@@ -66,7 +66,7 @@ Result:
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
-## mapAdd {#function-mapadd}
+## mapAdd
 
 Collect all the keys and sum corresponding values.
 
@@ -114,7 +114,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## mapSubtract {#function-mapsubtract}
+## mapSubtract
 
 Collect all the keys and subtract corresponding values.
 
@@ -162,7 +162,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## mapPopulateSeries {#function-mappopulateseries}
+## mapPopulateSeries
 
 Fills missing keys in the maps (key and value array pair), where keys are integers. Also, it supports specifying the max key, which is used to extend the keys array.
 
@@ -225,7 +225,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## mapContains {#mapcontains}
+## mapContains
 
 Determines  whether the `map` contains the `key` parameter.
 
@@ -268,7 +268,7 @@ Result:
 └────────────────────────┘
 ```
 
-## mapKeys {#mapkeys}
+## mapKeys
 
 Returns all keys from the `map` parameter.
 
@@ -311,7 +311,7 @@ Result:
 └───────────────────────┘
 ```
 
-## mapValues {#mapvalues}
+## mapValues
 
 Returns all values from the `map` parameter.
 
@@ -354,7 +354,7 @@ Result:
 └──────────────────┘
 ```  
   
-## mapContainsKeyLike {#mapContainsKeyLike}  
+## mapContainsKeyLike  
   
 **Syntax**
 
@@ -392,7 +392,7 @@ Result:
 └─────────────────────────────┘  
 ```  
   
-## mapExtractKeyLike {#mapExtractKeyLike}  
+## mapExtractKeyLike  
   
 **Syntax**
 

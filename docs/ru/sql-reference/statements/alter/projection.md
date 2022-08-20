@@ -1,6 +1,6 @@
 ---
-toc_priority: 49
-toc_title: PROJECTION
+sidebar_position: 49
+sidebar_label: PROJECTION
 ---
 
 # Манипуляции с проекциями {#manipulations-with-projections}
@@ -19,5 +19,6 @@ toc_title: PROJECTION
 
 Также команды реплицируются, синхронизируя описания проекций в метаданных с помощью ZooKeeper.
 
-!!! note "Note"
+    :::note
     Манипуляции с проекциями поддерживаются только для таблиц с движком [`*MergeTree`](../../../engines/table-engines/mergetree-family/mergetree.md) (включая [replicated](../../../engines/table-engines/mergetree-family/replication.md) варианты).
+    :::

@@ -13,7 +13,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 
 namespace DB
@@ -391,7 +391,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 }
 
 
-void registerFunctionArrayReduceInRanges(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayReduceInRanges)
 {
     factory.registerFunction<FunctionArrayReduceInRanges>();
 }

@@ -6,7 +6,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 
 namespace DB
 {
@@ -15,7 +15,7 @@ StoragePtr TableFunctionHDFS::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
-    return StorageHDFS::create(
+    return std::make_shared<StorageHDFS>(
         source,
         StorageID(getDatabaseName(), table_name),
         format_,

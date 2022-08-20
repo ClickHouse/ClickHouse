@@ -665,7 +665,7 @@ class DiagnosticsData:
 
     def _dump_wiki(self):
         """
-        Dump diagnostic data in Yandex wiki format.
+        Dump diagnostic data in Wiki format.
         """
 
         def _write_title(buffer, value):
