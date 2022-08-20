@@ -498,7 +498,6 @@ FROM
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
-
 ## sequenceNextNode {#sequenceNextNode}
 
 Возвращает значение следующего события, соответствующего цепочке событий.
