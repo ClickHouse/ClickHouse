@@ -320,7 +320,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY, settings);
             {
                 std::unique_lock segment_lock(file_segment->mutex);
-                file_segment->markAsDetached(segment_lock);
+                file_segment->detachAssumeStateFinalized(segment_lock);
             }
             file_segments.insert(it, file_segment);
         }
@@ -347,7 +347,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             auto file_segment = std::make_shared<FileSegment>(current_pos, hole_size, key, this, FileSegment::State::EMPTY, settings);
             {
                 std::unique_lock segment_lock(file_segment->mutex);
-                file_segment->markAsDetached(segment_lock);
+                file_segment->detachAssumeStateFinalized(segment_lock);
             }
             file_segments.insert(file_segments.end(), file_segment);
         }
@@ -409,7 +409,7 @@ FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
             offset, size, key, this, FileSegment::State::EMPTY, CreateFileSegmentSettings{});
         {
             std::unique_lock segment_lock(file_segment->mutex);
-            file_segment->markAsDetached(segment_lock);
+            file_segment->detachAssumeStateFinalized(segment_lock);
         }
         file_segments = { file_segment };
     }

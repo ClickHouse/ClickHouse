@@ -131,14 +131,14 @@ public:
 private:
     String cache_base_path;
 
-    size_t max_size;
-    size_t max_element_size;
-    size_t max_file_segment_size;
+    const size_t max_size;
+    const size_t max_element_size;
+    const size_t max_file_segment_size;
 
-    bool allow_persistent_files;
-    size_t enable_cache_hits_threshold;
-    bool enable_filesystem_query_cache_limit;
-    size_t background_download_max_memory_usage;
+    const bool allow_persistent_files;
+    const size_t enable_cache_hits_threshold;
+    const bool enable_filesystem_query_cache_limit;
+    const size_t background_download_max_memory_usage;
 
     Poco::Logger * log;
     bool is_initialized = false;

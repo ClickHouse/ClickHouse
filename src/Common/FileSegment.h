@@ -234,7 +234,7 @@ private:
     bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     bool isDetached(std::unique_lock<std::mutex> & /* segment_lock */) const { return is_detached; }
-    void markAsDetached(std::unique_lock<std::mutex> & segment_lock);
+    void detachAssumeStateFinalized(std::unique_lock<std::mutex> & segment_lock);
     [[noreturn]] void throwIfDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     void assertDetachedStatus(std::unique_lock<std::mutex> & segment_lock) const;
@@ -373,7 +373,6 @@ private:
         /// The following is_executing, execution_end_cv, ExecutinoHolder are needed for
         /// only one purpose: to be able to cancel background download.
         bool is_executing = false;
-        std::condition_variable execution_end_cv;
 
         struct ExecutionHolder
         {
@@ -386,7 +385,7 @@ private:
             ~ExecutionHolder()
             {
                 state.is_executing = false;
-                state.execution_end_cv.notify_all();
+                /// state.execution_end_cv.notify_all();
             }
 
             AsynchronousWriteState & state;
