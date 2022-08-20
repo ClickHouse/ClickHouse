@@ -23,12 +23,6 @@ int callSetCertificate(SSL * ssl, [[maybe_unused]] void * arg)
 }
 
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_STAT;
-}
-
-
 /// This is callback for OpenSSL. It will be called on every connection to obtain a certificate and private key.
 int CertificateReloader::setCertificate(SSL * ssl)
 {

@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
