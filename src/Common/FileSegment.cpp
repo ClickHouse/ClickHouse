@@ -305,7 +305,8 @@ void FileSegment::assertAsyncWriteStateInitialized() const
 
 void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
 {
-    assertAsyncWriteStateInitialized();
+    if (!async_write_state)
+        return;
 
     std::optional<std::shared_future<void>> shared_future;
 
@@ -415,7 +416,8 @@ void FileSegment::cancelBackgroundDownloadIfExists(std::unique_lock<std::mutex> 
     /// (e.g. removed from cache, etc see detach() method comment ).
     /// In this case we need to wait for all the current tasks to finish.
 
-    assertAsyncWriteStateInitialized();
+    if (!async_write_state)
+        return;
 
     auto & state = *async_write_state;
 

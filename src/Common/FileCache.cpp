@@ -29,7 +29,6 @@ FileCache::FileCache(
     , max_size(cache_settings_.max_size)
     , max_element_size(cache_settings_.max_elements)
     , max_file_segment_size(cache_settings_.max_file_segment_size)
-    , log(&Poco::Logger::get("FileCache"))
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
     , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
     , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
@@ -1241,7 +1240,7 @@ void FileCache::assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lo
                 ErrorCodes::LOGICAL_ERROR,
                 "Cache is in inconsistent state: LRU queue contains entries with no cache cell (assertCorrectness())");
         }
-        assert(cell->size() == size);
+        /// assert(cell->size() == size);
         total_size += size;
     }
     assert(total_size == main_priority->getCacheSize(cache_lock));
