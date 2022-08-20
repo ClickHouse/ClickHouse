@@ -1156,22 +1156,20 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("concurrent_threads_soft_limit"))
+            ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
+            if (config->has("concurrent_threads_soft_limit_num"))
             {
-                auto concurrent_threads_soft_limit = config->getInt("concurrent_threads_soft_limit", 0);
-                if (concurrent_threads_soft_limit == -1)
-                {
-                    // Based on tests concurrent_threads_soft_limit has an optimal value when it's about 3 times of logical CPU cores
-                    constexpr size_t thread_factor = 3;
-                    concurrent_threads_soft_limit = std::thread::hardware_concurrency() * thread_factor;
-                }
-                if (concurrent_threads_soft_limit)
-                    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-                else
-                    ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+                auto value = config->getUInt64("concurrent_threads_soft_limit_num", 0);
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
             }
-            else
-                ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+            if (config->has("concurrent_threads_soft_limit_ratio_to_cores"))
+            {
+                auto value = config->getUInt64("concurrent_threads_soft_limit_ratio_to_cores", 0) * std::thread::hardware_concurrency();
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
+            }
+            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
 
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
