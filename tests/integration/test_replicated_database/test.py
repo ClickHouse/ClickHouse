@@ -795,7 +795,7 @@ def test_startup_without_zk(started_cluster):
     main_node.query("INSERT INTO startup.rmt VALUES (42)")
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
-        main_node.restart_clickhouse(stop_start_wait_sec=30)
+        main_node.restart_clickhouse(stop_start_wait_sec=60)
         assert main_node.query("SELECT (*,).1 FROM startup.rmt") == "42\n"
 
     # we need to wait until the table is not readonly
