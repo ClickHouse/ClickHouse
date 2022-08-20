@@ -1,5 +1,5 @@
 ---
-toc_priority: 31
+sidebar_position: 31
 ---
 
 # stddevSamp {#stddevsamp}

@@ -1,9 +1,10 @@
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <limits>
+#include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/Pipe.h>
-#include <Interpreters/Aggregator.h>
 
 namespace DB
 {
@@ -246,6 +247,9 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
 
 void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
 {
+    if (!chunk.hasRows())
+        return;
+
     const auto & info = chunk.getChunkInfo();
     if (!info)
         throw Exception("Chunk info was not set for chunk in GroupingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
@@ -364,7 +368,7 @@ SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs_, Aggre
     : IProcessor(InputPorts(num_inputs_, params_->getHeader()), {params_->getHeader()})
     , num_inputs(num_inputs_)
     , params(std::move(params_))
-    , last_bucket_number(num_inputs, -1)
+    , last_bucket_number(num_inputs, std::numeric_limits<Int32>::min())
     , is_input_finished(num_inputs, false)
 {
 }
@@ -459,7 +463,13 @@ IProcessor::Status SortingAggregatedTransform::prepare()
             continue;
         }
 
-        //all_finished = false;
+        /// We want to keep not more than `num_inputs` buckets in memory (and there will be only a single chunk with the given `bucket_id`).
+        const bool bucket_from_this_input_still_in_memory = chunks.contains(last_bucket_number[input_num]);
+        if (bucket_from_this_input_still_in_memory)
+        {
+            all_finished = false;
+            continue;
+        }
 
         in->setNeeded();
 

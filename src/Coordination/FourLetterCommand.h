@@ -304,4 +304,27 @@ struct IsReadOnlyCommand : public IFourLetterCommand
     ~IsReadOnlyCommand() override = default;
 };
 
+struct RecoveryCommand : public IFourLetterCommand
+{
+    explicit RecoveryCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rcvr"; }
+    String run() override;
+    ~RecoveryCommand() override = default;
+};
+
+struct ApiVersionCommand : public IFourLetterCommand
+{
+    explicit ApiVersionCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "apiv"; }
+    String run() override;
+    ~ApiVersionCommand() override = default;
+};
 }

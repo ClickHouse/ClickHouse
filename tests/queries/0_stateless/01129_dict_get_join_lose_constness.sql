@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DICTIONARY IF EXISTS system.dict1;
 
 CREATE DICTIONARY IF NOT EXISTS system.dict1

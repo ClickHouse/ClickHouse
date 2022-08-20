@@ -1,6 +1,7 @@
 #include "ExternalUserDefinedExecutableFunctionsLoader.h"
 
 #include <boost/algorithm/string/split.hpp>
+#include <Common/StringUtils/StringUtils.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -17,6 +18,80 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FUNCTION_ALREADY_EXISTS;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int TYPE_MISMATCH;
+}
+
+namespace
+{
+    /** Extract parameters from command and replace them with parameter names placeholders.
+      * Example: test_script.py {parameter_name: UInt64}
+      * After run function: test_script.py {parameter_name}
+      */
+    std::vector<UserDefinedExecutableFunctionParameter> extractParametersFromCommand(String & command_value)
+    {
+        std::vector<UserDefinedExecutableFunctionParameter> parameters;
+        std::unordered_map<std::string_view, DataTypePtr> parameter_name_to_type;
+
+        size_t previous_parameter_match_position = 0;
+        while (true)
+        {
+            auto start_parameter_pos = command_value.find('{', previous_parameter_match_position);
+            if (start_parameter_pos == std::string::npos)
+                break;
+
+            auto end_parameter_pos = command_value.find('}', start_parameter_pos);
+            if (end_parameter_pos == std::string::npos)
+                break;
+
+            previous_parameter_match_position = start_parameter_pos + 1;
+
+            auto semicolon_pos = command_value.find(':', start_parameter_pos);
+            if (semicolon_pos == std::string::npos)
+                break;
+            else if (semicolon_pos > end_parameter_pos)
+                continue;
+
+            std::string parameter_name(command_value.data() + start_parameter_pos + 1, command_value.data() + semicolon_pos);
+            trim(parameter_name);
+
+            bool is_identifier = std::all_of(parameter_name.begin(), parameter_name.end(), [](char character)
+            {
+                return isWordCharASCII(character);
+            });
+
+            if (parameter_name.empty() && !is_identifier)
+                continue;
+
+            std::string data_type_name(command_value.data() + semicolon_pos + 1, command_value.data() + end_parameter_pos);
+            trim(data_type_name);
+
+            if (data_type_name.empty())
+                continue;
+
+            DataTypePtr parameter_data_type = DataTypeFactory::instance().get(data_type_name);
+            auto parameter_name_to_type_it = parameter_name_to_type.find(parameter_name);
+            if (parameter_name_to_type_it != parameter_name_to_type.end() && !parameter_data_type->equals(*parameter_name_to_type_it->second))
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Multiple parameters with same name {} does not have same type. Expected {}. Actual {}",
+                    parameter_name,
+                    parameter_name_to_type_it->second->getName(),
+                    parameter_data_type->getName());
+
+            size_t replace_size = end_parameter_pos - start_parameter_pos - 1;
+            command_value.replace(start_parameter_pos + 1, replace_size, parameter_name);
+            previous_parameter_match_position = start_parameter_pos + parameter_name.size();
+
+            if (parameter_name_to_type_it == parameter_name_to_type.end())
+            {
+                parameters.emplace_back(UserDefinedExecutableFunctionParameter{std::move(parameter_name), std::move(parameter_data_type)});
+                auto & last_parameter = parameters.back();
+                parameter_name_to_type.emplace(last_parameter.name, last_parameter.type);
+            }
+        }
+
+        return parameters;
+    }
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
@@ -71,6 +146,11 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     bool execute_direct = config.getBool(key_in_config + ".execute_direct", true);
 
     String command_value = config.getString(key_in_config + ".command");
+    std::vector<UserDefinedExecutableFunctionParameter> parameters = extractParametersFromCommand(command_value);
+
+    if (!execute_direct && !parameters.empty())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Parameters are not supported if executable user defined function is not direct");
+
     std::vector<String> command_arguments;
 
     if (execute_direct)
@@ -137,12 +217,17 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         arguments.emplace_back(std::move(argument));
     }
 
+    if (is_executable_pool && !parameters.empty())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Executable user defined functions with `executable_pool` type does not support parameters");
+
     UserDefinedExecutableFunctionConfiguration function_configuration
     {
         .name = name,
         .command = std::move(command_value),
         .command_arguments = std::move(command_arguments),
         .arguments = std::move(arguments),
+        .parameters = std::move(parameters),
         .result_type = std::move(result_type),
         .result_name = std::move(result_name),
     };

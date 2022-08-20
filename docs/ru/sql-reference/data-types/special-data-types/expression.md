@@ -1,6 +1,6 @@
 ---
-toc_priority: 58
-toc_title: Expression
+sidebar_position: 58
+sidebar_label: Expression
 ---
 
 # Expression {#expression}

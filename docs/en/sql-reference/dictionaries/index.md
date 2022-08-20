@@ -1,10 +1,9 @@
 ---
-toc_folder_title: Dictionaries
-toc_priority: 35
-toc_title: Introduction
+sidebar_label: Dictionaries
+sidebar_position: 35
 ---
 
-# Dictionaries {#dictionaries}
+# Dictionaries
 
 A dictionary is a mapping (`key -> attributes`) that is convenient for various types of reference lists.
 

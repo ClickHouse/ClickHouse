@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 
 #include <Core/ExternalResultDescription.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Poco/Redis/Array.h>
 #include <Poco/Redis/Type.h>
 #include "RedisDictionarySource.h"
@@ -19,7 +19,7 @@ namespace Poco
 
 namespace DB
 {
-    class RedisSource final : public SourceWithProgress
+    class RedisSource final : public ISource
     {
     public:
         using RedisArray = Poco::Redis::Array;

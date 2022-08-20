@@ -1,6 +1,6 @@
 <test>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(MACNumToString(number))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(MACStringToNum(MACNumToString(number)))</query>
-    <query>SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(MACNumToString(rand64()))</query>
-    <query>SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(MACStringToNum(MACNumToString(rand64())))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(MACNumToString(number))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(MACStringToNum(MACNumToString(number)))</query>
+    <query>SELECT count() FROM zeros_mt(100000000) WHERE NOT ignore(MACNumToString(rand64()))</query>
+    <query>SELECT count() FROM zeros_mt(100000000) WHERE NOT ignore(MACStringToNum(MACNumToString(rand64())))</query>
 </test>

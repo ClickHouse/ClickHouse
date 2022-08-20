@@ -1,6 +1,6 @@
 ---
-toc_priority: 54
-toc_title: Query Profiling
+sidebar_position: 54
+sidebar_label: Query Profiling
 ---
 
 # Sampling Query Profiler {#sampling-query-profiler}

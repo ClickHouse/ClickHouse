@@ -1,6 +1,6 @@
 ---
-toc_priority: 34
-toc_title: TinyLog
+sidebar_position: 34
+sidebar_label: TinyLog
 ---
 
 # TinyLog {#tinylog}

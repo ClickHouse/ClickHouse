@@ -26,17 +26,17 @@ namespace
         return (Util::stringToDigest(password) == password_plaintext);
     }
 
-    bool checkPasswordDoubleSHA1(const std::string_view & password, const Digest & password_double_sha1)
+    bool checkPasswordDoubleSHA1(std::string_view password, const Digest & password_double_sha1)
     {
         return (Util::encodeDoubleSHA1(password) == password_double_sha1);
     }
 
-    bool checkPasswordSHA256(const std::string_view & password, const Digest & password_sha256)
+    bool checkPasswordSHA256(std::string_view password, const Digest & password_sha256, const String & salt)
     {
-        return Util::encodeSHA256(password) == password_sha256;
+        return Util::encodeSHA256(String(password).append(salt)) == password_sha256;
     }
 
-    bool checkPasswordDoubleSHA1MySQL(const std::string_view & scramble, const std::string_view & scrambled_password, const Digest & password_double_sha1)
+    bool checkPasswordDoubleSHA1MySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_double_sha1)
     {
         /// scrambled_password = SHA1(password) XOR SHA1(scramble <concat> SHA1(SHA1(password)))
 
@@ -61,7 +61,7 @@ namespace
         return calculated_password_double_sha1 == password_double_sha1;
     }
 
-    bool checkPasswordPlainTextMySQL(const std::string_view & scramble, const std::string_view & scrambled_password, const Digest & password_plaintext)
+    bool checkPasswordPlainTextMySQL(std::string_view scramble, std::string_view scrambled_password, const Digest & password_plaintext)
     {
         return checkPasswordDoubleSHA1MySQL(scramble, scrambled_password, Util::encodeDoubleSHA1(password_plaintext));
     }
@@ -132,7 +132,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
                 return checkPasswordPlainText(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
 
             case AuthenticationType::SHA256_PASSWORD:
-                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary(), auth_data.getSalt());
 
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 return checkPasswordDoubleSHA1(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());

@@ -22,12 +22,12 @@ void HTTPServerConnection::run()
     std::string server = params->getSoftwareVersion();
     Poco::Net::HTTPServerSession session(socket(), params);
 
-    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests())
+    while (!stopped && tcp_server.isOpen() && session.hasMoreRequests() && session.connected())
     {
         try
         {
-            std::unique_lock<std::mutex> lock(mutex);
-            if (!stopped && tcp_server.isOpen())
+            std::lock_guard lock(mutex);
+            if (!stopped && tcp_server.isOpen() && session.connected())
             {
                 HTTPServerResponse response(session);
                 HTTPServerRequest request(context, response, session);

@@ -1,14 +1,15 @@
 ---
-toc_priority: 65
-toc_title: Introspection
+sidebar_position: 65
+sidebar_label: Introspection
 ---
 
-# Introspection Functions {#introspection-functions}
+# Introspection Functions
 
 You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
 
-!!! warning "Warning"
-    These functions are slow and may impose security considerations.
+:::warning    
+These functions are slow and may impose security considerations.
+:::
 
 For proper operation of introspection functions:
 
@@ -20,7 +21,7 @@ For proper operation of introspection functions:
 
 ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
-## addressToLine {#addresstoline}
+## addressToLine
 
 Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
 
@@ -113,7 +114,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97
 ```
 
-## addressToLineWithInlines {#addresstolinewithinlines}
+## addressToLineWithInlines
 
 Similar to `addressToLine`, but it will return an Array with all inline functions, and will be much slower as a price.
 
@@ -218,7 +219,7 @@ The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions
 ```
 
 
-## addressToSymbol {#addresstosymbol}
+## addressToSymbol
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
 
@@ -315,7 +316,7 @@ start_thread
 clone
 ```
 
-## demangle {#demangle}
+## demangle
 
 Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 
@@ -411,7 +412,7 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-## tid {#tid}
+## tid
 
 Returns id of the thread, in which current [Block](https://clickhouse.com/docs/en/development/architecture/#block) is processed.
 
@@ -441,7 +442,7 @@ Result:
 └───────┘
 ```
 
-## logTrace {#logtrace}
+## logTrace
 
 Emits trace log message to server log for each [Block](https://clickhouse.com/docs/en/development/architecture/#block).
 

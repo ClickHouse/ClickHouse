@@ -127,7 +127,14 @@ PoolWithFailover::Entry PoolWithFailover::get()
 
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;
-    std::map<std::string, std::tuple<std::string, int>> error_detail;
+
+    struct ErrorDetail
+    {
+        int code;
+        std::string description;
+    };
+
+    std::unordered_map<std::string, ErrorDetail> replica_name_to_error_detail;
 
     for (size_t try_no = 0; try_no < max_tries; ++try_no)
     {
@@ -161,15 +168,8 @@ PoolWithFailover::Entry PoolWithFailover::get()
                     }
 
                     app.logger().warning("Connection to " + pool->getDescription() + " failed: " + e.displayText());
-                    //save all errors to error_detail
-                    if (error_detail.contains(pool->getDescription()))
-                    {
-                        error_detail[pool->getDescription()] = {e.displayText(), e.code()};
-                    }
-                    else
-                    {
-                        error_detail.insert({pool->getDescription(), {e.displayText(), e.code()}});
-                    }
+                    replica_name_to_error_detail.insert_or_assign(pool->getDescription(), ErrorDetail{e.code(), e.displayText()});
+
                     continue;
                 }
 
@@ -189,15 +189,19 @@ PoolWithFailover::Entry PoolWithFailover::get()
     DB::WriteBufferFromOwnString message;
     message << "Connections to all replicas failed: ";
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
+    {
         for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
         {
             message << (it == replicas_by_priority.begin() && jt == it->second.begin() ? "" : ", ") << (*jt)->getDescription();
-            if (error_detail.contains((*jt)->getDescription()))
+
+            if (auto error_detail_it = replica_name_to_error_detail.find(((*jt)->getDescription()));
+                error_detail_it != replica_name_to_error_detail.end())
             {
-                std::tuple<std::string, int> error_and_code = error_detail[(*jt)->getDescription()];
-                message << ", ERROR " << std::get<1>(error_and_code)  << " : " << std::get<0>(error_and_code);
+                const auto & [code, description] = error_detail_it->second;
+                message << ", ERROR " << code  << " : " << description;
             }
         }
+    }
 
     throw Poco::Exception(message.str());
 }

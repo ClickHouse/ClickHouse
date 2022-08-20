@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS Test_00584;
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE Test_00584 (
     createdDate Date,
     str String,

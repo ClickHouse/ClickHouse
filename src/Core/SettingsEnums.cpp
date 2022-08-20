@@ -26,15 +26,19 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
 
 IMPLEMENT_SETTING_ENUM(JoinStrictness, ErrorCodes::UNKNOWN_JOIN,
     {{"",    JoinStrictness::Unspecified},
-     {"ALL", JoinStrictness::ALL},
-     {"ANY", JoinStrictness::ANY}})
+     {"ALL", JoinStrictness::All},
+     {"ANY", JoinStrictness::Any}})
 
 
-IMPLEMENT_SETTING_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
-    {{"auto",                 JoinAlgorithm::AUTO},
+IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
+    {{"default",              JoinAlgorithm::DEFAULT},
+     {"auto",                 JoinAlgorithm::AUTO},
      {"hash",                 JoinAlgorithm::HASH},
      {"partial_merge",        JoinAlgorithm::PARTIAL_MERGE},
-     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE}})
+     {"prefer_partial_merge", JoinAlgorithm::PREFER_PARTIAL_MERGE},
+     {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
+     {"direct",               JoinAlgorithm::DIRECT},
+     {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -130,6 +134,11 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"async",          TransactionsWaitCSNMode::ASYNC},
+     {"wait",           TransactionsWaitCSNMode::WAIT},
+     {"wait_unknown",   TransactionsWaitCSNMode::WAIT_UNKNOWN}})
+
 IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
     {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
      {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
@@ -148,5 +157,6 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
                        {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
                         {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
                         {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
+
 
 }

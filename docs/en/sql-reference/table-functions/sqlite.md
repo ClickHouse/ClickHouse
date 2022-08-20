@@ -1,9 +1,9 @@
 ---
-toc_priority: 55
-toc_title: sqlite
+sidebar_position: 55
+sidebar_label: sqlite
 ---
 
-## sqlite {#sqlite}
+## sqlite
 
 Allows to perform queries on a data stored in an [SQLite](../../engines/database-engines/sqlite.md) database.
 

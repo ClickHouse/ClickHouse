@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/IAccessStorage.h>
+#include <base/defines.h>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -9,13 +10,15 @@
 
 namespace DB
 {
+class AccessChangesNotifier;
+
 /// Implementation of IAccessStorage which keeps all data in memory.
 class MemoryAccessStorage : public IAccessStorage
 {
 public:
     static constexpr char STORAGE_TYPE[] = "memory";
 
-    explicit MemoryAccessStorage(const String & storage_name_ = STORAGE_TYPE);
+    explicit MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_);
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
@@ -24,8 +27,9 @@ public:
     void setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities);
 
     bool exists(const UUID & id) const override;
-    bool hasSubscription(const UUID & id) const override;
-    bool hasSubscription(AccessEntityType type) const override;
+
+    bool isBackupAllowed() const override { return backup_allowed; }
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
@@ -34,25 +38,22 @@ private:
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
-    scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
+
+    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) TSA_REQUIRES(mutex);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists) TSA_REQUIRES(mutex);
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) TSA_REQUIRES(mutex);
 
     struct Entry
     {
         UUID id;
         AccessEntityPtr entity;
-        mutable std::list<OnChangedHandler> handlers_by_id;
     };
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, Notifications & notifications);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists, Notifications & notifications);
-    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, Notifications & notifications);
-    void setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, Notifications & notifications);
-    void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
-
-    mutable std::recursive_mutex mutex;
-    std::unordered_map<UUID, Entry> entries_by_id; /// We want to search entries both by ID and by the pair of name and type.
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
-    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(AccessEntityType::MAX)];
+    mutable std::mutex mutex;
+    std::unordered_map<UUID, Entry> entries_by_id TSA_GUARDED_BY(mutex); /// We want to search entries both by ID and by the pair of name and type.
+    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)] TSA_GUARDED_BY(mutex);
+    AccessChangesNotifier & changes_notifier;
+    bool backup_allowed = false;
 };
 }

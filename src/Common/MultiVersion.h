@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <memory>
+#include <base/defines.h>
 
 
 /** Allow to store and read-only usage of an object in several threads,
@@ -51,6 +52,6 @@ public:
     }
 
 private:
-    Version current_version;
+    Version current_version TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
 };

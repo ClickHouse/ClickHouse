@@ -10,6 +10,9 @@ struct IntervalKind
 {
     enum Kind
     {
+        Nanosecond,
+        Microsecond,
+        Millisecond,
         Second,
         Minute,
         Hour,
@@ -30,9 +33,16 @@ struct IntervalKind
     /// For `Month`, `Quarter` and `Year` the function returns an average number of seconds.
     Int32 toAvgSeconds() const;
 
+    /// Returns exact number of seconds in one interval.
+    /// For `Month`, `Quarter` and `Year` the function raises an error.
+    Float64 toSeconds() const;
+
     /// Chooses an interval kind based on number of seconds.
     /// For example, `IntervalKind::fromAvgSeconds(3600)` returns `IntervalKind::Hour`.
     static IntervalKind fromAvgSeconds(Int64 num_seconds);
+
+    /// Returns whether IntervalKind has a fixed number of seconds (e.g. Day) or non-fixed(e.g. Month)
+    bool isFixedLength() const;
 
     /// Returns an uppercased version of what `toString()` returns.
     const char * toKeyword() const;
@@ -61,6 +71,9 @@ struct IntervalKind
 
 /// NOLINTNEXTLINE
 #define FOR_EACH_INTERVAL_KIND(M) \
+    M(Nanosecond) \
+    M(Microsecond) \
+    M(Millisecond) \
     M(Second) \
     M(Minute) \
     M(Hour) \

@@ -76,6 +76,10 @@ public:
     void setPasswordHashBinary(const Digest & hash);
     const Digest & getPasswordHashBinary() const { return password_hash; }
 
+    /// Sets the salt in String form.
+    void setSalt(String salt);
+    String getSalt() const;
+
     /// Sets the server name for authentication type LDAP.
     const String & getLDAPServerName() const { return ldap_server_name; }
     void setLDAPServerName(const String & name) { ldap_server_name = name; }
@@ -92,11 +96,11 @@ public:
 
     struct Util
     {
-        static Digest stringToDigest(const std::string_view & text) { return Digest(text.data(), text.data() + text.size()); }
-        static Digest encodeSHA256(const std::string_view & text);
-        static Digest encodeSHA1(const std::string_view & text);
+        static Digest stringToDigest(std::string_view text) { return Digest(text.data(), text.data() + text.size()); }
+        static Digest encodeSHA256(std::string_view text);
+        static Digest encodeSHA1(std::string_view text);
         static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
-        static Digest encodeDoubleSHA1(const std::string_view & text) { return encodeSHA1(encodeSHA1(text)); }
+        static Digest encodeDoubleSHA1(std::string_view text) { return encodeSHA1(encodeSHA1(text)); }
         static Digest encodeDoubleSHA1(const Digest & text) { return encodeSHA1(encodeSHA1(text)); }
     };
 
@@ -106,6 +110,7 @@ private:
     String ldap_server_name;
     String kerberos_realm;
     boost::container::flat_set<String> ssl_certificate_common_names;
+    String salt;
 };
 
 }

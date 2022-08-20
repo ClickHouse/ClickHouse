@@ -263,11 +263,6 @@ public:
         }
     }
 
-    SerializationInfoPtr getSerializationInfo() const override
-    {
-        return data->getSerializationInfo();
-    }
-
     bool isNullable() const override { return isColumnNullable(*data); }
     bool onlyNull() const override { return data->isNullAt(0); }
     bool isNumeric() const override { return data->isNumeric(); }

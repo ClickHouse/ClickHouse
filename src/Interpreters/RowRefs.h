@@ -10,7 +10,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <Interpreters/asof.h>
+#include <Core/Joins.h>
 #include <base/sort.h>
 #include <Common/Arena.h>
 
@@ -146,7 +146,7 @@ private:
 struct SortedLookupVectorBase
 {
     SortedLookupVectorBase() = default;
-    virtual ~SortedLookupVectorBase() { }
+    virtual ~SortedLookupVectorBase() = default;
 
     static std::optional<TypeIndex> getTypeSize(const IColumn & asof_column, size_t & type_size);
 
@@ -154,12 +154,12 @@ struct SortedLookupVectorBase
     virtual void insert(const IColumn &, const Block *, size_t) = 0;
 
     // This needs to be synchronized internally
-    virtual std::tuple<decltype(RowRef::block), decltype(RowRef::row_num)> findAsof(const IColumn &, size_t) = 0;
+    virtual RowRef findAsof(const IColumn &, size_t) = 0;
 };
 
 
 // It only contains a std::unique_ptr which is memmovable.
 // Source: https://github.com/ClickHouse/ClickHouse/issues/4906
 using AsofRowRefs = std::unique_ptr<SortedLookupVectorBase>;
-AsofRowRefs createAsofRowRef(TypeIndex type, ASOF::Inequality inequality);
+AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality);
 }

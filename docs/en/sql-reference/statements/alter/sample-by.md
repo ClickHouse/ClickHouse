@@ -1,9 +1,9 @@
 ---
-toc_priority: 41
-toc_title: SAMPLE BY
+sidebar_position: 41
+sidebar_label: SAMPLE BY
 ---
 
-# Manipulating Sampling-Key Expressions {#manipulations-with-sampling-key-expressions}
+# Manipulating Sampling-Key Expressions
 
 Syntax:
 
@@ -15,5 +15,6 @@ The command changes the [sampling key](../../../engines/table-engines/mergetree-
 
 The command is lightweight in the sense that it only changes metadata. The primary key must contain the new sample key.
 
-!!! note "Note"
-    It only works for tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables).
+:::note    
+It only works for tables in the [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family (including [replicated](../../../engines/table-engines/mergetree-family/replication.md) tables).
+:::

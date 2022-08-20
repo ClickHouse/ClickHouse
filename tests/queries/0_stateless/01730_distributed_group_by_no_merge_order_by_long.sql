@@ -1,4 +1,4 @@
--- Tags: long, distributed
+-- Tags: long, distributed, no-random-settings
 
 drop table if exists data_01730;
 

@@ -1,4 +1,4 @@
-# system.numbers {#system-numbers}
+# numbers
 
 This table contains a single UInt64 column named `number` that contains almost all the natural numbers starting from zero.
 

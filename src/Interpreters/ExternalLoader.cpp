@@ -10,7 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
 #include <base/chrono_io.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -1299,6 +1299,7 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
     return [this, ptr, name]()
     {
         config_files_reader->removeConfigRepository(ptr);
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, name);
         reloadConfig(name);
     };
 }

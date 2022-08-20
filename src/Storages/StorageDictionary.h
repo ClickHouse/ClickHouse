@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
@@ -12,11 +11,50 @@ namespace DB
 struct DictionaryStructure;
 class TableFunctionDictionary;
 
-class StorageDictionary final : public shared_ptr_helper<StorageDictionary>, public IStorage, public WithContext
+class StorageDictionary final : public IStorage, public WithContext
 {
-    friend struct shared_ptr_helper<StorageDictionary>;
-    friend class TableFunctionDictionary;
+friend class TableFunctionDictionary;
+
 public:
+    /// Specifies where the table is located relative to the dictionary.
+    enum class Location
+    {
+        /// Table was created automatically as an element of a database with the Dictionary engine.
+        DictionaryDatabase,
+
+        /// Table was created automatically along with a dictionary
+        /// and has the same database and name as the dictionary.
+        /// It provides table-like access to the dictionary.
+        /// User cannot drop that table.
+        SameDatabaseAndNameAsDictionary,
+
+        /// Table was created explicitly by a statement like
+        /// CREATE TABLE ... ENGINE=Dictionary
+        /// User chose the table's database and name and can drop that table.
+        Custom,
+    };
+
+    StorageDictionary(
+        const StorageID & table_id_,
+        const String & dictionary_name_,
+        const ColumnsDescription & columns_,
+        const String & comment,
+        Location location_,
+        ContextPtr context_);
+
+    StorageDictionary(
+        const StorageID & table_id_,
+        const String & dictionary_name_,
+        const DictionaryStructure & dictionary_structure,
+        const String & comment,
+        Location location_,
+        ContextPtr context_);
+
+    StorageDictionary(
+        const StorageID & table_id_,
+        LoadablesConfigurationPtr dictionary_configuration_,
+        ContextPtr context_);
+
     std::string getName() const override { return "Dictionary"; }
 
     ~StorageDictionary() override;
@@ -51,24 +89,6 @@ public:
 
     String getDictionaryName() const { return dictionary_name; }
 
-    /// Specifies where the table is located relative to the dictionary.
-    enum class Location
-    {
-        /// Table was created automatically as an element of a database with the Dictionary engine.
-        DictionaryDatabase,
-
-        /// Table was created automatically along with a dictionary
-        /// and has the same database and name as the dictionary.
-        /// It provides table-like access to the dictionary.
-        /// User cannot drop that table.
-        SameDatabaseAndNameAsDictionary,
-
-        /// Table was created explicitly by a statement like
-        /// CREATE TABLE ... ENGINE=Dictionary
-        /// User chose the table's database and name and can drop that table.
-        Custom,
-    };
-
 private:
     String dictionary_name;
     const Location location;
@@ -80,27 +100,6 @@ private:
     scope_guard remove_repository_callback;
 
     void removeDictionaryConfigurationFromRepository();
-
-    StorageDictionary(
-        const StorageID & table_id_,
-        const String & dictionary_name_,
-        const ColumnsDescription & columns_,
-        const String & comment,
-        Location location_,
-        ContextPtr context_);
-
-    StorageDictionary(
-        const StorageID & table_id_,
-        const String & dictionary_name_,
-        const DictionaryStructure & dictionary_structure,
-        const String & comment,
-        Location location_,
-        ContextPtr context_);
-
-    StorageDictionary(
-        const StorageID & table_id_,
-        LoadablesConfigurationPtr dictionary_configuration_,
-        ContextPtr context_);
 };
 
 }

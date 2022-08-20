@@ -9,7 +9,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
@@ -109,10 +109,16 @@ public:
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
     void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
 
+    void startServer();
+
     bool checkInit() const
     {
         return server && server->checkInit();
     }
+
+    /// Is server accepting requests, i.e. connected to the cluster
+    /// and achieved quorum
+    bool isServerActive() const;
 
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
@@ -120,6 +126,8 @@ public:
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
+
+    void forceRecovery();
 
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
@@ -140,6 +148,11 @@ public:
     bool isLeader() const
     {
         return server->isLeader();
+    }
+
+    bool isFollower() const
+    {
+        return server->isFollower();
     }
 
     bool hasLeader() const

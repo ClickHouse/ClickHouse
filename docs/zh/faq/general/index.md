@@ -1,8 +1,8 @@
 ---
 title: ClickHouse 有关常见问题
 toc_hidden_folder: true
-toc_priority: 1
-toc_title: General
+sidebar_position: 1
+sidebar_label: General
 ---
 
 # ClickHouse 有关常见问题 {#general-questions}
@@ -22,6 +22,6 @@ toc_title: General
 
 
 !!! info "没找到您需要的内容?"
-    请查阅 [其他 F.A.Q. 类别](../../faq/index.md) 或者从左侧导航栏浏览其他文档
+    请查阅 [其他 F.A.Q. 类别](../../faq/) 或者从左侧导航栏浏览其他文档
     
 {## [原始文档](https://clickhouse.com/docs/en/faq/general/) ##}

@@ -1,6 +1,6 @@
 ---
-toc_priority: 32
-toc_title: Distributed DDL
+sidebar_position: 32
+sidebar_label: Distributed DDL
 ---
 
 # 分布式DDL查询(ON CLUSTER条件) {#distributed-ddl-queries-on-cluster-clause}

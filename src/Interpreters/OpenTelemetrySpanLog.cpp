@@ -12,6 +12,7 @@
 
 #include <Common/hex.h>
 #include <Common/CurrentThread.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ NamesAndAliases OpenTelemetrySpanLogElement::getNamesAndAliases()
     return
     {
         {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"},
-        {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapKeys(attribute)"}
+        {"attribute.values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "mapValues(attribute)"}
     };
 }
 
@@ -64,13 +65,7 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     // The user might add some ints values, and we will have Int Field, and the
     // insert will fail because the column requires Strings. Convert the fields
     // here, because it's hard to remember to convert them in all other places.
-
-    Map map(attribute_names.size());
-    for (size_t attr_idx = 0; attr_idx < map.size(); ++attr_idx)
-    {
-        map[attr_idx] = Tuple{attribute_names[attr_idx], toString(attribute_values[attr_idx])};
-    }
-    columns[i++]->insert(map);
+    columns[i++]->insert(attributes);
 }
 
 
@@ -118,11 +113,14 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
         auto * thread_group = CurrentThread::getGroup().get();
         // Not sure whether and when this can be null.
         if (!thread_group)
-        {
             return;
+
+        ContextPtr context;
+        {
+            std::lock_guard lock(thread_group->mutex);
+            context = thread_group->query_context.lock();
         }
 
-        auto context = thread_group->query_context.lock();
         if (!context)
         {
             // Both global and query contexts can be null when executing a
@@ -155,8 +153,7 @@ void OpenTelemetrySpanHolder::addAttribute(const std::string& name, UInt64 value
     if (trace_id == UUID())
         return;
 
-    this->attribute_names.push_back(name);
-    this->attribute_values.push_back(std::to_string(value));
+    this->attributes.push_back(Tuple{name, toString(value)});
 }
 
 void OpenTelemetrySpanHolder::addAttribute(const std::string& name, const std::string& value)
@@ -164,8 +161,7 @@ void OpenTelemetrySpanHolder::addAttribute(const std::string& name, const std::s
     if (trace_id == UUID())
         return;
 
-    this->attribute_names.push_back(name);
-    this->attribute_values.push_back(value);
+    this->attributes.push_back(Tuple{name, value});
 }
 
 void OpenTelemetrySpanHolder::addAttribute(const Exception & e)
@@ -173,8 +169,7 @@ void OpenTelemetrySpanHolder::addAttribute(const Exception & e)
     if (trace_id == UUID())
         return;
 
-    this->attribute_names.push_back("clickhouse.exception");
-    this->attribute_values.push_back(getExceptionMessage(e, false));
+    this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
 }
 
 void OpenTelemetrySpanHolder::addAttribute(std::exception_ptr e)
@@ -182,8 +177,7 @@ void OpenTelemetrySpanHolder::addAttribute(std::exception_ptr e)
     if (trace_id == UUID() || e == nullptr)
         return;
 
-    this->attribute_names.push_back("clickhouse.exception");
-    this->attribute_values.push_back(getExceptionMessage(e, false));
+    this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
 }
 
 bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
@@ -266,4 +260,3 @@ std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
 
 
 }
-

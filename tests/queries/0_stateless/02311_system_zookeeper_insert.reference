@@ -1,0 +1,27 @@
+/default/1-insert-testc	c	
+/default/1-insert-testc/c	c	
+/default/1-insert-testc/c/c	c	
+/default/1-insert-testc/c/c	d	
+/default/1-insert-testc/c/c	e	
+/default/1-insert-testc/c/c	f	
+/default/1-insert-testc/c/c	kk	
+/default/1-insert-testc/c/c/c	c	
+/default/1-insert-testc/c/c/c/c	c	
+/default/1-insert-testc/c/c/c/c/c	c	
+/default/1-insert-testc/c/c/c/c/c/c	c	9
+/default/1-insert-testc/c/c/c/c/c/c/c	c	10
+/default/1-insert-testc/c/c/d	e	10
+/default/1-insert-testc/c/c/d	f	11
+/default/1-insert-testc/c/c/d	g	12
+/default/1-insert-testc/c/c/e	g	13
+/default/1-insert-testc/c/c/f	g	14
+/default/1-insert-testc/c/c/kk	g	14
+-------------------------
+/default/2-insert-testx	testb	z
+/default/2-insert-testx	testc	x
+/default/2-insert-testx	testz	y
+/default/2-insert-testz	c	
+/default/2-insert-testz/c	cd	
+/default/2-insert-testz/c/cd	dd	
+/default/2-insert-testz/c/cd	testc	
+/default/2-insert-testz/c/cd/dd	testc	y

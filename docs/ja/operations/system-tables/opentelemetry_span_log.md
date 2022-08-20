@@ -1,1 +1,0 @@
-../../../en/operations/system-tables/opentelemetry_span_log.md

@@ -296,8 +296,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_user)
     {
-        if (auto user = getContext()->getUser())
-            entities.push_back(user);
+        entities.push_back(getContext()->getUser());
     }
     else if (show_query.current_quota)
     {

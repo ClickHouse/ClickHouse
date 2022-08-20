@@ -19,4 +19,10 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
 /// so we startup system tables after all databases are loaded.
 void startupSystemTables();
 
+/// Converts `system` database from Ordinary to Atomic (if needed)
+void maybeConvertSystemDatabase(ContextMutablePtr context);
+
+/// Converts all databases (except system) from Ordinary to Atomic if convert_ordinary_to_atomic flag exists
+void convertDatabasesEnginesIfNeed(ContextMutablePtr context);
+
 }

@@ -1,9 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>hits_10m_single</table_exists>
-        <table_exists>hits_100m_single</table_exists>
-    </preconditions>
-
     <query>select sum(UserID + 1 in (select UserID from hits_10m_single)) from hits_10m_single</query>
     <query>select sum((UserID + 1, RegionID) in (select UserID, RegionID from hits_10m_single)) from hits_10m_single</query>
     <query>select sum(URL in (select URL from hits_10m_single where URL != '')) from hits_10m_single</query>

@@ -30,7 +30,7 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
 void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     /// NOTE: due to trickery of filling cte_name (in interpreters) it is hard
-    /// to print it w/o newline (for !oneline case), since if nl_or_ws
+    /// to print it without newline (for !oneline case), since if nl_or_ws
     /// prepended here, then formatting will be incorrect with alias:
     ///
     ///   (select 1 in ((select 1) as sub))
@@ -58,6 +58,22 @@ void ASTSubquery::updateTreeHashImpl(SipHash & hash_state) const
     if (!cte_name.empty())
         hash_state.update(cte_name);
     IAST::updateTreeHashImpl(hash_state);
+}
+
+String ASTSubquery::getAliasOrColumnName() const
+{
+    if (!alias.empty())
+        return alias;
+    if (!cte_name.empty())
+        return cte_name;
+    return getColumnName();
+}
+
+String ASTSubquery::tryGetAlias() const
+{
+    if (!alias.empty())
+        return alias;
+    return cte_name;
 }
 
 }

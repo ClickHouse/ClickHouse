@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -259,11 +259,6 @@ private:
 
     /** cu must exist during the life cycle of created detail::Die. */
     Die getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const;
-
-    /**
-     * Find the actual definition DIE instead of declaration for the given die.
-     */
-    Die findDefinitionDie(const CompilationUnit & cu, const Die & die) const;
 
     bool findLocation(
         uintptr_t address,

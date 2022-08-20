@@ -8,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <bit>
 
 
 namespace DB
@@ -93,7 +94,7 @@ private:
             if (!first)
                 writeChar(',', out);
             first = false;
-            writeIntText(T(bit), out);
+            writeIntText(static_cast<T>(bit), out);
         }
     }
 
@@ -285,7 +286,7 @@ public:
             {
                 while (x)
                 {
-                    result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
+                    result_array_values_data.push_back(std::countr_zero(x));
                     x &= (x - 1);
                 }
             }
@@ -329,7 +330,7 @@ public:
 
 }
 
-void registerFunctionsBitToArray(FunctionFactory & factory)
+REGISTER_FUNCTION(BitToArray)
 {
     factory.registerFunction<FunctionBitPositionsToArray>();
     factory.registerFunction<FunctionBitmaskToArray>();

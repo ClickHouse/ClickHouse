@@ -1,5 +1,5 @@
 ---
-toc_priority: 105
+sidebar_position: 105
 ---
 
 # argMin {#agg-function-argmin}

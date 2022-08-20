@@ -183,7 +183,7 @@ struct ArrayAggregateImpl
                 {
                     size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
-                    res[i] = x * ResultType(array_size);
+                    res[i] = x * static_cast<ResultType>(array_size);
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::min ||
                                 aggregate_operation == AggregateOperation::max)
@@ -387,7 +387,7 @@ using FunctionArrayAverage = FunctionArrayMapped<ArrayAggregateImpl<AggregateOpe
 struct NameArrayProduct { static constexpr auto name = "arrayProduct"; };
 using FunctionArrayProduct = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::product>, NameArrayProduct>;
 
-void registerFunctionArrayAggregation(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayAggregation)
 {
     factory.registerFunction<FunctionArrayMin>();
     factory.registerFunction<FunctionArrayMax>();

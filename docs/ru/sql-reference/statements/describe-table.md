@@ -1,6 +1,6 @@
 ---
-toc_priority: 42
-toc_title: DESCRIBE
+sidebar_position: 42
+sidebar_label: DESCRIBE
 ---
 
 # DESCRIBE TABLE {#misc-describe-table}

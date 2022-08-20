@@ -8,6 +8,7 @@
 #include "IDictionarySource.h"
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 #include <Poco/Logger.h>
 #include <mutex>
 
@@ -51,7 +52,7 @@ public:
             const String & config_prefix,
             Block & sample_block);
 
-    Pipe loadAll() override;
+    QueryPipeline loadAll() override;
 
     bool supportsSelectiveLoad() const override { return true; }
 
@@ -64,11 +65,11 @@ public:
         return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, sample_block);
     }
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    Pipe loadUpdatedAll() override;
+    QueryPipeline loadUpdatedAll() override;
 
     String toString() const override;
 
@@ -82,9 +83,10 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
 
-    std::mutex connect_mutex;
     CassClusterPtr cluster;
-    CassSessionWeak maybe_session;
+
+    std::mutex connect_mutex;
+    CassSessionWeak maybe_session TSA_GUARDED_BY(connect_mutex);
 };
 }
 

@@ -1,6 +1,6 @@
 ---
-toc_priority: 46
-toc_title: 角色
+sidebar_position: 46
+sidebar_label: 角色
 ---
 
 ## 操作角色 {#alter-role-statement}

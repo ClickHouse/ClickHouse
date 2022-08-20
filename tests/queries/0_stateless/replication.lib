@@ -25,13 +25,18 @@ function try_sync_replicas()
         done
     done
 
+    i=0
     for t in "${tables_arr[@]}"
     do
         # The size of log may be big, so increase timeout.
-        $CLICKHOUSE_CLIENT --receive_timeout 400 -q "SYSTEM SYNC REPLICA $t" || $CLICKHOUSE_CLIENT -q \
-            "select 'sync failed, queue:', * from system.replication_queue where database=currentDatabase() and table='$t' order by database, table, node_name" &
+        $CLICKHOUSE_CLIENT --receive_timeout 300 -q "SYSTEM SYNC REPLICA $t" || ($CLICKHOUSE_CLIENT -q \
+            "select 'sync failed, queue:', * from system.replication_queue where database=currentDatabase() and table='$t' order by database, table, node_name" && exit 1) &
+        pids[${i}]=$!
+        i=$((i + 1))
     done
-    wait
+    for pid in ${pids[*]}; do
+        wait $pid || (echo "Failed to sync some replicas" && exit 1)
+    done
     echo "Replication did not hang: synced all replicas of $table_name_prefix"
 }
 
@@ -44,9 +49,9 @@ function check_replication_consistency()
     num_tries=0
     while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%'") -ne 1 ]]; do
         sleep 0.5;
-        num_tries=$((num_tries-1))
-        if [ $num_tries -eq 100 ]; then
-            $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%' FORMAT Vertical"
+        num_tries=$((num_tries+1))
+        if [ $num_tries -eq 200 ]; then
+            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%' FORMAT Vertical"
             break
         fi
     done
@@ -73,7 +78,7 @@ function check_replication_consistency()
     # SYNC REPLICA is not enough if some MUTATE_PARTs are not assigned yet
     wait_for_all_mutations "$table_name_prefix%"
 
-    try_sync_replicas "$table_name_prefix"
+    try_sync_replicas "$table_name_prefix" || exit 1
 
     res=$($CLICKHOUSE_CLIENT -q \
     "SELECT

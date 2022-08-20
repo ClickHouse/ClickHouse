@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #include <vector>
 #include <atomic>
@@ -21,10 +21,10 @@ class IDictionarySource
 public:
 
     /// Returns a pipe with all the data available from this source.
-    virtual Pipe loadAll() = 0;
+    virtual QueryPipeline loadAll() = 0;
 
     /// Returns a pipe with updated data available from this source.
-    virtual Pipe loadUpdatedAll() = 0;
+    virtual QueryPipeline loadUpdatedAll() = 0;
 
     /**
      * result_size_hint - approx number of rows in the stream.
@@ -59,7 +59,7 @@ public:
      *
      *   ...
      */
-    virtual Pipe loadAllWithSizeHint(std::atomic<size_t> * /* result_size_hint */)
+    virtual QueryPipeline loadAllWithSizeHint(std::atomic<size_t> * /* result_size_hint */)
     {
         return loadAll();
     }
@@ -72,13 +72,13 @@ public:
     /** Returns an input stream with the data for a collection of identifiers.
       * It must be guaranteed, that 'ids' array will live at least until all data will be read from returned stream.
       */
-    virtual Pipe loadIds(const std::vector<UInt64> & ids) = 0;
+    virtual QueryPipeline loadIds(const std::vector<UInt64> & ids) = 0;
 
     /** Returns an input stream with the data for a collection of composite keys.
       * `requested_rows` contains indices of all rows containing unique keys.
       * It must be guaranteed, that 'requested_rows' array will live at least until all data will be read from returned stream.
       */
-    virtual Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) = 0;
+    virtual QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) = 0;
 
     /// indicates whether the source has been modified since last load* operation
     virtual bool isModified() const = 0;

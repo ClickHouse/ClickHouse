@@ -6,6 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames_string"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames_from_string"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
 
@@ -36,5 +38,16 @@ ${CLICKHOUSE_CLIENT} -q \
 ) \
 GROUP BY player ORDER BY triple_doubles DESC, player LIMIT 5"
 
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames_string (data String) ENGINE = MergeTree ORDER BY tuple()"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE nbagames_from_string (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_object_type 1
+
+cat $CUR_DIR/data_json/nbagames_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO nbagames_string FORMAT JSONAsString"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO nbagames_from_string SELECT data FROM nbagames_string"
+
+${CLICKHOUSE_CLIENT} -q "SELECT \
+    (SELECT toTypeName(any(data)), sum(cityHash64(flattenTuple(data))) FROM nbagames_from_string) = \
+    (SELECT toTypeName(any(data)), sum(cityHash64(flattenTuple(data))) FROM nbagames)"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames_string"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS nbagames_from_string"

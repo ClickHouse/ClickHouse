@@ -1,6 +1,6 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
-#include <sys/poll.h>
+#include <poll.h>
 
 #include <Common/Stopwatch.h>
 
@@ -125,7 +125,7 @@ public:
             ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
 
             if (-1 == res && errno != EINTR)
-                throwFromErrno("Cannot read from pipe ", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
 
             if (res == 0)
                 break;
@@ -187,7 +187,7 @@ public:
             ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
-                throwFromErrno("Cannot write into pipe ", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+                throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
 
             if (res > 0)
                 bytes_written += res;
@@ -244,7 +244,7 @@ namespace
     *
     * If process_pool is passed in constructor then after source is destroyed process is returned to pool.
     */
-    class ShellCommandSource final : public SourceWithProgress
+    class ShellCommandSource final : public ISource
     {
     public:
 
@@ -260,7 +260,7 @@ namespace
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
-            : SourceWithProgress(sample_block_)
+            : ISource(sample_block_)
             , context(context_)
             , format(format_)
             , sample_block(sample_block_)
@@ -373,7 +373,7 @@ namespace
 
         Status prepare() override
         {
-            auto status = SourceWithProgress::prepare();
+            auto status = ISource::prepare();
 
             if (status == Status::Finished)
             {
@@ -578,9 +578,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         source_configuration,
         std::move(process_holder),
         process_pool);
-    auto pipe = Pipe(std::move(source));
 
-    return pipe;
+    return Pipe(std::move(source));
 }
 
 }

@@ -9,7 +9,6 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 
@@ -42,7 +41,15 @@ CSVRowInputFormat::CSVRowInputFormat(
     bool with_types_,
     const FormatSettings & format_settings_,
     std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_)
-    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_, std::move(format_reader_))
+    : RowInputFormatWithNamesAndTypes(
+        header_,
+        in_,
+        params_,
+        false,
+        with_names_,
+        with_types_,
+        format_settings_,
+        std::move(format_reader_))
 {
     const String bad_delimiters = " \t\"'.UL";
     if (bad_delimiters.find(format_settings.csv.delimiter) != String::npos)
@@ -113,7 +120,9 @@ String CSVFormatReader::readCSVFieldIntoString()
 
 void CSVFormatReader::skipField()
 {
-    readCSVFieldIntoString<true>();
+    skipWhitespacesAndTabs(*in);
+    NullOutput out;
+    readCSVStringInto(out, *in, format_settings.csv);
 }
 
 void CSVFormatReader::skipRowEndDelimiter()
@@ -258,17 +267,22 @@ bool CSVFormatReader::readField(
     }
 }
 
+void CSVFormatReader::skipPrefixBeforeHeader()
+{
+    for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
+        readRow();
+}
 
-CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_, ContextPtr context_)
+
+CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_)
     : FormatWithNamesAndTypesSchemaReader(
         in_,
-        format_setting_.max_rows_to_read_for_schema_inference,
+        format_setting_,
         with_names_,
         with_types_,
         &reader,
         getDefaultDataTypeForEscapingRule(FormatSettings::EscapingRule::CSV))
     , reader(in_, format_setting_)
-    , context(context_)
 {
 }
 
@@ -279,7 +293,7 @@ DataTypes CSVSchemaReader::readRowAndGetDataTypes()
         return {};
 
     auto fields = reader.readRow();
-    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), FormatSettings::EscapingRule::CSV, context);
+    return determineDataTypesByEscapingRule(fields, reader.getFormatSettings(), FormatSettings::EscapingRule::CSV);
 }
 
 
@@ -300,7 +314,7 @@ void registerInputFormatCSV(FormatFactory & factory)
     registerWithNamesAndTypes("CSV", register_func);
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows)
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows)
 {
     char * pos = in.position();
     bool quotes = false;
@@ -376,15 +390,16 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("CSV", register_func);
+    markFormatWithNamesAndTypesSupportsSamplingColumns("CSV", factory);
 }
 
 void registerCSVSchemaReader(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        factory.registerSchemaReader(format_name, [with_names, with_types](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
+        factory.registerSchemaReader(format_name, [with_names, with_types](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_shared<CSVSchemaReader>(buf, with_names, with_types, settings, context);
+            return std::make_shared<CSVSchemaReader>(buf, with_names, with_types, settings);
         });
     };
 

@@ -1,5 +1,5 @@
 ---
-toc_title: GROUP BY
+sidebar_label: GROUP BY
 ---
 
 # GROUP BY子句 {#select-group-by-clause}
@@ -7,7 +7,7 @@ toc_title: GROUP BY
 `GROUP BY` 子句将 `SELECT` 查询结果转换为聚合模式，其工作原理如下:
 
 -   `GROUP BY` 子句包含表达式列表（或单个表达式 -- 可以认为是长度为1的列表）。 这份名单充当 “grouping key”，而每个单独的表达式将被称为 “key expressions”.
--   在所有的表达式在 [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having.md)，和 [ORDER BY](../../../sql-reference/statements/select/order-by.md) 子句中 **必须** 基于键表达式进行计算 **或** 上 [聚合函数](../../../sql-reference/aggregate-functions/index.md) 在非键表达式（包括纯列）上。 换句话说，从表中选择的每个列必须用于键表达式或聚合函数内，但不能同时使用。
+-   在所有的表达式在 [SELECT](../../../sql-reference/statements/select/index.md), [HAVING](../../../sql-reference/statements/select/having)，和 [ORDER BY](../../../sql-reference/statements/select/order-by.md) 子句中 **必须** 基于键表达式进行计算 **或** 上 [聚合函数](../../../sql-reference/aggregate-functions/index.md) 在非键表达式（包括纯列）上。 换句话说，从表中选择的每个列必须用于键表达式或聚合函数内，但不能同时使用。
 -   聚合结果 `SELECT` 查询将包含尽可能多的行，因为有唯一值 “grouping key” 在源表中。 通常这会显着减少行数，通常是数量级，但不一定：如果所有行数保持不变 “grouping key” 值是不同的。
 
 !!! note "注"
@@ -56,7 +56,7 @@ toc_title: GROUP BY
 -   在 `Pretty*` 格式时，该行在主结果之后作为单独的表输出。
 -   在其他格式中，它不可用。
 
-`WITH TOTALS` 可以以不同的方式运行时 [HAVING](../../../sql-reference/statements/select/having.md) 是存在的。 该行为取决于 `totals_mode` 设置。
+`WITH TOTALS` 可以以不同的方式运行时 [HAVING](../../../sql-reference/statements/select/having) 是存在的。 该行为取决于 `totals_mode` 设置。
 
 ### 配置总和处理 {#configuring-totals-processing}
 
@@ -116,11 +116,11 @@ GROUP BY domain
 ### 在外部存储器中分组 {#select-group-by-in-external-memory}
 
 您可以启用将临时数据转储到磁盘以限制内存使用期间 `GROUP BY`.
-该 [max_bytes_before_external_group_by](../../../operations/settings/settings.md#settings-max_bytes_before_external_group_by) 设置确定倾销的阈值RAM消耗 `GROUP BY` 临时数据到文件系统。 如果设置为0（默认值），它将被禁用。
+该 [max_bytes_before_external_group_by](../../../operations/settings/query-complexity.md#settings-max_bytes_before_external_group_by) 设置确定倾销的阈值RAM消耗 `GROUP BY` 临时数据到文件系统。 如果设置为0（默认值），它将被禁用。
 
 使用时 `max_bytes_before_external_group_by`，我们建议您设置 `max_memory_usage` 大约两倍高。 这是必要的，因为聚合有两个阶段：读取数据和形成中间数据（1）和合并中间数据（2）。 将数据转储到文件系统只能在阶段1中发生。 如果未转储临时数据，则阶段2可能需要与阶段1相同的内存量。
 
-例如，如果 [max_memory_usage](../../../operations/settings/settings.md#settings_max_memory_usage) 设置为10000000000，你想使用外部聚合，这是有意义的设置 `max_bytes_before_external_group_by` 到10000000000，和 `max_memory_usage` 到20000000000。 当触发外部聚合（如果至少有一个临时数据转储）时，RAM的最大消耗仅略高于 `max_bytes_before_external_group_by`.
+例如，如果 [max_memory_usage](../../../operations/settings/query-complexity.md#settings_max_memory_usage) 设置为10000000000，你想使用外部聚合，这是有意义的设置 `max_bytes_before_external_group_by` 到10000000000，和 `max_memory_usage` 到20000000000。 当触发外部聚合（如果至少有一个临时数据转储）时，RAM的最大消耗仅略高于 `max_bytes_before_external_group_by`.
 
 通过分布式查询处理，在远程服务器上执行外部聚合。 为了使请求者服务器只使用少量的RAM，设置 `distributed_aggregation_memory_efficient` 到1。
 

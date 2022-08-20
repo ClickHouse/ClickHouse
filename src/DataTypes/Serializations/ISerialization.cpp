@@ -172,10 +172,6 @@ String getNameForSubstreamPath(
             else
                 stream_name += "." + it->tuple_element_name;
         }
-        else if (it->type == Substream::ObjectElement)
-        {
-            stream_name += escapeForFileName(".") + escapeForFileName(it->object_key_name);
-        }
     }
 
     return stream_name;
@@ -228,8 +224,10 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 
 void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
 {
-    if (cache && !path.empty())
-        cache->emplace(getSubcolumnNameForStream(path), column);
+    if (!cache || path.empty())
+        return;
+
+    cache->emplace(getSubcolumnNameForStream(path), column);
 }
 
 ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
@@ -238,10 +236,7 @@ ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const 
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path));
-    if (it == cache->end())
-        return nullptr;
-
-    return it->second;
+    return it == cache->end() ? nullptr : it->second;
 }
 
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)

@@ -7,6 +7,8 @@ CSVWithNamesAndTypes
 CustomSeparated
 CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
+JSONColumns
+JSONCompactColumns
 JSONCompactEachRow
 JSONCompactEachRowWithNames
 JSONCompactEachRowWithNamesAndTypes
@@ -14,8 +16,10 @@ JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
+JSONLines
 JSONStringsEachRow
 MsgPack
+NDJSON
 Native
 ORC
 Parquet

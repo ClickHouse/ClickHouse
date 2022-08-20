@@ -8,11 +8,6 @@
 
 namespace Poco
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
-
     namespace Redis
     {
         class Client;
@@ -82,18 +77,18 @@ namespace DB
 
         ~RedisDictionarySource() override;
 
-        Pipe loadAll() override;
+        QueryPipeline loadAll() override;
 
-        Pipe loadUpdatedAll() override
+        QueryPipeline loadUpdatedAll() override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
         }
 
         bool supportsSelectiveLoad() const override { return true; }
 
-        Pipe loadIds(const std::vector<UInt64> & ids) override;
+        QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-        Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+        QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
         bool isModified() const override { return true; }
 

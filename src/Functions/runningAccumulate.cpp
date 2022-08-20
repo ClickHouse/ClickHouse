@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 
 
 namespace DB
@@ -138,7 +138,7 @@ public:
 
 }
 
-void registerFunctionRunningAccumulate(FunctionFactory & factory)
+REGISTER_FUNCTION(RunningAccumulate)
 {
     factory.registerFunction<FunctionRunningAccumulate>();
 }

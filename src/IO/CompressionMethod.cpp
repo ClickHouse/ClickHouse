@@ -98,9 +98,21 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         ErrorCodes::NOT_IMPLEMENTED);
 }
 
+std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method)
+{
+    switch (method)
+    {
+        case CompressionMethod::Zstd:
+            return {1, 22};
+        case CompressionMethod::Lz4:
+            return {1, 12};
+        default:
+            return {1, 9};
+    }
+}
 
-std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment)
+static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
         return std::make_unique<ZlibInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
@@ -111,7 +123,7 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     if (method == CompressionMethod::Xz)
         return std::make_unique<LZMAInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
     if (method == CompressionMethod::Zstd)
-        return std::make_unique<ZstdInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
+        return std::make_unique<ZstdInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment, zstd_window_log_max);
     if (method == CompressionMethod::Lz4)
         return std::make_unique<Lz4InflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #if USE_BZIP2
@@ -123,12 +135,16 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
         return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
 
-    if (method == CompressionMethod::None)
-        return nested;
-
     throw Exception("Unsupported compression method", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, size_t buf_size, char * existing_memory, size_t alignment)
+{
+    if (method == CompressionMethod::None)
+        return nested;
+    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max);
+}
 
 std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     std::unique_ptr<WriteBuffer> nested, CompressionMethod method, int level, size_t buf_size, char * existing_memory, size_t alignment)

@@ -245,6 +245,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::SYNC_DATABASE_REPLICA:
+        {
+            parseQueryWithOnCluster(res, pos, expected);
+            if (!parseDatabaseAsAST(pos, expected, res->database))
+                return false;
+            break;
+        }
+
         case Type::RESTART_DISK:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
@@ -344,6 +352,46 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
             res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
+            break;
+        }
+        case Type::DROP_FILESYSTEM_CACHE:
+        {
+            ParserLiteral path_parser;
+            ASTPtr ast;
+            if (path_parser.parse(pos, ast, expected))
+                res->filesystem_cache_path = ast->as<ASTLiteral>()->value.safeGet<String>();
+            parseQueryWithOnCluster(res, pos, expected);
+            break;
+        }
+        case Type::DROP_SCHEMA_CACHE:
+        {
+            if (ParserKeyword{"FOR"}.ignore(pos, expected))
+            {
+                if (ParserKeyword{"FILE"}.ignore(pos, expected))
+                    res->schema_cache_storage = "FILE";
+                else if (ParserKeyword{"S3"}.ignore(pos, expected))
+                    res->schema_cache_storage = "S3";
+                else if (ParserKeyword{"HDFS"}.ignore(pos, expected))
+                    res->schema_cache_storage = "HDFS";
+                else if (ParserKeyword{"URL"}.ignore(pos, expected))
+                    res->schema_cache_storage = "URL";
+                else
+                    return false;
+            }
+            break;
+        }
+
+        case Type::UNFREEZE:
+        {
+            ASTPtr ast;
+            if (ParserKeyword{"WITH NAME"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
+            {
+                res->backup_name = ast->as<ASTLiteral &>().value.get<const String &>();
+            }
+            else
+            {
+                return false;
+            }
             break;
         }
 

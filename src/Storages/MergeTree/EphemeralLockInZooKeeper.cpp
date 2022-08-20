@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/types.h>
 
 
@@ -12,30 +12,53 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, Coordination::Requests * precheck_ops)
-    : zookeeper(&zookeeper_), path_prefix(path_prefix_)
+EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, zkutil::ZooKeeper & zookeeper_, const String & holder_path_)
+    : zookeeper(&zookeeper_), path_prefix(path_prefix_), holder_path(holder_path_)
+{
+    /// Write the path to the secondary node in the main node.
+    path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
+    if (path.size() <= path_prefix.size())
+        throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
+}
+
+std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
+    const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, const String & deduplication_path)
 {
     /// The /abandonable_lock- name is for backward compatibility.
     String holder_path_prefix = temp_path + "/abandonable_lock-";
+    String holder_path;
 
     /// Let's create an secondary ephemeral node.
-    if (!precheck_ops || precheck_ops->empty())
+    if (deduplication_path.empty())
     {
-        holder_path = zookeeper->create(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential);
+        holder_path = zookeeper_.create(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential);
     }
     else
     {
-        precheck_ops->emplace_back(zkutil::makeCreateRequest(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential));
-        Coordination::Responses op_results = zookeeper->multi(*precheck_ops);
-        holder_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
+        /// Check for duplicates in advance, to avoid superfluous block numbers allocation
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(deduplication_path, "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeRemoveRequest(deduplication_path, -1));
+        ops.emplace_back(zkutil::makeCreateRequest(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential));
+        Coordination::Responses responses;
+        Coordination::Error e = zookeeper_.tryMulti(ops, responses);
+        if (e != Coordination::Error::ZOK)
+        {
+            if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
+            {
+                return {};
+            }
+            else
+            {
+                zkutil::KeeperMultiException::check(e, ops, responses); // This should always throw the proper exception
+                throw Exception("Unable to handle error {} when acquiring ephemeral lock in ZK", ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+
+        holder_path = dynamic_cast<const Coordination::CreateResponse *>(responses.back().get())->path_created;
     }
 
-    /// Write the path to the secondary node in the main node.
-    path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
-
-    if (path.size() <= path_prefix.size())
-        throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
+    return EphemeralLockInZooKeeper{path_prefix_, zookeeper_, holder_path};
 }
 
 void EphemeralLockInZooKeeper::unlock()

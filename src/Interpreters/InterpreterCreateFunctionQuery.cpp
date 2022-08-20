@@ -34,7 +34,11 @@ BlockIO InterpreterCreateFunctionQuery::execute()
         access_rights_elements.emplace_back(AccessType::DROP_FUNCTION);
 
     if (!create_function_query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext(), access_rights_elements);
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = std::move(access_rights_elements);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
 
     auto current_context = getContext();
     current_context->checkAccess(access_rights_elements);
@@ -57,8 +61,12 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
 void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const String & name)
 {
-    auto & lambda_function = function->as<ASTFunction &>();
-    auto & lambda_function_expression_list = lambda_function.arguments->children;
+    ASTFunction * lambda_function = function->as<ASTFunction>();
+
+    if (!lambda_function)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected function, got: {}", function->formatForErrorMessage());
+
+    auto & lambda_function_expression_list = lambda_function->arguments->children;
 
     if (lambda_function_expression_list.size() != 2)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments and body");
