@@ -31,12 +31,13 @@ FileCache::FileCache(
     , max_file_segment_size(cache_settings_.max_file_segment_size)
     , log(&Poco::Logger::get("FileCache"))
     , allow_persistent_files(cache_settings_.do_not_evict_index_and_mark_files)
+    , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
+    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
     , background_download_max_memory_usage(cache_settings_.background_download_max_memory_usage)
+    , log(&Poco::Logger::get("FileCache"))
     , main_priority(std::make_unique<LRUFileCachePriority>())
     , stash_priority(std::make_unique<LRUFileCachePriority>())
     , max_stash_element_size(cache_settings_.max_elements)
-    , enable_cache_hits_threshold(cache_settings_.enable_cache_hits_threshold)
-    , enable_filesystem_query_cache_limit(cache_settings_.enable_filesystem_query_cache_limit)
 {
 }
 
@@ -1129,12 +1130,6 @@ size_t FileCache::getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_l
     return main_priority->getCacheSize(cache_lock);
 }
 
-size_t FileCache::getAvailableCacheSize() const
-{
-    std::lock_guard cache_lock(mutex);
-    return getAvailableCacheSizeUnlocked(cache_lock);
-}
-
 size_t FileCache::getAvailableCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const
 {
     return max_size - getUsedCacheSizeUnlocked(cache_lock);
@@ -1254,6 +1249,24 @@ void FileCache::assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lo
     assert(main_priority->getElementsNum(cache_lock) <= max_element_size);
 }
 
+FileCache::QueryContextHolder::QueryContextHolder(
+    const String & query_id_,
+    FileCache * cache_,
+    FileCache::QueryContextPtr context_)
+    : query_id(query_id_)
+    , cache(cache_)
+    , context(context_)
+{
+}
+
+FileCache::QueryContextHolder::~QueryContextHolder()
+{
+    /// If only the query_map and the current holder hold the context_query,
+    /// the query has been completed and the query_context is released.
+    if (context && context.use_count() == 2)
+        cache->removeQueryContext(query_id);
+}
+
 FileCache::QueryContextPtr FileCache::getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock)
 {
     if (!isQueryInitialized())
@@ -1310,24 +1323,6 @@ FileCache::QueryContextHolder FileCache::getQueryContextHolder(const String & qu
     /// we create context query for current query.
     auto context = getOrSetQueryContext(query_id, settings, cache_lock);
     return QueryContextHolder(query_id, this, context);
-}
-
-FileCache::QueryContextHolder::QueryContextHolder(
-    const String & query_id_,
-    FileCache * cache_,
-    FileCache::QueryContextPtr context_)
-    : query_id(query_id_)
-    , cache(cache_)
-    , context(context_)
-{
-}
-
-FileCache::QueryContextHolder::~QueryContextHolder()
-{
-    /// If only the query_map and the current holder hold the context_query,
-    /// the query has been completed and the query_context is released.
-    if (context && context.use_count() == 2)
-        cache->removeQueryContext(query_id);
 }
 
 void FileCache::QueryContext::remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock)

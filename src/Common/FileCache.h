@@ -135,18 +135,22 @@ private:
     size_t max_element_size;
     size_t max_file_segment_size;
 
+    bool allow_persistent_files;
+    size_t enable_cache_hits_threshold;
+    bool enable_filesystem_query_cache_limit;
+    size_t background_download_max_memory_usage;
+
     Poco::Logger * log;
     bool is_initialized = false;
 
     mutable std::mutex mutex;
 
-    bool allow_persistent_files;
-    size_t background_download_max_memory_usage;
-
     std::optional<ThreadPool> async_write_threadpool;
     size_t current_background_download_memory_usage = 0;
 
     void assertInitialized() const;
+
+    ThreadPool & getThreadPoolForAsyncWrite();
 
     bool tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
@@ -168,8 +172,6 @@ private:
         std::lock_guard<std::mutex> & cache_lock,
         std::unique_lock<std::mutex> & segment_lock);
 
-    ThreadPool & getThreadPoolForAsyncWrite();
-
     struct FileSegmentCell : private boost::noncopyable
     {
         FileSegmentPtr file_segment;
@@ -187,8 +189,7 @@ private:
         FileSegmentCell(FileSegmentPtr file_segment_, FileCache * cache, std::lock_guard<std::mutex> & cache_lock);
 
         FileSegmentCell(FileSegmentCell && other) noexcept
-            : file_segment(std::move(other.file_segment))
-            , queue_iterator(std::move(other.queue_iterator)) {}
+            : file_segment(std::move(other.file_segment)), queue_iterator(std::move(other.queue_iterator)) {}
     };
 
     using AccessKeyAndOffset = std::pair<Key, size_t>;
@@ -209,9 +210,9 @@ private:
 
     FileCacheRecords stash_records;
     std::unique_ptr<IFileCachePriority> stash_priority;
-
     size_t max_stash_element_size;
-    size_t enable_cache_hits_threshold;
+
+    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments getImpl(const Key & key, const FileSegment::Range & range, std::lock_guard<std::mutex> & cache_lock);
 
@@ -233,10 +234,6 @@ private:
         size_t size,
         QueryContextPtr query_context,
         std::lock_guard<std::mutex> & cache_lock);
-
-    size_t getAvailableCacheSize() const;
-
-    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
 
     FileSegments splitRangeIntoCells(
         const Key & key,
@@ -280,12 +277,6 @@ private:
             : max_cache_size(max_cache_size_)
             , skip_download_if_exceeds_query_cache(skip_download_if_exceeds_query_cache_) {}
 
-        void remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
-
-        void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
-
-        void use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
-
         size_t getMaxCacheSize() const { return max_cache_size; }
 
         size_t getCacheSize() const { return cache_size; }
@@ -293,12 +284,16 @@ private:
         FileCachePriorityPtr getPriority() const { return priority; }
 
         bool isSkipDownloadIfExceed() const { return skip_download_if_exceeds_query_cache; }
+
+        void remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
+
+        void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
+
+        void use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
     };
 
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
-
     QueryContextMap query_map;
-    bool enable_filesystem_query_cache_limit;
 
     QueryContextPtr getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock);
 
