@@ -22,6 +22,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     size_t marks_count_,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
     bool save_marks_in_cache_,
+    const ReadSettings & read_settings_,
     size_t columns_in_mark_)
     : data_part_storage(std::move(data_part_storage_))
     , mark_cache(mark_cache_)
@@ -29,7 +30,10 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     , marks_count(marks_count_)
     , index_granularity_info(index_granularity_info_)
     , save_marks_in_cache(save_marks_in_cache_)
-    , columns_in_mark(columns_in_mark_) {}
+    , columns_in_mark(columns_in_mark_)
+    , read_settings(read_settings_)
+{
+}
 
 const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
@@ -66,7 +70,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
-        auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+        auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
         buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
 
         if (!buffer->eof())
@@ -75,7 +79,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     }
     else
     {
-        auto buffer = data_part_storage->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size, std::nullopt);
+        auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
         size_t i = 0;
         while (!buffer->eof())
         {
