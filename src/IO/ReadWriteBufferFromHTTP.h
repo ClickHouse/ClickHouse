@@ -207,21 +207,7 @@ namespace detail
                 return *file_size;
 
             Poco::Net::HTTPResponse response;
-            for (size_t i = 0; i < settings.http_max_tries; ++i)
-            {
-                try
-                {
-                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
-                    break;
-                }
-                catch (const Poco::Exception & e)
-                {
-                    if (i == settings.http_max_tries - 1)
-                        throw;
-
-                    LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
-                }
-            }
+            getHeadResponse(response);
 
             if (response.hasContentLength())
             {
@@ -250,6 +236,25 @@ namespace detail
         InitializeError initialization_error = InitializeError::NONE;
 
     private:
+        void getHeadResponse(Poco::Net::HTTPResponse & response)
+        {
+            for (size_t i = 0; i < settings.http_max_tries; ++i)
+            {
+                try
+                {
+                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
+                    break;
+                }
+                catch (const Poco::Exception & e)
+                {
+                    if (i == settings.http_max_tries - 1)
+                        throw;
+
+                    LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
+                }
+            }
+        }
+
         void setupExternalBuffer()
         {
             /**
@@ -669,6 +674,22 @@ namespace detail
         }
 
         const std::string & getCompressionMethod() const { return content_encoding; }
+
+        std::optional<time_t> getLastModificationTime()
+        {
+            Poco::Net::HTTPResponse response;
+            getHeadResponse(response);
+            if (!response.has("Last-Modified"))
+                return std::nullopt;
+
+            String date_str = response.get("Last-Modified");
+            struct tm info;
+            char * res = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+            if (!res || res != date_str.data() + date_str.size())
+                return std::nullopt;
+
+            return timegm(&info);
+        }
     };
 }
 

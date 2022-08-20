@@ -94,6 +94,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
+    format_settings.json.try_infer_numbers_from_strings = settings.input_format_json_try_infer_numbers_from_strings;
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
@@ -158,6 +159,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.msgpack.output_uuid_representation = settings.output_format_msgpack_uuid_representation;
     format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
     format_settings.column_names_for_schema_inference = settings.column_names_for_schema_inference;
+    format_settings.schema_inference_hints = settings.schema_inference_hints;
     format_settings.mysql_dump.table_name = settings.input_format_mysql_dump_table_name;
     format_settings.mysql_dump.map_column_names = settings.input_format_mysql_dump_map_column_names;
     format_settings.sql_insert.max_batch_size = settings.output_format_sql_insert_max_batch_size;
@@ -165,6 +167,9 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.sql_insert.table_name = settings.output_format_sql_insert_table_name;
     format_settings.sql_insert.use_replace = settings.output_format_sql_insert_use_replace;
     format_settings.sql_insert.quote_names = settings.output_format_sql_insert_quote_names;
+    format_settings.try_infer_integers = settings.input_format_try_infer_integers;
+    format_settings.try_infer_dates = settings.input_format_try_infer_dates;
+    format_settings.try_infer_datetimes = settings.input_format_try_infer_datetimes;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -398,7 +403,10 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
         throw Exception("FormatFactory: Format " + name + " doesn't support schema inference.", ErrorCodes::LOGICAL_ERROR);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    return schema_reader_creator(buf, format_settings);
+    auto schema_reader = schema_reader_creator(buf, format_settings);
+    if (schema_reader->needContext())
+        schema_reader->setContext(context);
+    return schema_reader;
 }
 
 ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
@@ -563,6 +571,25 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name) co
 {
     const auto & target = getCreators(name);
     return target.supports_subset_of_columns;
+}
+
+void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
+    const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter)
+{
+    auto & target = dict[name].additional_info_for_schema_cache_getter;
+    if (target)
+        throw Exception("FormatFactory: additional info for schema cache getter " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(additional_info_for_schema_cache_getter);
+}
+
+String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+{
+    const auto & additional_info_getter = getCreators(name).additional_info_for_schema_cache_getter;
+    if (!additional_info_getter)
+        return "";
+
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    return additional_info_getter(format_settings);
 }
 
 bool FormatFactory::isInputFormat(const String & name) const
