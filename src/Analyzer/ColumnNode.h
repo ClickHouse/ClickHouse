@@ -15,13 +15,13 @@ namespace DB
   * For table ALIAS columns. Column node must contain expression.
   * For ARRAY JOIN join expression column. Column node must contain expression.
   *
-  * Additionaly column must be initialized with column name qualification if there are multiple
-  * unqualified columns with same name in query scope.
-  * Example: SELECT a.id, b.id FROM test_table_join_1 AS a, test_table_join_1.
-  * Both columns a.id and b.id have same unqualified name id. And additionally must be initialized
-  * with qualification a and b.
-  *
   * During query analysis pass identifier node is resolved into column. See IdentifierNode.h.
+  *
+  * It is also important for client provide display identifier for AST conversion in case of JOINS are used.
+  * Example: SELECT t1.id, t2.id FROM test_table_1 AS t1, test_table_2 AS t2.
+  * In this example t1.id will be column with name id, but during conversion to AST, to keep AST valid it is important
+  * to save column name qualification. Display identifier does not take part in implementation of tree hash,
+  * or tree equals operator. It is only used during AST conversion.
   *
   * Examples:
   * SELECT id FROM test_table. id is identifier that must be resolved to column node during query analysis pass.
@@ -44,12 +44,6 @@ public:
     /// Construct expression column node with column name, type, column expression and column source weak pointer.
     ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
 
-    /// Construct column node with column name, type, column name qualification and column source weak pointer.
-    ColumnNode(NameAndTypePair column_, String column_name_qualification_, QueryTreeNodeWeakPtr column_source_);
-
-    /// Construct expression column node with column name, type, column name qualification column expression and column source weak pointer.
-    ColumnNode(NameAndTypePair column_, String column_name_qualification_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_);
-
     /// Get column
     const NameAndTypePair & getColumn() const
     {
@@ -62,20 +56,27 @@ public:
         return column.name;
     }
 
-    bool hasColumnNameQualfication() const
+    /// Set display identifier that will be used during convertion to AST
+    void setDisplayIdentifier(const Identifier & display_identifier_value)
     {
-        return !column_name_qualification.empty();
+        display_identifier = display_identifier_value;
     }
 
-    const String & getColumnQualification() const
+    const Identifier & getDisplayIdentifier() const
     {
-        return column_name_qualification;
+        return display_identifier;
     }
 
     /// Get column type
     const DataTypePtr & getColumnType() const
     {
         return column.type;
+    }
+
+    /// Set column type
+    void setColumnType(DataTypePtr column_type)
+    {
+        column.type = std::move(column_type);
     }
 
     bool hasExpression() const
@@ -91,6 +92,19 @@ public:
     QueryTreeNodePtr & getExpression()
     {
         return children[expression_child_index];
+    }
+
+    QueryTreeNodePtr & getExpressionOrThrow()
+    {
+        if (!children[expression_child_index])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column expression is not initialized");
+
+        return children[expression_child_index];
+    }
+
+    void setExpression(QueryTreeNodePtr expression_value)
+    {
+        children[expression_child_index] = std::move(expression_value);
     }
 
     /** Get column source.
@@ -134,8 +148,8 @@ protected:
 
 private:
     NameAndTypePair column;
-    String column_name_qualification;
     QueryTreeNodeWeakPtr column_source;
+    Identifier display_identifier;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;
