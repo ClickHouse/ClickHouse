@@ -444,7 +444,7 @@ inline void usage(FILE * out, const char * name)
         "\t--decompressor - path to decompressor\n"
         "\t--exec - path to an input file to execute after decompression, if omitted then\n"
         "\t         an <input_file> having the same name as <output_file> becomes such executable.\n"
-        "\t         This executable uppon decompression will substitute started compressed preserving compressed name.\n",
+        "\t         This executable upon decompression will substitute started compressed preserving compressed name.\n",
         name, ZSTD_maxCLevel());
 }
 
