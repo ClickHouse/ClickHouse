@@ -8,13 +8,17 @@ function(build_cargo target_name project_dir)
     endif()
 
     execute_process(COMMAND rustup target add x86_64-unknown-linux-gnu)
-    set(TARGET_SPEC "x86_64-unknown-linux-gnu")
-    message("Initializing Rust toolchain, default is ${TARGET_SPEC}")
-    set(RUSTFLAGS "-l dylib=../sysroot/linux-x86_64/x86_64-linux-gnu/libc/usr/lib64/libc.so")
-
     set(OSX_RUST_ROOT "")
 
     message(STATUS "Toolchain file for ${target_name}: ${CMAKE_TOOLCHAIN_FILE}")
+
+    set(TARGET_CP "0")
+
+    if(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64")
+        set(TARGET_SPEC "x86_64-unknown-linux-gnu")
+        set(TARGET_CP "1")
+    endif()
+
     if(CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-aarch64")
         set(TARGET_SPEC "aarch64-unknown-linux-gnu")
         message("Checking Rust toolchain for special target")
@@ -60,18 +64,17 @@ function(build_cargo target_name project_dir)
 
     set(output_library ${CMAKE_CURRENT_BINARY_DIR}/${TARGET_SPEC}/${TARGET_DIR}/lib${target_name}.a)
 
-    set(TARGET_SPEC "--target=${TARGET_SPEC}")
+    set(TARGET_SPEC_FLAG "--target=${TARGET_SPEC}")
 
-    if(TARGET_SPEC STREQUAL "--target=")
-        set(TARGET_SPEC "")
+    if(TARGET_SPEC_FLAG STREQUAL "--target=")
+        set(TARGET_SPEC_FLAG "")
     endif()
 
     add_custom_command(
         COMMENT ${compile_message}
         COMMAND export BUILD_FOR_OSX=${OSX_RUST_ROOT}
-        COMMAND env CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} ${RUSTFLAGS} cargo build -v ${CARGO_RELEASE_FLAG} ${TARGET_SPEC}
-        COMMAND cp ${output_library} ${CMAKE_CURRENT_BINARY_DIR}
-        COMMAND cat ./include/blake3.h
+        COMMAND env CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} cargo rustc -v ${CARGO_RELEASE_FLAG} ${TARGET_SPEC_FLAG}
+        COMMAND if [ ${TARGET_CP} = 0 ]\; then cp ${output_library} ${CMAKE_CURRENT_BINARY_DIR}\; else cp ./libblake_test/* ${CMAKE_CURRENT_BINARY_DIR}/${TARGET_SPEC}/${TARGET_DIR}\; fi
         OUTPUT ${output_library}
         WORKING_DIRECTORY ${project_dir})
 

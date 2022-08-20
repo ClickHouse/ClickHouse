@@ -14,6 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "x86_64-apple-darwin" => {
             // no glibc requirements in https://doc.rust-lang.org/stable/rustc/platform-support.html
+            println!("");
         },
         "x86_64-unknown-freebsd" => {
             println!("cargo:rustc-link-lib=dylib={}/../sysroot/freebsd-x86_64/usr/lib/libc.so", crate_dir);
