@@ -31,22 +31,6 @@ ColumnNode::ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node
     children[expression_child_index] = std::move(expression_node_);
 }
 
-ColumnNode::ColumnNode(NameAndTypePair column_, String column_name_qualification_, QueryTreeNodeWeakPtr column_source_)
-    : column(std::move(column_))
-    , column_name_qualification(std::move(column_name_qualification_))
-    , column_source(std::move(column_source_))
-{
-}
-
-ColumnNode::ColumnNode(NameAndTypePair column_, String column_name_qualification_, QueryTreeNodePtr expression_node_, QueryTreeNodeWeakPtr column_source_)
-    : column(std::move(column_))
-    , column_name_qualification(std::move(column_name_qualification_))
-    , column_source(std::move(column_source_))
-{
-    children.resize(children_size);
-    children[expression_child_index] = std::move(expression_node_);
-}
-
 QueryTreeNodePtr ColumnNode::getColumnSource() const
 {
     auto lock = column_source.lock();
@@ -68,9 +52,6 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
 
     buffer << ", column_name: " << column.name << ", result_type: " << column.type->getName();
 
-    if (!column_name_qualification.empty())
-        buffer << ", column_name_qualification: " << column_name_qualification;
-
     auto column_source_ptr = column_source.lock();
     if (column_source_ptr)
         buffer << ", source_id: " << state.getNodeId(column_source_ptr.get());
@@ -87,7 +68,7 @@ void ColumnNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & state, size_t 
 bool ColumnNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const ColumnNode &>(rhs);
-    if (column != rhs_typed.column || column_name_qualification != rhs_typed.column_name_qualification)
+    if (column != rhs_typed.column)
         return false;
 
     auto source_ptr = column_source.lock();
@@ -112,9 +93,6 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(column_type_name.size());
     hash_state.update(column_type_name);
 
-    hash_state.update(column_name_qualification.size());
-    hash_state.update(column_name_qualification);
-
     auto column_source_ptr = column_source.lock();
     if (column_source_ptr)
         column_source_ptr->updateTreeHashImpl(hash_state);
@@ -122,7 +100,10 @@ void ColumnNode::updateTreeHashImpl(HashState & hash_state) const
 
 QueryTreeNodePtr ColumnNode::cloneImpl() const
 {
-    return std::make_shared<ColumnNode>(column, column_name_qualification, column_source);
+    auto clone_result = std::make_shared<ColumnNode>(column, column_source);
+    clone_result->display_identifier = display_identifier;
+
+    return clone_result;
 }
 
 void ColumnNode::getPointersToUpdateAfterClone(QueryTreePointersToUpdate & pointers_to_update)
@@ -137,9 +118,9 @@ void ColumnNode::getPointersToUpdateAfterClone(QueryTreePointersToUpdate & point
 
 ASTPtr ColumnNode::toASTImpl() const
 {
-    if (!column_name_qualification.empty())
+    if (!display_identifier.empty())
     {
-        std::vector<String> parts = {column_name_qualification, column.name};
+        std::vector<String> parts = display_identifier.getParts();
         return std::make_shared<ASTIdentifier>(std::move(parts));
     }
 
