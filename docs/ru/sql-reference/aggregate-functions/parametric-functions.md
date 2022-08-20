@@ -29,13 +29,13 @@ histogram(number_of_bins)(values)
 
 -   [Массив](../../sql-reference/data-types/array.md) [кортежей](../../sql-reference/data-types/tuple.md) следующего вида:
 
-        ```
-        [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
-        ```
+```
+[(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+```
 
-        - `lower` — нижняя граница корзины.
-        - `upper` — верхняя граница корзины.
-        - `height` — количество значений в корзине.
+- `lower` — нижняя граница корзины.
+- `upper` — верхняя граница корзины.
+- `height` — количество значений в корзине.
 
 **Пример**
 
@@ -497,6 +497,7 @@ FROM
 Задача: показывать в отчёте только поисковые фразы, по которым было хотя бы 5 уникальных посетителей.
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
+
 
 ## sequenceNextNode {#sequenceNextNode}
 
