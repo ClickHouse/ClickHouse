@@ -170,7 +170,7 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     /// Can be overridden by environment variable (cannot use server config at this moment).
     if (argc > 0)
     {
-        const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE");
+        const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE"); // NOLINT
         if (env_watchdog)
         {
             if (0 == strcmp(env_watchdog, "1"))
@@ -658,6 +658,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 
+#if USE_HDFS
+    /// This will point libhdfs3 to the right location for its config.
+    /// Note: this has to be done once at server initialization, because 'setenv' is not thread-safe.
+
+    String libhdfs3_conf = config().getString("hdfs.libhdfs3_conf", "");
+    if (!libhdfs3_conf.empty())
+    {
+        if (std::filesystem::path{libhdfs3_conf}.is_relative() && !std::filesystem::exists(libhdfs3_conf))
+        {
+            const String config_path = config().getString("config-file", "config.xml");
+            const auto config_dir = std::filesystem::path{config_path}.remove_filename();
+            if (std::filesystem::exists(config_dir / libhdfs3_conf))
+                libhdfs3_conf = std::filesystem::absolute(config_dir / libhdfs3_conf);
+        }
+        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), true /* overwrite */); // NOLINT
+    }
+#endif
+
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -698,8 +716,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     GlobalThreadPool::initialize(
         config().getUInt("max_thread_pool_size", 10000),
         config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
-    );
+        config().getUInt("thread_pool_queue_size", 10000));
 
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
@@ -840,7 +857,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                     LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
                     if (0 != mlock(addr, len))
-                        LOG_WARNING(log, "Failed mlock: {}", errnoToString(ErrorCodes::SYSTEM_ERROR));
+                        LOG_WARNING(log, "Failed mlock: {}", errnoToString());
                     else
                         LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
                 }
@@ -908,7 +925,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             rlim.rlim_cur = config().getUInt("max_open_files", rlim.rlim_max);
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
-                LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, strerror(errno));
+                LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString());
             else
                 LOG_DEBUG(log, "Set max number of file descriptors to {} (was {}).", rlim.rlim_cur, old);
         }
@@ -931,7 +948,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             int rc = setrlimit(RLIMIT_NPROC, &rlim);
             if (rc != 0)
             {
-                LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, strerror(errno));
+                LOG_WARNING(log, "Cannot set max number of threads to {}. error: {}", rlim.rlim_cur, errnoToString());
                 rlim.rlim_cur = old;
             }
             else

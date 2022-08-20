@@ -708,7 +708,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// dpkg or apt installers can ask for non-interactive work explicitly.
 
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
+        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT
         bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;

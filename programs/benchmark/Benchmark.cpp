@@ -120,7 +120,7 @@ public:
     void initialize(Poco::Util::Application & self [[maybe_unused]]) override
     {
         std::string home_path;
-        const char * home_path_cstr = getenv("HOME");
+        const char * home_path_cstr = getenv("HOME"); // NOLINT
         if (home_path_cstr)
             home_path = home_path_cstr;
 
@@ -613,15 +613,15 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         std::optional<std::string> env_password_str;
         std::optional<std::string> env_quota_key_str;
 
-        const char * env_user = getenv("CLICKHOUSE_USER");
+        const char * env_user = getenv("CLICKHOUSE_USER"); // NOLINT
         if (env_user != nullptr)
             env_user_str.emplace(std::string(env_user));
 
-        const char * env_password = getenv("CLICKHOUSE_PASSWORD");
+        const char * env_password = getenv("CLICKHOUSE_PASSWORD"); // NOLINT
         if (env_password != nullptr)
             env_password_str.emplace(std::string(env_password));
 
-        const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY");
+        const char * env_quota_key = getenv("CLICKHOUSE_QUOTA_KEY"); // NOLINT
         if (env_quota_key != nullptr)
             env_quota_key_str.emplace(std::string(env_quota_key));
 
