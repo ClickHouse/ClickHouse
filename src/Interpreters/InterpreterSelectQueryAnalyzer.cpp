@@ -64,7 +64,7 @@ namespace ErrorCodes
 
 /** ClickHouse query planner.
   *
-  * TODO: JOIN support ASOF. JOIN support strictness. JOIN support constants
+  * TODO: JOIN support ASOF. JOIN support strictness. JOIN support constants. JOIN support ON t1.id = t1.id
   * TODO: JOIN drop unnecessary columns after ON, USING section
   * TODO: Support display names
   * TODO: Support RBAC. Support RBAC for ALIAS columns.
@@ -1395,9 +1395,22 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
             auto right_equals_expression_side = *right_equals_expression_side_optional;
 
             if (left_equals_expression_side != right_equals_expression_side)
-                join_clause.addKey(equals_left_child, equals_right_child);
+            {
+                const ActionsDAG::Node * left_key = equals_left_child;
+                const ActionsDAG::Node * right_key = equals_right_child;
+
+                if (left_equals_expression_side == JoinTableSide::Right)
+                {
+                    left_key = equals_right_child;
+                    right_key = equals_left_child;
+                }
+
+                join_clause.addKey(left_key, right_key);
+            }
             else
+            {
                 join_clause.addCondition(left_equals_expression_side, join_expressions_actions_node);
+            }
         }
 
         return;
@@ -1874,7 +1887,6 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
 
     auto columns_from_joined_table = right_plan.getCurrentDataStream().header.getNamesAndTypesList();
     table_join->setColumnsFromJoinedTable(columns_from_joined_table, left_table_names_set, "");
-
 
     for (auto & column_from_joined_table : columns_from_joined_table)
     {

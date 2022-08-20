@@ -86,6 +86,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int TYPE_MISMATCH;
+    extern const int AMBIGUOUS_IDENTIFIER;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -1391,10 +1392,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTable(const IdentifierLo
 QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     const auto & from_join_node = table_expression_node->as<const JoinNode &>();
+    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
 
     std::unordered_map<std::string, ColumnNodePtr> join_using_column_name_to_column_node;
 
-    if (from_join_node.isUsingJoinExpression())
+    if (!join_node_in_resolve_process && from_join_node.isUsingJoinExpression())
     {
         auto & join_using_list = from_join_node.getJoinExpression()->as<ListNode &>();
 
@@ -1411,7 +1413,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     std::optional<JoinTableSide> resolved_side;
     QueryTreeNodePtr resolved_identifier;
 
-    auto resolve_from_using_column = [&](const QueryTreeNodePtr & using_column, JoinTableSide expression_side, Identifier display_identifier)
+    auto resolve_from_using_column = [&](const QueryTreeNodePtr & using_column, JoinTableSide expression_side)
     {
         auto & using_column_node = using_column->as<ColumnNode &>();
         auto & using_expression_list = using_column_node.getExpression()->as<ListNode &>();
@@ -1421,7 +1423,6 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
         auto result_column_node = inner_column_node->clone();
         auto & result_column = result_column_node->as<ColumnNode &>();
-        result_column.setDisplayIdentifier(display_identifier);
         result_column.setColumnType(using_column_node.getColumnType());
 
         return result_column_node;
@@ -1439,11 +1440,11 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
             && left_resolved_column.getColumnName() == right_resolved_column.getColumnName())
         {
             JoinTableSide using_column_inner_column_table_side = isRight(join_kind) ? JoinTableSide::Right : JoinTableSide::Left;
-            resolved_identifier = resolve_from_using_column(using_column_node_it->second, using_column_inner_column_table_side, left_resolved_column.getDisplayIdentifier());
+            resolved_identifier = resolve_from_using_column(using_column_node_it->second, using_column_inner_column_table_side);
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "JOIN {} ambigious identifier {}. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
                 identifier_lookup.identifier.getFullName(),
@@ -1455,11 +1456,20 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         resolved_side = JoinTableSide::Left;
         auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
 
+        resolved_identifier = left_resolved_identifier;
+
         auto using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
-        if (using_column_node_it != join_using_column_name_to_column_node.end())
-            resolved_identifier = resolve_from_using_column(using_column_node_it->second, JoinTableSide::Left, left_resolved_column.getDisplayIdentifier());
+        if (using_column_node_it != join_using_column_name_to_column_node.end() &&
+            !using_column_node_it->second->getColumnType()->equals(*left_resolved_column.getColumnType()))
+        {
+            auto left_resolved_column_clone = std::static_pointer_cast<ColumnNode>(left_resolved_column.clone());
+            left_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
+            resolved_identifier = std::move(left_resolved_column_clone);
+        }
         else
+        {
             resolved_identifier = left_resolved_identifier;
+        }
     }
     else if (right_resolved_identifier)
     {
@@ -1467,13 +1477,19 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
 
         auto using_column_node_it = join_using_column_name_to_column_node.find(right_resolved_column.getColumnName());
-        if (using_column_node_it != join_using_column_name_to_column_node.end())
-            resolved_identifier = resolve_from_using_column(using_column_node_it->second, JoinTableSide::Right, right_resolved_column.getDisplayIdentifier());
+        if (using_column_node_it != join_using_column_name_to_column_node.end() &&
+            !using_column_node_it->second->getColumnType()->equals(*right_resolved_column.getColumnType()))
+        {
+            auto right_resolved_column_clone = std::static_pointer_cast<ColumnNode>(right_resolved_column.clone());
+            right_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
+            resolved_identifier = std::move(right_resolved_column_clone);
+        }
         else
+        {
             resolved_identifier = right_resolved_identifier;
+        }
     }
 
-    bool join_node_in_resolve_process = scope.table_expressions_in_resolve_process.contains(table_expression_node.get());
     if (join_node_in_resolve_process || !resolved_identifier)
         return resolved_identifier;
 
@@ -2684,20 +2700,20 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
                     scope.alias_name_to_expression_node.erase(node_alias);
             }
 
+            bool node_already_cloned = false;
+
             if (!node && allow_table_expression)
             {
                 node = tryResolveIdentifier({unresolved_identifier, IdentifierLookupContext::TABLE}, scope).resolved_identifier;
 
-                if (node)
-                {
-                    /// If table identifier is resolved as CTE clone it
-                    bool resolved_as_cte = node->as<QueryNode>() && node->as<QueryNode>()->isCTE();
+                /// If table identifier is resolved as CTE clone it
+                bool resolved_as_cte = node && node->as<QueryNode>() && node->as<QueryNode>()->isCTE();
 
-                    if (resolved_as_cte)
-                    {
-                        node = node->clone();
-                        node->as<QueryNode &>().setIsCTE(false);
-                    }
+                if (resolved_as_cte)
+                {
+                    node_already_cloned = true;
+                    node = node->clone();
+                    node->as<QueryNode &>().setIsCTE(false);
                 }
             }
 
@@ -2717,6 +2733,9 @@ void QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, IdentifierRes
                     unresolved_identifier.getFullName(),
                     scope.scope_node->formatASTForErrorMessage());
             }
+
+            if (!node_already_cloned)
+                node = node->clone();
 
             node->setAlias(node_alias);
             break;
@@ -3248,14 +3267,14 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     IdentifierLookup identifier_lookup {identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
                     auto result_left_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node.getLeftTableExpression(), scope);
                     if (!result_left_table_expression)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "JOIN {} using identifier {} cannot be resolved from left table expression. In scope {}",
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "JOIN {} using identifier {} cannot be resolved from left table expression. In scope {}",
                             join_node.formatASTForErrorMessage(),
                             identifier_full_name,
                             scope.scope_node->formatASTForErrorMessage());
 
                     auto result_right_table_expression = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node.getRightTableExpression(), scope);
                     if (!result_right_table_expression)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "JOIN {} using identifier {} cannot be resolved from right table expression. In scope {}",
+                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "JOIN {} using identifier {} cannot be resolved from right table expression. In scope {}",
                             join_node.formatASTForErrorMessage(),
                             identifier_full_name,
                             scope.scope_node->formatASTForErrorMessage());
