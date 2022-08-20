@@ -8,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <bit>
 
 
 namespace DB
@@ -285,7 +286,7 @@ public:
             {
                 while (x)
                 {
-                    result_array_values_data.push_back(getTrailingZeroBitsUnsafe(x));
+                    result_array_values_data.push_back(std::countr_zero(x));
                     x &= (x - 1);
                 }
             }

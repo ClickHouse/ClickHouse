@@ -368,6 +368,7 @@ SHOW ACCESS
 
 :::info "Note"
     По запросу `SHOW CLUSTER name` вы получите содержимое таблицы system.clusters для этого кластера.
+:::
 
 ### Синтаксис {#show-cluster-syntax}
 

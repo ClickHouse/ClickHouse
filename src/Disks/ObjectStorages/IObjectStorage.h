@@ -16,6 +16,7 @@
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Common/ThreadPool.h>
+#include <Common/FileCache.h>
 #include <Disks/WriteMode.h>
 
 
@@ -39,8 +40,6 @@ struct RelativePathWithSize
 };
 using RelativePathsWithSize = std::vector<RelativePathWithSize>;
 
-
-using StoredObjects = std::vector<StoredObject>;
 
 struct ObjectMetadata
 {
@@ -127,7 +126,7 @@ public:
     virtual ~IObjectStorage() = default;
 
     /// Path to directory with objects cache
-    virtual std::string getCacheBasePath() const;
+    virtual const std::string & getCacheBasePath() const;
 
     static AsynchronousReaderPtr getThreadPoolReader();
 
@@ -169,13 +168,21 @@ public:
 
     virtual bool supportsCache() const { return false; }
 
+    virtual bool isReadOnly() const { return false; }
+
+    virtual bool supportParallelWrite() const { return false; }
+
+    virtual ReadSettings getAdjustedSettingsFromMetadataFile(const ReadSettings & settings, const std::string & /* path */) const { return settings; }
+
+    virtual WriteSettings getAdjustedSettingsFromMetadataFile(const WriteSettings & settings, const std::string & /* path */) const { return settings; }
+
 protected:
     /// Should be called from implementation of applyNewSettings()
     void applyRemoteThrottlingSettings(ContextPtr context);
 
     /// Should be used by implementation of read* and write* methods
-    ReadSettings patchSettings(const ReadSettings & read_settings) const;
-    WriteSettings patchSettings(const WriteSettings & write_settings) const;
+    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
 private:
     mutable std::mutex throttlers_mutex;

@@ -125,9 +125,8 @@ void assertDigest(
     {
         LOG_FATAL(
             &Poco::Logger::get("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest version "
-            "{}). Keeper will "
-            "terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
+            "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
+            "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
             request.getOpNum(),
             first.value,
@@ -196,13 +195,21 @@ void KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
         return;
 
     std::lock_guard lock(storage_and_responses_lock);
-    storage->preprocessRequest(
-        request_for_session.request,
-        request_for_session.session_id,
-        request_for_session.time,
-        request_for_session.zxid,
-        true /* check_acl */,
-        request_for_session.digest);
+    try
+    {
+        storage->preprocessRequest(
+            request_for_session.request,
+            request_for_session.session_id,
+            request_for_session.time,
+            request_for_session.zxid,
+            true /* check_acl */,
+            request_for_session.digest);
+    }
+    catch (...)
+    {
+        rollbackRequest(request_for_session, true);
+        throw;
+    }
 
     if (keeper_context->digest_enabled && request_for_session.digest)
         assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, false);
@@ -311,11 +318,16 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     if (!request_for_session.zxid)
         request_for_session.zxid = log_idx;
 
+    rollbackRequest(request_for_session, false);
+}
+
+void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing)
+{
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
     std::lock_guard lock(storage_and_responses_lock);
-    storage->rollbackRequest(request_for_session.zxid);
+    storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
@@ -383,7 +395,14 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
     };
 
 
-    LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flash to disk", s.get_last_log_idx());
+    if (keeper_context->server_state == KeeperContext::Phase::SHUTDOWN)
+    {
+        LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
+        return;
+    }
+
+    LOG_DEBUG(log, "In memory snapshot {} created, queueing task to flush to disk", s.get_last_log_idx());
     /// Flush snapshot to disk in a separate thread.
     if (!snapshots_queue.push(std::move(snapshot_task)))
         LOG_WARNING(log, "Cannot push snapshot task into queue");

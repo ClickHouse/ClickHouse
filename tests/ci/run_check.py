@@ -10,7 +10,7 @@ from commit_status_helper import (
     get_commit,
     post_labels,
     remove_labels,
-    create_simple_check,
+    reset_mergeable_check,
 )
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
@@ -196,7 +196,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
     description_error, category = check_pr_description(pr_info)
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    create_simple_check(gh, pr_info)
+    reset_mergeable_check(commit, "skipped")
 
     if description_error:
         print(

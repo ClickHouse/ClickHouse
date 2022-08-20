@@ -389,12 +389,6 @@ SETTINGS mutations_sync = 1;
 
 Let's run the same 3 queries.
 
-[Enable](../../operations/settings/settings.md#allow-experimental-projection-optimization) projections for selects:
-
-```sql
-SET allow_experimental_projection_optimization = 1;
-```
-
 ### Query 1. Average Price Per Year {#average-price-projections}
 
 Query:

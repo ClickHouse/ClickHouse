@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using ReadBufferIterator = std::function<std::unique_ptr<ReadBuffer>()>;
+using ReadBufferIterator = std::function<std::unique_ptr<ReadBuffer>(ColumnsDescription &)>;
 
 /// Try to determine the schema of the data in specifying format.
 /// For formats that have an external schema reader, it will
@@ -46,4 +46,9 @@ DataTypePtr makeNullableRecursivelyAndCheckForNothing(DataTypePtr type);
 /// Call makeNullableRecursivelyAndCheckForNothing for all types
 /// in the block and return names and types.
 NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header);
+
+String getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+Strings getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+
+void splitSchemaCacheKey(const String & key, String & source, String & format, String & additional_format_info);
 }

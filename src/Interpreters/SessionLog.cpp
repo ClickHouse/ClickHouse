@@ -182,12 +182,10 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
         auto & names_col = *settings_tuple_col.getColumnPtr(0)->assumeMutable();
         auto & values_col = assert_cast<ColumnString &>(*settings_tuple_col.getColumnPtr(1)->assumeMutable());
 
-        size_t items_added = 0;
         for (const auto & kv : settings)
         {
             names_col.insert(kv.first);
             values_col.insert(kv.second);
-            ++items_added;
         }
 
         auto & offsets = settings_array_col.getOffsets();

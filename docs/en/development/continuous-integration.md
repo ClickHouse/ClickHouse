@@ -171,11 +171,11 @@ concurrency-related errors. If it fails:
 
 ## Split Build Smoke Test
 
-Checks that the server build in [split build](../development/build.md#split-build)
+Checks that the server build in [split build](../development/developer-instruction.md#split-build)
 configuration can start and run simple queries.  If it fails:
 
     * Fix other test errors first;
-    * Build the server in [split build](../development/build.md#split-build) configuration
+    * Build the server in [split build](../development/developer-instruction.md#split-build) configuration
       locally and check whether it can start and run `select 1`.
 
 

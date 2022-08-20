@@ -64,6 +64,8 @@ private:
 
     std::shared_ptr<KeeperContext> keeper_context;
 
+    const bool create_snapshot_on_exit;
+
 public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,
