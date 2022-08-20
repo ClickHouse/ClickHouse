@@ -16,7 +16,7 @@ void OpenTelemetrySpan::addAttribute(const std::string & name, UInt64 value)
     if (trace_id == UUID() || name.empty())
         return;
 
-    this->attributes.push_back(Tuple{name, std::to_string(value)});
+    this->attributes.push_back(Tuple{name, toString(value)});
 }
 
 void OpenTelemetrySpan::addAttribute(const std::string & name, const std::string & value)
