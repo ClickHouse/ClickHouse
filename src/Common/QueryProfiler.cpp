@@ -188,7 +188,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
     if (timer_id.has_value())
     {
         if (timer_delete(*timer_id))
-            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString());
         timer_id.reset();
     }
 

@@ -160,7 +160,7 @@ try
     if (options.empty() || options.count("help"))
     {
         std::cout << description << std::endl;
-        exit(0);
+        exit(0); // NOLINT
     }
 
     String metadata_path;

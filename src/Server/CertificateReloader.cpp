@@ -118,7 +118,7 @@ bool CertificateReloader::File::changeIfModified(std::string new_path, Poco::Log
     if (ec)
     {
         LOG_ERROR(logger, "Cannot obtain modification time for {} file {}, skipping update. {}",
-            description, new_path, errnoToString(ErrorCodes::CANNOT_STAT, ec.value()));
+            description, new_path, errnoToString(ec.value()));
         return false;
     }
 
