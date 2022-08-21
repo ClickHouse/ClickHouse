@@ -201,8 +201,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         // by the child process, which might not expect this.
         sigset_t mask;
         sigemptyset(&mask);
-        sigprocmask(0, nullptr, &mask); // NOLINT
-        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT
+        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe)
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
 
         execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
