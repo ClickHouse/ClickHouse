@@ -2,7 +2,7 @@
 
 #include <IO/SeekableReadBuffer.h>
 
-#include <Disks/IO/CachedReadBufferFromRemoteFS.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Common/logger_useful.h>
 #include <iostream>
 #include <Common/hex.h>
@@ -54,13 +54,18 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
 
     if (with_cache)
     {
-        return std::make_shared<CachedReadBufferFromRemoteFS>(
+        auto cache_key = settings.remote_fs_cache->hash(path);
+        return std::make_shared<CachedOnDiskReadBufferFromFile>(
             path,
+            cache_key,
             settings.remote_fs_cache,
-            current_read_buffer_creator,
+            std::move(current_read_buffer_creator),
             settings,
             query_id,
-            current_read_until_position);
+            file_size,
+            /* allow_seeks */false,
+            /* use_external_buffer */true,
+            read_until_position ? std::optional<size_t>(read_until_position) : std::nullopt);
     }
 
     return current_read_buffer_creator();
@@ -74,7 +79,7 @@ void ReadBufferFromRemoteFSGather::appendFilesystemCacheLog()
         .query_id = query_id,
         .source_file_path = current_file_path,
         .file_segment_range = { 0, current_file_size },
-        .read_type = FilesystemCacheLogElement::ReadType::READ_FROM_FS_BYPASSING_CACHE,
+        .cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
         .file_segment_size = total_bytes_read_from_current_file,
         .cache_attempted = false,
     };
