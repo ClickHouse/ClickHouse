@@ -159,6 +159,12 @@ private:
 
             // [0.1, ...., 0.1] vector without word 'array'
             FUNCTION_LITERAL_ARRAY,
+
+            // if client parameters are used, cast will always be in the query
+            FUNCTION_CAST,
+
+            // name of type in cast function
+            FUNCTION_STRING_LITERAL,
         };
 
         explicit RPNElement(Function function_ = FUNCTION_UNKNOWN)
@@ -213,6 +219,8 @@ private:
     // Get from settings ANNIndex parameters
     String ann_index_select_query_params;
     UInt64 index_granularity;
+    /// only queries with a lower limit can be considered to avoid memory overflow 
+    UInt64 limit_restriction;
     bool index_is_useful = false;
 };
 

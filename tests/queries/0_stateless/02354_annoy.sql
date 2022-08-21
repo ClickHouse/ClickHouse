@@ -24,8 +24,6 @@ FROM 02354_annoy
 ORDER BY L2Distance(embedding, [0.0, 0.0, 10.0])
 LIMIT 3;
 
-INSERT INTO 02354_annoy VALUES (1, 1); -- { serverError 53 }
-
 SELECT *
 FROM 02354_annoy
 ORDER BY L2Distance(embedding, [0.0, 0.0])
