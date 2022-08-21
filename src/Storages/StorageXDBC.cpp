@@ -38,8 +38,8 @@ StorageXDBC::StorageXDBC(
         table_id_,
         IXDBCBridgeHelper::DEFAULT_FORMAT,
         getFormatSettings(context_),
-        std::move(columns_),
-        std::move(constraints_),
+        columns_,
+        constraints_,
         comment,
         "" /* CompressionMethod */)
     , bridge_helper(bridge_helper_)
