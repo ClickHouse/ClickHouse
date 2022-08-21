@@ -27,7 +27,7 @@ void trim(String & s)
 
 std::string getEditor()
 {
-    const char * editor = std::getenv("EDITOR"); // NOLINT
+    const char * editor = std::getenv("EDITOR"); // NOLINT(concurrency-mt-unsafe)
 
     if (!editor || !*editor)
         editor = "vim";
@@ -292,8 +292,8 @@ int ReplxxLineReader::executeEditor(const std::string & path)
     {
         sigset_t mask;
         sigemptyset(&mask);
-        sigprocmask(0, nullptr, &mask); // NOLINT (ok in newly created process)
-        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT (ok in newly created process)
+        sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
+        sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe) // ok in newly created process
 
         execvp(editor.c_str(), argv);
         rx.print("Cannot execute %s: %s\n", editor.c_str(), errnoToString().c_str());
