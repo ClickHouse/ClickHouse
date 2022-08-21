@@ -61,11 +61,7 @@ struct ToDateImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        if (t < 0)
-            return 0;
-
-        auto day_num = time_zone.toDayNum(t);
-        return day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM;
+        return t < 0 ? 0 : std::min(time_t(time_zone.toDayNum(t)), time_t(DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -73,10 +69,7 @@ struct ToDateImpl
     }
     static inline UInt16 execute(Int32 t, const DateLUTImpl &)
     {
-        if (t < 0)
-            return 0;
-
-        return t < DATE_LUT_MAX_DAY_NUM ? t : DATE_LUT_MAX_DAY_NUM;
+        return t < 0 ? 0 : std::min(time_t(t), time_t(DATE_LUT_MAX_DAY_NUM));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
@@ -118,7 +111,7 @@ struct ToStartOfDayImpl
     //TODO: right now it is hardcoded to produce DateTime only, needs fixing later. See date_and_time_type_details::ResultDataTypeMap for deduction of result type example.
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        if (t.whole < 0)
+        if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
             return 0;
 
         Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(t.whole));
@@ -145,10 +138,7 @@ struct ToStartOfDayImpl
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(d));
-        if (date_time <= 0xffffffff)
-            return date_time;
-        else
-            return time_zone.toDate(0xffffffff);
+        return date_time < 0xffffffff ? date_time : time_zone.toDate(0xffffffff);
     }
 
     using FactorTransform = ZeroTransform;
@@ -160,12 +150,8 @@ struct ToMondayImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        if (t < 0)
-            return 0;
-
-        auto day_num = time_zone.toDayNum(t);
-
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
+        return t < 0 ? 0 : time_zone.toFirstDayNumOfWeek(ExtendedDayNum(
+                   std::min(time_t(time_zone.toDayNum(t)), time_t(DATE_LUT_MAX_DAY_NUM))));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -173,11 +159,7 @@ struct ToMondayImpl
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        if (d < 0)
-            return 0;
-
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM))
-            ;
+        return d < 0 ? 0 : time_zone.toFirstDayNumOfWeek(ExtendedDayNum(std::min(d, DATE_LUT_MAX_DAY_NUM)));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -193,12 +175,7 @@ struct ToStartOfMonthImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        if (t < 0)
-            return 0;
-
-        auto day_num = time_zone.toDayNum(t);
-
-        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
+        return t < 0 ? 0 : time_zone.toFirstDayNumOfMonth(ExtendedDayNum(std::min(time_t(time_zone.toDayNum(t)), time_t(DATE_LUT_MAX_DAY_NUM))));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -206,10 +183,7 @@ struct ToStartOfMonthImpl
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        if (d < 0)
-            return 0;
-
-        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
+        return d < 0 ? 0 : time_zone.toFirstDayNumOfMonth(ExtendedDayNum(std::min(d, DATE_LUT_MAX_DAY_NUM)));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -225,11 +199,7 @@ struct ToLastDayOfMonthImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        if (t < 0)
-            return 0;
-
-        auto day_num = time_zone.toDayNum(t);
-        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
+        return t < 0 ? 0 : time_zone.toLastDayNumOfMonth(ExtendedDayNum(std::min(time_t(time_zone.toDayNum(t)), time_t(DATE_LUT_MAX_DAY_NUM))));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -237,10 +207,7 @@ struct ToLastDayOfMonthImpl
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        if (d < 0)
-            return 0;
-
-        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
+        return d < 0 ? 0 : time_zone.toLastDayNumOfMonth(ExtendedDayNum(std::min(d, DATE_LUT_MAX_DAY_NUM)));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -256,12 +223,7 @@ struct ToStartOfQuarterImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        if (t < 0)
-            return 0;
-
-        auto day_num = time_zone.toDayNum(t);
-
-        return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
+        return t < 0 ? 0 : time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(std::min(time_t(time_zone.toDayNum(t)), time_t(DATE_LUT_MAX_DAY_NUM))));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -269,10 +231,7 @@ struct ToStartOfQuarterImpl
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        if (d < 0)
-            return 0;
-
-        return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
+        return d < 0 ? 0 : time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(std::min(d, DATE_LUT_MAX_DAY_NUM)));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -288,12 +247,7 @@ struct ToStartOfYearImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        if (t < 0)
-            return 0;
-
-        auto day_num = time_zone.toDayNum(t);
-
-        return time_zone.toFirstDayNumOfYear(ExtendedDayNum(day_num < DATE_LUT_MAX_DAY_NUM ? day_num : DATE_LUT_MAX_DAY_NUM));
+        return t < 0 ? 0 : time_zone.toFirstDayNumOfYear(ExtendedDayNum(std::min(time_t(time_zone.toDayNum(t)), time_t(DATE_LUT_MAX_DAY_NUM))));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -301,10 +255,7 @@ struct ToStartOfYearImpl
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        if (d < 0)
-            return 0;
-
-        return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d < DATE_LUT_MAX_DAY_NUM ? d : DATE_LUT_MAX_DAY_NUM));
+        return d < 0 ? 0 : time_zone.toFirstDayNumOfYear(ExtendedDayNum(std::min(d, DATE_LUT_MAX_DAY_NUM)));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -346,13 +297,10 @@ struct ToStartOfMinuteImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        if (t.whole < 0)
+        if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
             return 0;
 
-        auto day_num = time_zone.toDayNum(t.whole);
-
-        return time_zone.toStartOfMinute(day_num < DATE_LUT_MAX_DAY_NUM ? t.whole : INT16_MAX);
-//        return time_zone.toStartOfMinute(t.whole);
+        return time_zone.toStartOfMinute(std::min(t.whole, time_t(0xffffffff)));
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -643,7 +591,10 @@ struct ToStartOfHourImpl
 
     static inline UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfHour(t.whole);
+        if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
+            return 0;
+
+        return time_zone.toStartOfHour(std::min(t.whole, time_t(0xffffffff)));
     }
 
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
