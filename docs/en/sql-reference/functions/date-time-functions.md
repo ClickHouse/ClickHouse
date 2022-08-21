@@ -884,11 +884,86 @@ Result:
 └──────────────────────┘
 ```
 
+## now64
+
+Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
+
+**Syntax**
+
+``` sql
+now64([scale], [timezone])
+```
+
+**Arguments**
+
+-   `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Current date and time.
+
+Type: [Datetime64](../../sql-reference/data-types/datetime64.md).
+
+**Example**
+
+Query without timezone:
+
+``` sql
+SELECT now64(), now64(9, 'Asia/Istanbul');
+```
+
+Result:
+
+``` text
+┌─────────────────now64()─┬─────now64(9, 'Asia/Istanbul')─┐
+│ 2022-08-21 19:34:26.196 │ 2022-08-21 22:34:26.196542766 │
+└─────────────────────────┴───────────────────────────────┘
+```
+
 ## nowInBlock
 
-Returns the current date and time at the moment of processing of each block of data. In contrast to the function `now`, it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
+Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
 
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
+
+**Syntax**
+
+``` sql
+nowInBlock([timezone])
+```
+
+**Arguments**
+
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Current date and time at the moment of processing of each block of data.
+
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+``` sql
+SELECT
+    now(),
+    nowInBlock(),
+    sleep(1)
+FROM numbers(3)
+SETTINGS max_block_size = 1
+FORMAT PrettyCompactMonoBlock
+```
+
+Result:
+
+``` text
+┌───────────────now()─┬────────nowInBlock()─┬─sleep(1)─┐
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:19 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:20 │        0 │
+│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:21 │        0 │
+└─────────────────────┴─────────────────────┴──────────┘
+```
 
 ## today
 
