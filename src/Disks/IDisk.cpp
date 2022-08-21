@@ -121,18 +121,4 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-MetadataStoragePtr IDisk::getMetadataStorage()
-{
-    if (isRemote())
-    {
-        return std::make_shared<MetadataStorageFromDisk>(std::static_pointer_cast<IDisk>(shared_from_this()), "");
-    }
-    else
-    {
-        auto object_storage = std::make_shared<LocalObjectStorage>();
-        return std::make_shared<FakeMetadataStorageFromDisk>(
-            std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
-    }
-}
-
 }

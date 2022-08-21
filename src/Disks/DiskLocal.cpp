@@ -726,6 +726,13 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
+MetadataStoragePtr DiskLocal::getMetadataStorage()
+{
+    auto object_storage = std::make_shared<LocalObjectStorage>();
+    return std::make_shared<FakeMetadataStorageFromDisk>(
+        std::static_pointer_cast<IDisk>(shared_from_this()), object_storage, getPath());
+}
+
 void registerDiskLocal(DiskFactory & factory)
 {
     auto creator = [](const String & name,

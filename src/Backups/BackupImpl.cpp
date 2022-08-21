@@ -116,6 +116,11 @@ public:
         return data_file_name;
     }
 
+    std::shared_ptr<IDisk> tryGetDiskIfExists() const override
+    {
+        return nullptr;
+    }
+
     DataSourceDescription getDataSourceDescription() const override
     {
         return backup->reader->getDataSourceDescription();
@@ -677,12 +682,18 @@ ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(BackupEntryPtr entry, si
 
 void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 {
+
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
         throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
 
     if (writing_finalized)
         throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+
+    std::string from_file_name = "memory buffer";
+    if (auto fname = entry->getFilePath(); !fname.empty())
+        from_file_name = "file " + fname;
+    LOG_TRACE(log, "Writing backup for file {} from file {}", file_name, from_file_name);
 
     auto adjusted_path = removeLeadingSlash(file_name);
     if (coordination->getFileInfo(adjusted_path))
@@ -710,6 +721,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     /// If file has no checksum -- calculate and fill it.
     if (base_backup_file_info.has_value())
     {
+        LOG_TRACE(log, "File {} found in base backup, checking for equality", adjusted_path);
         CheckBackupResult check_base = checkBaseBackupForFile(*base_backup_file_info, info);
 
         /// File with the same name but smaller size exist in previous backup
@@ -722,8 +734,13 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
             /// In ClickHouse this can happen for StorageLog for example.
             if (checksums.prefix_checksum == base_backup_file_info->second)
             {
+                LOG_TRACE(log, "File prefix of {} in base backup, will write rest part of file to current backup", adjusted_path);
                 info.base_size = base_backup_file_info->first;
                 info.base_checksum = base_backup_file_info->second;
+            }
+            else
+            {
+                LOG_TRACE(log, "Prefix checksum of file {} doesn't match with checksum in base backup", adjusted_path);
             }
         }
         else
@@ -735,6 +752,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
             if (info.checksum == base_backup_file_info->second)
             {
+                LOG_TRACE(log, "Found whole file {} in base backup", adjusted_path);
                 assert(check_base == CheckBackupResult::HasFull);
                 assert(info.size == base_backup_file_info->first);
 
@@ -744,11 +762,17 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
                 /// but we intentionally don't do it, otherwise control flow
                 /// of this function will be very complex.
             }
+            else
+            {
+                LOG_TRACE(log, "Whole file {} in base backup doesn't match by checksum", adjusted_path);
+            }
         }
     }
     else /// We don't have info about this file_name (sic!) in base backup,
          /// however file could be renamed, so we will check one more time using size and checksum
     {
+
+        LOG_TRACE(log, "Nothing found for file {} in base backup", adjusted_path);
         auto checksums = calculateNewEntryChecksumsIfNeeded(entry, 0);
         info.checksum = checksums.full_checksum;
     }
@@ -756,6 +780,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     /// Maybe we have a copy of this file in the backup already.
     if (coordination->getFileInfo(std::pair{info.size, info.checksum}))
     {
+        LOG_TRACE(log, "File {} already exist in current backup, adding reference", adjusted_path);
         coordination->addFileInfo(info);
         return;
     }
@@ -764,6 +789,8 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     /// However file can be renamed, but has the same size and checksums, let's check for this case.
     if (base_backup && base_backup->fileExists(std::pair{info.size, info.checksum}))
     {
+
+        LOG_TRACE(log, "File {} doesn't exist in current backup, but we have file with same size and checksum", adjusted_path);
         info.base_size = info.size;
         info.base_checksum = info.checksum;
 
@@ -780,20 +807,25 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     bool is_data_file_required;
     coordination->addFileInfo(info, is_data_file_required);
     if (!is_data_file_required)
+    {
+        LOG_TRACE(log, "File {} doesn't exist in current backup, but we have file with same size and checksum", adjusted_path);
         return; /// We copy data only if it's a new combination of size & checksum.
+    }
+    auto writer_description = writer->getDataSourceDescription();
+    auto reader_description = entry->getDataSourceDescription();
 
     /// We need to copy whole file without archive, we can do it faster
     /// if source and destination are compatible
-    if (!use_archives && info.base_size == 0)
+    if (!use_archives && info.base_size == 0 && writer->supportNativeCopy(reader_description))
     {
-        auto writer_description = writer->getDataSourceDescription();
-        auto reader_description = entry->getDataSourceDescription();
+
+        LOG_TRACE(log, "Will copy file {} using native copy", adjusted_path);
         /// Should be much faster than writing data through server
-        if (writer->supportNativeCopy(reader_description))
-            writer->copyFileNative(entry->getFilePath(), info.data_file_name);
+        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.data_file_name);
     }
     else
     {
+        LOG_TRACE(log, "Will copy file {} through memory buffers", adjusted_path);
         auto read_buffer = entry->getReadBuffer();
 
         /// If we have prefix in base we will seek to the start of the suffix which differs
@@ -805,6 +837,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
         if (use_archives)
         {
+            LOG_TRACE(log, "Adding file {} to archive", adjusted_path);
             String archive_suffix = current_archive_suffix;
             bool next_suffix = false;
             if (current_archive_suffix.empty() && is_internal_backup)

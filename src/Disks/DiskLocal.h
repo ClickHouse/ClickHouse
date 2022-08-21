@@ -131,6 +131,8 @@ public:
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
 
+    MetadataStoragePtr getMetadataStorage() override;
+
 private:
     std::optional<UInt64> tryReserve(UInt64 bytes);
 

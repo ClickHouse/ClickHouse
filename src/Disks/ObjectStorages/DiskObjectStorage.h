@@ -153,6 +153,8 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
+    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
     void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);

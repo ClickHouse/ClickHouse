@@ -118,11 +118,17 @@ bool BackupWriterFile::supportNativeCopy(DataSourceDescription data_source_descr
     return data_source_description == getDataSourceDescription();
 }
 
-void BackupWriterFile::copyFileNative(const String & file_name_from, const String & file_name_to)
+void BackupWriterFile::copyFileNative(std::shared_ptr<IDisk> from_disk, const String & file_name_from, const String & file_name_to)
 {
     auto file_path = path / file_name_to;
     fs::create_directories(file_path.parent_path());
-    fs::copy(file_name_from, file_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+    std::string abs_source_path;
+    if (from_disk)
+        abs_source_path = fullPath(from_disk, file_name_from);
+    else
+        abs_source_path = fs::absolute(file_name_from);
+
+    fs::copy(abs_source_path, file_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
 }
 
 }
