@@ -18,6 +18,12 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    echo "Azure is disabled"
+else
+    azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
+fi
+
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
 

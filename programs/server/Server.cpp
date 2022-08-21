@@ -613,10 +613,22 @@ static void sanityChecks(Server & server)
     {
         if (getAvailableMemoryAmount() < (2l << 30))
             server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
+    }
+    catch (...)
+    {
+    }
 
+    try
+    {
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
             server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
+    }
+    catch (...)
+    {
+    }
 
+    try
+    {
         if (!logs_path.empty())
         {
             auto logs_parent = fs::path(logs_path).parent_path();
@@ -626,6 +638,13 @@ static void sanityChecks(Server & server)
     }
     catch (...)
     {
+    }
+
+    if (server.context()->getMergeTreeSettings().allow_remote_fs_zero_copy_replication)
+    {
+        server.context()->addWarningMessage("The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
+            " But the feature of 'zero-copy replication' is under development and is not ready for production."
+            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
 }
 
@@ -1137,22 +1156,20 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (config->has("concurrent_threads_soft_limit"))
+            ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
+            if (config->has("concurrent_threads_soft_limit_num"))
             {
-                auto concurrent_threads_soft_limit = config->getInt("concurrent_threads_soft_limit", 0);
-                if (concurrent_threads_soft_limit == -1)
-                {
-                    // Based on tests concurrent_threads_soft_limit has an optimal value when it's about 3 times of logical CPU cores
-                    constexpr size_t thread_factor = 3;
-                    concurrent_threads_soft_limit = std::thread::hardware_concurrency() * thread_factor;
-                }
-                if (concurrent_threads_soft_limit)
-                    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-                else
-                    ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+                auto value = config->getUInt64("concurrent_threads_soft_limit_num", 0);
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
             }
-            else
-                ConcurrencyControl::instance().setMaxConcurrency(ConcurrencyControl::Unlimited);
+            if (config->has("concurrent_threads_soft_limit_ratio_to_cores"))
+            {
+                auto value = config->getUInt64("concurrent_threads_soft_limit_ratio_to_cores", 0) * std::thread::hardware_concurrency();
+                if (value > 0 && value < concurrent_threads_soft_limit)
+                    concurrent_threads_soft_limit = value;
+            }
+            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
 
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
@@ -1522,7 +1539,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
-        maybeConvertOrdinaryDatabaseToAtomic(global_context, DatabaseCatalog::instance().getSystemDatabase());
+        maybeConvertSystemDatabase(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1536,6 +1553,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         database_catalog.loadMarkedAsDroppedTables();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
+        convertDatabasesEnginesIfNeed(global_context);
         startupSystemTables();
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
