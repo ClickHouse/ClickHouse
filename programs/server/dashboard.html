@@ -357,7 +357,7 @@ GROUP BY t
 ORDER BY t`
     },
     {
-      "title": "SELECTed Bytes/second",
+      "title": "Selected Bytes/second",
       "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_SelectedBytes)
 FROM system.metric_log
 WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
