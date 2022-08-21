@@ -38,5 +38,9 @@ if (TARGET ch_contrib::cassandra)
     target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::cassandra)
 endif()
 
+if (TARGET ch_contrib::yaml_cpp)
+    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::yaml_cpp)
+endif()
+
 add_subdirectory(Embedded)
 target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::sparsehash)
