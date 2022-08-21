@@ -459,10 +459,11 @@ QueryTreeNodePtr QueryTreeBuilder::getFromNode(const ASTPtr & tables_in_select_q
             table_expressions.pop_back();
 
             auto array_join_expressions_list = getExpressionList(array_join_expression.expression_list);
-
             auto array_join_node = std::make_shared<ArrayJoinNode>(std::move(last_table_expression), std::move(array_join_expressions_list), is_left_array_join);
-            array_join_node->setOriginalAST(table_element.array_join);
 
+            /** Original AST is not set because it will contain only array join part and does
+              * not include left table expression.
+              */
             table_expressions.push_back(std::move(array_join_node));
         }
     }
