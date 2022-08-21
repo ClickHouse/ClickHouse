@@ -121,7 +121,6 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     String bin_column;
     String last_string;
     String column_name;
-    int character_passed = 0;
 
     while (!pos->isEnd() && pos->type != TokenType::PipeMark && pos->type != TokenType::Semicolon)
     {
@@ -160,7 +159,7 @@ bool ParserKQLSummarize ::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
                     if (!column_name.empty())
                     {
                         expr_aggregation = expr_aggregation + String(pos->begin, pos->end);
-                        character_passed++;
+
                         if (String(pos->begin, pos->end) == ")")
                         {
                             expr_aggregation = expr_aggregation + " AS " + column_name;
