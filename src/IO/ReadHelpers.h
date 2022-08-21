@@ -856,10 +856,10 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     const char * s = buf.position();
 
     /// YYYY-MM-DD hh:mm:ss
-    static constexpr auto DateTimeStringInputSize = 19;
-    ///YYYY-MM-DD
-    static constexpr auto DateStringInputSize = 10;
-    bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
+    static constexpr auto date_time_broken_down_length = 19;
+    /// YYYY-MM-DD
+    static constexpr auto date_broken_down_length = 10;
+    bool optimistic_path_for_date_time_input = s + date_time_broken_down_length <= buf.buffer().end();
 
     if (optimistic_path_for_date_time_input)
     {
@@ -872,7 +872,8 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 hour = 0;
             UInt8 minute = 0;
             UInt8 second = 0;
-            ///simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
+
+            /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
             bool dt_long = (s[10] == ' ' || s[10] == 'T');
             if (dt_long)
             {
@@ -881,15 +882,13 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 second = (s[17] - '0') * 10 + (s[18] - '0');
             }
 
-            if (unlikely(year == 0))
-                datetime = 0;
-            else
-                datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
+            datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
             if (dt_long)
-                buf.position() += DateTimeStringInputSize;
+                buf.position() += date_time_broken_down_length;
             else
-                buf.position() += DateStringInputSize;
+                buf.position() += date_broken_down_length;
+
             return ReturnType(true);
         }
         else
@@ -988,21 +987,33 @@ inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuf
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {
-    char s[19];
-    size_t size = buf.read(s, 19);
-    if (19 != size)
+    char s[10];
+    size_t size = buf.read(s, 10);
+    if (10 != size)
     {
         s[size] = 0;
-        throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+        throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
     }
 
     datetime.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
     datetime.month((s[5] - '0') * 10 + (s[6] - '0'));
     datetime.day((s[8] - '0') * 10 + (s[9] - '0'));
 
-    datetime.hour((s[11] - '0') * 10 + (s[12] - '0'));
-    datetime.minute((s[14] - '0') * 10 + (s[15] - '0'));
-    datetime.second((s[17] - '0') * 10 + (s[18] - '0'));
+    /// Allow to read Date as DateTime
+    if (buf.eof() || !(*buf.position() == ' ' || *buf.position() == 'T'))
+        return;
+
+    ++buf.position();
+    size = buf.read(s, 8);
+    if (8 != size)
+    {
+        s[size] = 0;
+        throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+    }
+
+    datetime.hour((s[0] - '0') * 10 + (s[1] - '0'));
+    datetime.minute((s[3] - '0') * 10 + (s[4] - '0'));
+    datetime.second((s[6] - '0') * 10 + (s[7] - '0'));
 }
 
 
