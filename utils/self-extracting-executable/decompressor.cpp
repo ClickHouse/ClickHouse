@@ -440,7 +440,7 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 
-        if(has_exec)
+        if (has_exec)
         {
             execv(self, argv);
 
