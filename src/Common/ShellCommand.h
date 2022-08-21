@@ -44,6 +44,17 @@ public:
         size_t wait_for_normal_exit_before_termination_seconds = 0;
     };
 
+
+    struct Environ
+    {
+        explicit Environ(const std::vector<std::string> *env_vars);
+        ~Environ();
+
+        char ** data;
+        size_t orig_number_of_env_vars = 0;
+        size_t current_number_of_env_vars = 0;
+    };
+
     struct Config
     {
         Config(const std::string & command_) /// NOLINT
@@ -57,6 +68,8 @@ public:
         std::string command;
 
         std::vector<std::string> arguments;
+
+        std::vector<std::string> env_vars;
 
         std::vector<int> read_fds;
 
@@ -100,7 +113,7 @@ private:
     static Poco::Logger * getLogger();
 
     /// Print command name and the list of arguments to log. NOTE: No escaping of arguments is performed.
-    static void logCommand(const char * filename, char * const argv[]);
+    static void logCommand(const char * filename, char * const argv[], const std::vector<std::string> *env);
 
     static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], const Config & config);
 };

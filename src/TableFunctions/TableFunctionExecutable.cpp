@@ -14,6 +14,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
 #include <boost/algorithm/string.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/parseGlobs.h>
 #include "registerTableFunctions.h"
 
 
@@ -59,9 +61,24 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     for (size_t i = 3; i < args.size(); ++i)
     {
-        if (args[i]->as<ASTSetQuery>())
+        if (args[i]->as<ASTSettings>())
         {
-            settings_query = std::move(args[i]);
+            if (args[i]->as<ASTSettings>()->getKeyword() == "ENVIRONMENT")
+            {
+                env_vars = std::move(args[i]);
+            }
+            else if (args[i]->as<ASTSettings>()->getKeyword() == "SETTINGS")
+            {
+                settings_query = std::move(args[i]);
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Table function '{}' argument is invalid {}",
+                    getName(),
+                    args[i]->formatForErrorMessage());
+            }
         }
         else
         {
@@ -80,6 +97,28 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
             }
         }
     }
+
+    const auto & config = context->getConfigRef();
+    const auto & allow_env_prefix = "user_scripts.allow_env_variables";
+    if (config.has(allow_env_prefix))
+    {
+        Poco::Util::AbstractConfiguration::Keys env_var_keys;
+        config.keys(allow_env_prefix, env_var_keys);
+        if (!env_var_keys.empty())
+        {
+            for (const auto & env_var : env_var_keys)
+            {
+                auto var = makeRegexpPatternFromGlobs(env_var);
+                allowed_env_vars.emplace_back(std::move(var));
+            }
+        }
+        else
+        {
+            auto pattern = config.getRawString(allow_env_prefix, "");
+            if (!pattern.empty())
+                allowed_env_vars.emplace_back(makeRegexpPatternFromGlobs(pattern));
+        }
+    }
 }
 
 ColumnsDescription TableFunctionExecutable::getActualTableStructure(ContextPtr context) const
@@ -95,7 +134,9 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
     settings.script_name = script_name;
     settings.script_arguments = arguments;
     if (settings_query != nullptr)
-        settings.applyChanges(settings_query->as<ASTSetQuery>()->changes);
+        settings.applyChanges(settings_query->as<ASTSettings>()->changes);
+    if (env_vars != nullptr)
+        settings.applyEnvVars(env_vars->as<ASTSettings>()->changes, allowed_env_vars);
 
     auto storage = std::make_shared<StorageExecutable>(storage_id, format, settings, input_queries, getActualTableStructure(context), ConstraintsDescription{});
     storage->startup();

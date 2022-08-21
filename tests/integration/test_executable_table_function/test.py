@@ -9,7 +9,10 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True, main_configs=[])
+node = cluster.add_instance("node", stay_alive=True)
+config = """<clickhouse>
+    <user_scripts>{user_scripts}</user_scripts>
+</clickhouse>"""
 
 
 # Something like https://reviews.llvm.org/D33325
@@ -26,6 +29,14 @@ def copy_file_to_container(local_path, dist_path, container_id):
     )
 
 
+def change_config(user_scripts):
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/table_functions_config.xml",
+        config.format(user_scripts=user_scripts),
+    )
+    node.restart_clickhouse()
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -36,7 +47,7 @@ def started_cluster():
             "/var/lib/clickhouse/user_scripts",
             node.docker_id,
         )
-        node.restart_clickhouse()
+        change_config("<allow_env_variables>FOO*</allow_env_variables>")
 
         node.query("CREATE TABLE test_data_table (id UInt64) ENGINE=TinyLog;")
         node.query("INSERT INTO test_data_table VALUES (0), (1), (2);")
@@ -173,6 +184,67 @@ def test_executable_function_input_slow_python_timeout_increased(started_cluster
             query.format(source="(SELECT id FROM test_data_table)", settings=settings)
         )
         == "Key 0\nKey 1\nKey 2\n"
+    )
+
+
+def test_executable_function_input_env_allowed(started_cluster):
+    skip_test_msan(node)
+    query = "SELECT * FROM executable('input_env.py', 'TabSeparated', 'value String', {source}, ENVIRONMENT FOO_1 = 'v1', FOO_2 = 42)"
+    assert (
+        node.query(query.format(source="(SELECT 1)")) == "Key v1 42 (null) (null) 1\n"
+    )
+
+
+def test_executable_function_input_env_not_allowed(started_cluster):
+    skip_test_msan(node)
+    query = "SELECT * FROM executable('input_env.py', 'TabSeparated', 'value String', {source}, ENVIRONMENT BAR_1 = 'v1', BAR_2 = 42)"
+    assert (
+        node.query(query.format(source="(SELECT 1)"))
+        == "Key (null) (null) (null) (null) 1\n"
+    )
+
+
+def test_executable_function_input_env_partially_allowed(started_cluster):
+    skip_test_msan(node)
+    query = "SELECT * FROM executable('input_env.py', 'TabSeparated', 'value String', {source}, ENVIRONMENT FOO_1 = 'v1', BAR_2 = 42)"
+    assert (
+        node.query(query.format(source="(SELECT 1)"))
+        == "Key v1 (null) (null) (null) 1\n"
+    )
+
+
+def test_executable_function_input_env_size_exceeded(started_cluster):
+    skip_test_msan(node)
+    query = "SELECT * FROM executable('input_env.py', 'TabSeparated', 'value String', {source}, ENVIRONMENT FOO_1 = '{value}')"
+    value = "A" * (4 * 1024)
+    assert node.query_and_get_error(query.format(source="(SELECT 1)", value=value))
+
+
+def test_executable_function_input_env_separate(started_cluster):
+    skip_test_msan(node)
+    change_config("<allow_env_variables><BAR_1/></allow_env_variables>")
+    query = "SELECT * FROM executable('input_env.py', 'TabSeparated', 'value String', {source}, ENVIRONMENT BAR_1 = 'v1', BAR_2 = 42)"
+    assert (
+        node.query(query.format(source="(SELECT 1)"))
+        == "Key (null) (null) v1 (null) 1\n"
+    )
+
+
+def test_executable_function_input_env_multiple(started_cluster):
+    skip_test_msan(node)
+    change_config("<allow_env_variables><BAR_1/><BAR_2/></allow_env_variables>")
+    query = "SELECT * FROM executable('input_env.py', 'TabSeparated', 'value String', {source}, ENVIRONMENT BAR_1 = 'v1', BAR_2 = 42)"
+    assert (
+        node.query(query.format(source="(SELECT 1)")) == "Key (null) (null) v1 42 1\n"
+    )
+
+
+def test_executable_function_input_env_mixed(started_cluster):
+    skip_test_msan(node)
+    change_config("<allow_env_variables><FOO_1/><BAR_2/></allow_env_variables>")
+    query = "SELECT * FROM executable('input_env.py', 'TabSeparated', 'value String', {source}, ENVIRONMENT FOO_1 = 'v1', BAR_1 = 'v2', BAR_2 = 42)"
+    assert (
+        node.query(query.format(source="(SELECT 1)")) == "Key v1 (null) (null) 42 1\n"
     )
 
 

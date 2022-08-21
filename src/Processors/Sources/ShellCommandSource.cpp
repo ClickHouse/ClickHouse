@@ -461,6 +461,7 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const std::vector<std::string> & arguments,
+    const std::vector<std::string> & env_vars,
     std::vector<Pipe> && input_pipes,
     Block sample_block,
     ContextPtr context,
@@ -468,6 +469,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 {
     ShellCommand::Config command_config(command);
     command_config.arguments = arguments;
+    command_config.env_vars = env_vars;
     for (size_t i = 1; i < input_pipes.size(); ++i)
         command_config.write_fds.emplace_back(i + 2);
 

@@ -464,6 +464,8 @@ protected:
     const char * getName() const override { return "table function expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+private:
+    static bool parseSettings(std::string_view keyword, IParser::Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 

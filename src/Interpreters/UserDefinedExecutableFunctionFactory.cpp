@@ -194,6 +194,7 @@ public:
         Pipe pipe = coordinator->createPipe(
             command,
             command_arguments_with_parameters,
+            {},
             std::move(shell_input_pipes),
             result_block,
             context,

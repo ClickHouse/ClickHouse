@@ -31,6 +31,28 @@ public:
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
+
+protected:
+    void formatChanges(const FormatSettings & format) const;
+};
+
+class ASTSettings : public ASTSetQuery
+{
+public:
+    explicit ASTSettings(const char * keyword_)
+    {
+        keyword = String(keyword_);
+    }
+
+    ASTPtr clone() const override { return std::make_shared<ASTSettings>(*this); }
+
+    String getID(char delimiter) const override { return String("Set") + delimiter + keyword; }
+
+    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+
+    String getKeyword() { return keyword; }
+protected:
+    String keyword;
 };
 
 }

@@ -6,7 +6,6 @@ namespace DB
 {
 
 class Context;
-class ASTSetQuery;
 
 /* executable(script_name_optional_arguments, format, structure, input_query) - creates a temporary storage from executable file
  *
@@ -34,5 +33,7 @@ private:
     String structure;
     std::vector<ASTPtr> input_queries;
     ASTPtr settings_query = nullptr;
+    ASTPtr env_vars = nullptr;
+    std::vector<String> allowed_env_vars;
 };
 }

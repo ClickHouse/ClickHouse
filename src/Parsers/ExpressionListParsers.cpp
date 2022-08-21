@@ -602,18 +602,26 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return elem_parser.parse(pos, node, expected);
 }
 
+bool ParserTableFunctionExpression::parseSettings(std::string_view keyword, Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword p_keyword(keyword);
+    if (p_keyword.ignore(pos, expected))
+    {
+        ParserSettings parser_settings(p_keyword.getName());
+        if (parser_settings.parse(pos, node, expected))
+            return true;
+    }
+    return false;
+}
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (ParserTableFunctionView().parse(pos, node, expected))
         return true;
-    ParserKeyword s_settings("SETTINGS");
-    if (s_settings.ignore(pos, expected))
-    {
-        ParserSetQuery parser_settings(true);
-        if (parser_settings.parse(pos, node, expected))
-            return true;
-    }
+    if (parseSettings("ENVIRONMENT", pos, node, expected))
+        return true;
+    if (parseSettings("SETTINGS", pos, node, expected))
+        return true;
     return elem_parser.parse(pos, node, expected);
 }
 

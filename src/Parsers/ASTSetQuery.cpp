@@ -24,6 +24,11 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
     if (is_standalone)
         format.ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
 
+    this->formatChanges(format);
+}
+
+void ASTSetQuery::formatChanges(const FormatSettings & format) const
+{
     for (auto it = changes.begin(); it != changes.end(); ++it)
     {
         if (it != changes.begin())
@@ -32,6 +37,13 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
         formatSettingName(it->name, format.ostr);
         format.ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
     }
+}
+
+void ASTSettings::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+{
+    format.ostr << (format.hilite ? hilite_keyword : "") << keyword << " " << (format.hilite ? hilite_none : "");
+
+    this->formatChanges(format);
 }
 
 }

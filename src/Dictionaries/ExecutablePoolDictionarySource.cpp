@@ -139,6 +139,7 @@ QueryPipeline ExecutablePoolDictionarySource::getStreamForBlock(const Block & bl
     auto pipe = coordinator->createPipe(
         command,
         configuration.command_arguments,
+        {},
         std::move(shell_input_pipes),
         sample_block,
         context,

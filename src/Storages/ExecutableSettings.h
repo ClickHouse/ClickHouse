@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
+#include <re2/re2.h>
 
 namespace DB
 {
@@ -23,10 +24,12 @@ struct ExecutableSettings : public BaseSettings<ExecutableSettingsTraits>
 {
     std::string script_name;
     std::vector<std::string> script_arguments;
+    std::vector<std::string> env_vars;
 
     bool is_executable_pool = false;
 
     void loadFromQuery(ASTStorage & storage_def);
+    void applyEnvVars(const SettingsChanges & changes, const std::vector<String> & allow_list);
 };
 
 }

@@ -162,7 +162,7 @@ void StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    auto pipe = coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    auto pipe = coordinator->createPipe(script_path, settings.script_arguments, settings.env_vars, std::move(inputs), std::move(sample_block), context, configuration);
     IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
     query_plan.addResources(std::move(resources));
 }

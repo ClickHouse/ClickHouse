@@ -179,7 +179,7 @@ QueryPipeline ExecutableDictionarySource::getStreamForBlock(const Block & block)
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-    auto pipe = coordinator->createPipe(command, configuration.command_arguments, std::move(shell_input_pipes), sample_block, context);
+    auto pipe = coordinator->createPipe(command, configuration.command_arguments, {}, std::move(shell_input_pipes), sample_block, context);
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));

@@ -26,4 +26,15 @@ protected:
     bool parse_only_internals;
 };
 
+class ParserSettings : public ParserSetQuery
+{
+public:
+    explicit ParserSettings(const char * keyword_);
+    const char * getName() const override { return name; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+protected:
+    const char * keyword;
+    const char * name;
+};
+
 }

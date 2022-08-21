@@ -8,7 +8,7 @@ Prerequisites:
 * Ubuntu 20.04 (Focal) or higher.
 * [docker](https://www.docker.com/community-edition#/download). Minimum required API version: 1.25, check with `docker version`.
 
-You must install latest Docker from
+You must install the latest Docker from
 https://docs.docker.com/engine/installation/linux/docker-ce/ubuntu/#set-up-the-repository
 Don't use Docker from your system repository.
 
@@ -38,6 +38,8 @@ sudo -H pip install \
     pytz \
     pytest \
     pytest-timeout \
+    pytest-order \
+    pytest-dotenv \
     redis \
     tzlocal==2.1 \
     urllib3 \
@@ -58,7 +60,7 @@ To check, that you have access to Docker, run `docker ps`.
 
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 
-By default tests are run with system-wide client binary, server binary and base configs. To change that,
+By default, tests are run with system-wide client binary, server binary and base configs. To change that,
 set the following environment variables:
 * `CLICKHOUSE_TESTS_SERVER_BIN_PATH` to choose the server binary.
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
@@ -119,7 +121,7 @@ test_odbc_interaction/test.py ......                                     [100%]
 ==================== 6 passed, 1 warnings in 96.33 seconds =====================
 ```
 
-You can just open shell inside a container by overwritting the command:
+You can just open shell inside a container by overwriting the command:
 ./runner --command=bash
 
 ### Rebuilding the docker containers

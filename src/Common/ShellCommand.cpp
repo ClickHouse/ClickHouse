@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 #include <Common/waitForPid.h>
 
+extern char **environ;
 
 namespace
 {
@@ -104,7 +105,7 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     return waitForPid(pid, timeout_in_seconds);
 }
 
-void ShellCommand::logCommand(const char * filename, char * const argv[])
+void ShellCommand::logCommand(const char * filename, char * const argv[], const std::vector<std::string> *env)
 {
     WriteBufferFromOwnString args;
     for (int i = 0; argv != nullptr && argv[i] != nullptr; ++i)
@@ -115,6 +116,17 @@ void ShellCommand::logCommand(const char * filename, char * const argv[])
         /// NOTE: No escaping is performed.
         args << "'" << argv[i] << "'";
     }
+    if (!env->empty())
+    {
+        args << " (env: ";
+        for (size_t i = 0; i < env->size(); i += 2)
+        {
+            if (i > 0)
+                args << ", ";
+            args << (*env)[i] << "='" << (*env)[i + 1] << "'";
+        }
+        args << " )";
+    }
     LOG_TRACE(ShellCommand::getLogger(), "Will start shell command '{}' with arguments {}", filename, args.str());
 }
 
@@ -123,8 +135,10 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     char * const argv[],
     const Config & config)
 {
-    logCommand(filename, argv);
+    logCommand(filename, argv, &config.env_vars);
     ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
+    auto *env = new Environ(&config.env_vars);
+    bool use_execve = env->data != nullptr;
 
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
@@ -204,11 +218,16 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         sigprocmask(0, nullptr, &mask); // NOLINT(concurrency-mt-unsafe)
         sigprocmask(SIG_UNBLOCK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
 
-        execv(filename, argv);
+        if (use_execve)
+            execve(filename, argv, env->data);
+        else
+            execv(filename, argv);
         /// If the process is running, then `execv` does not return here.
 
         _exit(static_cast<int>(ReturnCodes::CANNOT_EXEC));
     }
+
+    delete env;
 
     std::unique_ptr<ShellCommand> res(new ShellCommand(
         pid,
@@ -335,5 +354,50 @@ void ShellCommand::wait()
     }
 }
 
+ShellCommand::Environ::Environ(const std::vector<std::string> *env_vars)
+{
+    data = nullptr;
+    if (!env_vars->empty())
+    {
+        // loosely lifted from the freebsd source
+        char ** envp;
+        for (envp = environ; envp && *envp; envp++) {}
+        size_t env_num = envp - environ;
+        orig_number_of_env_vars = env_num;
+        size_t needed_size = (env_num + env_vars->size() / 2 + 1) * sizeof(*envp);
+        data = static_cast<char **>(malloc(needed_size));
+        // here we only copy the pointers, as clickhouse should __never__ call setenv() when threads are up
+        memcpy(data, environ, env_num * sizeof(*envp));
+        for (size_t i = 0; i < env_vars->size(); i += 2)
+        {
+            const auto *name = env_vars->at(i).c_str();
+            auto name_len = env_vars->at(i).size();
+            auto val_len = env_vars->at(i + 1).size();
+            // although getenv() is not "thread-safe", it's okay
+            // as we are working on the best-effort base anyway
+            if (!getenv(name))
+            {
+                size_t kv_len = name_len + val_len + 2;
+                auto *kv_pair = static_cast<char *>(malloc(kv_len));
+                strncpy(kv_pair, name, name_len);
+                kv_pair[name_len] = '=';
+                strcpy(kv_pair + name_len + 1, env_vars->at(i + 1).c_str());
+                data[env_num++] = kv_pair;
+            }
+        }
+        current_number_of_env_vars = env_num;
+        data[env_num] = nullptr;
+    }
+}
+
+ShellCommand::Environ::~Environ()
+{
+    if (data != nullptr)
+    {
+        for (size_t i = orig_number_of_env_vars; i < current_number_of_env_vars; i++)
+            free(data[i]);
+        free(data);
+    }
+}
 
 }

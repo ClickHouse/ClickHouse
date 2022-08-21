@@ -165,5 +165,45 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+ParserSettings::ParserSettings(const char * keyword_)
+{
+    keyword = std::move(keyword_);
+    name = ("Set " + std::string(keyword)).c_str();
+}
+
+bool ParserSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserToken s_comma(TokenType::Comma);
+
+    SettingsChanges changes;
+
+    while (true)
+    {
+        auto begin = pos;
+        if (!changes.empty() && !s_comma.ignore(pos))
+            break;
+
+        SettingChange change;
+
+        if (!parseNameValuePair(change, pos, expected))
+        {
+            if (!changes.empty())
+            {
+                pos = begin;
+                break;
+            }
+            else
+                return false;
+        }
+        changes.push_back(std::move(change));
+    }
+
+    auto query = std::make_shared<ASTSettings>(keyword);
+    node = query;
+
+    query->changes = std::move(changes);
+
+    return true;
+}
 
 }

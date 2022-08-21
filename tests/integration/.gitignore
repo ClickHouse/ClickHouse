@@ -1,2 +1,6 @@
 .cache
 _instances*
+.env
+dockerd.log
+pytest.log
+.pytest_cache
