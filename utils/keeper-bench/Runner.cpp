@@ -167,6 +167,7 @@ void Runner::runBenchmark()
     }
     catch (...)
     {
+        shutdown = true;
         pool.wait();
         throw;
     }

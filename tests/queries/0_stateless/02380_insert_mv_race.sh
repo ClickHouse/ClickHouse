@@ -9,6 +9,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+$CLICKHOUSE_CLIENT -nm -q "ATTACH TABLE mv" |& {
+    # CANNOT_GET_CREATE_TABLE_QUERY -- ATTACH TABLE IF EXISTS
+    # TABLE_ALREADY_EXISTS          -- ATTACH TABLE IF NOT EXISTS
+    grep -F -m1 Exception | grep -v -e CANNOT_GET_CREATE_TABLE_QUERY -e TABLE_ALREADY_EXISTS
+}
+
 $CLICKHOUSE_CLIENT -nm -q "
     DROP TABLE IF EXISTS null;
     CREATE TABLE null (key Int) ENGINE = Null;
@@ -23,4 +29,8 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO null SELECT * FROM numbers_mt(1000) settings 
 } &
 sleep 0.05
 $CLICKHOUSE_CLIENT -q "DETACH TABLE mv"
+
+# avoid leftovers on DROP DATABASE (force_remove_data_recursively_on_drop) for Ordinary database
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE mv"
+
 wait

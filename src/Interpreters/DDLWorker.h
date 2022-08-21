@@ -138,7 +138,7 @@ protected:
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
-    std::atomic<bool> stop_flag = false;
+    std::atomic<bool> stop_flag = true;
 
     ThreadFromGlobalPool main_thread;
     ThreadFromGlobalPool cleanup_thread;

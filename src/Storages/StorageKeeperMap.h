@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Interpreters/Context.h>
+#include <Interpreters/IKeyValueEntity.h>
+
 #include <QueryPipeline/Pipe.h>
-#include <Storages/IKVStorage.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/PODArray_fwd.h>
@@ -14,7 +15,7 @@ namespace DB
 {
 
 // KV store using (Zoo|CH)Keeper
-class StorageKeeperMap final : public IKeyValueStorage
+class StorageKeeperMap final : public IStorage, public IKeyValueEntity
 {
 public:
     StorageKeeperMap(
@@ -46,8 +47,10 @@ public:
     std::string getName() const override { return "KeeperMap"; }
     Names getPrimaryKey() const override { return {primary_key}; }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map) const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
     Chunk getBySerializedKeys(std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map) const;
+
+    Block getSampleBlock(const Names &) const override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
