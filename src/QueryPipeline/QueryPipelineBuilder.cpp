@@ -23,6 +23,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
 #include "Core/SortDescription.h"
+#include <QueryPipeline/narrowPipe.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -193,6 +194,12 @@ void QueryPipelineBuilder::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitializedAndNotCompleted();
     pipe.resize(num_streams, force, strict);
+}
+
+void QueryPipelineBuilder::narrow(size_t size)
+{
+    checkInitializedAndNotCompleted();
+    narrowPipe(pipe, size);
 }
 
 void QueryPipelineBuilder::addTotalsHavingTransform(ProcessorPtr transform)

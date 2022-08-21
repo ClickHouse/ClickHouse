@@ -8,9 +8,7 @@
 #include <Common/DateLUT.h>
 #include <Common/ClickHouseRevision.h>
 
-#if defined(OS_LINUX)
-#    include <Poco/Environment.h>
-#endif
+#include <Poco/Environment.h>
 
 #include <Common/config_version.h>
 
@@ -109,7 +107,6 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
 
-#if defined(OS_LINUX)
     class FunctionGetOSKernelVersion : public FunctionConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
     {
     public:
@@ -117,66 +114,62 @@ namespace
         explicit FunctionGetOSKernelVersion(ContextPtr context) : FunctionConstantBase(Poco::Environment::osName() + " " + Poco::Environment::osVersion(), context->isDistributed()) {}
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
-#endif
 
 }
 
-
-void registerFunctionBuildId([[maybe_unused]] FunctionFactory & factory)
-{
 #if defined(__ELF__) && !defined(OS_FREEBSD)
+REGISTER_FUNCTION(BuildId)
+{
     factory.registerFunction<FunctionBuildId>();
-#endif
 }
+#endif
 
-void registerFunctionHostName(FunctionFactory & factory)
+REGISTER_FUNCTION(HostName)
 {
     factory.registerFunction<FunctionHostName>();
     factory.registerAlias("hostname", "hostName");
 }
 
-void registerFunctionServerUUID(FunctionFactory & factory)
+REGISTER_FUNCTION(ServerUUID)
 {
     factory.registerFunction<FunctionServerUUID>();
 }
 
-void registerFunctionTcpPort(FunctionFactory & factory)
+REGISTER_FUNCTION(TcpPort)
 {
     factory.registerFunction<FunctionTcpPort>();
 }
 
-void registerFunctionTimezone(FunctionFactory & factory)
+REGISTER_FUNCTION(Timezone)
 {
     factory.registerFunction<FunctionTimezone>();
     factory.registerAlias("timeZone", "timezone");
 }
 
-void registerFunctionUptime(FunctionFactory & factory)
+REGISTER_FUNCTION(Uptime)
 {
     factory.registerFunction<FunctionUptime>();
 }
 
-void registerFunctionVersion(FunctionFactory & factory)
+REGISTER_FUNCTION(Version)
 {
     factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
 }
 
-void registerFunctionRevision(FunctionFactory & factory)
+REGISTER_FUNCTION(Revision)
 {
     factory.registerFunction<FunctionRevision>(FunctionFactory::CaseInsensitive);
 }
 
-void registerFunctionZooKeeperSessionUptime(FunctionFactory & factory)
+REGISTER_FUNCTION(ZooKeeperSessionUptime)
 {
     factory.registerFunction<FunctionZooKeeperSessionUptime>();
 }
 
 
-void registerFunctionGetOSKernelVersion([[maybe_unused]] FunctionFactory & factory)
+REGISTER_FUNCTION(GetOSKernelVersion)
 {
-#if defined(OS_LINUX)
     factory.registerFunction<FunctionGetOSKernelVersion>();
-#endif
 }
 
 

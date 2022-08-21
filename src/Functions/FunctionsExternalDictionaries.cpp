@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void registerFunctionsExternalDictionaries(FunctionFactory & factory)
+REGISTER_FUNCTION(ExternalDictionaries)
 {
     factory.registerFunction<FunctionDictHas>();
     factory.registerFunction<FunctionDictGetUInt8>();

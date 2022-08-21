@@ -104,3 +104,4 @@ WATCH lv EVENTS LIMIT 1;
 
 :::info "Примечание"
     При отслеживании [LIVE VIEW](./create/view.md#live-view) через интерфейс HTTP следует использовать формат [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress). Постоянные сообщения об изменениях будут добавлены в поток вывода для поддержания активности долговременного HTTP-соединения до тех пор, пока результат запроса изменяется. Проомежуток времени между сообщениями об изменениях управляется настройкой[live_view_heartbeat_interval](./create/view.md#live-view-settings).
+:::

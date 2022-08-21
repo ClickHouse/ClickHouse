@@ -17,7 +17,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
@@ -34,11 +34,14 @@
 
 namespace ProfileEvents
 {
-extern const Event ExternalAggregationWritePart;
-extern const Event ExternalAggregationCompressedBytes;
-extern const Event ExternalAggregationUncompressedBytes;
-extern const Event AggregationPreallocatedElementsInHashTables;
-extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event ExternalAggregationWritePart;
+    extern const Event ExternalAggregationCompressedBytes;
+    extern const Event ExternalAggregationUncompressedBytes;
+    extern const Event AggregationPreallocatedElementsInHashTables;
+    extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event OverflowThrow;
+    extern const Event OverflowBreak;
+    extern const Event OverflowAny;
 }
 
 namespace
@@ -54,7 +57,7 @@ public:
         size_t median_size; // roughly the size we're going to preallocate on each thread
     };
 
-    using Cache = DB::LRUCache<UInt64, Entry>;
+    using Cache = DB::CacheBase<UInt64, Entry>;
     using CachePtr = std::shared_ptr<Cache>;
     using Params = DB::Aggregator::Params::StatsCollectingParams;
 
@@ -911,7 +914,7 @@ void Aggregator::mergeOnBlockSmall(
         mergeStreamsImpl(result.aggregates_pool, *result.NAME, result.NAME->data, \
                          result.without_key, /* no_more_keys= */ false, \
                          row_begin, row_end, \
-                         aggregate_columns_data, key_columns);
+                         aggregate_columns_data, key_columns, result.aggregates_pool);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -1667,14 +1670,17 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
         switch (params.group_by_overflow_mode)
         {
             case OverflowMode::THROW:
+                ProfileEvents::increment(ProfileEvents::OverflowThrow);
                 throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
                     + " rows, maximum: " + toString(params.max_rows_to_group_by),
                     ErrorCodes::TOO_MANY_ROWS);
 
             case OverflowMode::BREAK:
+                ProfileEvents::increment(ProfileEvents::OverflowBreak);
                 return false;
 
             case OverflowMode::ANY:
+                ProfileEvents::increment(ProfileEvents::OverflowAny);
                 no_more_keys = true;
                 break;
         }
@@ -2647,11 +2653,15 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     size_t row_begin,
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data,
-    const ColumnRawPtrs & key_columns) const
+    const ColumnRawPtrs & key_columns,
+    Arena * arena_for_keys) const
 {
     typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
+
+    if (!arena_for_keys)
+        arena_for_keys = aggregates_pool;
 
     for (size_t i = row_begin; i < row_end; ++i)
     {
@@ -2659,7 +2669,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
         if (!no_more_keys)
         {
-            auto emplace_result = state.emplaceKey(data, i, *aggregates_pool);
+            auto emplace_result = state.emplaceKey(data, i, *arena_for_keys); // NOLINT
             if (emplace_result.isInserted())
             {
                 emplace_result.setMapped(nullptr);
@@ -2674,7 +2684,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         }
         else
         {
-            auto find_result = state.findKey(data, i, *aggregates_pool);
+            auto find_result = state.findKey(data, i, *arena_for_keys);
             if (find_result.isFound())
                 aggregate_data = find_result.getMapped();
         }
@@ -2703,21 +2713,14 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Method & method,
     Table & data,
     AggregateDataPtr overflow_row,
-    bool no_more_keys) const
+    bool no_more_keys,
+    Arena * arena_for_keys) const
 {
     const AggregateColumnsConstData & aggregate_columns_data = params.makeAggregateColumnsData(block);
     const ColumnRawPtrs & key_columns = params.makeRawKeyColumns(block);
 
     mergeStreamsImpl<Method, Table>(
-        aggregates_pool,
-        method,
-        data,
-        overflow_row,
-        no_more_keys,
-        0,
-        block.rows(),
-        aggregate_columns_data,
-        key_columns);
+        aggregates_pool, method, data, overflow_row, no_more_keys, 0, block.rows(), aggregate_columns_data, key_columns, arena_for_keys);
 }
 
 template <typename Method, typename Table>
@@ -2730,12 +2733,15 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     size_t row_begin,
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data,
-    const ColumnRawPtrs & key_columns) const
+    const ColumnRawPtrs & key_columns,
+    Arena * arena_for_keys) const
 {
     if (!no_more_keys)
-        mergeStreamsImplCase<false>(aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns);
+        mergeStreamsImplCase<false>(
+            aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns, arena_for_keys);
     else
-        mergeStreamsImplCase<true>(aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns);
+        mergeStreamsImplCase<true>(
+            aggregates_pool, method, data, overflow_row, row_begin, row_end, aggregate_columns_data, key_columns, arena_for_keys);
 }
 
 
@@ -3015,17 +3021,26 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
+    size_t source_rows = 0;
+
+    /// In some aggregation methods (e.g. serialized) aggregates pools are used also to store serialized aggregation keys.
+    /// Memory occupied by them will have the same lifetime as aggregate function states, while it is not actually necessary and leads to excessive memory consumption.
+    /// To avoid this we use a separate arena to allocate memory for aggregation keys. Its memory will be freed at this function return.
+    auto arena_for_keys = std::make_shared<Arena>();
+
     for (Block & block : blocks)
     {
+        source_rows += block.rows();
+
         if (bucket_num >= 0 && block.info.bucket_num != bucket_num)
             bucket_num = -1;
 
         if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
             mergeBlockWithoutKeyStreamsImpl(std::move(block), result);
 
-    #define M(NAME, IS_TWO_LEVEL) \
-        else if (result.type == AggregatedDataVariants::Type::NAME) \
-            mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false);
+#define M(NAME, IS_TWO_LEVEL) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+        mergeStreamsImpl(std::move(block), result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false, arena_for_keys.get());
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
@@ -3049,9 +3064,15 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_DEBUG(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({:.3f} rows/sec., {}/sec.)",
-        rows, ReadableSize(bytes),
-        elapsed_seconds, rows / elapsed_seconds,
+    LOG_DEBUG(
+        log,
+        "Merged partially aggregated blocks for bucket #{}. Got {} rows, {} from {} source rows in {} sec. ({:.3f} rows/sec., {}/sec.)",
+        bucket_num,
+        rows,
+        ReadableSize(bytes),
+        source_rows,
+        elapsed_seconds,
+        rows / elapsed_seconds,
         ReadableSize(bytes / elapsed_seconds));
 
     block.info.bucket_num = bucket_num;

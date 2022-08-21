@@ -68,7 +68,7 @@ public:
 
 }
 
-void registerFunctionBlockNumber(FunctionFactory & factory)
+REGISTER_FUNCTION(BlockNumber)
 {
     factory.registerFunction<FunctionBlockNumber>();
 }

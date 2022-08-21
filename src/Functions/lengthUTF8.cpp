@@ -68,7 +68,7 @@ using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, NameLengthUT
 
 }
 
-void registerFunctionLengthUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(LengthUTF8)
 {
     factory.registerFunction<FunctionLengthUTF8>();
 

@@ -1272,7 +1272,7 @@ using TupleOrArrayFunctionLpDistance = TupleOrArrayFunction<LpDistanceTraits>;
 using TupleOrArrayFunctionLinfDistance = TupleOrArrayFunction<LinfDistanceTraits>;
 using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTraits>;
 
-void registerVectorFunctions(FunctionFactory & factory)
+REGISTER_FUNCTION(VectorFunctions)
 {
     factory.registerFunction<FunctionTuplePlus>();
     factory.registerAlias("vectorSum", FunctionTuplePlus::name, FunctionFactory::CaseInsensitive);

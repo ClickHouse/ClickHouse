@@ -45,7 +45,7 @@ def test_concurrent_backups(start_cluster):
 
     assert_eq_with_retry(
         node,
-        "SELECT count() FROM system.backups WHERE status != 'BACKUP_COMPLETE' and status != 'FAILED_TO_BACKUP'",
+        "SELECT count() FROM system.backups WHERE status != 'BACKUP_CREATED' and status != 'BACKUP_FAILED'",
         "0",
         retry_count=100,
     )
