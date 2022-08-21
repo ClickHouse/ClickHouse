@@ -42,13 +42,14 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashJoin.h>
-
+#include <Interpreters/ArrayJoinAction.h>
 
 namespace DB
 {
@@ -74,7 +75,6 @@ namespace ErrorCodes
   * TODO: Support ORDER BY, LIMIT
   * TODO: Support WINDOW FUNCTIONS
   * TODO: Support DISTINCT
-  * TODO: Support ArrayJoin
   * TODO: Support building sets for IN functions
   * TODO: Support trivial count optimization
   * TODO: Support totals, extremes
@@ -994,7 +994,12 @@ public:
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ARRAY JOIN is not supported");
+                auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
+                visit(array_join_node.getTableExpression(), planner_context);
+
+                std::string table_expression_identifier = std::to_string(planner_context.table_expression_node_to_identifier.size());
+                planner_context.table_expression_node_to_identifier.emplace(join_tree_node.get(), table_expression_identifier);
+                break;
             }
             default:
             {
@@ -1025,10 +1030,8 @@ public:
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::ARRAY_JOIN)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ARRAY JOIN is not supported");
-
-        if (column_source_node_type == QueryTreeNodeType::LAMBDA)
+        if (column_source_node_type == QueryTreeNodeType::ARRAY_JOIN ||
+            column_source_node_type == QueryTreeNodeType::LAMBDA)
             return;
 
         /// JOIN using expression
@@ -1682,11 +1685,11 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
             planner_context);
 
         auto left_join_expressions_actions_step = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), join_clauses_and_actions.left_join_expressions_actions);
-        left_join_expressions_actions_step->setStepDescription("Join actions");
+        left_join_expressions_actions_step->setStepDescription("JOIN actions");
         left_plan.addStep(std::move(left_join_expressions_actions_step));
 
         auto right_join_expressions_actions_step = std::make_unique<ExpressionStep>(right_plan.getCurrentDataStream(), join_clauses_and_actions.right_join_expressions_actions);
-        right_join_expressions_actions_step->setStepDescription("Join actions");
+        right_join_expressions_actions_step->setStepDescription("JOIN actions");
         right_plan.addStep(std::move(right_join_expressions_actions_step));
     }
 
@@ -1918,6 +1921,49 @@ QueryPlan buildQueryPlanForJoinNode(QueryTreeNodePtr join_tree_node,
     return result_plan;
 }
 
+QueryPlan buildQueryPlanForArrayJoinNode(QueryTreeNodePtr table_expression,
+    SelectQueryInfo & select_query_info,
+    const SelectQueryOptions & select_query_options,
+    PlannerContext & planner_context)
+{
+    auto & array_join_node = table_expression->as<ArrayJoinNode &>();
+
+    auto left_plan = buildQueryPlanForJoinTreeNode(array_join_node.getTableExpression(),
+        select_query_info,
+        select_query_options,
+        planner_context);
+    auto left_plan_output_columns = left_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+    ActionsDAGPtr array_join_action_dag = std::make_shared<ActionsDAG>(left_plan_output_columns);
+    QueryTreeActionsVisitor actions_visitor(array_join_action_dag, planner_context);
+
+    NameSet array_join_columns;
+    for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
+    {
+        auto & array_join_expression_column = array_join_expression->as<ColumnNode &>();
+        const auto & array_join_column_name = array_join_expression_column.getColumnName();
+        array_join_columns.insert(array_join_column_name);
+
+        auto expression_dag_index_nodes = actions_visitor.visit(array_join_expression_column.getExpressionOrThrow());
+        for (auto & expression_dag_index_node : expression_dag_index_nodes)
+        {
+            const auto * array_join_column_node = &array_join_action_dag->addAlias(*expression_dag_index_node, array_join_column_name);
+            array_join_action_dag->getOutputs().push_back(array_join_column_node);
+        }
+    }
+
+    auto array_join_actions = std::make_unique<ExpressionStep>(left_plan.getCurrentDataStream(), array_join_action_dag);
+    array_join_actions->setStepDescription("ARRAY JOIN actions");
+    left_plan.addStep(std::move(array_join_actions));
+
+    auto array_join_action = std::make_shared<ArrayJoinAction>(array_join_columns, array_join_node.isLeft(), planner_context.query_context);
+    auto array_join_step = std::make_unique<ArrayJoinStep>(left_plan.getCurrentDataStream(), std::move(array_join_action));
+    array_join_step->setStepDescription("ARRAY JOIN");
+    left_plan.addStep(std::move(array_join_step));
+
+    return left_plan;
+}
+
 QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
     SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -1942,11 +1988,13 @@ QueryPlan buildQueryPlanForJoinTreeNode(QueryTreeNodePtr join_tree_node,
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ARRAY JOIN is not supported");
+            return buildQueryPlanForArrayJoinNode(join_tree_node, select_query_info, select_query_options, planner_context);
         }
         default:
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected query, table, table function, join or array join query node. Actual {}", join_tree_node->formatASTForErrorMessage());
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Expected query, table, table function, join or array join query node. Actual {}",
+                join_tree_node->formatASTForErrorMessage());
         }
     }
 }

@@ -32,7 +32,7 @@ void ArrayJoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_stat
     buffer << '\n' << std::string(indent + 2, ' ') << "TABLE EXPRESSION\n";
     getTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "JOIN EXPRESSSION\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "JOIN EXPRESSSIONS\n";
     getJoinExpressionsNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
@@ -51,6 +51,7 @@ ASTPtr ArrayJoinNode::toASTImpl() const
 {
     auto array_join_ast = std::make_shared<ASTArrayJoin>();
     array_join_ast->kind = is_left ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
+
     const auto & join_expression_list_node = getJoinExpressionsNode();
     array_join_ast->children.push_back(join_expression_list_node->toAST());
     array_join_ast->expression_list = array_join_ast->children.back();
