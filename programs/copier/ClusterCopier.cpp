@@ -2010,7 +2010,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             {
                 connections.emplace_back(std::make_shared<Connection>(
                     node.host_name, node.port, node.default_database,
-                    node.user, node.password, node.cluster, node.cluster_secret,
+                    node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
                     "ClusterCopier", node.compression, node.secure
                 ));
 

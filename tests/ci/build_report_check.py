@@ -244,7 +244,7 @@ def main():
         logging.error("No success builds, failing check")
         sys.exit(1)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"

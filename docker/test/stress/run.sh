@@ -178,6 +178,7 @@ install_packages package_folder
 
 configure
 
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
 ./setup_minio.sh stateful  # to have a proper environment
 
 start
@@ -315,6 +316,13 @@ else
     # Avoid "Setting allow_deprecated_database_ordinary is neither a builtin setting..."
     rm -f /etc/clickhouse-server/users.d/database_ordinary.xml ||:
 
+    # Remove s3 related configs to avoid "there is no disk type `cache`"
+    rm -f /etc/clickhouse-server/config.d/storage_conf.xml ||:
+    rm -f /etc/clickhouse-server/config.d/azure_storage_conf.xml ||:
+
+    # Disable aggressive cleanup of tmp dirs (it worked incorrectly before 22.8)
+    rm -f /etc/clickhouse-server/config.d/merge_tree_old_dirs_cleanup.xml ||:
+
     start
 
     clickhouse-client --query="SELECT 'Server version: ', version()"
@@ -379,6 +387,7 @@ else
                -e "TABLE_IS_READ_ONLY" \
                -e "Code: 1000, e.code() = 111, Connection refused" \
                -e "UNFINISHED" \
+               -e "NETLINK_ERROR" \
                -e "Renaming unexpected part" \
                -e "PART_IS_TEMPORARILY_LOCKED" \
                -e "and a merge is impossible: we didn't find" \
@@ -391,6 +400,7 @@ else
                -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
                -e "This engine is deprecated and is not supported in transactions" \
                -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
+               -e "The set of parts restored in place of" \
         /var/log/clickhouse-server/clickhouse-server.backward.clean.log | zgrep -Fa "<Error>" > /test_output/bc_check_error_messages.txt \
         && echo -e 'Backward compatibility check: Error message in clickhouse-server.log (see bc_check_error_messages.txt)\tFAIL' >> /test_output/test_results.tsv \
         || echo -e 'Backward compatibility check: No Error messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv

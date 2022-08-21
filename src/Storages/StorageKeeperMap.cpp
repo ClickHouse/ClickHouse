@@ -18,7 +18,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <Storages/ColumnsDescription.h>
-#include <Storages/IKVStorage.h>
 #include <Storages/KVStorageUtils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -315,7 +314,7 @@ StorageKeeperMap::StorageKeeperMap(
     bool create_missing_root_path,
     size_t keys_limit_,
     bool remove_existing_data)
-    : IKeyValueStorage(table_id), root_path(root_path_), primary_key(primary_key_), zookeeper_client(getZooKeeperClient(hosts, context)), log(&Poco::Logger::get("StorageKeeperMap"))
+    : IStorage(table_id), root_path(root_path_), primary_key(primary_key_), zookeeper_client(getZooKeeperClient(hosts, context)), log(&Poco::Logger::get("StorageKeeperMap"))
 {
     setInMemoryMetadata(metadata);
 
@@ -500,7 +499,7 @@ UInt64 StorageKeeperMap::keysLimit() const
     return keys_limit;
 }
 
-Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map) const
+Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());
@@ -577,6 +576,12 @@ Chunk StorageKeeperMap::getBySerializedKeys(const std::span<const std::string> k
 
     size_t num_rows = columns.at(0)->size();
     return Chunk(std::move(columns), num_rows);
+}
+
+Block StorageKeeperMap::getSampleBlock(const Names &) const
+{
+    auto metadata = getInMemoryMetadataPtr();
+    return metadata ? metadata->getSampleBlock() : Block();
 }
 
 namespace

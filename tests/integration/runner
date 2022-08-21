@@ -345,7 +345,7 @@ if __name__ == "__main__":
                 f"docker volume create {VOLUME_NAME}_volume", shell=True
             )
         except Exception as ex:
-            print("Volume creationg failed, probably it already exists, exception", ex)
+            print("Volume creation failed, probably it already exists, exception", ex)
         # TODO: this part cleans out stale volumes produced by container name
         # randomizer, we should remove it after Sep 2022
         try:
