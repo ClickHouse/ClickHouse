@@ -164,7 +164,7 @@ Default value: 604800 (1 week).
 
 Similar to [replicated_deduplication_window](#replicated-deduplication-window), `replicated_deduplication_window_seconds` specifies how long to store hash sums of blocks for insert deduplication. Hash sums older than `replicated_deduplication_window_seconds` are removed from ClickHouse Keeper, even if they are less than ` replicated_deduplication_window`.
 
-The time is relative to the time of the most recent record, not to wall time. If it's the only record it will stored forever.
+The time is relative to the time of the most recent record, not to the wall time. If it's the only record it will be stored forever.
 
 ## max_replicated_logs_to_keep
 
