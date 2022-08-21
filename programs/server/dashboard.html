@@ -299,79 +299,155 @@ let host = 'https://play.clickhouse.com/';
 let user = 'explorer';
 let password = '';
 
+/// If it is hosted on server, assume that it is the address of ClickHouse.
 if (location.protocol != 'file:') {
     host = location.origin;
     user = 'default';
 }
 
+/// This is just a demo configuration of the dashboard.
+
 let queries = [
     {
       "title": "Queries/second",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_Query)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_Query)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "CPU Usage (cores)",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSCPUVirtualTimeMicroseconds) / 1000000\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSCPUVirtualTimeMicroseconds) / 1000000
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Queries Running",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_Query)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_Query)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Merges Running",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_Merge)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_Merge)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
-      "title": "Selected Bytes/second",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_SelectedBytes)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "title": "SELECTed Bytes/second",
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_SelectedBytes)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "IO Wait",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSIOWaitMicroseconds) / 1000000\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSIOWaitMicroseconds) / 1000000
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "CPU Wait",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSCPUWaitMicroseconds) / 1000000\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSCPUWaitMicroseconds) / 1000000
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "OS CPU Usage (Userspace)",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM system.asynchronous_metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'OSUserTimeNormalized'\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'OSUserTimeNormalized'
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "OS CPU Usage (Kernel)",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM system.asynchronous_metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'OSSystemTimeNormalized'\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'OSSystemTimeNormalized'
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Read From Disk",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSReadBytes)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSReadBytes)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Read From Filesystem",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSReadChars)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_OSReadChars)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Memory (tracked)",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_MemoryTracking)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(CurrentMetric_MemoryTracking)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Load Average (15 minutes)",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM system.asynchronous_metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'LoadAverage15'\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'LoadAverage15'
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Selected Rows/second",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_SelectedRows)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_SelectedRows)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Inserted Rows/second",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_InsertedRows)\nFROM system.metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_InsertedRows)
+FROM system.metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Total MergeTree Parts",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)\nFROM system.asynchronous_metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'TotalPartsOfMergeTreeTables'\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'TotalPartsOfMergeTreeTables'
+GROUP BY t
+ORDER BY t`
     },
     {
       "title": "Max Parts For Partition",
-      "query": "SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)\nFROM system.asynchronous_metric_log\nWHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}\nAND metric = 'MaxPartCountForPartition'\nGROUP BY t\nORDER BY t"
+      "query": `SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, max(value)
+FROM system.asynchronous_metric_log
+WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+AND metric = 'MaxPartCountForPartition'
+GROUP BY t
+ORDER BY t`
     }
 ];
 
@@ -381,6 +457,10 @@ let params = {
     "rounding": "60",
     "seconds": "86400"
 };
+
+/// Implementation note: it might be more natural to use some reactive framework.
+/// But for now it is small enough to avoid it. As a bonus we have less number of dependencies,
+/// which is better for maintainability.
 
 let theme = 'light';
 
