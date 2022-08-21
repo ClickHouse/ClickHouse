@@ -171,14 +171,17 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
 
     auto play_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     play_handler->attachNonStrictPath("/play");
+    play_handler->allowGetAndHeadRequest();
     factory.addHandler(play_handler);
 
     auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     dashboard_handler->attachNonStrictPath("/dashboard");
+    dashboard_handler->allowGetAndHeadRequest();
     factory.addHandler(dashboard_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
+    js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
 }
 
