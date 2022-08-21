@@ -288,6 +288,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                     ///                     file_offset_of_buffer_end
 
                     read_type = ReadType::CACHED;
+                    LOG_TEST(log, "`Cached` read type (1): {}", file_segment->getInfoForLog());
                     return getCacheReadBuffer(range.left);
                 }
 
@@ -306,6 +307,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
             case FileSegment::State::DOWNLOADED:
             {
                 read_type = ReadType::CACHED;
+                LOG_TEST(log, "`Cached` read type (2): {}", file_segment->getInfoForLog());
                 return getCacheReadBuffer(range.left);
             }
             case FileSegment::State::EMPTY:
@@ -322,6 +324,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                     ///                     file_offset_of_buffer_end
 
                     read_type = ReadType::CACHED;
+                    LOG_TEST(log, "`Cached` read type (3): {}", file_segment->getInfoForLog());
                     return getCacheReadBuffer(range.left);
                 }
 
@@ -339,6 +342,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                         ///                     file_offset_of_buffer_end
 
                         read_type = ReadType::CACHED;
+                        LOG_TEST(log, "`Cached` read type (4): {}", file_segment->getInfoForLog());
                         file_segment->resetDownloader();
                         return getCacheReadBuffer(range.left);
                     }
@@ -371,6 +375,7 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegmentPtr & fil
                 if (canStartFromCache(file_offset_of_buffer_end, *file_segment))
                 {
                     read_type = ReadType::CACHED;
+                    LOG_TEST(log, "`Cached` read type (5): {}", file_segment->getInfoForLog());
                     return getCacheReadBuffer(range.left);
                 }
                 else
@@ -718,24 +723,24 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         auto current_write_offset = file_segment->getCurrentWriteOffset();
         bool cached_part_is_finished = current_write_offset == file_offset_of_buffer_end;
 
-#ifndef NDEBUG
-        size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
-        size_t cache_file_read_offset = implementation_buffer->getFileOffsetOfBufferEnd();
-        size_t implementation_buffer_finished = cache_file_size == cache_file_read_offset;
-
-        if (cached_part_is_finished != implementation_buffer_finished)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Incorrect state of buffers. Current write offset: {}, file offset of buffer end: {}, "
-                "cache file size: {}, cache file offset: {}, file segment info: {}",
-                current_write_offset, file_offset_of_buffer_end, cache_file_size, cache_file_read_offset,
-                file_segment->getInfoForLog());
-        }
-#endif
-
+        LOG_TEST(log, "Current write offset: {}, file offset of buffer end: {}", current_write_offset, file_offset_of_buffer_end);
         if (cached_part_is_finished)
         {
+#ifndef NDEBUG
+            size_t cache_file_size = getFileSizeFromReadBuffer(*implementation_buffer);
+            size_t cache_file_read_offset = implementation_buffer->getFileOffsetOfBufferEnd();
+
+            if (cache_file_size != cache_file_read_offset)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Incorrect state of buffers. Current write offset: {}, file offset of buffer end: {}, "
+                    "cache file size: {}, cache file offset: {}, file segment info: {}",
+                    current_write_offset, file_offset_of_buffer_end, cache_file_size, cache_file_read_offset,
+                    file_segment->getInfoForLog());
+            }
+#endif
+
             /// TODO: makes sense to reuse local file reader if we return here with CACHED read type again?
             implementation_buffer = getImplementationBuffer(*current_file_segment_it);
 
@@ -747,6 +752,10 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected {} >= {} ({})",
                 current_write_offset, file_offset_of_buffer_end, getInfoForLog());
+        }
+        else
+        {
+            file_segment->waitBackgroundDownloadIfExists(file_offset_of_buffer_end);
         }
     }
 
@@ -887,12 +896,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     LOG_TEST(
         log,
-        "Current segment: {}, downloader: {}, current count: {}, position: {}, read range: {}",
-        current_read_range.toString(),
-        file_segment->getDownloader(),
+        "Current count: {}, position: {}, read range: {}, file segment: {}",
         implementation_buffer->count(),
         implementation_buffer->getPosition(),
-        implementation_buffer->getRemainingReadRange().toString());
+        implementation_buffer->getRemainingReadRange().toString(),
+        file_segment->getInfoForLog());
 
     chassert(current_read_range.left <= file_offset_of_buffer_end);
     chassert(current_read_range.right >= file_offset_of_buffer_end);

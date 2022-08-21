@@ -314,17 +314,25 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
     {
         std::unique_lock segment_lock(mutex);
 
+        const auto & currently_downloading = async_write_state->currently_downloading;
+
 #ifndef NDEBUG
         String currently_downloading_str;
-        for (const auto & [download_offset, result] : async_write_state->currently_downloading)
+        for (const auto & [download_offset, result] : currently_downloading)
         {
             if (!currently_downloading_str.empty())
                 currently_downloading_str += ", ";
             currently_downloading_str += fmt::format("[{}:{}]", download_offset, download_offset + result.expected_size - 1);
         }
 
-        LOG_TEST(log, "Background download ranges: {}", currently_downloading_str);
+        LOG_TEST(
+            log,
+            "Reqested offset: {}, background download ranges: {} ({})",
+            offset, currently_downloading_str, getInfoForLogUnlocked(segment_lock));
 #endif
+
+        if (currently_downloading.empty())
+            return;
 
         /// Get offset which corresponds to the first byte for which
         /// there is no in memory buffer in the background download queue:
@@ -345,12 +353,9 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
 
             /// There is no data starting from `offset` which is waiting
             /// to be downloaded by the background thread.
+            LOG_TEST(log, "current write offset < offset");
             return;
         }
-
-        const auto & currently_downloading = async_write_state->currently_downloading;
-        if (currently_downloading.empty())
-            return;
 
         size_t first_non_downloaded_offset = currently_downloading.begin()->first;
 
@@ -362,6 +367,7 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
             ///   offset    first_non_downloaded_offset
 
             /// Data containing `offset` is already downloaded.
+            LOG_TEST(log, "offset < first_non_downloaded_offset");
             return;
         }
 
@@ -565,12 +571,6 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         std::optional<size_t> start_offset;
         size_t total_size = 0;
 
-        auto on_cancel = [this]()
-        {
-            assert(async_write_state->currently_downloading.empty());
-            background_downloader_id.clear();
-        };
-
         try
         {
             std::optional<size_t> last_finished_buffer_offset;
@@ -584,7 +584,9 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
                     if (state.is_cancelled)
                     {
-                        on_cancel();
+                        assert(async_write_state->currently_downloading.empty());
+                        background_downloader_id.clear();
+
                         return;
                     }
 
@@ -1065,6 +1067,8 @@ String FileSegment::getInfoForLogUnlocked(std::unique_lock<std::mutex> & segment
     info << "reserved size: " << reserved_size << ", ";
     info << "downloader id: " << (downloader_id.empty() ? "None" : downloader_id) << ", ";
     info << "background downloader id: " << background_downloader_id << ", ";
+    info << "current write offset: " << getCurrentWriteOffsetUnlocked(segment_lock) << ", ";
+    info << "first non-downloaded offset: " << getFirstNonDownloadedOffsetUnlocked(segment_lock) << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "persistent: " << is_persistent;
 
