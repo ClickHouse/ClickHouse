@@ -34,6 +34,6 @@ install(FILES config.xml users.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse
 
 clickhouse_embed_binaries(
     TARGET clickhouse_server_configs
-    RESOURCES config.xml users.xml embedded.xml play.html
+    RESOURCES config.xml users.xml embedded.xml play.html dashboard.html js/uplot.js
 )
 add_dependencies(clickhouse-server-lib clickhouse_server_configs)
