@@ -68,6 +68,7 @@ ANNCondition::ANNCondition(const SelectQueryInfo & query_info,
     block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
     ann_index_select_query_params{context->getSettings().get("ann_index_select_query_params").get<String>()},
     index_granularity{context->getMergeTreeSettings().get("index_granularity").get<UInt64>()},
+    limit_restriction{context->getSettings().get("max_limit_for_ann_queries").get<UInt64>()},
     index_is_useful{checkQueryStructure(query_info)} {}
 
 bool ANNCondition::alwaysUnknownOrTrue(String metric_name) const
@@ -200,8 +201,8 @@ bool ANNCondition::checkQueryStructure(const SelectQueryInfo & query)
     const bool order_by_is_valid = matchRPNOrderBy(rpn_order_by_clause, order_by_info);
     const bool limit_is_valid = matchRPNLimit(rpn_limit, limit);
 
-    // Query without LIMIT clause is not supported
-    if (!limit_is_valid)
+    // Query without a LIMIT clause or with a limit greater than a restriction is not supported
+    if (!limit_is_valid || limit_restriction < limit)
     {
         return false;
     }
@@ -290,6 +291,10 @@ bool ANNCondition::traverseAtomAST(const ASTPtr & node, RPNElement & out)
         {
             out.function = RPNElement::FUNCTION_COMPARISON;
         }
+        else if (function->name == "_CAST")
+        {
+            out.function = RPNElement::FUNCTION_CAST;
+        }
         else
         {
             return false;
@@ -356,6 +361,13 @@ bool ANNCondition::tryCastToConstType(const ASTPtr & node, RPNElement & out)
             out.function = RPNElement::FUNCTION_LITERAL_ARRAY;
             out.array_literal = const_value.get<Array>();
             out.func_name = "Array literal";
+            return true;
+        }
+
+        if (const_value.getType() == Field::Types::String)
+        {
+            out.function = RPNElement::FUNCTION_STRING_LITERAL;
+            out.func_name = const_value.get<String>();
             return true;
         }
     }
@@ -507,6 +519,31 @@ bool ANNCondition::matchMainParts(RPN::iterator & iter, const RPN::iterator & en
     {
         extractTargetVectorFromLiteral(expr.target, iter->array_literal);
         ++iter;
+    }
+
+    if (iter->function == RPNElement::FUNCTION_CAST)
+    {
+        ++iter;
+        /// Cast should be made to array or tuple
+        if (!iter->func_name.starts_with("Array") && !iter->func_name.starts_with("Tuple"))
+        {
+            return false;
+        }
+        ++iter;
+        if (iter->function == RPNElement::FUNCTION_LITERAL_TUPLE)
+        {
+            extractTargetVectorFromLiteral(expr.target, iter->tuple_literal);
+            ++iter;
+        }
+        else if (iter->function == RPNElement::FUNCTION_LITERAL_ARRAY)
+        {
+            extractTargetVectorFromLiteral(expr.target, iter->array_literal);
+            ++iter;
+        }
+        else
+        {
+            return false;
+        }
     }
 
     while (iter != end)
