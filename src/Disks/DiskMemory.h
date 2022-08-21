@@ -97,6 +97,8 @@ public:
 
     bool supportZeroCopyReplication() const override { return false; }
 
+    MetadataStoragePtr getMetadataStorage() override;
+
 private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);

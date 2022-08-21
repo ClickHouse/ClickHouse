@@ -24,7 +24,8 @@ public:
         const std::optional<UInt128> & checksum_ = {});
 
     String getFilePath() const override { return file_path; }
-    DiskPtr getDisk() const { return disk; }
+
+    std::shared_ptr<IDisk> tryGetDiskIfExists() const override { return disk; }
 private:
     const DiskPtr disk;
     const String file_path;

@@ -6,6 +6,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & path_) : disk(disk_), path(path_)
 {
 }
@@ -92,11 +98,14 @@ bool BackupWriterDisk::supportNativeCopy(DataSourceDescription data_source_descr
     return data_source_description == disk->getDataSourceDescription();
 }
 
-void BackupWriterDisk::copyFileNative(const String & file_name_from, const String & file_name_to)
+void BackupWriterDisk::copyFileNative(std::shared_ptr<IDisk> from_disk, const String & file_name_from, const String & file_name_to)
 {
     auto file_path = path / file_name_to;
     disk->createDirectories(file_path.parent_path());
-    disk->copyFile(file_name_from, *disk, file_path);
+    if (from_disk)
+        from_disk->copyFile(file_name_from, *disk, file_path);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot natively copy data to disk without source disk");
 }
 
 }

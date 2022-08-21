@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 #include <Disks/DiskType.h>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -27,6 +28,8 @@ public:
     virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer() const = 0;
 
     virtual String getFilePath() const = 0;
+
+    virtual std::shared_ptr<IDisk> tryGetDiskIfExists() const = 0;
 
     virtual DataSourceDescription getDataSourceDescription() const = 0;
 };

@@ -29,6 +29,8 @@ public:
         return DataSourceDescription{DataSourceType::RAM, "", false, false};
     }
 
+    std::shared_ptr<IDisk> tryGetDiskIfExists() const override { return nullptr; }
+
 private:
     const String data;
     const std::optional<UInt128> checksum;

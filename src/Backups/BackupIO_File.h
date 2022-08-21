@@ -35,7 +35,7 @@ public:
     DataSourceDescription getDataSourceDescription() const override;
     bool supportNativeCopy(DataSourceDescription data_source_description) const override;
 
-    void copyFileNative(const String & file_name_from, const String & file_name_to) override;
+    void copyFileNative(std::shared_ptr<IDisk> from_disk, const String & file_name_from, const String & file_name_to) override;
 
 private:
     std::filesystem::path path;

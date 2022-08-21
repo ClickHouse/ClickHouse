@@ -214,6 +214,22 @@ void DiskObjectStorage::moveFile(const String & from_path, const String & to_pat
     transaction->commit();
 }
 
+
+void DiskObjectStorage::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+{
+    /// It's the same object storage disk
+    if (this == to_disk.get())
+    {
+        auto transaction = createObjectStorageTransaction();
+        transaction->copyFile(from_path, to_path);
+        transaction->commit();
+    }
+    else
+    {
+        IDisk::copy(from_path, to_disk, to_path);
+    }
+}
+
 void DiskObjectStorage::moveFile(const String & from_path, const String & to_path)
 {
     moveFile(from_path, to_path, send_metadata);
