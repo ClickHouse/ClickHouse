@@ -883,7 +883,10 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 second = (s[17] - '0') * 10 + (s[18] - '0');
             }
 
-            datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
+            if (unlikely(year == 0))
+                datetime = 0;
+            else
+                datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
             if (dt_long)
                 buf.position() += date_time_broken_down_length;
