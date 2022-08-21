@@ -901,13 +901,11 @@ now64([scale], [timezone])
 
 **Returned value**
 
--   Current date and time.
+-   Current date and time with sub-second precision.
 
 Type: [Datetime64](../../sql-reference/data-types/datetime64.md).
 
 **Example**
-
-Query without timezone:
 
 ``` sql
 SELECT now64(), now64(9, 'Asia/Istanbul');
