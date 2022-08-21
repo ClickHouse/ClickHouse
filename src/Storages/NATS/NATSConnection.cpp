@@ -9,7 +9,6 @@
 namespace DB
 {
 
-//static const auto CONNECT_SLEEP = 200;
 static const auto RETRIES_MAX = 20;
 static const auto CONNECTED_TO_BUFFER_SIZE = 256;
 
@@ -19,6 +18,10 @@ NATSConnectionManager::NATSConnectionManager(const NATSConfiguration & configura
     , log(log_)
     , event_handler(loop.getLoop(), log)
 {
+    const char * val = std::getenv("CLICKHOUSE_NATS_TLS_SECURE");
+    std::string tls_secure = val == nullptr ? std::string("1") : std::string(val);
+    if (tls_secure == "0")
+        skip_verification = true;
 }
 
 
@@ -92,6 +95,9 @@ void NATSConnectionManager::connectImpl()
     if (configuration.secure)
     {
         natsOptions_SetSecure(options, true);
+    }
+    if (skip_verification)
+    {
         natsOptions_SkipServerVerification(options, true);
     }
     if (!configuration.url.empty())

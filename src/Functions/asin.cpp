@@ -12,7 +12,7 @@ using FunctionAsin = FunctionMathUnary<UnaryFunctionVectorized<AsinName, asin>>;
 
 }
 
-void registerFunctionAsin(FunctionFactory & factory)
+REGISTER_FUNCTION(Asin)
 {
     factory.registerFunction<FunctionAsin>(FunctionFactory::CaseInsensitive);
 }

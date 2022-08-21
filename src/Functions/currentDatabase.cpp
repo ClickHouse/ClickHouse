@@ -51,7 +51,7 @@ public:
 
 }
 
-void registerFunctionCurrentDatabase(FunctionFactory & factory)
+REGISTER_FUNCTION(CurrentDatabase)
 {
     factory.registerFunction<FunctionCurrentDatabase>();
     factory.registerFunction<FunctionCurrentDatabase>("DATABASE", FunctionFactory::CaseInsensitive);

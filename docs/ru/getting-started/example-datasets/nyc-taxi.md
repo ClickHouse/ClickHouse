@@ -293,6 +293,7 @@ $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.trips_mergetree"
 :::info "Info"
     Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
 нужно добавить имя базы, `datasets.trips_mergetree`.
+:::
 
 ## Результаты на одном сервере {#rezultaty-na-odnom-servere}
 

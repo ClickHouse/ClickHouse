@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToHourImpl>;
 
-void registerFunctionToHour(FunctionFactory & factory)
+REGISTER_FUNCTION(ToHour)
 {
     factory.registerFunction<FunctionToHour>();
 

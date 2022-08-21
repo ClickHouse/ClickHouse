@@ -77,7 +77,7 @@ struct CutURLParameterImpl
 struct NameCutURLParameter { static constexpr auto name = "cutURLParameter"; };
 using FunctionCutURLParameter = FunctionsStringSearchToString<CutURLParameterImpl, NameCutURLParameter>;
 
-void registerFunctionCutURLParameter(FunctionFactory & factory)
+REGISTER_FUNCTION(CutURLParameter)
 {
     factory.registerFunction<FunctionCutURLParameter>();
 }

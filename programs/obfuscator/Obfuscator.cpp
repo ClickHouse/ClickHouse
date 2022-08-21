@@ -46,6 +46,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
 #include <Common/TerminalSize.h>
+#include <bit>
 
 
 static const char * documentation = R"(
@@ -186,7 +187,7 @@ static UInt64 transform(UInt64 x, UInt64 seed)
     if (x == 2 || x == 3)
         return x ^ (seed & 1);
 
-    size_t num_leading_zeros = __builtin_clzll(x);
+    size_t num_leading_zeros = std::countl_zero(x);
 
     return feistelNetwork(x, 64 - num_leading_zeros - 1, seed);
 }

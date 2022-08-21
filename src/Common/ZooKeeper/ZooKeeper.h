@@ -127,6 +127,8 @@ public:
     /// Returns true, if the session has expired.
     bool expired();
 
+    DB::KeeperApiVersion getApiVersion();
+
     /// Create a znode.
     /// Throw an exception if something went wrong.
     std::string create(const std::string & path, const std::string & data, int32_t mode);
@@ -184,11 +186,13 @@ public:
 
     Strings getChildren(const std::string & path,
                         Coordination::Stat * stat = nullptr,
-                        const EventPtr & watch = nullptr);
+                        const EventPtr & watch = nullptr,
+                        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     Strings getChildrenWatch(const std::string & path,
                              Coordination::Stat * stat,
-                             Coordination::WatchCallback watch_callback);
+                             Coordination::WatchCallback watch_callback,
+                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist.
