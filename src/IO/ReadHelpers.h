@@ -736,6 +736,7 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf)
         readDateTextImpl<ReturnType>(local_date, buf);
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
+
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
     date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
     return ReturnType(true);
