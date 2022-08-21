@@ -327,7 +327,7 @@ void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
 
         LOG_TEST(
             log,
-            "Reqested offset: {}, background download ranges: {} ({})",
+            "Requested offset: {}, background download ranges: {} ({})",
             offset, currently_downloading_str, getInfoForLogUnlocked(segment_lock));
 #endif
 
