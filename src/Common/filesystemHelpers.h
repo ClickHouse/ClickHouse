@@ -9,6 +9,7 @@
 #include <sys/statvfs.h>
 #include <Poco/TemporaryFile.h>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -89,4 +90,8 @@ Poco::Timestamp getModificationTimestamp(const std::string & path);
 void setModificationTime(const std::string & path, time_t time);
 /// st_ctime
 time_t getChangeTime(const std::string & path);
+
+bool isSymlink(const fs::path & path);
+fs::path readSymlink(const fs::path & path);
+
 }

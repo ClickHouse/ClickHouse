@@ -88,8 +88,6 @@ using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 /// small amounts of data (strings).
 class IMetadataStorage : private boost::noncopyable
 {
-friend class MetadataStorageFromDiskTransaction;
-
 public:
     virtual MetadataTransactionPtr createTransaction() const = 0;
 
