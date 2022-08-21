@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cerrno>
+#include <iomanip>
 #include <memory>
 #include <iostream>
 
@@ -76,9 +77,10 @@ int doCompress(char * input, char * output, off_t & in_offset, off_t & out_offse
 }
 
 /// compress data from opened file into output file
-int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in)
+int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct stat & info_in, uint64_t & compressed_size)
 {
     off_t in_offset = 0;
+    compressed_size = 0;
 
     /// mmap files
     char * input = static_cast<char*>(mmap(nullptr, info_in.st_size, PROT_READ, MAP_PRIVATE, in_fd, 0));
@@ -141,6 +143,8 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         return 1;
     }
 
+    uint64_t total_size = 0;
+
     /// Compress data
     while (in_offset < info_in.st_size)
     {
@@ -171,8 +175,15 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         }
         pointer += current_block_size;
         printf("...block compression rate: %.2f%%\n", static_cast<float>(current_block_size) / size * 100);
+        total_size += size;
+        compressed_size += current_block_size;
         current_block_size = 0;
     }
+    std::cout <<
+        "Compressed size: " << compressed_size <<
+        ", compression rate: " << std::fixed << std::setprecision(2) <<
+        static_cast<float>(compressed_size) / total_size * 100 << "%"
+        << std::endl;
 
     if (0 != munmap(input, info_in.st_size) ||
         0 != munmap(output, 2 * max_block_size))
@@ -232,9 +243,12 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
 {
     MetaData metadata;
     size_t sum_file_size = 0;
-    int is_exec = exec ? 1 : 0;
+    int is_exec = exec && *exec ? 1 : 0;
     metadata.number_of_files = htole64(count + is_exec);
     off_t pointer = info_out.st_size;
+
+    uint64_t total_size = 0;
+    uint64_t total_compressed_size = 0;
 
     /// Store information about each file and compress it
     FileData* files_data = new FileData[count + is_exec];
@@ -273,7 +287,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         size_t nlen = strlen(names[i]) + 1;
         files_data[i].name_length = htole64(nlen);
         sum_file_size += nlen;
-        if (!is_exec && strcmp(names[i], out_name) == 0)
+        if (!is_exec && !exec && strcmp(names[i], out_name) == 0)
             files_data[i].exec = true;
 
         /// read data about input file
@@ -292,6 +306,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         }
 
         std::cout << "Size: " << info_in.st_size << std::endl;
+        total_size += info_in.st_size;
 
         /// Save umask
         files_data[i].umask = htole64(info_in.st_mode);
@@ -301,14 +316,18 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         files_data[i].uncompressed_size = htole64(info_in.st_size);
         files_data[i].start = htole64(pointer);
 
+        uint64_t compressed_size = 0;
+
         /// Compressed data will be added to the end of file
         /// It will allow to create self extracting executable from file
-        if (0 != compress(input_fd, output_fd, level, pointer, info_in))
+        if (0 != compress(input_fd, output_fd, level, pointer, info_in, compressed_size))
         {
             perror(nullptr);
             delete [] files_data;
             return 1;
         }
+
+        total_compressed_size += compressed_size;
 
         /// This error is less important, than others.
         /// If file cannot be closed, in some cases it will lead to
@@ -327,6 +346,10 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         delete [] files_data;
         return 1;
     }
+
+    std::cout << "Compression rate: " << std::fixed << std::setprecision(2) <<
+        static_cast<float>(total_compressed_size) / total_size * 100 << "%"
+        << std::endl;
 
     delete [] files_data;
     return 0;
@@ -444,7 +467,8 @@ inline void usage(FILE * out, const char * name)
         "\t--decompressor - path to decompressor\n"
         "\t--exec - path to an input file to execute after decompression, if omitted then\n"
         "\t         an <input_file> having the same name as <output_file> becomes such executable.\n"
-        "\t         This executable upon decompression will substitute started compressed preserving compressed name.\n",
+        "\t         This executable upon decompression will substitute started compressed preserving compressed name.\n"
+        "\t         If no <path> is specified - nothing will be run - only decompression will be performed.\n",
         name, ZSTD_maxCLevel());
 }
 
@@ -517,13 +541,9 @@ int main(int argc, char* argv[])
     /// Specified executable
     const char * exec = get_param(argc, argv, "exec");
     if (exec != nullptr)
-    {
-        if (exec[0] == 0)
-            exec = nullptr;
         ++start_of_files;
-    }
 
-    if (argc < start_of_files + (exec == nullptr ? 1 : 0))
+    if (argc < start_of_files + (exec == nullptr || *exec == 0 ? 1 : 0))
     {
         usage(stderr, argv[0]);
         return 1;
