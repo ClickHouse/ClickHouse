@@ -266,8 +266,13 @@ Result:
 └────────────────┘
 ```
 
-:::note
-The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1900 - 2299) will give an incorrect result.
+:::Attention
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday` functions described below is `Date` or `DateTime`. 
+Though these functions can take `Date32` and `DateTime64` values as an argument, passing them a time point that is out of the normal range (years 1970 - 2148) will give wrong result.
+In case argument is out of normal range:
+  * `1970-01-01 (00:00:00)` will be returned for values prior to 1970,
+  * `2106-02-07 08:28:15` will be taken as argument when actual argument is above this timestamp and return type is `DateTime`,
+  * `2149-06-06` will be taken as argument when actual argument is above this timestamp and return type is `Date`.
 :::
 
 ## toStartOfYear
@@ -291,9 +296,10 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-:::note
-The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
-:::
+## toLastDayOfMonth
+
+Rounds up a date or date with time to the last day of the month.
+Returns the date.
 
 ## toMonday
 
