@@ -33,8 +33,7 @@ public:
         bool attach,
         ContextPtr context_,
         const String & primary_key_,
-        Int32 ttl_ = 0,
-        bool read_only = false);
+        Int32 ttl_ = 0);
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
@@ -83,7 +82,6 @@ private:
     mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;
     Int32 ttl;
-    bool read_only;
 
     void initDB();
 };
