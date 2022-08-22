@@ -341,7 +341,8 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
         }
         else
         {
-            LOG_WARNING(log, "Unknown library method: '{}'", method);
+            processError(response, "Unknown library method '" + method + "'");
+            LOG_ERROR(log, "Unknown library method: '{}'", method);
         }
     }
     catch (...)
@@ -517,7 +518,7 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             const String & data = params.get("data");
 
             ReadBufferFromString string_read_buf(data);
-            NativeReader deserializer(string_read_buf, 0);
+            NativeReader deserializer(string_read_buf, /*server_revision*/ 0);
             Block block_read = deserializer.read();
 
             Columns col_ptrs = block_read.getColumns();
@@ -543,14 +544,15 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 
             WriteBufferFromOwnString string_write_buf;
             Block block_write(res_cols_with_type_and_name);
-            NativeWriter native_writer{string_write_buf, 0, block_write};
+            NativeWriter native_writer{string_write_buf, /*client_revision*/ 0, block_write};
             native_writer.write(block_write);
 
             writeStringBinary(string_write_buf.str(), out);
         }
         else
         {
-            LOG_WARNING(log, "Unknown library method: '{}'", method);
+            processError(response, "Unknown library method '" + method + "'");
+            LOG_ERROR(log, "Unknown library method: '{}'", method);
         }
     }
     catch (...)
