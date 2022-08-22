@@ -143,7 +143,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (query->as<ASTSelectWithUnionQuery>())
         {
             auto settings = query_with_output.settings_ast->clone();
-            assert_cast<ASTSetQuery *>(settings.get())->is_clone = true;
+            assert_cast<ASTSetQuery *>(settings.get())->print_in_format = false;
             QueryWithOutputSettingsPushDownVisitor::Data data{settings};
             QueryWithOutputSettingsPushDownVisitor(data).visit(query);
         }
