@@ -1,0 +1,12 @@
+SELECT transform(number, [null, 5, 7], [111, null, 333], materialize(9999)) FROM system.numbers LIMIT 10;
+SELECT transform(number, [3, 5, 7], ['hello', 'world', 'abc'], null) FROM system.numbers LIMIT 10;
+SELECT transform(null, ['3', '5', '7'], ['hello', 'world', 'abc'], null) FROM system.numbers LIMIT 10;
+SELECT transform(toString(number), ['3', null, '7'], ['hello', 'world', null], materialize('-')) FROM system.numbers LIMIT 10;
+SELECT transform(null, [null, null, null], [null, null, null], null) FROM system.numbers LIMIT 10;
+SELECT transform(toString(number), ['3', '5', '7'], [111, 222, null], -1) FROM system.numbers LIMIT 10;
+SELECT transform(toString(number), ['3', '5', '7'], [null, 222, 333], materialize(-1.1)) FROM system.numbers LIMIT 10;
+SELECT transform(toString(number), ['3', '5', '7'], [null, null, null], materialize(1)) FROM system.numbers LIMIT 10;
+SELECT transform(1, [2, 3], ['Meta.ua', null], materialize('Остальные')) AS title;
+SELECT transform(2, [2, 3], [null, 'Google'], materialize('Остальные')) AS title;
+SELECT transform(3, [null, null], ['Meta.ua', 'Google'], materialize('Остальные')) AS title;
+SELECT transform(4, [null, null], [null, null]) AS title;

@@ -9,14 +9,17 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/typeid_cast.h>
 #include <base/StringRef.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 
 
@@ -28,6 +31,71 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
+}
+
+template <typename T>
+struct ColumnNumericImpl
+{
+    using type = ColumnVector<T>;
+};
+
+template <class T>
+concept decimals = std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>;
+
+template <decimals T>
+struct ColumnNumericImpl<T>
+{
+    using type = ColumnDecimal<T>;
+};
+
+template <typename T>
+using ColumnNumeric = typename ColumnNumericImpl<T>::type;
+
+enum class DestSource
+{
+    SOURCE,
+    DEFAULT_ELEMENT,
+    DEFAULT_COLUMN,
+};
+
+template <typename Func>
+bool dispatchNumericColumns(Func && func)
+{
+#define APPLY_FOR_NUMERIC_COLUMNS(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Float32) \
+    M(Float64) \
+    M(Decimal32) \
+    M(Decimal64) \
+    M(DateTime64)
+
+#define M(NAME) else if (func(std::type_identity_t<NAME>{})) return true;
+    if (false) {} // NOLINT
+    APPLY_FOR_NUMERIC_COLUMNS(M)
+#undef M
+#undef APPLY_FOR_NUMERIC_COLUMNS
+
+    return false;
+}
+
+template <typename Func>
+void dispatchNullableCases(bool src_has_null, bool dst_has_null, Func && func)
+{
+    if (src_has_null && dst_has_null)
+        func(std::true_type(), std::true_type());
+    else if (src_has_null)
+        func(std::true_type(), std::false_type());
+    else if (dst_has_null)
+        func(std::false_type(), std::true_type());
+    else
+        func(std::false_type(), std::false_type());
 }
 
 namespace
@@ -72,80 +140,112 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto args_size = arguments.size();
         if (args_size != 3 && args_size != 4)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " + toString(args_size) + ", should be 3 or 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 3 or 4",
+                getName(),
+                args_size);
 
-        const DataTypePtr & type_x = arguments[0];
+        const auto & type_x_maybe_null = arguments[0];
+        auto type_x = type_x_maybe_null;
+        if (type_x->isNullable())
+            type_x = static_cast<const DataTypeNullable &>(*type_x).getNestedType();
 
-        if (!type_x->isValueRepresentedByNumber() && !isString(type_x))
-            throw Exception{"Unsupported type " + type_x->getName()
-                + " of first argument of function " + getName()
-                + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        if (!type_x_maybe_null->onlyNull() && !type_x->isValueRepresentedByNumber() && !isString(type_x))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Unsupported type {} of first argument of function {}, must be numeric type or Date/DateTime or String",
+                type_x->getName(),
+                getName());
 
         const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-
         if (!type_arr_from)
-            throw Exception{"Second argument of function " + getName()
-                + ", must be array of source values to transform from.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument of function {} must be array of source values to transform from",
+                getName());
 
-        const auto type_arr_from_nested = type_arr_from->getNestedType();
+        /// NULL in src value array is useless. (NULL != NULL)
+        const auto & type_arr_from_nested_maybe_null = type_arr_from->getNestedType();
+        auto type_arr_from_nested = type_arr_from_nested_maybe_null;
+        if (type_arr_from_nested->isNullable())
+            type_arr_from_nested = static_cast<const DataTypeNullable &>(*type_arr_from_nested).getNestedType();
 
-        if ((type_x->isValueRepresentedByNumber() != type_arr_from_nested->isValueRepresentedByNumber())
-            || (isString(type_x) != isString(type_arr_from_nested)))
+        if (!type_x_maybe_null->onlyNull() && !type_arr_from_nested_maybe_null->onlyNull())
         {
-            throw Exception{"First argument and elements of array of second argument of function " + getName()
-                + " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            if ((type_x->isValueRepresentedByNumber() != type_arr_from_nested->isValueRepresentedByNumber())
+                || (isString(type_x) != isString(type_arr_from_nested)))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument and elements of array of second argument of function {} must have compatible types: both numeric or "
+                    "both strings",
+                    getName());
         }
 
-        const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+        const auto * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
 
         if (!type_arr_to)
-            throw Exception{"Third argument of function " + getName()
-                + ", must be array of destination values to transform to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Third argument of function {} must be array of destination values to transform to",
+                getName());
 
-        const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
+        const auto & type_arr_to_nested_maybe_null = type_arr_to->getNestedType();
+        auto type_arr_to_nested = type_arr_to_nested_maybe_null;
+        if (type_arr_to_nested->isNullable())
+            type_arr_to_nested = static_cast<const DataTypeNullable &>(*type_arr_to_nested).getNestedType();
 
         if (args_size == 3)
         {
-            if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-                || (isString(type_x) != isString(type_arr_to_nested)))
-                throw Exception{"Function " + getName()
-                    + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            if (!type_x_maybe_null->onlyNull() && !type_arr_to_nested_maybe_null->onlyNull())
+            {
+                if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+                    || (isString(type_x) != isString(type_arr_to_nested)))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; "
+                        "where T and U are types",
+                        getName());
+            }
 
-            return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
+            return getLeastSupertype(DataTypes{type_x_maybe_null, type_arr_to_nested_maybe_null});
         }
         else
         {
-            const DataTypePtr & type_default = arguments[3];
+            const DataTypePtr & type_default_maybe_null = arguments[3];
+            if (type_arr_to_nested_maybe_null->onlyNull() || type_default_maybe_null->onlyNull())
+                return getLeastSupertype(DataTypes{type_arr_to_nested_maybe_null, type_default_maybe_null});
+
+            DataTypePtr type_default = type_default_maybe_null;
+            if (type_default->isNullable())
+                type_default = static_cast<const DataTypeNullable &>(*type_default).getNestedType();
 
             if (!type_default->isValueRepresentedByNumber() && !isString(type_default))
-                throw Exception{"Unsupported type " + type_default->getName()
-                    + " of fourth argument (default value) of function " + getName()
-                    + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Unsupported type {} of fourth argument (default value) of function {}, must be numeric type or Date/DateTime or "
+                    "String",
+                    type_default->getName(),
+                    getName());
 
             bool default_is_string = WhichDataType(type_default).isString();
             bool nested_is_string = WhichDataType(type_arr_to_nested).isString();
 
             if ((type_default->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
                 || (default_is_string != nested_is_string))
-                throw Exception{"Function " + getName()
-                    + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where "
+                    "T and U are types",
+                    getName());
 
-            if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
-            {
-                /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                return getLeastSupertype(DataTypes{type_arr_to_nested, type_default});
-            }
-
-            /// TODO More checks.
-            return type_arr_to_nested;
+            return getLeastSupertype(DataTypes{type_arr_to_nested_maybe_null, type_default_maybe_null});
         }
     }
 
@@ -155,7 +255,7 @@ public:
         const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(arguments[2].column.get());
 
         if (!array_from || !array_to)
-            throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays", getName());
 
         initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), arguments);
 
@@ -168,25 +268,38 @@ public:
         if (arguments.size() == 4)
             default_column = arguments[3].column.get();
 
+        if (in->onlyNull() || cache.src_all_null)
+        {
+            if (!default_column)
+                return castColumn(arguments[0], result_type);
+            else
+                return castColumn(arguments[3], result_type);
+        }
+
         auto column_result = result_type->createColumn();
         auto * out = column_result.get();
 
-        if (!executeNum<UInt8>(in, out, default_column)
-            && !executeNum<UInt16>(in, out, default_column)
-            && !executeNum<UInt32>(in, out, default_column)
-            && !executeNum<UInt64>(in, out, default_column)
-            && !executeNum<Int8>(in, out, default_column)
-            && !executeNum<Int16>(in, out, default_column)
-            && !executeNum<Int32>(in, out, default_column)
-            && !executeNum<Int64>(in, out, default_column)
-            && !executeNum<Float32>(in, out, default_column)
-            && !executeNum<Float64>(in, out, default_column)
-            && !executeDecimal<Decimal32>(in, out, default_column)
-            && !executeDecimal<Decimal64>(in, out, default_column)
-            && !executeString(in, out, default_column))
+        ConstNullMapPtr in_null_map = nullptr;
+        NullMap * out_null_map = nullptr;
+        if (in->isNullable())
         {
-            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            const auto & nullable_col = static_cast<const ColumnNullable &>(*in);
+            in = &nullable_col.getNestedColumn();
+            in_null_map = &nullable_col.getNullMapData();
         }
+
+        if (out->isNullable())
+        {
+            auto & nullable_col = static_cast<ColumnNullable &>(*out);
+            out = &nullable_col.getNestedColumn();
+            out_null_map = &nullable_col.getNullMapData();
+        }
+
+        const bool execute_numeric_succeeded = dispatchNumericColumns(
+            [&](auto type) { return executeNum<decltype(type)>(in, in_null_map, out, out_null_map, default_column); });
+
+        if (!execute_numeric_succeeded && !executeString(in, in_null_map, out, out_null_map, default_column))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
 
         return column_result;
     }
@@ -205,60 +318,40 @@ private:
     }
 
     template <typename T>
-    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped) const
+    bool executeNum(
+        const IColumn * in_untyped,
+        ConstNullMapPtr in_null_map,
+        IColumn * out_untyped,
+        NullMapPtr out_null_map,
+        const IColumn * default_untyped) const
     {
-        if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
+        if (const auto in = checkAndGetColumn<ColumnNumeric<T>>(in_untyped))
         {
             if (!default_untyped)
             {
-                auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
+                auto out = typeid_cast<ColumnNumeric<T> *>(out_untyped);
                 if (!out)
-                {
-                    throw Exception{"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
-                        + ", must be " + in->getName(), ErrorCodes::ILLEGAL_COLUMN};
-                }
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of elements of array of third argument of function {}, must be {}",
+                        out_untyped->getName(),
+                        getName(),
+                        in->getName());
 
-                executeImplNumToNum<T>(in->getData(), out->getData());
-            }
-            else if (isColumnConst(*default_untyped))
-            {
-                if (!executeNumToNumWithConstDefault<T, UInt8>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, UInt16>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, UInt32>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, UInt64>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, Int8>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, Int16>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, Int32>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, Int64>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, Float32>(in, out_untyped)
-                    && !executeNumToNumWithConstDefault<T, Float64>(in, out_untyped)
-                    && !executeNumToDecimalWithConstDefault<T, Decimal32>(in, out_untyped)
-                    && !executeNumToDecimalWithConstDefault<T, Decimal64>(in, out_untyped)
-                    && !executeNumToStringWithConstDefault<T>(in, out_untyped))
-                {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
-                }
+                executeImplNumToNumWithoutDefault(in->getData(), in_null_map, out->getData(), out_null_map);
             }
             else
             {
-                if (!executeNumToNumWithNonConstDefault<T, UInt8>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, UInt16>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, UInt32>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, UInt64>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, Int8>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, Int16>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, Int32>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, Int64>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, Float32>(in, out_untyped, default_untyped)
-                    && !executeNumToNumWithNonConstDefault<T, Float64>(in, out_untyped, default_untyped)
-                    && !executeNumToDecimalWithNonConstDefault<T, Decimal32>(in, out_untyped, default_untyped)
-                    && !executeNumToDecimalWithNonConstDefault<T, Decimal64>(in, out_untyped, default_untyped)
-                    && !executeNumToStringWithNonConstDefault<T>(in, out_untyped, default_untyped))
-                {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
-                }
+                const bool execute_numeric_succeeded = dispatchNumericColumns(
+                    [&](auto type)
+                    { return executeNumToNum<T, decltype(type)>(in, in_null_map, out_untyped, out_null_map, default_untyped); });
+
+                if (!execute_numeric_succeeded && !executeNumToString<T>(in, in_null_map, out_untyped, out_null_map, default_untyped))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of elements of array of second argument of function {}",
+                        in->getName(),
+                        getName());
             }
 
             return true;
@@ -267,119 +360,27 @@ private:
         return false;
     }
 
-    template <typename T>
-    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        if (const auto in = checkAndGetColumn<ColumnDecimal<T>>(in_untyped))
-        {
-            if (!default_untyped)
-            {
-                auto out = typeid_cast<ColumnDecimal<T> *>(out_untyped);
-                if (!out)
-                {
-                    throw Exception{"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
-                                    + ", must be " + in->getName(), ErrorCodes::ILLEGAL_COLUMN};
-                }
-
-                executeImplNumToNum<T>(in->getData(), out->getData());
-            }
-            else if (isColumnConst(*default_untyped))
-            {
-                if (!executeDecimalToNumWithConstDefault<T, UInt8>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, UInt16>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, UInt32>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, UInt64>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, Int8>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, Int16>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, Int32>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, Int64>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, Float32>(in, out_untyped)
-                    && !executeDecimalToNumWithConstDefault<T, Float64>(in, out_untyped)
-                    && !executeDecimalToDecimalWithConstDefault<T, Decimal32>(in, out_untyped)
-                    && !executeDecimalToDecimalWithConstDefault<T, Decimal64>(in, out_untyped)
-                    && !executeDecimalToStringWithConstDefault<T>(in, out_untyped))
-                {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_COLUMN};
-                }
-            }
-            else
-            {
-                if (!executeDecimalToNumWithNonConstDefault<T, UInt8>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, UInt16>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, UInt32>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, UInt64>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, Int8>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, Int16>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, Int32>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, Int64>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, Float32>(in, out_untyped, default_untyped)
-                    && !executeDecimalToNumWithNonConstDefault<T, Float64>(in, out_untyped, default_untyped)
-                    && !executeDecimalToDecimalWithNonConstDefault<T, Decimal32>(in, out_untyped, default_untyped)
-                    && !executeDecimalToDecimalWithNonConstDefault<T, Decimal64>(in, out_untyped, default_untyped)
-                    && !executeDecimalToStringWithNonConstDefault<T>(in, out_untyped, default_untyped))
-                {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_COLUMN};
-                }
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-    bool executeString(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped) const
+    bool executeString(
+        const IColumn * in_untyped,
+        ConstNullMapPtr in_null_map,
+        IColumn * out_untyped,
+        NullMapPtr out_null_map,
+        const IColumn * default_untyped) const
     {
         if (const auto * in = checkAndGetColumn<ColumnString>(in_untyped))
         {
-            if (!default_untyped)
+            if (!executeStringToString(in, in_null_map, out_untyped, out_null_map, default_untyped))
             {
-                if (!executeStringToString(in, out_untyped))
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
-            }
-            else if (isColumnConst(*default_untyped))
-            {
-                if (!executeStringToNumWithConstDefault<UInt8>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<UInt16>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<UInt32>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<UInt64>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<Int8>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<Int16>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<Int32>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<Int64>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<Float32>(in, out_untyped)
-                    && !executeStringToNumWithConstDefault<Float64>(in, out_untyped)
-                    && !executeStringToDecimalWithConstDefault<Decimal32>(in, out_untyped)
-                    && !executeStringToDecimalWithConstDefault<Decimal64>(in, out_untyped)
-                    && !executeStringToStringWithConstDefault(in, out_untyped))
-                {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
-                }
-            }
-            else
-            {
-                if (!executeStringToNumWithNonConstDefault<UInt8>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<UInt16>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<UInt32>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<UInt64>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<Int8>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<Int16>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<Int32>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<Int64>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<Float32>(in, out_untyped, default_untyped)
-                    && !executeStringToNumWithNonConstDefault<Float64>(in, out_untyped, default_untyped)
-                    && !executeStringToDecimalWithNonConstDefault<Decimal32>(in, out_untyped, default_untyped)
-                    && !executeStringToDecimalWithNonConstDefault<Decimal64>(in, out_untyped, default_untyped)
+                const bool execute_numeric_succeeded = dispatchNumericColumns(
+                    [&](auto type)
+                    { return executeStringToNum<decltype(type)>(in, in_null_map, out_untyped, out_null_map, default_untyped); });
 
-                    && !executeStringToStringWithNonConstDefault(in, out_untyped, default_untyped))
-                {
-                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
-                }
+                if (!execute_numeric_succeeded)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of elements of array of second argument of function {}",
+                        in->getName(),
+                        getName());
             }
 
             return true;
@@ -389,674 +390,912 @@ private:
     }
 
     template <typename T, typename U>
-    bool executeNumToNumWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped) const
+    bool executeNumToNum(
+        const ColumnNumeric<T> * in,
+        ConstNullMapPtr in_null_map,
+        IColumn * out_untyped,
+        NullMapPtr out_null_map,
+        const IColumn * default_untyped) const
     {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        auto out = typeid_cast<ColumnNumeric<U> *>(out_untyped);
         if (!out)
             return false;
 
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
-        return true;
-    }
-
-    template <typename T, typename U>
-    bool executeNumToDecimalWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped) const
-    {
-        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
-        return true;
-    }
-
-
-    template <typename T, typename U>
-    bool executeDecimalToNumWithConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped) const
-    {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
-        return true;
-    }
-
-    template <typename T, typename U>
-    bool executeDecimalToDecimalWithConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped) const
-    {
-        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
-        return true;
-    }
-
-    template <typename T, typename U>
-    bool executeNumToNumWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        if (!executeNumToNumWithNonConstDefault2<T, U, UInt8>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, UInt16>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, UInt32>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, UInt64>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, Int8>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, Int16>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, Int32>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, Int64>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
-            && !executeNumToNumWithNonConstDefault2<T, U, Float64>(in, out, default_untyped))
+        if (isColumnConst(*default_untyped))
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            executeImplNumToNumWithDefaultValue(
+                in->getData(), in_null_map, out->getData(), out_null_map, cache.const_default_value);
         }
-
-        return true;
-    }
-
-    template <typename T, typename U>
-    bool executeNumToDecimalWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        if (!executeNumToDecimalWithNonConstDefault2<T, U, UInt8>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, UInt16>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, UInt32>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, UInt64>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, Int8>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, Int16>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, Int32>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, Int64>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefault2<T, U, Float64>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
-            && !executeNumToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
+        else
         {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
-        }
+            ConstNullMapPtr default_null_map = nullptr;
+            if (default_untyped->isNullable())
+            {
+                const auto & nullable_col = static_cast<const ColumnNullable &>(*default_untyped);
+                default_untyped = &nullable_col.getNestedColumn();
+                default_null_map = &nullable_col.getNullMapData();
+            }
 
-        return true;
-    }
+            const bool execute_numeric_succeeded = dispatchNumericColumns(
+                [&](auto type)
+                {
+                    return executeNumToNumWithNonConstDefault<T, U, decltype(type)>(
+                        in, in_null_map, out, out_null_map, default_untyped, default_null_map);
+                });
 
-    template <typename T, typename U>
-    bool executeDecimalToNumWithNonConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        if (!executeDecimalToNumWithNonConstDefault2<T, U, UInt8>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, UInt16>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, UInt32>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, UInt64>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, Int8>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, Int16>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, Int32>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, Int64>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefault2<T, U, Float64>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
-            && !executeDecimalToNumWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
-        {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        return true;
-    }
-
-    template <typename T, typename U>
-    bool executeDecimalToDecimalWithNonConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        if (!executeDecimalToDecimalWithNonConstDefault2<T, U, UInt8>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, UInt16>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, UInt32>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, UInt64>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Int8>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Int16>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Int32>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Int64>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Float32>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefault2<T, U, Float64>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal32>(in, out, default_untyped)
-            && !executeDecimalToDecimalWithNonConstDefaultDecimal2<T, U, Decimal64>(in, out, default_untyped))
-        {
-            throw Exception(
-                "Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            if (!execute_numeric_succeeded)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of fourth argument of function {}",
+                    default_untyped->getName(),
+                    getName());
         }
 
         return true;
     }
 
     template <typename T, typename U, typename V>
-    bool executeNumToNumWithNonConstDefault2(const ColumnVector<T> * in, ColumnVector<U> * out, const IColumn * default_untyped) const
+    bool executeNumToNumWithNonConstDefault(
+        const ColumnNumeric<T> * in,
+        ConstNullMapPtr in_null_map,
+        ColumnNumeric<U> * out,
+        NullMapPtr out_null_map,
+        const IColumn * default_untyped,
+        ConstNullMapPtr default_null_map) const
     {
-        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
+        auto col_default = checkAndGetColumn<ColumnNumeric<V>>(default_untyped);
         if (!col_default)
             return false;
 
-        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
-        return true;
-    }
-
-    template <typename T, typename U, typename V>
-    bool executeNumToDecimalWithNonConstDefault2(const ColumnVector<T> * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
-    {
-        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
-        if (!col_default)
-            return false;
-
-        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
-        return true;
-    }
-
-    template <typename T, typename U, typename V>
-    bool executeNumToDecimalWithNonConstDefaultDecimal2(const ColumnVector<T> * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
-    {
-        auto col_default = checkAndGetColumn<ColumnDecimal<V>>(default_untyped);
-        if (!col_default)
-            return false;
-
-        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
-        return true;
-    }
-
-    template <typename T, typename U, typename V>
-    bool executeDecimalToNumWithNonConstDefault2(const ColumnDecimal<T> * in, ColumnVector<U> * out, const IColumn * default_untyped) const
-    {
-        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
-        if (!col_default)
-            return false;
-
-        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
-        return true;
-    }
-
-    template <typename T, typename U, typename V>
-    bool executeDecimalToDecimalWithNonConstDefault2(const ColumnDecimal<T> * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
-    {
-        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
-        if (!col_default)
-            return false;
-
-        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
-        return true;
-    }
-
-    template <typename T, typename U, typename V>
-    bool executeDecimalToNumWithNonConstDefaultDecimal2(const ColumnDecimal<T> * in, ColumnVector<U> * out, const IColumn * default_untyped) const
-    {
-        auto col_default = checkAndGetColumn<ColumnDecimal<V>>(default_untyped);
-        if (!col_default)
-            return false;
-
-        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
-        return true;
-    }
-
-    template <typename T, typename U, typename V>
-    bool executeDecimalToDecimalWithNonConstDefaultDecimal2(const ColumnDecimal<T> * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
-    {
-        auto col_default = checkAndGetColumn<ColumnDecimal<V>>(default_untyped);
-        if (!col_default)
-            return false;
-
-        executeImplNumToNumWithNonConstDefault<T, U, V>(in->getData(), out->getData(), col_default->getData());
+        executeImplNumToNumWithDefaultColumn(
+            in->getData(), in_null_map, out->getData(), out_null_map, col_default->getData(), default_null_map);
         return true;
     }
 
     template <typename T>
-    bool executeNumToStringWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped) const
+    bool executeNumToString(
+        const ColumnNumeric<T> * in,
+        ConstNullMapPtr in_null_map,
+        IColumn * out_untyped,
+        NullMapPtr out_null_map,
+        const IColumn * default_untyped) const
     {
         auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
-        const String & default_str = cache.const_default_value.get<const String &>();
-        StringRef default_string_ref{default_str.data(), default_str.size() + 1};
-        executeImplNumToStringWithConstDefault<T>(in->getData(), out->getChars(), out->getOffsets(), default_string_ref);
-        return true;
-    }
-
-    template <typename T>
-    bool executeDecimalToStringWithConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped) const
-    {
-        auto * out = typeid_cast<ColumnString *>(out_untyped);
-        if (!out)
-            return false;
-
-        const String & default_str = cache.const_default_value.get<const String &>();
-        StringRef default_string_ref{default_str.data(), default_str.size() + 1};
-        executeImplNumToStringWithConstDefault<T>(in->getData(), out->getChars(), out->getOffsets(), default_string_ref);
-        return true;
-    }
-
-    template <typename T>
-    bool executeNumToStringWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        auto * out = typeid_cast<ColumnString *>(out_untyped);
-        if (!out)
-            return false;
-
-        const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
-        if (!default_col)
+        if (isColumnConst(*default_untyped))
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            executeImplNumToStringWithDefaultValue(
+                in->getData(), in_null_map, out->getChars(), out->getOffsets(), out_null_map, cache.const_default_value);
         }
-
-        executeImplNumToStringWithNonConstDefault<T>(
-            in->getData(),
-            out->getChars(), out->getOffsets(),
-            default_col->getChars(), default_col->getOffsets());
-
-        return true;
-    }
-
-    template <typename T>
-    bool executeDecimalToStringWithNonConstDefault(const ColumnDecimal<T> * in, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        auto * out = typeid_cast<ColumnString *>(out_untyped);
-        if (!out)
-            return false;
-
-        const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
-        if (!default_col)
+        else
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN};
-        }
+            ConstNullMapPtr default_null_map = nullptr;
+            if (default_untyped->isNullable())
+            {
+                const auto & nullable_col = static_cast<const ColumnNullable &>(*default_untyped);
+                default_untyped = &nullable_col.getNestedColumn();
+                default_null_map = &nullable_col.getNullMapData();
+            }
 
-        executeImplNumToStringWithNonConstDefault<T>(
-            in->getData(),
-            out->getChars(), out->getOffsets(),
-            default_col->getChars(), default_col->getOffsets());
+            const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
+            if (!default_col)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of fourth argument of function {}",
+                    default_untyped->getName(),
+                    getName());
 
-        return true;
-    }
-
-    template <typename U>
-    bool executeStringToNumWithConstDefault(const ColumnString * in, IColumn * out_untyped) const
-    {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        executeImplStringToNumWithConstDefault<U>(
-            in->getChars(), in->getOffsets(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
-        return true;
-    }
-
-    template <typename U>
-    bool executeStringToDecimalWithConstDefault(const ColumnString * in, IColumn * out_untyped) const
-    {
-        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        executeImplStringToNumWithConstDefault<U>(in->getChars(), in->getOffsets(), out->getData(), cache.const_default_value.get<U>());
-        return true;
-    }
-
-    template <typename U>
-    bool executeStringToNumWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
-        if (!out)
-            return false;
-
-        if (!executeStringToNumWithNonConstDefault2<U, UInt8>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, UInt16>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, UInt32>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, UInt64>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, Int8>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, Int16>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, Int32>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, Int64>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, Float32>(in, out, default_untyped)
-            && !executeStringToNumWithNonConstDefault2<U, Float64>(in, out, default_untyped))
-        {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            executeImplNumToStringWithDefaultColumn(
+                in->getData(),
+                in_null_map,
+                out->getChars(),
+                out->getOffsets(),
+                out_null_map,
+                default_col->getChars(),
+                default_col->getOffsets(),
+                default_null_map);
         }
 
         return true;
     }
 
     template <typename U>
-    bool executeStringToDecimalWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped) const
+    bool executeStringToNum(
+        const ColumnString * in,
+        ConstNullMapPtr in_null_map,
+        IColumn * out_untyped,
+        NullMapPtr out_null_map,
+        const IColumn * default_untyped) const
     {
-        auto out = typeid_cast<ColumnDecimal<U> *>(out_untyped);
+        auto out = typeid_cast<ColumnNumeric<U> *>(out_untyped);
         if (!out)
             return false;
 
-        if (!executeStringToDecimalWithNonConstDefault2<U, UInt8>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, UInt16>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, UInt32>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, UInt64>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, Int8>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, Int16>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, Int32>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, Int64>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, Float32>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefault2<U, Float64>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefaultDecimal2<U, Decimal32>(in, out, default_untyped)
-            && !executeStringToDecimalWithNonConstDefaultDecimal2<U, Decimal64>(in, out, default_untyped))
+        if (isColumnConst(*default_untyped))
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN};
+            executeImplStringToNumWithDefaultValue(
+                in->getChars(), in->getOffsets(), in_null_map, out->getData(), out_null_map, cache.const_default_value);
+        }
+        else
+        {
+            ConstNullMapPtr default_null_map = nullptr;
+            if (default_untyped->isNullable())
+            {
+                const auto & nullable_col = static_cast<const ColumnNullable &>(*default_untyped);
+                default_untyped = &nullable_col.getNestedColumn();
+                default_null_map = &nullable_col.getNullMapData();
+            }
+
+            const bool execute_numeric_succeeded = dispatchNumericColumns(
+                [&](auto type)
+                {
+                    return executeStringToNumWithNonConstDefault<U, decltype(type)>(
+                        in, in_null_map, out, out_null_map, default_untyped, default_null_map);
+                });
+
+            if (!execute_numeric_succeeded)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of fourth argument of function {}",
+                    default_untyped->getName(),
+                    getName());
         }
 
-        return true;
-    }
-
-
-    template <typename U, typename V>
-    bool executeStringToNumWithNonConstDefault2(const ColumnString * in, ColumnVector<U> * out, const IColumn * default_untyped) const
-    {
-        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
-        if (!col_default)
-            return false;
-
-        executeImplStringToNumWithNonConstDefault<U, V>(in->getChars(), in->getOffsets(), out->getData(), col_default->getData());
         return true;
     }
 
     template <typename U, typename V>
-    bool executeStringToDecimalWithNonConstDefault2(const ColumnString * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
+    bool executeStringToNumWithNonConstDefault(
+        const ColumnString * in,
+        ConstNullMapPtr in_null_map,
+        ColumnNumeric<U> * out,
+        NullMapPtr out_null_map,
+        const IColumn * default_untyped,
+        ConstNullMapPtr default_null_map) const
     {
-        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
+        auto col_default = checkAndGetColumn<ColumnNumeric<V>>(default_untyped);
         if (!col_default)
             return false;
 
-        executeImplStringToNumWithNonConstDefault<U, V>(in->getChars(), in->getOffsets(), out->getData(), col_default->getData());
+        executeImplStringToNumWithDefaultColumn(
+            in->getChars(), in->getOffsets(), in_null_map, out->getData(), out_null_map, col_default->getData(), default_null_map);
+
         return true;
     }
 
-    template <typename U, typename V>
-    bool executeStringToDecimalWithNonConstDefaultDecimal2(const ColumnString * in, ColumnDecimal<U> * out, const IColumn * default_untyped) const
-    {
-        auto col_default = checkAndGetColumn<ColumnDecimal<V>>(default_untyped);
-        if (!col_default)
-            return false;
-
-        executeImplStringToNumWithNonConstDefault<U, V>(in->getChars(), in->getOffsets(), out->getData(), col_default->getData());
-        return true;
-    }
-
-    bool executeStringToString(const ColumnString * in, IColumn * out_untyped) const
+    bool executeStringToString(
+        const ColumnString * in,
+        ConstNullMapPtr in_null_map,
+        IColumn * out_untyped,
+        NullMapPtr out_null_map,
+        const IColumn * default_untyped) const
     {
         auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
-        executeImplStringToString(in->getChars(), in->getOffsets(), out->getChars(), out->getOffsets());
-        return true;
-    }
-
-    bool executeStringToStringWithConstDefault(const ColumnString * in, IColumn * out_untyped) const
-    {
-        auto * out = typeid_cast<ColumnString *>(out_untyped);
-        if (!out)
-            return false;
-
-        const String & default_str = cache.const_default_value.get<const String &>();
-        StringRef default_string_ref{default_str.data(), default_str.size() + 1};
-        executeImplStringToStringWithConstDefault(in->getChars(), in->getOffsets(), out->getChars(), out->getOffsets(), default_string_ref);
-        return true;
-    }
-
-    bool executeStringToStringWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped) const
-    {
-        auto * out = typeid_cast<ColumnString *>(out_untyped);
-        if (!out)
-            return false;
-
-        const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
-        if (!default_col)
+        if (!default_untyped)
         {
-            throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            executeImplStringToStringWithoutDefault(
+                in->getChars(), in->getOffsets(), in_null_map, out->getChars(), out->getOffsets(), out_null_map);
+        }
+        else if (isColumnConst(*default_untyped))
+        {
+            executeImplStringToStringWithDefaultValue(
+                in->getChars(),
+                in->getOffsets(),
+                in_null_map,
+                out->getChars(),
+                out->getOffsets(),
+                out_null_map,
+                cache.const_default_value);
+        }
+        else
+        {
+            ConstNullMapPtr default_null_map = nullptr;
+            if (default_untyped->isNullable())
+            {
+                const auto & nullable_col = static_cast<const ColumnNullable &>(*default_untyped);
+                default_untyped = &nullable_col.getNestedColumn();
+                default_null_map = &nullable_col.getNullMapData();
+            }
+
+            const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
+            if (!default_col)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of fourth argument of function {}",
+                    default_untyped->getName(),
+                    getName());
+
+            executeImplStringToStringWithDefaultColumn(
+                in->getChars(),
+                in->getOffsets(),
+                in_null_map,
+                out->getChars(),
+                out->getOffsets(),
+                out_null_map,
+                default_col->getChars(),
+                default_col->getOffsets(),
+                default_null_map);
         }
 
-        executeImplStringToStringWithNonConstDefault(
-            in->getChars(), in->getOffsets(),
-            out->getChars(), out->getOffsets(),
-            default_col->getChars(), default_col->getOffsets());
-
         return true;
-    }
-
-
-    template <typename T, typename U>
-    void executeImplNumToNumWithConstDefault(const PaddedPODArray<T> & src, PaddedPODArray<U> & dst, U dst_default) const
-    {
-        const auto & table = *cache.table_num_to_num;
-        size_t size = src.size();
-        dst.resize(size);
-        for (size_t i = 0; i < size; ++i)
-        {
-            const auto * it = table.find(bit_cast<UInt64>(src[i]));
-            if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
-            else
-                dst[i] = dst_default;
-        }
     }
 
     template <typename T, typename U, typename V>
-    void executeImplNumToNumWithNonConstDefault(const PaddedPODArray<T> & src, PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default) const
+    void executeImplNumToNumWithDefaultColumn(
+        const PaddedPODArray<T> & src,
+        ConstNullMapPtr src_null_map,
+        PaddedPODArray<U> & dst,
+        NullMapPtr dst_null_map,
+        const PaddedPODArray<V> & dst_defaults,
+        ConstNullMapPtr dst_defaults_null_map) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr || dst_defaults_null_map != nullptr;
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplNumToNum<DestSource::DEFAULT_COLUMN, k_src_has_null, k_dst_has_null>(
+                    src, src_null_map, dst, dst_null_map, {}, dst_defaults, dst_defaults_null_map);
+            });
+    }
+
+    template <typename T, typename U>
+    void executeImplNumToNumWithDefaultValue(
+        const PaddedPODArray<T> & src,
+        ConstNullMapPtr src_null_map,
+        PaddedPODArray<U> & dst,
+        NullMapPtr dst_null_map,
+        Field dst_default) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr || dst_default.isNull();
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplNumToNum<DestSource::DEFAULT_ELEMENT, k_src_has_null, k_dst_has_null>(
+                    src, src_null_map, dst, dst_null_map, dst_default);
+            });
+    }
+
+    template <typename T, typename U>
+    void executeImplNumToNumWithoutDefault(
+        const PaddedPODArray<T> & src,
+        ConstNullMapPtr src_null_map,
+        PaddedPODArray<U> & dst,
+        NullMapPtr dst_null_map) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr;
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            { executeImplNumToNum<DestSource::SOURCE, k_src_has_null, k_dst_has_null>(src, src_null_map, dst, dst_null_map); });
+    }
+
+    template <DestSource source, bool src_has_null, bool dst_has_null, typename T, typename U, typename V = U>
+    void executeImplNumToNum(
+        const PaddedPODArray<T> & src,
+        ConstNullMapPtr src_null_map [[maybe_unused]],
+        PaddedPODArray<U> & dst,
+        NullMapPtr dst_null_map [[maybe_unused]],
+        Field dst_default [[maybe_unused]] = {},
+        const PaddedPODArray<V> & dst_defaults [[maybe_unused]] = {},
+        ConstNullMapPtr dst_defaults_null_map [[maybe_unused]] = {}) const
     {
         const auto & table = *cache.table_num_to_num;
         size_t size = src.size();
         dst.resize(size);
+        if constexpr (dst_has_null)
+        {
+            if (dst_null_map)
+                dst_null_map->resize_fill(size);
+        }
+
+        U dst_default_value{};
+        if (!dst_default.isNull())
+            dst_default_value = static_cast<U>(dst_default.get<U>());
+
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(bit_cast<UInt64>(src[i]));
+            auto fill_default = [&]()
+            {
+                if constexpr (source == DestSource::SOURCE)
+                {
+                    if constexpr (src_has_null)
+                    {
+                        if ((*src_null_map)[i]) // NOLINT
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            dst[i] = 0;
+                            return;
+                        }
+                    }
+
+                    dst[i] = src[i];
+                }
+                else if constexpr (source == DestSource::DEFAULT_COLUMN)
+                {
+                    if constexpr (dst_has_null)
+                    {
+                        if (dst_defaults_null_map && (*dst_defaults_null_map)[i])
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            dst[i] = 0;
+                            return;
+                        }
+                    }
+
+                    if constexpr (is_decimal<U>)
+                        dst[i] = static_cast<typename U::NativeType>(dst_defaults[i]);
+                    else
+                        dst[i] = static_cast<U>(dst_defaults[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+                }
+                else
+                {
+                    if constexpr (dst_has_null)
+                    {
+                        if (dst_default.isNull())
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            dst[i] = 0;
+                            return;
+                        }
+                    }
+
+                    dst[i] = dst_default_value;
+                }
+            };
+
+            if constexpr (src_has_null)
+            {
+                if ((*src_null_map)[i]) // NOLINT
+                {
+                    fill_default();
+                    continue;
+                }
+            }
+
+            auto key = bit_cast<UInt64>(src[i]);
+
+            if constexpr (dst_has_null)
+            {
+                if (dst_null_map && cache.null_value_num_set && cache.null_value_num_set->has(key))
+                {
+                    (*dst_null_map)[i] = 1;
+                    dst[i] = 0;
+                    continue;
+                }
+            }
+
+            const auto * it = table.find(key);
             if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
-            else if constexpr (is_decimal<U>)
-                dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
+                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i])); /// little endian.
             else
-                dst[i] = static_cast<U>(dst_default[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+                fill_default();
         }
     }
 
     template <typename T>
-    void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst) const
+    void executeImplNumToStringWithDefaultColumn(
+        const PaddedPODArray<T> & src,
+        ConstNullMapPtr src_null_map,
+        ColumnString::Chars & dst_data,
+        ColumnString::Offsets & dst_offsets,
+        NullMapPtr dst_null_map,
+        const ColumnString::Chars & dst_default_data,
+        const ColumnString::Offsets & dst_default_offsets,
+        ConstNullMapPtr dst_default_null_map) const
     {
-        const auto & table = *cache.table_num_to_num;
-        size_t size = src.size();
-        dst.resize(size);
-        for (size_t i = 0; i < size; ++i)
-        {
-            const auto * it = table.find(bit_cast<UInt64>(src[i]));
-            if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
-            else
-                dst[i] = src[i];
-        }
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr || dst_default_null_map != nullptr;
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplNumToString<false, k_src_has_null, k_dst_has_null, T>(
+                    src,
+                    src_null_map,
+                    dst_data,
+                    dst_offsets,
+                    dst_null_map,
+                    {},
+                    dst_default_data,
+                    dst_default_offsets,
+                    dst_default_null_map);
+            });
     }
 
     template <typename T>
-    void executeImplNumToStringWithConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default) const
+    void executeImplNumToStringWithDefaultValue(
+        const PaddedPODArray<T> & src,
+        ConstNullMapPtr src_null_map,
+        ColumnString::Chars & dst_data,
+        ColumnString::Offsets & dst_offsets,
+        NullMapPtr dst_null_map,
+        Field dst_default) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr || dst_default.isNull();
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplNumToString<true, k_src_has_null, k_dst_has_null, T>(
+                    src, src_null_map, dst_data, dst_offsets, dst_null_map, dst_default);
+            });
+    }
+
+    template <bool with_default_value, bool src_has_null, bool dst_has_null, typename T>
+    void executeImplNumToString(
+        const PaddedPODArray<T> & src,
+        ConstNullMapPtr src_null_map [[maybe_unused]],
+        ColumnString::Chars & dst_data,
+        ColumnString::Offsets & dst_offsets,
+        NullMapPtr dst_null_map [[maybe_unused]],
+        Field dst_default [[maybe_unused]],
+        const ColumnString::Chars & dst_default_data [[maybe_unused]] = {},
+        const ColumnString::Offsets & dst_default_offsets [[maybe_unused]] = {},
+        ConstNullMapPtr dst_default_null_map [[maybe_unused]] = {}) const
     {
         const auto & table = *cache.table_num_to_string;
         size_t size = src.size();
         dst_offsets.resize(size);
-        ColumnString::Offset current_dst_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            const auto * it = table.find(bit_cast<UInt64>(src[i]));
-            StringRef ref = it ? it->getMapped() : dst_default;
-            dst_data.resize(current_dst_offset + ref.size);
-            memcpy(&dst_data[current_dst_offset], ref.data, ref.size);
-            current_dst_offset += ref.size;
-            dst_offsets[i] = current_dst_offset;
-        }
-    }
 
-    template <typename T>
-    void executeImplNumToStringWithNonConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets,
-        const ColumnString::Chars & dst_default_data, const ColumnString::Offsets & dst_default_offsets) const
-    {
-        const auto & table = *cache.table_num_to_string;
-        size_t size = src.size();
-        dst_offsets.resize(size);
+        if constexpr (dst_has_null)
+        {
+            if (dst_null_map)
+                dst_null_map->resize_fill(size);
+        }
+
+        StringRef dst_default_value{};
+        if (!dst_default.isNull())
+        {
+            const String & default_str = dst_default.get<const String &>();
+            dst_default_value = {default_str.data(), default_str.size() + 1};
+        }
+
         ColumnString::Offset current_dst_offset = 0;
-        ColumnString::Offset current_dst_default_offset = 0;
+        ColumnString::Offset current_dst_default_offset [[maybe_unused]] = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            const auto * it = table.find(bit_cast<UInt64>(src[i]));
             StringRef ref;
 
-            if (it)
-                ref = it->getMapped();
+            auto fill_default = [&]()
+            {
+                if constexpr (with_default_value)
+                {
+                    if constexpr (dst_has_null)
+                    {
+                        if (dst_default.isNull())
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            return;
+                        }
+                    }
+
+                    ref = dst_default_value;
+                }
+                else
+                {
+                    if constexpr (dst_has_null)
+                    {
+                        if (dst_default_null_map && (*dst_default_null_map)[i])
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            return;
+                        }
+                    }
+
+                    ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);
+                    ref.size = dst_default_offsets[i] - current_dst_default_offset;
+                }
+            };
+
+            auto fill_dst = [&]()
+            {
+                if constexpr (src_has_null)
+                {
+                    if ((*src_null_map)[i]) // NOLINT
+                    {
+                        fill_default();
+                        return;
+                    }
+                }
+
+                auto key = bit_cast<UInt64>(src[i]);
+
+                if constexpr (dst_has_null)
+                {
+                    if (dst_null_map && cache.null_value_num_set && cache.null_value_num_set->has(key))
+                    {
+                        (*dst_null_map)[i] = 1;
+                        return;
+                    }
+                }
+
+                if (const auto * it = table.find(key))
+                    ref = it->getMapped();
+                else
+                    fill_default();
+            };
+
+            fill_dst();
+
+            if (ref.size > 0)
+            {
+                dst_data.resize(current_dst_offset + ref.size);
+                memcpy(&dst_data[current_dst_offset], ref.data, ref.size);
+                current_dst_offset += ref.size;
+            }
             else
             {
-                ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);
-                ref.size = dst_default_offsets[i] - current_dst_default_offset;
+                dst_data.push_back('\0');
+                ++current_dst_offset;
             }
 
-            dst_data.resize(current_dst_offset + ref.size);
-            memcpy(&dst_data[current_dst_offset], ref.data, ref.size);
-            current_dst_offset += ref.size;
-            current_dst_default_offset = dst_default_offsets[i];
+            if constexpr (!with_default_value)
+                current_dst_default_offset = dst_default_offsets[i];
             dst_offsets[i] = current_dst_offset;
-        }
-    }
-
-    template <typename U>
-    void executeImplStringToNumWithConstDefault(
-        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        PaddedPODArray<U> & dst, U dst_default) const
-    {
-        const auto & table = *cache.table_string_to_num;
-        size_t size = src_offsets.size();
-        dst.resize(size);
-        ColumnString::Offset current_src_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
-            current_src_offset = src_offsets[i];
-            const auto * it = table.find(ref);
-            if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
-            else
-                dst[i] = dst_default;
         }
     }
 
     template <typename U, typename V>
-    void executeImplStringToNumWithNonConstDefault(
-        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default) const
+    void executeImplStringToNumWithDefaultColumn(
+        const ColumnString::Chars & src_data,
+        const ColumnString::Offsets & src_offsets,
+        ConstNullMapPtr src_null_map,
+        PaddedPODArray<U> & dst,
+        NullMapPtr dst_null_map,
+        const PaddedPODArray<V> & dst_defaults,
+        ConstNullMapPtr dst_defaults_null_map) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr || dst_defaults_null_map != nullptr;
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplStringToNum<false, k_src_has_null, k_dst_has_null>(
+                    src_data, src_offsets, src_null_map, dst, dst_null_map, {}, dst_defaults, dst_defaults_null_map);
+            });
+    }
+
+    template <typename U>
+    void executeImplStringToNumWithDefaultValue(
+        const ColumnString::Chars & src_data,
+        const ColumnString::Offsets & src_offsets,
+        ConstNullMapPtr src_null_map,
+        PaddedPODArray<U> & dst,
+        NullMapPtr dst_null_map,
+        Field dst_default) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr || dst_default.isNull();
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplStringToNum<true, k_src_has_null, k_dst_has_null>(
+                    src_data, src_offsets, src_null_map, dst, dst_null_map, dst_default);
+            });
+    }
+
+    template <bool with_default, bool src_has_null, bool dst_has_null, typename U, typename V = U>
+    void executeImplStringToNum(
+        const ColumnString::Chars & src_data,
+        const ColumnString::Offsets & src_offsets,
+        ConstNullMapPtr src_null_map,
+        PaddedPODArray<U> & dst,
+        NullMapPtr dst_null_map,
+        Field dst_default [[maybe_unused]],
+        const PaddedPODArray<V> & dst_defaults [[maybe_unused]] = {},
+        ConstNullMapPtr dst_defaults_null_map [[maybe_unused]] = {}) const
     {
         const auto & table = *cache.table_string_to_num;
         size_t size = src_offsets.size();
         dst.resize(size);
-        ColumnString::Offset current_src_offset = 0;
-        for (size_t i = 0; i < size; ++i)
+
+        if constexpr (dst_has_null)
         {
-            StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
-            current_src_offset = src_offsets[i];
-            const auto * it = table.find(ref);
-            if (it)
-                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
-            else if constexpr (is_decimal<U>)
-                dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
-            else
-                dst[i] = static_cast<U>(dst_default[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+            if (dst_null_map)
+                dst_null_map->resize_fill(size);
         }
-    }
 
-    template <bool with_default>
-    void executeImplStringToStringWithOrWithoutConstDefault(
-        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default) const
-    {
-        const auto & table = *cache.table_string_to_string;
-        size_t size = src_offsets.size();
-        dst_offsets.resize(size);
+        U dst_default_value{};
+        if (!dst_default.isNull())
+            dst_default_value = static_cast<U>(dst_default.get<U>());
+
         ColumnString::Offset current_src_offset = 0;
-        ColumnString::Offset current_dst_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
+            StringRef key{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
 
-            const auto * it = table.find(src_ref);
-
-            StringRef dst_ref = it ? it->getMapped() : (with_default ? dst_default : src_ref);
-            dst_data.resize(current_dst_offset + dst_ref.size);
-            memcpy(&dst_data[current_dst_offset], dst_ref.data, dst_ref.size);
-            current_dst_offset += dst_ref.size;
-            dst_offsets[i] = current_dst_offset;
-        }
-    }
-
-    void executeImplStringToString(
-        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets) const
-    {
-        executeImplStringToStringWithOrWithoutConstDefault<false>(src_data, src_offsets, dst_data, dst_offsets, {});
-    }
-
-    void executeImplStringToStringWithConstDefault(
-        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default) const
-    {
-        executeImplStringToStringWithOrWithoutConstDefault<true>(src_data, src_offsets, dst_data, dst_offsets, dst_default);
-    }
-
-    void executeImplStringToStringWithNonConstDefault(
-        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets,
-        const ColumnString::Chars & dst_default_data, const ColumnString::Offsets & dst_default_offsets) const
-    {
-        const auto & table = *cache.table_string_to_string;
-        size_t size = src_offsets.size();
-        dst_offsets.resize(size);
-        ColumnString::Offset current_src_offset = 0;
-        ColumnString::Offset current_dst_offset = 0;
-        ColumnString::Offset current_dst_default_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
-            current_src_offset = src_offsets[i];
-
-            const auto * it = table.find(src_ref);
-            StringRef dst_ref;
-
-            if (it)
-                dst_ref = it->getMapped();
-            else
+            auto fill_default = [&]()
             {
-                dst_ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);
-                dst_ref.size = dst_default_offsets[i] - current_dst_default_offset;
+                if constexpr (with_default)
+                {
+                    if constexpr (dst_has_null)
+                    {
+                        if (dst_default.isNull())
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            dst[i] = 0;
+                            return;
+                        }
+                    }
+
+                    dst[i] = dst_default_value;
+                }
+                else
+                {
+                    if constexpr (dst_has_null)
+                    {
+                        if (dst_defaults_null_map && (*dst_defaults_null_map)[i])
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            dst[i] = 0;
+                            return;
+                        }
+                    }
+
+                    if constexpr (is_decimal<U>)
+                        dst[i] = static_cast<typename U::NativeType>(dst_defaults[i]);
+                    else
+                        dst[i] = static_cast<U>(dst_defaults[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+                }
+            };
+
+            if constexpr (src_has_null)
+            {
+                if ((*src_null_map)[i])
+                {
+                    fill_default();
+                    continue;
+                }
             }
 
-            dst_data.resize(current_dst_offset + dst_ref.size);
-            memcpy(&dst_data[current_dst_offset], dst_ref.data, dst_ref.size);
-            current_dst_offset += dst_ref.size;
-            current_dst_default_offset = dst_default_offsets[i];
+            if constexpr (dst_has_null)
+            {
+                if (dst_null_map && cache.null_value_string_set && cache.null_value_string_set->has(key))
+                {
+                    (*dst_null_map)[i] = 1;
+                    dst[i] = 0;
+                    continue;
+                }
+            }
+
+            const auto * it = table.find(key);
+            if (it)
+                memcpy(&dst[i], &it->getMapped(), sizeof(dst[i])); /// little endian.
+            else
+                fill_default();
+        }
+    }
+
+    void executeImplStringToStringWithDefaultColumn( /// NOLINT
+        const ColumnString::Chars & src_data,
+        const ColumnString::Offsets & src_offsets,
+        ConstNullMapPtr src_null_map,
+        ColumnString::Chars & dst_data,
+        ColumnString::Offsets & dst_offsets,
+        NullMapPtr dst_null_map,
+        const ColumnString::Chars & dst_default_data,
+        const ColumnString::Offsets & dst_default_offsets,
+        ConstNullMapPtr dst_default_null_map) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr || dst_default_null_map != nullptr;
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplStringToString<DestSource::DEFAULT_COLUMN, k_src_has_null, k_dst_has_null>(
+                    src_data,
+                    src_offsets,
+                    src_null_map,
+                    dst_data,
+                    dst_offsets,
+                    dst_null_map,
+                    {},
+                    dst_default_data,
+                    dst_default_offsets,
+                    dst_default_null_map);
+            });
+    }
+
+    void executeImplStringToStringWithDefaultValue( /// NOLINT
+        const ColumnString::Chars & src_data,
+        const ColumnString::Offsets & src_offsets,
+        ConstNullMapPtr src_null_map,
+        ColumnString::Chars & dst_data,
+        ColumnString::Offsets & dst_offsets,
+        NullMapPtr dst_null_map,
+        Field dst_default) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr || dst_default.isNull();
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplStringToString<DestSource::DEFAULT_ELEMENT, k_src_has_null, k_dst_has_null>(
+                    src_data, src_offsets, src_null_map, dst_data, dst_offsets, dst_null_map, dst_default);
+            });
+    }
+
+    void executeImplStringToStringWithoutDefault( /// NOLINT
+        const ColumnString::Chars & src_data,
+        const ColumnString::Offsets & src_offsets,
+        ConstNullMapPtr src_null_map,
+        ColumnString::Chars & dst_data,
+        ColumnString::Offsets & dst_offsets,
+        NullMapPtr dst_null_map) const
+    {
+        bool src_has_null = src_null_map != nullptr;
+        bool dst_has_null = dst_null_map != nullptr;
+
+        dispatchNullableCases(
+            src_has_null,
+            dst_has_null,
+            [&](auto k_src_has_null, auto k_dst_has_null)
+            {
+                executeImplStringToString<DestSource::SOURCE, k_src_has_null, k_dst_has_null>(
+                    src_data, src_offsets, src_null_map, dst_data, dst_offsets, dst_null_map);
+            });
+    }
+
+    template <DestSource source, bool src_has_null, bool dst_has_null>
+    void executeImplStringToString(
+        const ColumnString::Chars & src_data,
+        const ColumnString::Offsets & src_offsets,
+        ConstNullMapPtr src_null_map [[maybe_unused]],
+        ColumnString::Chars & dst_data,
+        ColumnString::Offsets & dst_offsets,
+        NullMapPtr dst_null_map [[maybe_unused]],
+        Field dst_default [[maybe_unused]] = {},
+        const ColumnString::Chars & dst_default_data [[maybe_unused]] = {},
+        const ColumnString::Offsets & dst_default_offsets [[maybe_unused]] = {},
+        ConstNullMapPtr dst_default_null_map [[maybe_unused]] = {}) const
+    {
+        const auto & table = *cache.table_string_to_string;
+        size_t size = src_offsets.size();
+        dst_offsets.resize(size);
+
+        if constexpr (dst_has_null)
+        {
+            if (dst_null_map)
+                dst_null_map->resize_fill(size);
+        }
+
+        StringRef dst_default_value{};
+        if (!dst_default.isNull())
+        {
+            const String & default_str = dst_default.get<const String &>();
+            dst_default_value = {default_str.data(), default_str.size() + 1};
+        }
+
+        ColumnString::Offset current_src_offset = 0;
+        ColumnString::Offset current_dst_offset = 0;
+        ColumnString::Offset current_dst_default_offset [[maybe_unused]] = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
+            current_src_offset = src_offsets[i];
+            StringRef dst_ref;
+
+            auto fill_default = [&]()
+            {
+                if constexpr (source == DestSource::SOURCE)
+                {
+                    if constexpr (src_has_null)
+                    {
+                        if ((*src_null_map)[i])
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            return;
+                        }
+                    }
+
+                    dst_ref = src_ref;
+                }
+                else if constexpr (source == DestSource::DEFAULT_ELEMENT)
+                {
+                    if constexpr (dst_has_null)
+                    {
+                        if (dst_default.isNull())
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            return;
+                        }
+                    }
+
+                    dst_ref = dst_default_value;
+                }
+                else
+                {
+                    if constexpr (dst_has_null)
+                    {
+                        if (dst_default_null_map && (*dst_default_null_map)[i])
+                        {
+                            (*dst_null_map)[i] = 1; // NOLINT
+                            return;
+                        }
+                    }
+
+                    dst_ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);
+                    dst_ref.size = dst_default_offsets[i] - current_dst_default_offset;
+                }
+            };
+
+            auto fill_dst = [&]()
+            {
+                if constexpr (src_has_null)
+                {
+                    if ((*src_null_map)[i]) // NOLINT
+                    {
+                        fill_default();
+                        return;
+                    }
+                }
+
+                if constexpr (dst_has_null)
+                {
+                    if (dst_null_map && cache.null_value_string_set && cache.null_value_string_set->has(src_ref))
+                    {
+                        (*dst_null_map)[i] = 1;
+                        return;
+                    }
+                }
+
+                const auto * it = table.find(src_ref);
+                if (it)
+                    dst_ref = it->getMapped();
+                else
+                    fill_default();
+            };
+
+            fill_dst();
+
+            if (dst_ref.size > 0)
+            {
+                dst_data.resize(current_dst_offset + dst_ref.size);
+                memcpy(&dst_data[current_dst_offset], dst_ref.data, dst_ref.size);
+                current_dst_offset += dst_ref.size;
+            }
+            else
+            {
+                dst_data.push_back('\0');
+                ++current_dst_offset;
+            }
+
+            if constexpr (source == DestSource::DEFAULT_COLUMN)
+                current_dst_default_offset = dst_default_offsets[i];
             dst_offsets[i] = current_dst_offset;
         }
     }
@@ -1071,10 +1310,17 @@ private:
         using StringToNum = HashMap<StringRef, UInt64, StringRefHash>;
         using StringToString = HashMap<StringRef, StringRef, StringRefHash>;
 
+        using NullSetNum = HashSet<UInt64, HashCRC32<UInt64>>;
+        using NullSetString = HashSet<StringRef, StringRefHash>;
+
         std::unique_ptr<NumToNum> table_num_to_num;
         std::unique_ptr<NumToString> table_num_to_string;
         std::unique_ptr<StringToNum> table_string_to_num;
         std::unique_ptr<StringToString> table_string_to_string;
+        bool src_all_null{false};
+
+        std::unique_ptr<NullSetNum> null_value_num_set;
+        std::unique_ptr<NullSetString> null_value_string_set;
 
         Arena string_pool;
 
@@ -1110,7 +1356,7 @@ private:
 
         const size_t size = from.size();
         if (0 == size)
-            throw Exception{"Empty arrays are illegal in function " + getName(), ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty arrays are illegal in function {}", getName());
 
         std::lock_guard lock(cache.mutex);
 
@@ -1118,7 +1364,7 @@ private:
             return;
 
         if (size != to.size())
-            throw Exception{"Second and third arguments of function " + getName() + " must be arrays of same size", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments of function {} must be arrays of same size", getName());
 
         Array converted_to;
         const Array * used_to = &to;
@@ -1127,31 +1373,36 @@ private:
 
         if (arguments.size() == 4)
         {
-            const IColumn * default_col = arguments[3].column.get();
-            const ColumnConst * const_default_col = typeid_cast<const ColumnConst *>(default_col);
+            const IColumn * default_col_maybe_null = arguments[3].column.get();
+            const ColumnConst * const_default_col = typeid_cast<const ColumnConst *>(default_col_maybe_null);
 
+            const IColumn * default_col = default_col_maybe_null;
             if (const_default_col)
+            {
                 cache.const_default_value = (*const_default_col)[0];
+                default_col = &const_default_col->getDataColumn();
+            }
+
+            if (default_col->isNullable())
+                default_col = &static_cast<const ColumnNullable &>(*default_col).getNestedColumn();
 
             /// Do we need to convert the elements `to` and `default_value` to the smallest common type that is Float64?
-            bool default_col_is_float =
-                   checkColumn<ColumnFloat32>(default_col)
-                || checkColumn<ColumnFloat64>(default_col)
-                || checkColumnConst<ColumnFloat32>(default_col)
-                || checkColumnConst<ColumnFloat64>(default_col);
-
+            bool default_col_is_float = checkColumn<ColumnFloat32>(default_col) || checkColumn<ColumnFloat64>(default_col);
             bool to_is_float = to[0].getType() == Field::Types::Float64;
 
             if (default_col_is_float && !to_is_float)
             {
                 converted_to.resize(size);
                 for (size_t i = 0; i < size; ++i)
-                    converted_to[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), to[i]);
+                {
+                    if (!to[i].isNull())
+                        converted_to[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), to[i]);
+                }
                 used_to = &converted_to;
             }
             else if (!default_col_is_float && to_is_float)
             {
-                if (const_default_col)
+                if (const_default_col && !cache.const_default_value.isNull())
                     cache.const_default_value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), cache.const_default_value);
             }
         }
@@ -1160,11 +1411,35 @@ private:
 
         const IDataType & from_type = *arguments[0].type;
 
-        if (from[0].getType() != Field::Types::String)
+        bool has_null = false;
+        auto from_arr_element_type = Field::Types::Null;
+        auto to_arr_element_type = Field::Types::Null;
+        for (size_t i = 0; i < size; ++i)
         {
-            if (to[0].getType() != Field::Types::String)
+            if (!from[i].isNull() && from_arr_element_type == Field::Types::Null)
+                from_arr_element_type = from[i].getType();
+
+            if ((*used_to)[i].isNull())
+                has_null = true;
+            else if (to_arr_element_type == Field::Types::Null)
+                to_arr_element_type = to[i].getType();
+        }
+
+        if (from_arr_element_type == Field::Types::Null)
+        {
+            /// src all NULL, always use default
+            cache.src_all_null = true;
+        }
+        else if (from_arr_element_type != Field::Types::String)
+        {
+            if (has_null)
+                cache.null_value_num_set = std::make_unique<Cache::NullSetNum>();
+
+            cache.table_num_to_num = std::make_unique<Cache::NumToNum>();
+            cache.table_num_to_string = std::make_unique<Cache::NumToString>();
+
+            if (to_arr_element_type != Field::Types::String)
             {
-                cache.table_num_to_num = std::make_unique<Cache::NumToNum>();
                 auto & table = *cache.table_num_to_num;
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1172,13 +1447,14 @@ private:
                     if (key.isNull())
                         continue;
 
-                    /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
-                    table[bitCastToUInt64(key)] = bitCastToUInt64((*used_to)[i]);
+                    if ((*used_to)[i].isNull())
+                        cache.null_value_num_set->insert(bitCastToUInt64(key));
+                    else
+                        table[bitCastToUInt64(key)] = bitCastToUInt64((*used_to)[i]);
                 }
             }
             else
             {
-                cache.table_num_to_string = std::make_unique<Cache::NumToString>();
                 auto & table = *cache.table_num_to_string;
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1186,36 +1462,61 @@ private:
                     if (key.isNull())
                         continue;
 
-                    const String & str_to = to[i].get<const String &>();
-                    StringRef ref{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                    table[bitCastToUInt64(key)] = ref;
+                    if ((*used_to)[i].isNull())
+                        cache.null_value_num_set->insert(bitCastToUInt64(key));
+                    else
+                    {
+                        const String & str_to = to[i].get<const String &>();
+                        StringRef ref{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
+                        table[bitCastToUInt64(key)] = ref;
+                    }
                 }
             }
         }
         else
         {
-            if (to[0].getType() != Field::Types::String)
+            if (has_null)
+                cache.null_value_string_set = std::make_unique<Cache::NullSetString>();
+
+            cache.table_string_to_num = std::make_unique<Cache::StringToNum>();
+            cache.table_string_to_string = std::make_unique<Cache::StringToString>();
+
+            if (to_arr_element_type != Field::Types::String)
             {
-                cache.table_string_to_num = std::make_unique<Cache::StringToNum>();
                 auto & table = *cache.table_string_to_num;
                 for (size_t i = 0; i < size; ++i)
                 {
+                    if (from[i].isNull())
+                        continue;
+
                     const String & str_from = from[i].get<const String &>();
                     StringRef ref{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                    table[ref] = bitCastToUInt64((*used_to)[i]);
+
+                    if ((*used_to)[i].isNull())
+                        cache.null_value_string_set->insert(ref);
+                    else
+                        table[ref] = bitCastToUInt64((*used_to)[i]);
                 }
             }
             else
             {
-                cache.table_string_to_string = std::make_unique<Cache::StringToString>();
                 auto & table = *cache.table_string_to_string;
                 for (size_t i = 0; i < size; ++i)
                 {
+                    if (from[i].isNull())
+                        continue;
+
                     const String & str_from = from[i].get<const String &>();
-                    const String & str_to = to[i].get<const String &>();
                     StringRef ref_from{cache.string_pool.insert(str_from.data(), str_from.size() + 1), str_from.size() + 1};
-                    StringRef ref_to{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
-                    table[ref_from] = ref_to;
+
+                    if ((*used_to)[i].isNull())
+                        cache.null_value_string_set->insert(ref_from);
+                    else
+                    {
+                        const String & str_to = to[i].get<const String &>();
+                        StringRef ref_to{cache.string_pool.insert(str_to.data(), str_to.size() + 1), str_to.size() + 1};
+                        table[ref_from] = ref_to;
+                    }
                 }
             }
         }

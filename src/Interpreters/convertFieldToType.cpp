@@ -76,8 +76,11 @@ Field convertNumericType(const Field & from, const IDataType & type)
     if (from.getType() == Field::Types::Int256)
         return convertNumericTypeImpl<Int256, To>(from);
 
-    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
-        type.getName(), from.getType());
+    throw Exception(
+        ErrorCodes::TYPE_MISMATCH,
+        "Type mismatch when trying to do implicit literal type casting. Expected: {}. Got: {}",
+        type.getName(),
+        from.getType());
 }
 
 
@@ -153,8 +156,11 @@ Field convertDecimalType(const Field & from, const To & type)
     if (from.getType() == Field::Types::Float64)
         return convertFloatToDecimalType<Float64>(from, type);
 
-    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
-        type.getName(), from.getType());
+    throw Exception(
+        ErrorCodes::TYPE_MISMATCH,
+        "Type mismatch when trying to do implicit literal type casting. Expected: {}. Got: {}",
+        type.getName(),
+        from.getType());
 }
 
 
@@ -461,10 +467,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return convertFieldToType(parsed, type, from_type_hint);
     }
 
-    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
-        type.getName(), src.getType());
+    throw Exception(
+        ErrorCodes::TYPE_MISMATCH,
+        "Type mismatch when trying to do implicit literal type casting. Expected: {}. Got: {}",
+        type.getName(),
+        src.getType());
 }
-
 }
 
 

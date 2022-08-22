@@ -15,6 +15,7 @@ namespace DB
 {
 
 using NullMap = ColumnUInt8::Container;
+using NullMapPtr = NullMap *;
 using ConstNullMapPtr = const NullMap *;
 
 /// Class that specifies nullable columns. A nullable column represents

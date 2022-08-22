@@ -1,0 +1,21 @@
+<test>
+    <!-- num to num -->
+    <query>SELECT transform(rand(10), [2, 4, 6], [20, 40, 60]) FROM numbers(10000000) FORMAT Null</query>
+    <!-- num to num default -->
+    <query>SELECT transform(rand(10), [2, 4, 6], [20, 40, 60], 80) FROM numbers(10000000) FORMAT Null</query>
+    <!-- string to num default -->
+    <query>SELECT transform(toString(rand(10)), ['2', '4', '6'], [20, 40, 60], 80) FROM numbers(10000000) FORMAT Null</query>
+    <!-- num to string default -->
+    <query>SELECT transform(rand(10), [2, 4, 6], ['20', '40', '60'], '80') FROM numbers(10000000) FORMAT Null</query>
+    <!-- string to string -->
+    <query>SELECT transform(toString(rand(10)), ['2', '4', '6'], ['20', '40', '60']) FROM numbers(10000000) FORMAT Null</query>
+    <!-- string to string default -->
+    <query>SELECT transform(toString(rand(10)), ['2', '4', '6'], ['20', '40', '60'], '80') FROM numbers(10000000) FORMAT Null</query>
+
+    <!-- nullable variants -->
+    <query>SELECT transform(rand(10), [2, 4, null], [20, 40, 60]) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT transform(rand(10), [2, 4, 6], [20, null, 60], null) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT transform(null, ['2', '4', null], [20, 40, 60], 80) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT transform(rand(10), [2, 4, 6], [null, null, null], '80') FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT transform(toString(rand(10)), [null, null, null], ['20', '40', '60']) FROM numbers(10000000) FORMAT Null</query>
+</test>
