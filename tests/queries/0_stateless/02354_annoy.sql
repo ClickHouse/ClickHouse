@@ -24,6 +24,18 @@ FROM 02354_annoy
 ORDER BY L2Distance(embedding, [0.0, 0.0, 10.0])
 LIMIT 3;
 
+SET param_02354_target_vector='[0.0, 0.0, 10.0]';
+
+SELECT *
+FROM 02354_annoy
+WHERE L2Distance(embedding, {02354_target_vector: Array(Float32)}) < 1.0
+LIMIT 5;
+
+SELECT *
+FROM 02354_annoy
+ORDER BY L2Distance(embedding, {02354_target_vector: Array(Float32)})
+LIMIT 3;
+
 SELECT *
 FROM 02354_annoy
 ORDER BY L2Distance(embedding, [0.0, 0.0])
