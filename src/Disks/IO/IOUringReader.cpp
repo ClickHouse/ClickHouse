@@ -20,6 +20,8 @@ namespace ProfileEvents
 
     extern const Event IOUringSQEsSubmitted;
     extern const Event IOUringSQEsResubmits;
+    extern const Event IOUringCQEsCompleted;
+    extern const Event IOUringCQEsFailed;
 }
 
 namespace CurrentMetrics
@@ -246,6 +248,7 @@ void IOUringReader::monitorRing()
             int fd = assert_cast<const LocalFileDescriptor &>(*enqueued.request.descriptor).fd;
             failRequest(it, ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, fmt::format("Cannot read from file {}", fd));
 
+            ProfileEvents::increment(ProfileEvents::IOUringCQEsFailed);
             io_uring_cqe_seen(&ring, cqe);
             continue;
         }
@@ -275,6 +278,7 @@ void IOUringReader::monitorRing()
             finalizeRequest(it);
         }
 
+        ProfileEvents::increment(ProfileEvents::IOUringCQEsCompleted);
         io_uring_cqe_seen(&ring, cqe);
     }
 }
