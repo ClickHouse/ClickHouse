@@ -293,7 +293,7 @@ void HashSplitter::computeAndCountPartitionId(DB::Block & block)
     partition_ids.clear();
     for (size_t i = 0; i < block.rows(); i++)
     {
-        partition_ids.emplace_back(static_cast<UInt64>(hash_column->getUInt(i) % options.partition_nums));
+        partition_ids.emplace_back(static_cast<UInt64>(hash_column->get64(i)  % options.partition_nums));
     }
     split_result.total_compute_pid_time += watch.elapsedNanoseconds();
 }
