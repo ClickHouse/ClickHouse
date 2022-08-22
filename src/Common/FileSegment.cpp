@@ -458,7 +458,6 @@ void FileSegment::completeWithState(State state)
 
     download_state = state;
     completeBasedOnCurrentState(cache_lock, segment_lock);
-    cv.notify_all();
 }
 
 void FileSegment::completeWithoutState(std::lock_guard<std::mutex> & cache_lock)
@@ -472,14 +471,17 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
     if (is_detached)
         return;
 
-    SCOPE_EXIT({
-        cv.notify_one();
-    });
-
     bool is_downloader = isDownloaderImpl(segment_lock);
     bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock, segment_lock);
     bool can_update_segment_state = is_downloader || is_last_holder;
     size_t current_downloaded_size = getDownloadedSize(segment_lock);
+
+    SCOPE_EXIT({
+        if (is_downloader)
+        {
+            cv.notify_all();
+        }
+    });
 
     LOG_TEST(log, "Complete without state (is_last_holder: {}). File segment info: {}", is_last_holder, getInfoForLogImpl(segment_lock));
 
