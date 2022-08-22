@@ -11,6 +11,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 
 #include "config_core.h"
 
@@ -95,6 +96,7 @@ static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 
 std::atomic<Int64> MemoryTracker::free_memory_in_allocator_arenas;
+std::mutex free_memory_in_allocator_arenas_mutex;
 
 MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
@@ -221,9 +223,12 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
 
         if (current_free_memory_in_allocator_arenas > 0 && current_hard_limit && current_free_memory_in_allocator_arenas + will_be > current_hard_limit)
         {
+            std::lock_guard guard(free_memory_in_allocator_arenas_mutex);
             if (free_memory_in_allocator_arenas.exchange(-current_free_memory_in_allocator_arenas) > 0)
             {
+                //Stopwatch watch;
                 mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+                //LOG_TRACE(&Poco::Logger::get("MT"), "Purge time {}", watch.elapsedSeconds());
             }
         }
 
