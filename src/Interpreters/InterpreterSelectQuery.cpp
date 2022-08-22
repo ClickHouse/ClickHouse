@@ -98,7 +98,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_FINAL;
     extern const int ILLEGAL_PREWHERE;
-    extern const int TOO_DEEP_PIPELINE;
+    extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
