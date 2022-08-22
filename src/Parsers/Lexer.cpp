@@ -350,7 +350,7 @@ Token Lexer::nextTokenImpl()
         case '\\':
         {
             ++pos;
-            if (pos < end && *pos == 'G')
+            if (pos < end && (*pos == 'G' || *pos == 'd' || *pos == 'l' || *pos == 'q' || *pos == 'Q'))
                 return Token(TokenType::VerticalDelimiter, token_begin, ++pos);
             return Token(TokenType::Error, token_begin, pos);
         }
