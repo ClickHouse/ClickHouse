@@ -745,8 +745,6 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
-    // create a new zookeeper connection from auxiliary_zookeepers configuration entry
-    std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeperConnection(const String & name) const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true
