@@ -20,11 +20,38 @@
 namespace DB
 {
 
-bool Bin::convertImpl(String &out,IParser::Pos &pos)
+bool Bin::convertImpl(String & out,IParser::Pos & pos)
 {
-    String res = String(pos->begin,pos->end);
-    out = res;
-    return false;
+    double bin_size;
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String origal_expr(pos->begin, pos->end);
+    String value = getConvertedArgument(fn_name, pos);
+
+    ++pos;
+    String round_to = getConvertedArgument(fn_name, pos);
+
+    auto t = std::format("toFloat64({})", value);
+
+    bin_size =  std::stod(round_to);
+
+    if (origal_expr == "datetime" || origal_expr == "date")
+    {
+        out = std::format("toDateTime64(toInt64({0} / {1} ) * {1}, 9, 'UTC')", t, bin_size);
+    }
+    else if (origal_expr == "timespan" || origal_expr =="time" || ParserKQLDateTypeTimespan().parseConstKQLTimespan(origal_expr))
+    {
+        String bin_value = std::format(" toInt64({0} / {1} ) * {1}", t, bin_size);
+        out = std::format("concat(toString( toInt32((({}) as x) / 3600)),':', toString( toInt32(x % 3600 / 60)),':',toString( toInt32(x % 3600 % 60)))", bin_value);
+    }
+    else
+    {
+        out = std::format("toInt64({0} / {1} ) * {1}", t, bin_size);
+    }
+    return true;
 }
 
 bool BinAt::convertImpl(String & out,IParser::Pos & pos)
@@ -49,11 +76,11 @@ bool BinAt::convertImpl(String & out,IParser::Pos & pos)
     int dir = t2 >= t1 ? 0 : -1;
     bin_size =  std::stod(bin_size_str);
 
-    if (origal_expr == "datetime" or origal_expr == "date") 
+    if (origal_expr == "datetime" || origal_expr == "date")
     {
         out = std::format("toDateTime64({} + toInt64(({} - {}) / {} + {}) * {}, 9, 'UTC')", t1, t2, t1, bin_size, dir, bin_size);
     }
-    else if (origal_expr == "timespan" or origal_expr =="time" or ParserKQLDateTypeTimespan().parseConstKQLTimespan(origal_expr))
+    else if (origal_expr == "timespan" || origal_expr =="time" || ParserKQLDateTypeTimespan().parseConstKQLTimespan(origal_expr))
     {
         String bin_value = std::format("{} + toInt64(({} - {}) / {} + {}) * {}", t1, t2, t1, bin_size, dir, bin_size);
         out = std::format("concat(toString( toInt32((({}) as x) / 3600)),':', toString( toInt32(x % 3600 / 60)),':',toString( toInt32(x % 3600 % 60)))", bin_value);
