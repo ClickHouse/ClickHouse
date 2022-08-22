@@ -114,10 +114,40 @@ private:
 class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
 {
 public:
-    size_t operator()(const Array & x) const;
+    size_t operator()(const Array & x);
 
     template <typename T>
     size_t operator()(const T &) const { return 0; }
+
+    bool need_fold_dimension = false;
+};
+
+/// Fold field to the higher dimension, e.g. `1` -- fold 2 --> `[[1]]`
+/// used to normalize dimension of element in an array. e.g [1, [2]] --> [[1], [2]]
+class FieldVisitorFoldDimension : public StaticVisitor<Field>
+{
+public:
+    explicit FieldVisitorFoldDimension(size_t num_dimensions_to_fold_) : num_dimensions_to_fold(num_dimensions_to_fold_) { }
+    Field operator()(const Array & x) const;
+
+    template <typename T>
+    Field operator()(const T & x) const
+    {
+        if (num_dimensions_to_fold == 0)
+            return x;
+        Array res;
+        res.push_back(x);
+        for (size_t i = 1; i < num_dimensions_to_fold; ++i)
+        {
+            Array new_res;
+            new_res.push_back(res);
+            res = new_res;
+        }
+        return res;
+    }
+
+private:
+    size_t num_dimensions_to_fold;
 };
 
 /// Receives range of objects, which contains collections
