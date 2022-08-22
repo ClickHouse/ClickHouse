@@ -33,6 +33,8 @@ void optimizePrimaryKeyCondition(QueryPlan::Node & root)
             continue;
         }
 
+        optimizeReadInOrder(*frame.node);
+
         auto add_filter = [&](auto & storage)
         {
             for (auto iter=stack.rbegin() + 1; iter!=stack.rend(); ++iter)
