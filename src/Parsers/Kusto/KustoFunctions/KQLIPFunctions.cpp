@@ -225,11 +225,13 @@ bool ParseIpv6Mask::convertImpl(String & out, IParser::Pos & pos)
 
     const auto ip_address = getArgument(function_name, pos);
     const auto mask = getArgument(function_name, pos);
+    const auto unique_identifier = generateUniqueIdentifier();
     out = std::format(
-        "if(isNull({0} as ipv4), {1}, {2})",
+        "if(isNull({0} as ipv4_{3}), {1}, {2})",
         kqlCallToExpression("parse_ipv4_mask", {ip_address, mask}, pos.max_depth),
         kqlCallToExpression("parse_ipv6", {"strcat(tostring(parse_ipv6(" + ip_address + ")), '/', tostring(" + mask + "))"}, pos.max_depth),
-        kqlCallToExpression("parse_ipv6", {"format_ipv4(ipv4)"}, pos.max_depth));
+        kqlCallToExpression("parse_ipv6", {"format_ipv4(ipv4_" + unique_identifier + ")"}, pos.max_depth),
+        unique_identifier);
     return true;
 }
 

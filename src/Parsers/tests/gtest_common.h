@@ -12,3 +12,6 @@ struct ParserTestCase
 
 class ParserTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IParser>, ParserTestCase>>
 {};
+
+class ParserRegexTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IParser>, ParserTestCase>>
+{};

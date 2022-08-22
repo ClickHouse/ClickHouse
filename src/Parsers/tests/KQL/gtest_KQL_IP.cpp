@@ -1,27 +1,6 @@
 #include <Parsers/tests/gtest_common.h>
 
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
-
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-
-class ParserRegexTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<DB::IParser>, ParserTestCase>>
-{};
-
-TEST_P(ParserRegexTest, parseQuery)
-{
-    const auto & parser = std::get<0>(GetParam());
-    const auto & [input_text, expected_ast] = std::get<1>(GetParam());
-
-    ASSERT_TRUE(parser);
-    ASSERT_TRUE(expected_ast);
-
-    DB::ASTPtr ast;
-    ASSERT_NO_THROW(ast = parseQuery(*parser, input_text.begin(), input_text.end(), 0, 0));
-    EXPECT_THAT(serializeAST(*ast->clone(), false), ::testing::MatchesRegex(expected_ast));
-}
 
 INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_IP, ParserRegexTest,
     ::testing::Combine(
@@ -101,6 +80,6 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery_IP, ParserRegexTest,
         },
         {
             "print parse_ipv6_mask(A, B)",
-            "SELECT if\\(\\(if\\(\\(\\(toIPv4OrNull\\(A\\) AS ip_\\d+\\) IS NULL\\) OR \\(\\(toUInt8OrNull\\(toString\\(B\\)\\) AS mask_\\d+\\) IS NULL\\), NULL, toUInt32\\(IPv4CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), toUInt8\\(max2\\(0, min2\\(32, assumeNotNull\\(mask_\\d+\\)\\)\\)\\)\\).1\\)\\) AS ipv4\\) IS NULL, if\\(\\(length\\(splitByChar\\('/', concat\\(ifNull\\(toString\\(if\\(\\(length\\(splitByChar\\('/', A\\) AS tokens_\\d+\\) > 2\\) OR \\(\\(IPv6StringToNumOrNull\\(tokens_\\d+\\[1\\]\\) AS ip_\\d+\\) IS NULL\\) OR \\(\\(length\\(tokens_\\d+\\) = 2\\) AND \\(\\(toUInt8OrNull\\(tokens_\\d+\\[-1\\]\\) AS mask_\\d+\\) IS NULL\\)\\), NULL, arrayStringConcat\\(flatten\\(extractAllGroups\\(lower\\(hex\\(IPv6CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), toUInt8\\(ifNull\\(mask_\\d+ \\+ if\\(isIPv4String\\(tokens_\\d+\\[1\\]\\), 96, 0\\), 128\\)\\)\\).1\\)\\), '\\(\\[\\\\\\\\da-f\\]\\{4\\}\\)'\\)\\), ':'\\)\\)\\), ''\\), '/', ifNull\\(toString\\(B\\), ''\\)\\)\\) AS tokens_\\d+\\) > 2\\) OR \\(\\(IPv6StringToNumOrNull\\(tokens_\\d+\\[1\\]\\) AS ip_\\d+\\) IS NULL\\) OR \\(\\(length\\(tokens_\\d+\\) = 2\\) AND \\(\\(toUInt8OrNull\\(tokens_\\d+\\[-1\\]\\) AS mask_\\d+\\) IS NULL\\)\\), NULL, arrayStringConcat\\(flatten\\(extractAllGroups\\(lower\\(hex\\(IPv6CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), toUInt8\\(ifNull\\(mask_\\d+ \\+ if\\(isIPv4String\\(tokens_\\d+\\[1\\]\\), 96, 0\\), 128\\)\\)\\).1\\)\\), '\\(\\[\\\\\\\\da-f\\]\\{4\\}\\)'\\)\\), ':'\\)\\), if\\(\\(length\\(splitByChar\\('/', ifNull\\(if\\(\\(\\(\\(toUInt32OrNull\\(toString\\(ipv4\\)\\) AS param_as_uint32_\\d+\\) IS NOT NULL\\) AND \\(toTypeName\\(ipv4\\) = 'String'\\)\\) OR \\(32 < 0\\) OR \\(\\(ifNull\\(param_as_uint32_\\d+, multiIf\\(length\\(splitByChar\\('/', ifNull\\(toString\\(ipv4\\), ''\\)\\) AS tokens_\\d+\\) = 1, IPv4StringToNumOrNull\\(tokens_\\d+\\[1\\]\\) AS ip_\\d+, \\(length\\(tokens_\\d+\\) = 2\\) AND \\(ip_\\d+ IS NOT NULL\\) AND \\(\\(toUInt8OrNull\\(tokens_\\d+\\[-1\\]\\) AS mask_\\d+\\) IS NOT NULL\\), IPv4CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), assumeNotNull\\(mask_\\d+\\)\\).1, NULL\\)\\) AS ip_as_number_\\d+\\) IS NULL\\), NULL, IPv4NumToString\\(bitAnd\\(ip_as_number_\\d+, bitNot\\(toUInt32\\(intExp2\\(32 - 32\\) - 1\\)\\)\\)\\)\\), ''\\)\\) AS tokens_\\d+\\) > 2\\) OR \\(\\(IPv6StringToNumOrNull\\(tokens_\\d+\\[1\\]\\) AS ip_\\d+\\) IS NULL\\) OR \\(\\(length\\(tokens_\\d+\\) = 2\\) AND \\(\\(toUInt8OrNull\\(tokens_\\d+\\[-1\\]\\) AS mask_\\d+\\) IS NULL\\)\\), NULL, arrayStringConcat\\(flatten\\(extractAllGroups\\(lower\\(hex\\(IPv6CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), toUInt8\\(ifNull\\(mask_\\d+ \\+ if\\(isIPv4String\\(tokens_\\d+\\[1\\]\\), 96, 0\\), 128\\)\\)\\).1\\)\\), '\\(\\[\\\\\\\\da-f\\]\\{4\\}\\)'\\)\\), ':'\\)\\)\\)"
+            "SELECT if\\(\\(if\\(\\(\\(toIPv4OrNull\\(A\\) AS ip_\\d+\\) IS NULL\\) OR \\(\\(toUInt8OrNull\\(toString\\(B\\)\\) AS mask_\\d+\\) IS NULL\\), NULL, toUInt32\\(IPv4CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), toUInt8\\(max2\\(0, min2\\(32, assumeNotNull\\(mask_\\d+\\)\\)\\)\\)\\).1\\)\\) AS ipv4_\\d+\\) IS NULL, if\\(\\(length\\(splitByChar\\('/', concat\\(ifNull\\(toString\\(if\\(\\(length\\(splitByChar\\('/', A\\) AS tokens_\\d+\\) > 2\\) OR \\(\\(IPv6StringToNumOrNull\\(tokens_\\d+\\[1\\]\\) AS ip_\\d+\\) IS NULL\\) OR \\(\\(length\\(tokens_\\d+\\) = 2\\) AND \\(\\(toUInt8OrNull\\(tokens_\\d+\\[-1\\]\\) AS mask_\\d+\\) IS NULL\\)\\), NULL, arrayStringConcat\\(flatten\\(extractAllGroups\\(lower\\(hex\\(IPv6CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), toUInt8\\(ifNull\\(mask_\\d+ \\+ if\\(isIPv4String\\(tokens_\\d+\\[1\\]\\), 96, 0\\), 128\\)\\)\\).1\\)\\), '\\(\\[\\\\\\\\da-f\\]\\{4\\}\\)'\\)\\), ':'\\)\\)\\), ''\\), '/', ifNull\\(toString\\(B\\), ''\\)\\)\\) AS tokens_\\d+\\) > 2\\) OR \\(\\(IPv6StringToNumOrNull\\(tokens_\\d+\\[1\\]\\) AS ip_\\d+\\) IS NULL\\) OR \\(\\(length\\(tokens_\\d+\\) = 2\\) AND \\(\\(toUInt8OrNull\\(tokens_\\d+\\[-1\\]\\) AS mask_\\d+\\) IS NULL\\)\\), NULL, arrayStringConcat\\(flatten\\(extractAllGroups\\(lower\\(hex\\(IPv6CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), toUInt8\\(ifNull\\(mask_\\d+ \\+ if\\(isIPv4String\\(tokens_\\d+\\[1\\]\\), 96, 0\\), 128\\)\\)\\).1\\)\\), '\\(\\[\\\\\\\\da-f\\]\\{4\\}\\)'\\)\\), ':'\\)\\), if\\(\\(length\\(splitByChar\\('/', ifNull\\(if\\(\\(\\(\\(toUInt32OrNull\\(toString\\(ipv4_\\d+\\)\\) AS param_as_uint32_\\d+\\) IS NOT NULL\\) AND \\(toTypeName\\(ipv4_\\d+\\) = 'String'\\)\\) OR \\(32 < 0\\) OR \\(\\(ifNull\\(param_as_uint32_\\d+, multiIf\\(length\\(splitByChar\\('/', ifNull\\(toString\\(ipv4_\\d+\\), ''\\)\\) AS tokens_\\d+\\) = 1, IPv4StringToNumOrNull\\(tokens_\\d+\\[1\\]\\) AS ip_\\d+, \\(length\\(tokens_\\d+\\) = 2\\) AND \\(ip_\\d+ IS NOT NULL\\) AND \\(\\(toUInt8OrNull\\(tokens_\\d+\\[-1\\]\\) AS mask_\\d+\\) IS NOT NULL\\), IPv4CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), assumeNotNull\\(mask_\\d+\\)\\).1, NULL\\)\\) AS ip_as_number_\\d+\\) IS NULL\\), NULL, IPv4NumToString\\(bitAnd\\(ip_as_number_\\d+, bitNot\\(toUInt32\\(intExp2\\(32 - 32\\) - 1\\)\\)\\)\\)\\), ''\\)\\) AS tokens_\\d+\\) > 2\\) OR \\(\\(IPv6StringToNumOrNull\\(tokens_\\d+\\[1\\]\\) AS ip_\\d+\\) IS NULL\\) OR \\(\\(length\\(tokens_\\d+\\) = 2\\) AND \\(\\(toUInt8OrNull\\(tokens_\\d+\\[-1\\]\\) AS mask_\\d+\\) IS NULL\\)\\), NULL, arrayStringConcat\\(flatten\\(extractAllGroups\\(lower\\(hex\\(IPv6CIDRToRange\\(assumeNotNull\\(ip_\\d+\\), toUInt8\\(ifNull\\(mask_\\d+ \\+ if\\(isIPv4String\\(tokens_\\d+\\[1\\]\\), 96, 0\\), 128\\)\\)\\).1\\)\\), '\\(\\[\\\\\\\\da-f\\]\\{4\\}\\)'\\)\\), ':'\\)\\)\\)"
         }
 })));
