@@ -304,8 +304,10 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         auto file_in = part->data_part_storage->readFile(file_name, {}, std::nullopt, std::nullopt);
         HashingWriteBuffer hashing_out(out);
-        copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
-        hashing_out.finalize();
+        {
+            SCOPE_EXIT(hashing_out.finalize());
+            copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
+        }
 
         if (blocker.isCancelled())
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);

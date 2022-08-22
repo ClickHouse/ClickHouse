@@ -54,6 +54,9 @@ void CascadeWriteBuffer::nextImpl()
 
 void CascadeWriteBuffer::finalizeImpl()
 {
+    /// Sync position with underlying buffer before invalidating
+    curr_buffer->position() = position();
+
     for (auto & buf : prepared_sources)
     {
         if (buf)

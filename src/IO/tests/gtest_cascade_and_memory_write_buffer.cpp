@@ -144,6 +144,7 @@ static void checkHTTPHandlerCase(size_t input_size, size_t memory_buffer_size)
 
         cascade.write(src.data(), src.size());
         EXPECT_EQ(cascade.count(), src.size());
+        cascade.finalize();
     }
 
     ASSERT_EQ(src.size(), res_str.size());
@@ -216,6 +217,7 @@ try
 
         auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
         buf->write(data.data(), data.size());
+        buf->finalize();
 
         std::string tmp_filename = buf->getFileName();
         ASSERT_EQ(tmp_template, tmp_filename.substr(0, tmp_template.size()));

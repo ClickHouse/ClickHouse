@@ -79,14 +79,20 @@ struct MergedBlockOutputStream::Finalizer::Impl
         , files_to_remove_after_finish(files_to_remove_after_finish_)
         , sync(sync_) {}
 
+    ~Impl()
+    {
+        for (auto & file : written_files)
+            file->finalize();
+    }
+
     void finish();
 };
 
 void MergedBlockOutputStream::Finalizer::finish()
 {
+    if (impl)
+        impl->finish();
     std::unique_ptr<Impl> to_finish = std::move(impl);
-    if (to_finish)
-        to_finish->finish();
 }
 
 void MergedBlockOutputStream::Finalizer::Impl::finish()

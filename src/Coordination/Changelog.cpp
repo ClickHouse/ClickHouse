@@ -586,6 +586,8 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             description = std::prev(index_changelog)->second;
 
         /// Initialize writer from this log file
+        if (current_writer)
+            current_writer->finalize();
         current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, index_changelog->first);
 
         /// Remove all subsequent files if overwritten something in previous one

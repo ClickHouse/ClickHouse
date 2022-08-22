@@ -1079,6 +1079,7 @@ void TCPHandler::receiveHello()
         if (packet_type == 'G' || packet_type == 'P')
         {
             writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
+            out->next();
             throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
         }
         else

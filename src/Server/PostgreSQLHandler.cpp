@@ -206,7 +206,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 #if USE_SSL
 void PostgreSQLHandler::makeSecureConnectionSSL()
 {
-    message_transport->send('S');
+    message_transport->send('S', true);
     ss = std::make_shared<Poco::Net::SecureStreamSocket>(
         Poco::Net::SecureStreamSocket::attach(socket(), Poco::Net::SSLManager::instance().defaultServerContext()));
     changeIO(*ss);

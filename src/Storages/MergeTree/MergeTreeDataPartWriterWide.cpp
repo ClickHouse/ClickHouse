@@ -91,7 +91,16 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
 MergeTreeDataPartWriterWide::~MergeTreeDataPartWriterWide()
 {
     for (auto & stream : column_streams)
-        stream.second->finalize();
+    {
+        try
+        {
+            stream.second->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(&Poco::Logger::get("MergeTreeDataPartWriterWide"));
+        }
+    }
 }
 
 void MergeTreeDataPartWriterWide::addStreams(

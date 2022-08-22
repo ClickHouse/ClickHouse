@@ -109,14 +109,30 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
 
 MergeTreeDataPartWriterOnDisk::~MergeTreeDataPartWriterOnDisk()
 {
-    if (index_stream)
+    try
     {
-        index_stream->finalize();
-        index_file_stream->finalize();
+        if (index_stream)
+        {
+            index_stream->finalize();
+            index_file_stream->finalize();
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&Poco::Logger::get("MergeTreeDataPartWriterOnDisk"));
     }
 
     for (auto & stream : skip_indices_streams)
-        stream->finalize();
+    {
+        try
+        {
+            stream->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(&Poco::Logger::get("MergeTreeDataPartWriterOnDisk"));
+        }
+    }
 }
 
 // Implementation is split into static functions for ability
