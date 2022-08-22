@@ -179,7 +179,7 @@ void IBridge::initialize(Application & self)
     limit.rlim_max = limit.rlim_cur = gb;
     if (setrlimit(RLIMIT_RSS, &limit))
         LOG_WARNING(log, "Unable to set maximum RSS to 1GB: {} (current rlim_cur={}, rlim_max={})",
-                    errnoToString(errno), limit.rlim_cur, limit.rlim_max);
+                    errnoToString(), limit.rlim_cur, limit.rlim_max);
 
     if (!getrlimit(RLIMIT_RSS, &limit))
         LOG_INFO(log, "RSS limit: cur={}, max={}", limit.rlim_cur, limit.rlim_max);
