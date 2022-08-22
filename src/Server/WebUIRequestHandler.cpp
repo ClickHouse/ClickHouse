@@ -8,6 +8,8 @@
 #include <IO/HTTPCommon.h>
 #include <Common/getResource.h>
 
+#include <re2/re2.h>
+
 
 namespace DB
 {
