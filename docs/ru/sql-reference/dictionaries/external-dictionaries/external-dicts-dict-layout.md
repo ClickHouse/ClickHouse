@@ -444,6 +444,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 
 :::danger "Warning"
     Не используйте в качестве источника ClickHouse, поскольку он медленно обрабатывает запросы со случайным чтением.
+:::
 
 ### complex_key_cache {#complex-key-cache}
 
