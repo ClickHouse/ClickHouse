@@ -77,7 +77,6 @@ public:
     void decrementReader();
 
 private:
-    ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
     const String exchange_name;
@@ -177,7 +176,7 @@ private:
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    ContextMutablePtr addSettings(ContextPtr context) const;
+    ContextMutablePtr createNewContext(ContextPtr local_context, bool query_context = false) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
