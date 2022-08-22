@@ -43,6 +43,7 @@ def run_endpoint(cluster):
 
     logging.info("S3 endpoint started")
 
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -66,6 +67,7 @@ def cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 def test_dataloss(cluster):
     node = cluster.instances["node"]

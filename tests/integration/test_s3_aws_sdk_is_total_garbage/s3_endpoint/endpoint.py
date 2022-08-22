@@ -18,7 +18,10 @@ def server(_bucket, _path):
         response.content_type = "text/xml"
         return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>InternalError</Code><Message>We encountered an internal error. Please try again.</Message><RequestId>txfbd566d03042474888193-00608d7538</RequestId></Error>'
 
-    response.set_header("Location", "http://minio1:9001/" + _bucket + "/" + _path + "?" + request.query_string)
+    response.set_header(
+        "Location",
+        "http://minio1:9001/" + _bucket + "/" + _path + "?" + request.query_string,
+    )
     response.status = 307
     return "Redirected"
 
