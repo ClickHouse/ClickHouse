@@ -5,6 +5,8 @@
 #include "PocoHTTPClient.h"
 
 #include <utility>
+#include <algorithm>
+#include <functional>
 
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
@@ -14,6 +16,7 @@
 
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/HttpResponse.h>
+#include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
 #include <aws/core/utils/ratelimiter/RateLimiterInterface.h>
 #include "Poco/StreamCopier.h"
@@ -120,6 +123,37 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
     makeRequestInternal(*request, response, readLimiter, writeLimiter);
     return response;
 }
+
+namespace
+{
+    /// No comments:
+    /// 1) https://aws.amazon.com/premiumsupport/knowledge-center/s3-resolve-200-internalerror/
+    /// 2) https://github.com/aws/aws-sdk-cpp/issues/658
+    bool checkRequestCanReturn200AndErrorInBody(Aws::Http::HttpRequest & request)
+    {
+        auto query_params = request.GetQueryStringParameters();
+        if (request.HasHeader("z-amz-copy-source"))
+        {
+            /// CopyObject https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html
+            if (query_params.empty())
+                return true;
+
+            /// UploadPartCopy https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html
+            if (query_params.contains("partNumber") && query_params.contains("uploadId"))
+                return true;
+
+        }
+        else
+        {
+            /// CompleteMultipartUpload https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
+            if (query_params.size() == 1 && query_params.contains("uploadId"))
+                return true;
+        }
+
+        return false;
+    }
+}
+
 
 void PocoHTTPClient::makeRequestInternal(
     Aws::Http::HttpRequest & request,
@@ -281,6 +315,7 @@ void PocoHTTPClient::makeRequestInternal(
             ProfileEvents::increment(select_metric(S3MetricType::Microseconds), watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
+
             if (enable_s3_requests_logging)
                 LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
@@ -316,19 +351,41 @@ void PocoHTTPClient::makeRequestInternal(
                     response->AddHeader(header_name, header_value);
             }
 
-            if (status_code == 429 || status_code == 503)
-            { // API throttling
-                ProfileEvents::increment(select_metric(S3MetricType::Throttling));
-            }
-            else if (status_code >= 300)
+            if (status_code == 200 && checkRequestCanReturn200AndErrorInBody(request))
             {
+                std::string response_string((std::istreambuf_iterator<char>(response_body_stream)),
+                               std::istreambuf_iterator<char>());
+
+                LOG_TRACE(log, "Got dangerous response with code 200, checking its body: '{}'", response_string.substr(0, 300));
+                const static std::string_view needle = "<Error>";
+                if (auto it = std::search(response_string.begin(), response_string.end(), std::default_searcher(needle.begin(), needle.end())); it != response_string.end())
+                {
+                    LOG_WARNING(log, "Response for request contain <Error> tag in body, settings internal server error (500 code)");
+                    response->SetResponseCode(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
+                    status_code = static_cast<int32_t>(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
+                }
+
                 ProfileEvents::increment(select_metric(S3MetricType::Errors));
                 if (status_code >= 500 && error_report)
                     error_report(request_configuration);
             }
+            else
+            {
 
-            response->SetResponseBody(response_body_stream, session);
+                if (status_code == 429 || status_code == 503)
+                { // API throttling
+                    ProfileEvents::increment(select_metric(S3MetricType::Throttling));
+                }
+                else if (status_code >= 300)
+                {
+                    ProfileEvents::increment(select_metric(S3MetricType::Errors));
+                    if (status_code >= 500 && error_report)
+                        error_report(request_configuration);
+                }
 
+                response->SetResponseBody(response_body_stream, session);
+
+            }
             return;
         }
         throw Exception(String("Too many redirects while trying to access ") + request.GetUri().GetURIString(),
