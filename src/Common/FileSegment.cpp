@@ -559,8 +559,6 @@ void FileSegment::asynchronousWriteImpl(const char * from, size_t size, size_t o
 
         const auto & file_segment = holder.file_segments.front();
 
-        std::optional<AsynchronousWriteState::ExecutionHolder> execution_holder;
-
         {
             std::unique_lock lock(file_segment->mutex);
 
@@ -583,14 +581,11 @@ void FileSegment::asynchronousWriteImpl(const char * from, size_t size, size_t o
                 return;
 
             background_downloader_id = background_caller_id = executor_id;
-            /// Important that it is done along with background_downloader_id under file_segment.mutex.
-            execution_holder.emplace(*file_segment->async_write_state, file_segment->mutex);
 
             LOG_TEST(log, "Assigned background downloader: {}", executor_id);
         }
 
         SCOPE_EXIT({
-            execution_holder.reset();
             chassert(background_downloader_id != executor_id);
         });
 

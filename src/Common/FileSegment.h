@@ -382,29 +382,6 @@ private:
 
         /// Whether the download was cancelled. For example because file segment was removed from cache.
         size_t is_cancelled = false;
-
-        /// The following is_executing, execution_end_cv, ExecutinoHolder are needed for
-        /// only one purpose: to be able to cancel background download.
-        bool is_executing = false;
-
-        struct ExecutionHolder
-        {
-            explicit ExecutionHolder(AsynchronousWriteState & state_, std::mutex & file_segment_mutex)
-                : state(state_), execution_end_lock(file_segment_mutex, std::defer_lock)
-            {
-                state.is_executing = true;
-            }
-
-            ~ExecutionHolder()
-            {
-                state.is_executing = false;
-                /// state.execution_end_cv.notify_all();
-            }
-
-            AsynchronousWriteState & state;
-            std::unique_lock<std::mutex> execution_end_lock;
-        };
-        std::optional<ExecutionHolder> execution_holder;
     };
 
     mutable std::optional<AsynchronousWriteState> async_write_state;
