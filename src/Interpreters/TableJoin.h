@@ -244,6 +244,8 @@ public:
 
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
+    void sortKeys();
+
     /* Conditions for left/right table from JOIN ON section.
      *
      * Conditions for left and right tables stored separately and united with 'and' function into one column.
@@ -263,6 +265,7 @@ public:
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
     String getOriginalName(const String & column_name) const;
+    Names getOriginalNames(const Names & column_names) const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_required_columns) const;
 

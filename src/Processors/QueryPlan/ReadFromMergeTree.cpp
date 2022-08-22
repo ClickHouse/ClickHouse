@@ -139,6 +139,7 @@ ReadFromMergeTree::ReadFromMergeTree(
                 break;
             sort_description.emplace_back(column_name, sort_direction);
         }
+
         if (!sort_description.empty())
         {
             auto const & settings = context->getSettingsRef();
@@ -149,7 +150,6 @@ ReadFromMergeTree::ReadFromMergeTree(
         }
 
         output_stream->sort_description = std::move(sort_description);
-
     }
 }
 

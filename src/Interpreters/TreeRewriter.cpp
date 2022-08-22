@@ -782,6 +782,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                 throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
         }
     }
+    analyzed_join.sortKeys();
 }
 
 

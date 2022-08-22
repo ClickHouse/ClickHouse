@@ -85,6 +85,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
 #include <Common/scope_guard_safe.h>
@@ -1077,6 +1078,30 @@ static SortDescription getSortDescriptionFromGroupBy(const ASTSelectQuery & quer
     return order_descr;
 }
 
+static NameSet namesToSet(const Names & names)
+{
+    NameSet result;
+    for (const auto & name : names)
+        result.emplace(name);
+    return result;
+}
+
+static SortDescription getSortDescriptionFromNames(const Names & target_sorting, const Names & current_sorting)
+{
+    NameSet names = namesToSet(target_sorting);
+
+    SortDescription order_descr;
+    for (const auto & sorted_by : current_sorting)
+    {
+        auto found = names.find(sorted_by);
+        if (found == names.end())
+            return order_descr;
+        names.erase(found);
+        order_descr.emplace_back(sorted_by);
+    }
+    return order_descr;
+}
+
 static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
@@ -1437,16 +1462,41 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     if (!joined_plan)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no joined plan for query");
 
-                    auto add_sorting = [&settings, this] (QueryPlan & plan, const Names & key_names, JoinTableSide join_pos)
+                    auto add_sorting = [&] (QueryPlan & plan, const SortDescription & join_sort_descr, JoinTableSide side)
                     {
-                        SortDescription order_descr;
-                        order_descr.reserve(key_names.size());
-                        for (const auto & key_name : key_names)
-                            order_descr.emplace_back(key_name);
+                        SortDescription sort_descr;
+                        {
+                            /// Join keys may contain duplicates, remove them
+                            /// Example: JOIN ON t1.x = t2.a AND t1.x = t2.b AND t1.y = t2.c
+                            /// We need to sort t1 by [x, y] (not [x, x, y]).
+                            NameSet existing;
+                            for (const auto & desc : join_sort_descr)
+                            {
+                                if (existing.count(desc.column_name))
+                                    continue;
+                                existing.insert(desc.column_name);
+                                sort_descr.push_back(desc);
+                            }
+                        }
 
-                        auto sorting_step = std::make_unique<SortingStep>(
-                            plan.getCurrentDataStream(),
-                            std::move(order_descr),
+                        std::unique_ptr<SortingStep> sorting_step;
+
+                        const auto & data_stream = plan.getCurrentDataStream();
+                        if (data_stream.isSortedBy(sort_descr) && settings.optimize_sorting_by_input_stream_properties)
+                        {
+                            LOG_TRACE(log, "{} stream is already sorted by [{}], using partial sorting before join",
+                                side, fmt::join(sort_descr.getColumnNames(), ", "));
+                        }
+                        else if (settings.optimize_sorting_by_input_stream_properties)
+                        {
+                            LOG_TRACE(log, "{} stream is not sorted by {} (sorted {} by {}), using full sorting before join",
+                                side, fmt::join(sort_descr.getColumnNames(), ", "),
+                                data_stream.sort_mode, fmt::join(data_stream.sort_description.getColumnNames(), ", "));
+                        }
+
+                        sorting_step = std::make_unique<SortingStep>(
+                            data_stream,
+                            sort_descr,
                             settings.max_block_size,
                             0 /* LIMIT */,
                             SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
@@ -1456,7 +1506,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             this->context->getTemporaryVolume(),
                             settings.min_free_disk_space_for_temporary_data,
                             settings.optimize_sorting_by_input_stream_properties);
-                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos));
+                        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", side));
                         plan.addStep(std::move(sorting_step));
                     };
 
@@ -1491,8 +1541,16 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                                 left_set->setFiltering(right_set->getSet());
                         }
 
-                        add_sorting(query_plan, join_clause.key_names_left, JoinTableSide::Left);
-                        add_sorting(*joined_plan, join_clause.key_names_right, JoinTableSide::Right);
+                        SortDescription left_sort_descr;
+                        SortDescription right_sort_descr;
+                        FullSortingMergeJoin::getSortDescriptions(
+                            query_plan.getCurrentDataStream(), join_clause.key_names_left,
+                            joined_plan->getCurrentDataStream(), join_clause.key_names_right,
+                            left_sort_descr, right_sort_descr);
+
+                        add_sorting(query_plan, left_sort_descr, JoinTableSide::Left);
+                        add_sorting(*joined_plan, right_sort_descr, JoinTableSide::Right);
+                        expressions.join->setSortDescriptions(left_sort_descr, right_sort_descr);
                     }
 
                     QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
@@ -2215,10 +2273,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         bool optimize_read_in_order = analysis_result.optimize_read_in_order;
         bool optimize_aggregation_in_order = analysis_result.optimize_aggregation_in_order && !query_analyzer->useGroupingSetKey();
+        bool optimize_join_in_order = !analysis_result.optimize_join_in_order.empty();
 
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
-        if ((optimize_read_in_order || optimize_aggregation_in_order)
+        if ((optimize_read_in_order || optimize_aggregation_in_order || optimize_join_in_order)
             && (!query_info.projection || query_info.projection->complete))
         {
             if (optimize_read_in_order)
@@ -2260,14 +2319,39 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                         query_info.syntax_analyzer_result);
                 }
             }
+            else if (optimize_join_in_order)
+            {
+                if (query_info.projection)
+                {
+                    /// TODO(@vdimir)
+                }
+                else
+                {
+                    /// Order of sorted columns doesn't matter for JOIN, so we can use any existing order
+                    const auto & join_sort = analysis_result.optimize_join_in_order;
+                    const auto & storage_sort = metadata_snapshot->getSortingKeyColumns();
+                    if (auto sort_descr = getSortDescriptionFromNames(join_sort, storage_sort); !sort_descr.empty())
+                    {
+                        query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                            query,
+                            ManyExpressionActions{}, /// TODO(@vdimir): support expressions
+                            sort_descr,
+                            query_info.syntax_analyzer_result);
+                    }
+                }
+            }
 
             /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
             UInt64 limit = (query.hasFiltration() || query.groupBy()) ? 0 : getLimitForSorting(query, context);
-            if (query_info.projection)
+            if (query_info.projection && query_info.projection->order_optimizer)
+            {
                 query_info.projection->input_order_info
                     = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context, limit);
-            else
+            }
+            else if (query_info.order_optimizer)
+            {
                 query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
+            }
         }
 
         query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);

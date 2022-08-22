@@ -8,18 +8,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static bool isPrefix(const SortDescription & pref_descr, const SortDescription & descr)
-{
-    if (pref_descr.size() > descr.size())
-        return false;
-
-    for (size_t i = 0; i < pref_descr.size(); ++i)
-        if (pref_descr[i] != descr[i])
-            return false;
-
-    return true;
-}
-
 FinishSortingTransform::FinishSortingTransform(
     const Block & header,
     const SortDescription & description_sorted_,
@@ -30,9 +18,13 @@ FinishSortingTransform::FinishSortingTransform(
     : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
 {
     /// Check for sanity non-modified descriptions
-    if (!isPrefix(description_sorted_, description_to_sort_))
-        throw Exception("Can't finish sorting. SortDescription of already sorted stream is not prefix of "
-            "SortDescription needed to sort", ErrorCodes::LOGICAL_ERROR);
+    if (!description_to_sort_.hasPrefix(description_sorted_))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Can't finish sorting: "
+            "SortDescription {} of already sorted stream is not prefix of "
+            "SortDescription {} needed to sort",
+            fmt::join(description_sorted_.getColumnNames(), ", "),
+            fmt::join(description_to_sort_.getColumnNames(), ", "));
 
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.

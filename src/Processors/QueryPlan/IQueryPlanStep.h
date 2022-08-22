@@ -33,6 +33,7 @@ public:
 
     /// Sorting scope
     enum class SortScope
+    enum class SortMode : UInt8
     {
         None,
         Chunk, /// Separate chunks are sorted
@@ -60,6 +61,12 @@ public:
     bool hasEqualHeaderWith(const DataStream & other) const
     {
         return blocksHaveEqualStructure(header, other.header);
+    }
+
+    template <typename T>
+    bool isSortedBy(const T & prefix) const
+    {
+        return sort_mode >= SortMode::Port && sort_description.hasPrefix(prefix);
     }
 };
 

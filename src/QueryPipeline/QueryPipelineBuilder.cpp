@@ -10,6 +10,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PipelineExecutor.h>
@@ -22,7 +23,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Common/typeid_cast.h>
 #include <Common/CurrentThread.h>
-#include "Core/SortDescription.h"
+#include <Core/SortDescription.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
@@ -348,14 +349,15 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
-    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
-        throw Exception("Join is supported only for pipelines with one output port", ErrorCodes::LOGICAL_ERROR);
+
+    if (left->pipe.output_ports.size() != 1 || right->pipe.output_ports.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port, got {} and {}",
+            left->pipe.output_ports.size(), right->pipe.output_ports.size());
 
     if (left->hasTotals() || right->hasTotals())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
 
     Blocks inputs = {left->getHeader(), right->getHeader()};
-
     auto joining = std::make_shared<MergeJoinTransform>(join, inputs, out_header, max_block_size);
 
     return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);

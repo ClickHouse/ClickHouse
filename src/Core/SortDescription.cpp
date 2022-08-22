@@ -58,6 +58,25 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     return true;
 }
 
+bool SortDescription::hasPrefix(const Names & prefix) const
+{
+    if (prefix.size() > size())
+        return false;
+
+    SortDescription prefix_desc;
+    for (size_t i = 0; i < prefix.size(); ++i)
+        prefix_desc.emplace_back(prefix[i], this->at(i).direction, this->at(i).nulls_direction);
+    return this->hasPrefix(prefix_desc);
+}
+
+Names SortDescription::getColumnNames() const
+{
+    Names res;
+    for (const auto & column : *this)
+        res.push_back(column.column_name);
+    return res;
+}
+
 #if USE_EMBEDDED_COMPILER
 
 static CHJIT & getJITInstance()

@@ -316,7 +316,7 @@ public:
         const ColumnsWithTypeAndName & all_inputs);
 
     bool
-    isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
+    isSortingPreserved(const Block & input_header, const Names & sort_column_names, const String & ignore_output_column = "") const;
 
 private:
     Node & addNode(Node node);

@@ -2001,22 +2001,22 @@ static bool isColumnSortingPreserved(const ActionsDAG::Node * start_node, const 
 }
 
 bool ActionsDAG::isSortingPreserved(
-    const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column) const
+    const Block & input_header, const Names & sort_column_names, const String & ignore_output_column) const
 {
-    if (sort_description.empty())
+    if (sort_column_names.empty())
         return true;
 
     if (hasArrayJoin())
         return false;
 
     const Block & output_header = updateHeader(input_header);
-    for (const auto & desc : sort_description)
+    for (const auto & column_name : sort_column_names)
     {
         /// header contains column with the same name
-        if (output_header.findByName(desc.column_name))
+        if (output_header.findByName(column_name))
         {
             /// find the corresponding node in output
-            const auto * output_node = tryFindInOutputs(desc.column_name);
+            const auto * output_node = tryFindInOutputs(column_name);
             if (!output_node)
             {
                 /// sorted column name in header but NOT in expression output -> no expression is applied to it -> sorting preserved
@@ -2031,7 +2031,7 @@ bool ActionsDAG::isSortingPreserved(
             if (output_node->result_name == ignore_output_column)
                 continue;
 
-            if (isColumnSortingPreserved(output_node, desc.column_name))
+            if (isColumnSortingPreserved(output_node, column_name))
             {
                 preserved = true;
                 break;

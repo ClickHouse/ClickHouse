@@ -197,6 +197,15 @@ String TableJoin::getOriginalName(const String & column_name) const
     return column_name;
 }
 
+Names TableJoin::getOriginalNames(const Names & column_name) const
+{
+    Names result;
+    result.reserve(column_name.size());
+    for (const auto & name : column_name)
+        result.push_back(getOriginalName(name));
+    return result;
+}
+
 NamesWithAliases TableJoin::getNamesWithAliases(const NameSet & required_columns) const
 {
     NamesWithAliases out;
@@ -679,6 +688,36 @@ void TableJoin::addKey(const String & left_name, const String & right_name, cons
 
     clauses.back().key_names_right.emplace_back(right_name);
     key_asts_right.emplace_back(right_ast ? right_ast : left_ast);
+}
+
+static void sortPairwise(std::vector<String> & lhs, std::vector<String> & rhs, bool keep_last)
+{
+    assert(lhs.size() == rhs.size());
+    size_t size = lhs.size();
+    if (keep_last)
+        size--;
+
+    std::vector<size_t> permutation(size);
+    std::iota(permutation.begin(), permutation.end(), 0);
+    auto cmp = [&lhs, &rhs](size_t i, size_t j) { return lhs[i] == lhs[j] ? rhs[i] < rhs[j] : lhs[i] < lhs[j]; };
+    std::stable_sort(permutation.begin(), permutation.end(), cmp);
+
+    std::vector<String> lhs_sorted(size);
+    std::vector<String> rhs_sorted(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        lhs_sorted[i] = lhs[permutation[i]];
+        rhs_sorted[i] = rhs[permutation[i]];
+    }
+    lhs = std::move(lhs_sorted);
+    rhs = std::move(rhs_sorted);
+}
+
+void TableJoin::sortKeys()
+{
+    /// Sort, but keep correspondence between left and right keys.
+    for (auto & clause : clauses)
+        sortPairwise(clause.key_names_left, clause.key_names_right, strictness() == JoinStrictness::Asof);
 }
 
 static void addJoinConditionWithAnd(ASTPtr & current_cond, const ASTPtr & new_cond)

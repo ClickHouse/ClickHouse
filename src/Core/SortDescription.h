@@ -40,10 +40,16 @@ struct FillColumnDescription
 /// Description of the sorting rule by one column.
 struct SortColumnDescription
 {
+    /// Ascending: 1
+    /// Descending: -1
+    using Direction = int;
+
     std::string column_name; /// The name of the column.
-    int direction;           /// 1 - ascending, -1 - descending.
-    int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
-                             /// To achieve NULLS LAST, set it equal to direction, to achieve NULLS FIRST, set it opposite.
+
+    Direction direction;
+    /// To achieve NULLS LAST, set nulls_direction equal to direction, to achieve NULLS FIRST, set it opposite.
+    Direction nulls_direction;
+
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
     bool with_fill;
     FillColumnDescription fill_description;
@@ -121,6 +127,10 @@ public:
     bool compile_sort_description = false;
 
     bool hasPrefix(const SortDescription & prefix) const;
+    /// Check prefix without considering direction
+    bool hasPrefix(const Names & prefix) const;
+
+    Names getColumnNames() const;
 };
 
 /** Compile sort description for header_types.

@@ -228,7 +228,7 @@ struct ExpressionAnalysisResult
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;
-    bool join_has_delayed_stream = false;
+    Names optimize_join_in_order;
 
     bool use_grouping_set_key = false;
 
@@ -361,6 +361,7 @@ public:
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);
 
+    const SelectQueryOptions & getOptions() const { return query_options; }
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.

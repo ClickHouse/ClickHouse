@@ -25,7 +25,7 @@ public:
 
 private:
     InputOrderInfoPtr getInputOrderImpl(
-        const StorageMetadataPtr & metadata_snapshot,
+        const Names & sorting_key_columns,
         const SortDescription & description,
         const ManyExpressionActions & actions,
         const ContextPtr & context,

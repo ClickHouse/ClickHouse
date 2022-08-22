@@ -51,6 +51,9 @@ struct SelectQueryOptions
     bool settings_limit_offset_done = false;
     bool is_explain = false; /// The value is true if it's explain statement.
 
+    /// For right side of join
+    Names optimize_join_read_in_order;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
@@ -155,6 +158,12 @@ struct SelectQueryOptions
     SelectQueryOptions & setExplain(bool value = true)
     {
         is_explain = value;
+        return *this;
+    }
+
+    SelectQueryOptions & setJoinSortBy(const Names & names)
+    {
+        optimize_join_read_in_order = names;
         return *this;
     }
 };

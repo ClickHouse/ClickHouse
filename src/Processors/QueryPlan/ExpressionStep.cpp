@@ -10,15 +10,25 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const Block & header, const SortDescription & sort_description)
+static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const Block & header, const SortDescription & sort_description,
+                                           const NameSet & perserve_sorting_by)
 {
+    Names sort_column_names;
+    for (const auto & sort_desc : sort_description)
+    {
+        /// For some columns we know from user that they are sorted
+        if (!perserve_sorting_by.contains(sort_desc.column_name))
+            sort_column_names.push_back(sort_desc.column_name);
+    }
+    bool preserves_sorting = actions->isSortingPreserved(header, sort_column_names);
+
     return ITransformingStep::Traits
     {
         {
             .preserves_distinct_columns = !actions->hasArrayJoin(),
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = actions->isSortingPreserved(header, sort_description),
+            .preserves_sorting = preserves_sorting,
         },
         {
             .preserves_number_of_rows = !actions->hasArrayJoin(),
@@ -26,15 +36,25 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & actions, const 
     };
 }
 
-ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDAGPtr & actions_dag_)
+static NameSet getMapValues(const NameToNameMap & map)
+{
+    NameSet keys;
+    for (const auto & it : map)
+        keys.insert(it.second);
+    return keys;
+}
+
+ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDAGPtr & actions_dag_, const NameToNameMap & perserve_sort_hint_)
     : ITransformingStep(
         input_stream_,
         ExpressionTransform::transformHeader(input_stream_.header, *actions_dag_),
-        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
+        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description, getMapValues(perserve_sort_hint_)))
     , actions_dag(actions_dag_)
+    , perserve_sort_hint(perserve_sort_hint_)
 {
     /// Some columns may be removed by expression.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
+    updateOutputStream();
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -89,8 +109,15 @@ void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void ExpressionStep::updateOutputStream()
 {
-    output_stream = createOutputStream(
-        input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
+    const auto & output_header = ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag);
+    output_stream = createOutputStream(input_streams.front(), output_header, getDataStreamTraits());
+
+    for (auto & desc : output_stream->sort_description)
+    {
+        auto rename_it = perserve_sort_hint.find(desc.column_name);
+        if (rename_it != perserve_sort_hint.end())
+            desc.column_name = rename_it->second;
+    }
 }
 
 }

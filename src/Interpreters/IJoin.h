@@ -7,6 +7,7 @@
 #include <Core/Block.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -81,8 +82,19 @@ public:
     virtual std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
+    void setSortDescriptions(const SortDescription & left_descr, const SortDescription & right_descr)
+    {
+        this->lhs_sort_descr = left_descr;
+        this->rhs_sort_descr = right_descr;
+    }
+
+    std::pair<const SortDescription *, const SortDescription *> getSortDescriptions() const { return {&lhs_sort_descr, &rhs_sort_descr}; }
+
 private:
     Block totals;
+
+    SortDescription lhs_sort_descr;
+    SortDescription rhs_sort_descr;
 };
 
 

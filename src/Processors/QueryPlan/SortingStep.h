@@ -25,7 +25,7 @@ public:
         size_t min_free_disk_space_,
         bool optimize_sorting_by_input_stream_properties_);
 
-    /// FinishSorting
+    /// FinishSorting: input stream should be sorted by prefix_description.
     SortingStep(
         const DataStream & input_stream_,
         SortDescription prefix_description_,
@@ -33,7 +33,7 @@ public:
         size_t max_block_size_,
         UInt64 limit_);
 
-    /// MergingSorted
+    /// MergingSorted: input stream should be partially sorted (each port is sorted).
     SortingStep(
         const DataStream & input_stream,
         SortDescription sort_description_,

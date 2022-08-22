@@ -5,9 +5,11 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Poco/Logger.h>
+#include <Core/SortDescription.h>
 
 namespace DB
 {
+class DataStream;
 
 namespace ErrorCodes
 {
@@ -19,6 +21,15 @@ namespace ErrorCodes
 /// Dummy class, actual joining is done by MergeTransform
 class FullSortingMergeJoin : public IJoin
 {
+public:
+    /// Helper methods to build proper plan for this type of join
+
+    /// Returns left_sort_descr and right_sort_descr
+    static void getSortDescriptions(
+        const DataStream & left_data_stream, const Names & left_key_names,
+        const DataStream & right_data_stream, const Names & right_key_names,
+        SortDescription & left_sort_descr, SortDescription & right_sort_descr);
+
 public:
     explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
         : table_join(table_join_)

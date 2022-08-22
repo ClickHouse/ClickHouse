@@ -1069,6 +1069,14 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
     for (auto & pr : required_columns_with_aliases)
         original_right_column_names.push_back(pr.first);
 
+    bool join_use_sorting = analyzed_join.isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE) && analyzed_join.getClauses().size() == 1;
+    Names sort_by_columns;
+    if (join_use_sorting)
+    {
+        const auto & right_key_names = analyzed_join.getOnlyClause().key_names_right;
+        sort_by_columns = analyzed_join.getOriginalNames(right_key_names);
+    }
+
     /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
         * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
         *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
@@ -1079,12 +1087,14 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         join_element.table_expression,
         context,
         original_right_column_names,
-        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
+        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false).setJoinSortBy(sort_by_columns));
+
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {
         Block original_right_columns = interpreter->getSampleBlock();
-        auto rename_dag = std::make_unique<ActionsDAG>(original_right_columns.getColumnsWithTypeAndName());
+        ActionsDAGPtr rename_dag = std::make_shared<ActionsDAG>(original_right_columns.getColumnsWithTypeAndName());
+        NameToNameMap alias_map;
         for (const auto & name_with_alias : required_columns_with_aliases)
         {
             if (name_with_alias.first != name_with_alias.second && original_right_columns.has(name_with_alias.first))
@@ -1093,9 +1103,11 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
                 const auto & alias = rename_dag->addAlias(*rename_dag->getInputs()[pos], name_with_alias.second);
                 rename_dag->getOutputs()[pos] = &alias;
             }
+            alias_map[name_with_alias.first] = name_with_alias.second;
         }
         rename_dag->projectInput();
-        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
+
+        auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), rename_dag, alias_map);
         rename_step->setStepDescription("Rename joined columns");
         joined_plan->addStep(std::move(rename_step));
     }
@@ -1884,6 +1896,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             before_join = chain.getLastActions();
             join = query_analyzer.appendJoin(chain, converting_join_columns);
             chain.addStep();
+
+            const auto & analyzed_join = query_analyzer.analyzedJoin();
+            bool join_use_sorting = analyzed_join.isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+            if (settings.optimize_read_in_order && storage && join_use_sorting)
+                optimize_join_in_order = analyzed_join.getOnlyClause().key_names_left;
+        }
+        else if (settings.optimize_read_in_order && storage)
+        {
+            optimize_join_in_order = query_analyzer.getOptions().optimize_join_read_in_order;
         }
 
         if (query_analyzer.appendWhere(chain, only_types || !first_stage))
@@ -1939,7 +1960,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (hasJoin())
         {
             /// You may find it strange but we support read_in_order for HashJoin and do not support for MergeJoin.
-            join_has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
+            bool join_has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
             join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join_has_delayed_stream;
         }
 
