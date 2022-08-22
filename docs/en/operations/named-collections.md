@@ -248,7 +248,7 @@ Example of configuration:
 </clickhouse>
 ```
 
-### Example of using named collections with the remote/remoteSecure function
+### Example of using named collections with the `remote`/`remoteSecure` functions
 
 ```sql
 SELECT * FROM remote(remote1, table = one);
