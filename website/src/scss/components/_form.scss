@@ -1,0 +1,56 @@
+form {
+	.form-group {
+		position: relative;
+	}
+
+	.form-group.is-select:before {
+		border-left: 6px solid transparent;
+		border-right: 6px solid transparent;
+		border-top: 8px solid $gray-700;
+		content: '';
+		display: block;
+		position: absolute;
+		right: 33px;
+		top: calc(50% - 4px);
+		z-index: 10;
+	}
+
+	.form-control {
+		border: 1px solid $gray-700;
+		border-radius: 6px;
+		box-shadow: $box-shadow;
+		color: $black;
+		height: auto;
+		line-height: 20px;
+		min-height: 44px;
+		padding: 12px 16px;
+		width: 100%;
+
+		&:focus {
+			border-color: $black;
+			box-shadow: $box-shadow;
+			color: $black;
+		}
+
+		&::placeholder {
+			color: $gray-700;
+		}
+	}
+
+	select.form-control {
+		appearance: none;
+		padding-right: 24px;
+		white-space: pre-wrap;
+	}
+
+	select.form-control:not([data-chosen]) {
+		color: $gray-700;
+	}
+
+	.btn-secondary:active,
+	.btn-secondary:hover {
+		color: $black;
+		background: $color-brand-primary;
+		border-color: $color-brand-primary;
+	}
+}

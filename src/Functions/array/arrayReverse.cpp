@@ -247,7 +247,7 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
 }
 
 
-REGISTER_FUNCTION(ArrayReverse)
+void registerFunctionArrayReverse(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayReverse>();
 }

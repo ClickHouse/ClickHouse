@@ -15,7 +15,7 @@ class DiskAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "local directory";
 
-    DiskAccessStorage(const String & storage_name_, const String & directory_path_, AccessChangesNotifier & changes_notifier_, bool readonly_, bool allow_backup_);
+    DiskAccessStorage(const String & storage_name_, const String & directory_path_, bool readonly_, AccessChangesNotifier & changes_notifier_);
     ~DiskAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
@@ -29,14 +29,11 @@ public:
 
     bool exists(const UUID & id) const override;
 
-    bool isBackupAllowed() const override { return backup_allowed; }
-    void restoreFromBackup(RestorerFromBackup & restorer) override;
-
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
-    std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
@@ -50,7 +47,6 @@ private:
     void listsWritingThreadFunc();
     void stopListsWritingThread();
 
-    bool insertWithID(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
     bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
     bool removeNoLock(const UUID & id, bool throw_if_not_exists);
     bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
@@ -69,6 +65,7 @@ private:
     };
 
     String directory_path;
+    std::atomic<bool> readonly;
     std::unordered_map<UUID, Entry> entries_by_id;
     std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
     boost::container::flat_set<AccessEntityType> types_of_lists_to_write;
@@ -77,8 +74,6 @@ private:
     std::condition_variable lists_writing_thread_should_exit;    /// Signals `lists_writing_thread` to exit.
     bool lists_writing_thread_is_waiting = false;
     AccessChangesNotifier & changes_notifier;
-    std::atomic<bool> readonly;
-    std::atomic<bool> backup_allowed;
     mutable std::mutex mutex;
 };
 }

@@ -28,7 +28,7 @@ ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const
 {
     LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 
-    std::lock_guard lock(cache_mutex);
+    std::unique_lock lock(cache_mutex);
 
     std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
 
@@ -110,7 +110,7 @@ void ProxyResolverConfiguration::errorReport(const ClientConfigurationPerRequest
     if (config.proxy_host.empty())
         return;
 
-    std::lock_guard lock(cache_mutex);
+    std::unique_lock lock(cache_mutex);
 
     if (!cache_ttl.count() || !cache_valid)
         return;

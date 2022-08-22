@@ -18,9 +18,6 @@
 #if USE_MYSQL
 #include <Storages/MySQL/MySQLSettings.h>
 #endif
-#if USE_NATSIO
-#include <Storages/NATS/NATSSettings.h>
-#endif
 
 #include <re2/re2.h>
 
@@ -35,7 +32,7 @@ namespace ErrorCodes
 IMPLEMENT_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
 
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "quota_key", "db",
+    "host", "port", "user", "password", "db",
     "database", "table", "schema", "replica",
     "update_field", "update_lag", "invalidate_query", "query",
     "where", "name", "secure", "uri", "collection"};
@@ -84,7 +81,6 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     port = conf.port;
     username = conf.username;
     password = conf.password;
-    quota_key = conf.quota_key;
     database = conf.database;
     table = conf.table;
     schema = conf.schema;
@@ -124,7 +120,6 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         configuration.port = config.getInt(collection_prefix + ".port", 0);
         configuration.username = config.getString(collection_prefix + ".user", "");
         configuration.password = config.getString(collection_prefix + ".password", "");
-        configuration.quota_key = config.getString(collection_prefix + ".quota_key", "");
         configuration.database = config.getString(collection_prefix + ".database", "");
         configuration.table = config.getString(collection_prefix + ".table", config.getString(collection_prefix + ".collection", ""));
         configuration.schema = config.getString(collection_prefix + ".schema", "");
@@ -171,8 +166,6 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
                         configuration.username = arg_value.safeGet<String>();
                     else if (arg_name == "password")
                         configuration.password = arg_value.safeGet<String>();
-                    else if (arg_name == "quota_key")
-                        configuration.quota_key = arg_value.safeGet<String>();
                     else if (arg_name == "database")
                         configuration.database = arg_value.safeGet<String>();
                     else if (arg_name == "table")
@@ -240,7 +233,6 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(collection_prefix + ".port", 0));
         configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(collection_prefix + ".user", ""));
         configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(collection_prefix + ".password", ""));
-        configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", config.getString(collection_prefix + ".quota_key", ""));
         configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(dict_config_prefix + ".database",
             config.getString(collection_prefix + ".db", config.getString(collection_prefix + ".database", ""))));
         configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(collection_prefix + ".table", ""));
@@ -333,7 +325,6 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
         common_configuration.port = dict_config.getUInt(dict_config_prefix + ".port", 0);
         common_configuration.username = dict_config.getString(dict_config_prefix + ".user", "");
         common_configuration.password = dict_config.getString(dict_config_prefix + ".password", "");
-        common_configuration.quota_key = dict_config.getString(dict_config_prefix + ".quota_key", "");
         common_configuration.database = dict_config.getString(dict_config_prefix + ".db", dict_config.getString(dict_config_prefix + ".database", ""));
         common_configuration.table = dict_config.getString(fmt::format("{}.table", dict_config_prefix), "");
         common_configuration.schema = dict_config.getString(fmt::format("{}.schema", dict_config_prefix), "");
@@ -365,7 +356,6 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
                 replica_configuration.port = dict_config.getUInt(replica_name + ".port", common_configuration.port);
                 replica_configuration.username = dict_config.getString(replica_name + ".user", common_configuration.username);
                 replica_configuration.password = dict_config.getString(replica_name + ".password", common_configuration.password);
-                replica_configuration.quota_key = dict_config.getString(replica_name + ".quota_key", common_configuration.quota_key);
 
                 if (replica_configuration.host.empty() || replica_configuration.port == 0
                     || replica_configuration.username.empty() || replica_configuration.password.empty())
@@ -550,11 +540,6 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQ
 #if USE_RDKAFKA
 template
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
-#endif
-
-#if USE_NATSIO
-template
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<NATSSettingsTraits> & settings, ContextPtr context);
 #endif
 
 template

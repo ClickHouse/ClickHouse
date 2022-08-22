@@ -86,7 +86,6 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 
 :::info "Замечание"
     Все передаваемые координаты должны быть одного и того же типа: либо `Float32`, либо `Float64`.
-:::
 
 **Возвращаемые значения**
 
@@ -97,7 +96,6 @@ geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precisi
 
 :::info "Замечание"
     Если возвращаемый массив содержит свыше 10 000 000 элементов, функция сгенерирует исключение.
-:::
 
 **Пример**
 

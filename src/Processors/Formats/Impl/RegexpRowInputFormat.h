@@ -81,10 +81,8 @@ public:
 private:
     DataTypes readRowAndGetDataTypes() override;
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
-
-
     using EscapingRule = FormatSettings::EscapingRule;
+    const FormatSettings format_settings;
     RegexpFieldExtractor field_extractor;
     PeekableReadBuffer buf;
 };

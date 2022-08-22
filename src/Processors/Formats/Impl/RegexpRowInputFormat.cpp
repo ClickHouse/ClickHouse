@@ -133,6 +133,7 @@ RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & 
         buf,
         format_settings_,
         getDefaultDataTypeForEscapingRule(format_settings_.regexp.escaping_rule))
+    , format_settings(format_settings_)
     , field_extractor(format_settings)
     , buf(in_)
 {
@@ -155,12 +156,6 @@ DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
 
     return data_types;
 }
-
-void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings, format_settings.regexp.escaping_rule);
-}
-
 
 void registerInputFormatRegexp(FormatFactory & factory)
 {

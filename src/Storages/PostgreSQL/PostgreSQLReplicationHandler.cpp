@@ -31,7 +31,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int POSTGRESQL_REPLICATION_INTERNAL_ERROR;
-    extern const int QUERY_NOT_ALLOWED;
 }
 
 class TemporaryReplicationSlot
@@ -189,17 +188,6 @@ void PostgreSQLReplicationHandler::shutdown()
 }
 
 
-void PostgreSQLReplicationHandler::assertInitialized() const
-{
-    if (!replication_handler_initialized)
-    {
-        throw Exception(
-            ErrorCodes::QUERY_NOT_ALLOWED,
-            "PostgreSQL replication initialization did not finish successfully. Please check logs for error messages");
-    }
-}
-
-
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     postgres::Connection replication_connection(connection_info, /* replication */true);
@@ -251,7 +239,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
                 /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
                 /// (unlike database engine where it is done in a separate thread).
-                if (throw_on_error && !is_materialized_postgresql_database)
+                if (throw_on_error)
                     throw;
             }
         }
@@ -326,8 +314,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
     /// Do not rely anymore on saved storage pointers.
     materialized_storages.clear();
-
-    replication_handler_initialized = true;
 }
 
 
@@ -407,20 +393,12 @@ void PostgreSQLReplicationHandler::cleanupFunc()
     cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
 }
 
-PostgreSQLReplicationHandler::ConsumerPtr PostgreSQLReplicationHandler::getConsumer()
-{
-    if (!consumer)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Consumer not initialized");
-    return consumer;
-}
 
 void PostgreSQLReplicationHandler::consumerFunc()
 {
-    assertInitialized();
-
     std::vector<std::pair<Int32, String>> skipped_tables;
 
-    bool schedule_now = getConsumer()->consume(skipped_tables);
+    bool schedule_now = consumer->consume(skipped_tables);
 
     LOG_DEBUG(log, "checking for skipped tables: {}", skipped_tables.size());
     if (!skipped_tables.empty())
@@ -625,10 +603,8 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 
 void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 {
-    assertInitialized();
-
     consumer_task->deactivate();
-    getConsumer()->setSetting(setting);
+    consumer->setSetting(setting);
     consumer_task->activateAndSchedule();
 }
 
@@ -782,15 +758,6 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
             {
                 pqxx::nontransaction tx(connection.getRef());
                 result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
-
-                std::string tables_string;
-                for (const auto & table : result_tables)
-                {
-                    if (!tables_string.empty())
-                        tables_string += ", ";
-                    tables_string += table;
-                }
-                LOG_DEBUG(log, "Tables list was fetched from PostgreSQL directly: {}", tables_string);
             }
         }
     }
@@ -857,8 +824,6 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
 
 void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPostgreSQL * materialized_storage, const String & postgres_table_name)
 {
-    assertInitialized();
-
     /// Note: we have to ensure that replication consumer task is stopped when we reload table, because otherwise
     /// it can read wal beyond start lsn position (from which this table is being loaded), which will result in losing data.
     consumer_task->deactivate();
@@ -893,7 +858,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         }
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
-        getConsumer()->addNested(postgres_table_name, nested_storage_info, start_lsn);
+        consumer->addNested(postgres_table_name, nested_storage_info, start_lsn);
         LOG_TRACE(log, "Table `{}` successfully added to replication", postgres_table_name);
     }
     catch (...)
@@ -911,8 +876,6 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
 void PostgreSQLReplicationHandler::removeTableFromReplication(const String & postgres_table_name)
 {
-    assertInitialized();
-
     consumer_task->deactivate();
     try
     {
@@ -924,7 +887,7 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
         }
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
-        getConsumer()->removeNested(postgres_table_name);
+        consumer->removeNested(postgres_table_name);
     }
     catch (...)
     {
@@ -1003,7 +966,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
                             nested_storage->getStorageID().getNameForLogs(), nested_sample_block.dumpStructure());
 
                     /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
-                    getConsumer()->updateNested(table_name, StorageInfo(nested_storage, std::move(table_attributes)), relation_id, start_lsn);
+                    consumer->updateNested(table_name, StorageInfo(nested_storage, std::move(table_attributes)), relation_id, start_lsn);
 
                     auto table_to_drop = DatabaseCatalog::instance().getTable(StorageID(temp_table_id.database_name, temp_table_id.table_name, table_id.uuid), nested_context);
                     auto drop_table_id = table_to_drop->getStorageID();

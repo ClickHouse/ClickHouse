@@ -162,19 +162,20 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
-        : state(std::make_shared<State>())
+        : state(std::make_shared<Poco::Event>())
+        , thread_id(std::make_shared<std::thread::id>())
     {
-        /// NOTE:
-        /// - If this will throw an exception, the destructor won't be called
-        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
+        /// NOTE: If this will throw an exception, the destructor won't be called.
         GlobalThreadPool::instance().scheduleOrThrow([
+            thread_id = thread_id,
             state = state,
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            SCOPE_EXIT(state->event.set());
+            auto event = std::move(state);
+            SCOPE_EXIT(event->set());
 
-            state->thread_id = std::this_thread::get_id();
+            thread_id = std::make_shared<std::thread::id>(std::this_thread::get_id());
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
@@ -195,30 +196,31 @@ public:
 
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
     {
-        if (initialized())
+        if (joinable())
             abort();
         state = std::move(rhs.state);
+        thread_id = std::move(rhs.thread_id);
         return *this;
     }
 
     ~ThreadFromGlobalPool()
     {
-        if (initialized())
+        if (joinable())
             abort();
     }
 
     void join()
     {
-        if (!initialized())
+        if (!joinable())
             abort();
 
-        state->event.wait();
+        state->wait();
         state.reset();
     }
 
     void detach()
     {
-        if (!initialized())
+        if (!joinable())
             abort();
         state.reset();
     }
@@ -228,30 +230,15 @@ public:
         if (!state)
             return false;
         /// Thread cannot join itself.
-        if (state->thread_id == std::this_thread::get_id())
+        if (*thread_id == std::this_thread::get_id())
             return false;
         return true;
     }
 
 private:
-    struct State
-    {
-        /// Should be atomic() because of possible concurrent access between
-        /// assignment and joinable() check.
-        std::atomic<std::thread::id> thread_id;
-
-        /// The state used in this object and inside the thread job.
-        Poco::Event event;
-    };
-    std::shared_ptr<State> state;
-
-    /// Internally initialized() should be used over joinable(),
-    /// since it is enough to know that the thread is initialized,
-    /// and ignore that fact that thread cannot join itself.
-    bool initialized() const
-    {
-        return static_cast<bool>(state);
-    }
+    /// The state used in this object and inside the thread job.
+    std::shared_ptr<Poco::Event> state;
+    std::shared_ptr<std::thread::id> thread_id;
 };
 
 

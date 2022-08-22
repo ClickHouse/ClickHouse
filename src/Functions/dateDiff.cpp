@@ -114,7 +114,7 @@ public:
             dispatchForColumns<ToRelativeWeekNumImpl>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "day" || unit == "dd" || unit == "d")
             dispatchForColumns<ToRelativeDayNumImpl>(x, y, timezone_x, timezone_y, res->getData());
-        else if (unit == "hour" || unit == "hh" || unit == "h")
+        else if (unit == "hour" || unit == "hh")
             dispatchForColumns<ToRelativeHourNumImpl>(x, y, timezone_x, timezone_y, res->getData());
         else if (unit == "minute" || unit == "mi" || unit == "n")
             dispatchForColumns<ToRelativeMinuteNumImpl>(x, y, timezone_x, timezone_y, res->getData());
@@ -261,7 +261,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(DateDiff)
+void registerFunctionDateDiff(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDateDiff>(FunctionFactory::CaseInsensitive);
 }

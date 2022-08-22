@@ -98,7 +98,7 @@ public:
 };
 
 
-REGISTER_FUNCTION(ArrayConcat)
+void registerFunctionArrayConcat(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayConcat>();
 }

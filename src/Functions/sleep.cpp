@@ -5,7 +5,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(Sleep)
+void registerFunctionSleep(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>();
 }

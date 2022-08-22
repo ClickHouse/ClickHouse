@@ -29,8 +29,8 @@ Metadata contains:
 */
 struct MetaData
 {
-    uint64_t number_of_files     = 0;
-    uint64_t start_of_files_data = 0;
+    size_t number_of_files     = 0;
+    size_t start_of_files_data = 0;
 };
 
 /// Information about each file for correct extraction.
@@ -38,10 +38,9 @@ struct MetaData
 /// with length equals to name_length.
 struct FileData
 {
-    uint64_t start             = 0;
-    uint64_t end               = 0;
-    uint64_t name_length       = 0;
-    uint64_t uncompressed_size = 0;
-    uint64_t umask             = 0;
+    size_t start             = 0;
+    size_t end               = 0;
+    size_t name_length       = 0;
+    size_t uncompressed_size = 0;
+    mode_t umask             = 0;
 };
-

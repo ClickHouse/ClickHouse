@@ -1,9 +1,6 @@
 ---
 sidebar_position: 39
 sidebar_label: USER
-tags:
-  - create user
-  - add user
 ---
 
 # CREATE USER

@@ -312,20 +312,19 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
     return DiskDecorator::checkUniqueId(id);
 }
 
-const String & DiskRestartProxy::getCacheBasePath() const
+String DiskRestartProxy::getCacheBasePath() const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getCacheBasePath();
 }
 
-StoredObjects DiskRestartProxy::getStorageObjects(const String & path) const
+std::vector<String> DiskRestartProxy::getRemotePaths(const String & path) const
 {
     ReadLock lock (mutex);
-    return DiskDecorator::getStorageObjects(path);
+    return DiskDecorator::getRemotePaths(path);
 }
 
-void DiskRestartProxy::getRemotePathsRecursive(
-    const String & path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
+void DiskRestartProxy::getRemotePathsRecursive(const String & path, std::vector<LocalPathWithRemotePaths> & paths_map)
 {
     ReadLock lock (mutex);
     return DiskDecorator::getRemotePathsRecursive(path, paths_map);

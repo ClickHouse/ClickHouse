@@ -100,7 +100,7 @@ private:
     ImplementationSelector<IFunction> selector;
 };
 
-REGISTER_FUNCTION(GenerateUUIDv4)
+void registerFunctionGenerateUUIDv4(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGenerateUUIDv4>();
 }

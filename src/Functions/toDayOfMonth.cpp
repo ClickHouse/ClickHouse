@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfMonthImpl>;
 
-REGISTER_FUNCTION(ToDayOfMonth)
+void registerFunctionToDayOfMonth(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToDayOfMonth>();
 

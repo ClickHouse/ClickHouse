@@ -1,4 +1,4 @@
-clickhouse_add_executable(graphite-rollup-bench graphite-rollup-bench.cpp)
+add_executable(graphite-rollup-bench graphite-rollup-bench.cpp)
 target_link_libraries(
     graphite-rollup-bench
     PRIVATE

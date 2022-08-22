@@ -17,6 +17,7 @@ public:
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 
 private:
+    void write(Chunk chunk, PortKind port_kind) override;
     void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths);
     void writeBottom(const Widths & max_widths);
     void writeRow(
@@ -26,7 +27,12 @@ private:
         const WidthsPerColumn & widths,
         const Widths & max_widths);
 
-    void writeChunk(const Chunk & chunk, PortKind port_kind) override;
+    bool mono_block;
+    /// For mono_block == true only
+    Chunk mono_chunk;
+
+    void writeChunk(const Chunk & chunk, PortKind port_kind);
+    void writeSuffix() override;
 };
 
 }
