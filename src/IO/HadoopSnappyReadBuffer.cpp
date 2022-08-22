@@ -217,10 +217,6 @@ bool HadoopSnappyReadBuffer::nextImpl()
         }
         return true;
     }
-    else if (decoder->result == Status::NEEDS_MORE_INPUT)
-    {
-        return nextImpl();
-    }
     else if (decoder->result == Status::INVALID_INPUT || decoder->result == Status::BUFFER_TOO_SMALL)
     {
         throw Exception(String("hadoop snappy decode error:") + statusToString(decoder->result), ErrorCodes::SNAPPY_UNCOMPRESS_FAILED);
