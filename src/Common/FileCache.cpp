@@ -102,18 +102,6 @@ void FileCache::initialize()
     }
 }
 
-ThreadPool & FileCache::getThreadPoolForAsyncWrite()
-{
-    std::lock_guard lock(mutex);
-    if (!async_write_threadpool)
-    {
-        constexpr size_t pool_size = 50; /// TODO: add a user setting for this
-        constexpr size_t queue_size = 1000000;
-        async_write_threadpool.emplace(pool_size, pool_size, queue_size);
-    }
-    return *async_write_threadpool;
-}
-
 void FileCache::useCell(
     const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock)
 {
@@ -492,6 +480,24 @@ FileCache::FileSegmentCell * FileCache::addCell(
             key.toString(), offset, size);
 
     return &(it->second);
+}
+
+ThreadPool & FileCache::getThreadPoolForAsyncWrite()
+{
+    std::lock_guard lock(mutex);
+    if (!async_write_threadpool)
+    {
+        constexpr size_t pool_size = 50; /// TODO: add a user setting for this
+        constexpr size_t queue_size = 1000000;
+        async_write_threadpool.emplace(pool_size, pool_size, queue_size);
+    }
+    return *async_write_threadpool;
+}
+
+void FileCache::incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & /* cache_lock */)
+{
+    background_download_current_memory_usage += increment;
+    assert(background_download_current_memory_usage >= 0);
 }
 
 FileSegmentPtr FileCache::createFileSegmentForDownload(
@@ -1070,8 +1076,8 @@ void FileCache::reduceSizeToDownloaded(
         offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
 
     assert(file_segment->reserved_size >= downloaded_size);
-    size_t decrement = file_segment->reserved_size - downloaded_size;
-    cell->queue_iterator->incrementSize(decrement, cache_lock);
+    size_t reserved_but_not_downloaded = file_segment->reserved_size - downloaded_size;
+    cell->queue_iterator->incrementSize(-static_cast<Int64>(reserved_but_not_downloaded), cache_lock);
 }
 
 bool FileCache::isLastFileSegmentHolder(

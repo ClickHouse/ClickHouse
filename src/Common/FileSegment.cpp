@@ -127,12 +127,6 @@ size_t FileSegment::getDownloadedSize() const
     return getDownloadedSizeUnlocked(segment_lock);
 }
 
-size_t FileSegment::getRemainingSizeToDownload() const
-{
-    std::unique_lock segment_lock(mutex);
-    return range().size() - downloaded_size;
-}
-
 size_t FileSegment::getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & /* segment_lock */) const
 {
     if (download_state == State::DOWNLOADED)
@@ -140,6 +134,25 @@ size_t FileSegment::getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & /* 
 
     std::unique_lock download_lock(download_mutex);
     return downloaded_size;
+}
+
+size_t FileSegment::getRemainingSizeToDownload() const
+{
+    std::unique_lock segment_lock(mutex);
+    return range().size() - getDownloadedSizeUnlocked(segment_lock);
+}
+
+bool FileSegment::isDownloadedSizeEqualToFileSegmentSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const
+{
+    return getDownloadedSizeUnlocked(segment_lock) == range().size();
+}
+
+void FileSegment::assertNotAlreadyDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock) const
+{
+    if (isDownloadedSizeEqualToFileSegmentSizeUnlocked(segment_lock))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+    }
 }
 
 String FileSegment::getCallerId()
@@ -196,7 +209,7 @@ void FileSegment::resetDownloader()
     assertNotDetachedUnlocked(segment_lock);
     assertIsDownloaderUnlocked(false, "resetDownloader", segment_lock);
 
-    if (downloaded_size == range().size())
+    if (isDownloadedSizeEqualToFileSegmentSizeUnlocked(segment_lock))
         setDownloadedUnlocked(segment_lock);
 
     resetDownloaderUnlocked(false, segment_lock);
@@ -306,13 +319,13 @@ void FileSegment::assertAsyncWriteStateInitialized() const
 
 void FileSegment::waitBackgroundDownloadIfExists(size_t offset) const
 {
-    if (!async_write_state)
-        return;
-
     std::optional<std::shared_future<void>> shared_future;
 
     {
         std::unique_lock segment_lock(mutex);
+
+        if (!async_write_state)
+            return;
 
         const auto & currently_downloading = async_write_state->currently_downloading;
 
@@ -438,27 +451,37 @@ void FileSegment::cancelBackgroundDownloadIfExists(std::unique_lock<std::mutex> 
 
 void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offset)
 {
-    assertNotDetached();
-    assertAsyncWriteStateInitialized();
-
     if (!size)
         throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Writing zero size is not allowed");
 
     {
         std::unique_lock segment_lock(mutex);
 
+        assertAsyncWriteStateInitialized();
         assertIsDownloaderUnlocked(false, "write", segment_lock);
         assertNotDetachedUnlocked(segment_lock);
+        assertNotAlreadyDownloadedUnlocked(segment_lock);
 
-        if (getDownloadedSizeUnlocked(segment_lock) == range().size())
+        if (!async_write_state->reserved_buffer)
         {
             throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Attempt to write {} bytes to offset: {}, but current file segment is already fully downloaded",
-                size, offset);
+                ErrorCodes::LOGICAL_ERROR, "Expected that reserve() method was previously called and set `reserved_buffer`, but `reserved_buffer` is not set");
         }
     }
 
+    try
+    {
+        asynchronousWriteImpl(from, size, offset);
+    }
+    catch (...)
+    {
+        async_write_state->reserved_buffer.reset();
+        throw;
+    }
+}
+
+void FileSegment::asynchronousWriteImpl(const char * from, size_t size, size_t offset)
+{
     /// When we need to pass some data buffer, which need to be written to cache
     /// in the background, we create a threadpool task. But we need to note that
     /// each such buffer need to be written in direct order one after another within
@@ -473,14 +496,13 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
     /// as long as !state.buffers.empty() (&& !state.exception) there should be a task
     /// which will set background_downloader_id and write those buffers to cache.
 
+    memcpy(async_write_state->reserved_buffer->data(), from, size);
+
+    std::unique_lock segment_lock(mutex);
+
+    assertNotDetachedUnlocked(segment_lock);
+
     {
-        AsynchronousWriteState::Buffer buffer(size, offset);
-        memcpy(buffer.data(), from, size);
-
-        std::unique_lock segment_lock(mutex);
-
-        assertNotDetachedUnlocked(segment_lock);
-
         auto & state = *async_write_state;
 
         /// If there was an exception on a previous attempt to write data - rethrow it.
@@ -503,7 +525,11 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
             }
         }
 
+        auto buffer = std::move(state.reserved_buffer);
+        buffer->offset = offset;
+
         state.buffers.emplace(std::move(buffer));
+
         state.last_added_buffer_info = {offset, size};
         state.future_downloaded_size += size;
     }
@@ -536,7 +562,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         std::optional<AsynchronousWriteState::ExecutionHolder> execution_holder;
 
         {
-            std::unique_lock segment_lock(file_segment->mutex);
+            std::unique_lock lock(file_segment->mutex);
 
             if (state.is_cancelled)
                 return;
@@ -577,70 +603,61 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
 
             while (true)
             {
-                AsynchronousWriteState::Buffer buffer;
+                std::unique_lock lock(file_segment->mutex);
 
+                if (state.is_cancelled)
                 {
-                    std::unique_lock segment_lock(file_segment->mutex);
+                    assert(async_write_state->currently_downloading.empty());
+                    background_downloader_id.clear();
 
-                    if (state.is_cancelled)
-                    {
-                        assert(async_write_state->currently_downloading.empty());
-                        background_downloader_id.clear();
-
-                        return;
-                    }
-
-                    if (last_finished_buffer_offset)
-                    {
-                        auto erased = state.currently_downloading.erase(*last_finished_buffer_offset);
-                        if (erased == 0)
-                        {
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "There is no offset {} in currently downloading list",
-                                *last_finished_buffer_offset);
-                        }
-
-                        LOG_TEST(log, "Removed offset {} from currently downloading", *last_finished_buffer_offset);
-
-                        last_finished_buffer_offset.reset();
-                    }
-                    else
-                    {
-                        assert(!state.buffers.empty());
-                        assert(!state.exception);
-                    }
-
-                    if (state.buffers.empty())
-                    {
-                        LOG_TEST(log, "No buffers left, will reset downloader {}", background_downloader_id);
-
-                        /// Resetting background_downloader must be done under state lock
-                        /// along with the check state.buffers.empty()
-
-                        completePartAndResetDownloaderUnlocked(true, segment_lock);
-                        break;
-                    }
-
-                    buffer = std::move(state.buffers.front());
-                    state.buffers.pop();
-                    if (!start_offset)
-                        start_offset = buffer.offset;
+                    return;
                 }
+
+                if (last_finished_buffer_offset)
+                {
+                    auto erased = state.currently_downloading.erase(*last_finished_buffer_offset);
+                    if (erased == 0)
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "There is no offset {} in currently downloading list",
+                            *last_finished_buffer_offset);
+                    }
+
+                    LOG_TEST(log, "Removed offset {} from currently downloading", *last_finished_buffer_offset);
+
+                    last_finished_buffer_offset.reset();
+                }
+                else
+                {
+                    assert(!state.buffers.empty());
+                    assert(!state.exception);
+                }
+
+                if (state.buffers.empty())
+                {
+                    LOG_TEST(log, "No buffers left, will reset downloader {}", background_downloader_id);
+
+                    /// Resetting background_downloader must be done under state lock
+                    /// along with the check state.buffers.empty()
+
+                    completePartAndResetDownloaderUnlocked(true, lock);
+                    break;
+                }
+
+                auto buffer_ptr = std::move(state.buffers.front());
+                state.buffers.pop();
+
+                auto & buffer = *buffer_ptr;
+
+                if (!start_offset)
+                    start_offset = buffer.offset;
+
+                lock.unlock();
 
                 LOG_TEST(log, "Background download: [{}:{})", buffer.offset, buffer.offset + buffer.size());
 
-                try
-                {
-                    synchronousWrite(buffer.data(), buffer.size(), buffer.offset, true);
-                }
-                catch (...)
-                {
-                    std::lock_guard cache_lock(cache->mutex);
-                    cache->current_background_download_memory_usage -= buffer.size();
-
-                    throw;
-                }
+                synchronousWrite(buffer.data(), buffer.size(), buffer.offset, true);
 
                 last_finished_buffer_offset = buffer.offset;
                 total_size += buffer.size();
@@ -648,7 +665,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         }
         catch (...)
         {
-            std::unique_lock segment_lock(file_segment->mutex);
+            std::unique_lock lock(file_segment->mutex);
 
             bool is_cancelled = state.is_cancelled;
             if (!is_cancelled)
@@ -663,7 +680,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
                 state.buffers = {}; /// Clear all hold memory.
 
                 if (!is_cancelled)
-                    completePartAndResetDownloaderUnlocked(true, segment_lock);
+                    completePartAndResetDownloaderUnlocked(true, lock);
             }
             catch (...)
             {
@@ -688,13 +705,12 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
         cv.notify_all();
     });
 
-    {
-        std::unique_lock segment_lock(mutex);
-        AsynchronousWriteState::BackgroundDownloadResult result(task->get_future(), size);
-        auto [_, inserted] = async_write_state->currently_downloading.emplace(offset, result);
-        if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset {} is already marked as downloading", offset);
-    }
+    AsynchronousWriteState::BackgroundDownloadResult result(task->get_future(), size);
+    auto [_, inserted] = async_write_state->currently_downloading.emplace(offset, result);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset {} is already marked as downloading", offset);
+
+    segment_lock.unlock();
 
     try
     {
@@ -702,7 +718,7 @@ void FileSegment::asynchronousWrite(const char * from, size_t size, size_t offse
     }
     catch (...)
     {
-        std::unique_lock segment_lock(mutex);
+        std::unique_lock lock(mutex);
         [[maybe_unused]] bool erased = async_write_state->currently_downloading.erase(offset);
         assert(erased);
 
@@ -723,12 +739,7 @@ void FileSegment::synchronousWrite(const char * from, size_t size, size_t offset
 
         assertIsDownloaderUnlocked(is_internal, "write", segment_lock);
         assertNotDetachedUnlocked(segment_lock);
-
-        if (downloaded_size == range().size())
-            throw Exception(
-                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
-                "Attempt to write {} bytes to offset: {}, but current file segment is already fully downloaded",
-                size, offset);
+        assertNotAlreadyDownloadedUnlocked(segment_lock);
 
         if (!is_internal && download_state != State::DOWNLOADING)
             throw Exception(
@@ -818,6 +829,18 @@ FileSegment::State FileSegment::wait()
     return download_state;
 }
 
+FileSegment::AsynchronousWriteState::Buffer::Buffer(size_t size_, FileCache * cache_, std::lock_guard<std::mutex> & cache_lock)
+    : memory(size_), buf_size(size_), cache(cache_)
+{
+    cache->incrementBackgroundDownloadSize(buf_size, cache_lock);
+}
+
+FileSegment::AsynchronousWriteState::Buffer::~Buffer()
+{
+    std::lock_guard cache_lock(cache->mutex);
+    cache->incrementBackgroundDownloadSize(-static_cast<int64_t>(buf_size), cache_lock);
+}
+
 bool FileSegment::reserve(size_t size)
 {
     if (!size)
@@ -826,12 +849,11 @@ bool FileSegment::reserve(size_t size)
     if (async_write_state)
     {
         std::lock_guard cache_lock(cache->mutex);
-        if (size + cache->current_background_download_memory_usage > cache->background_download_max_memory_usage)
-        {
-            return false;
-        }
 
-        cache->current_background_download_memory_usage += size;
+        if (cache->background_download_current_memory_usage + size > cache->background_download_max_memory_usage)
+            return false;
+
+        async_write_state->reserved_buffer = std::make_unique<AsynchronousWriteState::Buffer>(size, cache, cache_lock);
     }
 
     {
@@ -877,6 +899,7 @@ void FileSegment::setDownloadedUnlocked(std::unique_lock<std::mutex> & /* segmen
 
     download_state = State::DOWNLOADED;
     is_downloaded = true;
+    async_write_state.reset();
 
     if (cache_writer)
     {
@@ -915,12 +938,14 @@ void FileSegment::completePartAndResetDownloaderUnlocked(bool is_internal, std::
 
     if (background_downloader_id.empty() || is_internal)
     {
-        if (getDownloadedSizeUnlocked(segment_lock) == range().size())
+        if (isDownloadedSizeEqualToFileSegmentSizeUnlocked(segment_lock))
         {
             setDownloadedUnlocked(segment_lock);
         }
         else
+        {
             download_state = State::PARTIALLY_DOWNLOADED;
+        }
     }
 
     resetDownloaderUnlocked(is_internal, segment_lock);
@@ -1016,6 +1041,8 @@ void FileSegment::completeBasedOnCurrentState(std::lock_guard<std::mutex> & cach
         {
             if (is_last_holder)
             {
+                async_write_state.reset();
+
                 if (current_downloaded_size == 0)
                 {
                     LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());

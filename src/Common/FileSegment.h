@@ -232,6 +232,7 @@ private:
     void resetDownloaderUnlocked(bool is_internal, std::unique_lock<std::mutex> & segment_lock);
 
     bool hasFinalizedStateUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    bool isDownloadedSizeEqualToFileSegmentSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     bool isDetached(std::unique_lock<std::mutex> & /* segment_lock */) const { return is_detached; }
     void detachAssumeStateFinalized(std::unique_lock<std::mutex> & segment_lock);
@@ -242,12 +243,15 @@ private:
     void assertNotDetachedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     void assertIsDownloaderUnlocked(bool is_internal, const std::string & operation, std::unique_lock<std::mutex> & segment_lock) const;
     void assertCorrectnessUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+    void assertNotAlreadyDownloadedUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
 
     size_t getDownloadedSizeUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     bool isDownloaderUnlocked(bool is_internal, std::unique_lock<std::mutex> & segment_lock) const;
     String getDownloaderUnlocked(bool is_internal, std::unique_lock<std::mutex> & segment_lock) const;
     size_t getCurrentWriteOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
     size_t getFirstNonDownloadedOffsetUnlocked(std::unique_lock<std::mutex> & segment_lock) const;
+
+    void asynchronousWriteImpl(const char * from, size_t size, size_t offset);
 
     /// complete() without any completion state is called from destructor of
     /// FileSegmentsHolder. complete() might check if the caller of the method
@@ -306,7 +310,7 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
 
-    class AsynchronousWriteState
+    class AsynchronousWriteState : private boost::noncopyable
     {
     public:
 
@@ -314,28 +318,37 @@ private:
         /// which were submitted for download.
         size_t getFutureDownloadedSize() const { return future_downloaded_size; }
 
-        struct Buffer
+        struct Buffer : private boost::noncopyable
         {
-            Buffer() = default;
+            explicit Buffer(size_t size_, FileCache * cache_, std::lock_guard<std::mutex> & cache_lock);
 
-            explicit Buffer(size_t size, size_t offset_) : memory(size), offset(offset_) {}
+            ~Buffer();
 
             char * data() { return memory.data(); }
 
-            size_t size() const { return memory.size(); }
+            size_t size() const { return buf_size; }
 
             /// Buffer data.
             Memory<> memory;
 
             /// Offset within a file segment where current buffer needs to be written.
             size_t offset;
+            /// Size of current buffer. size == memory.size().
+            size_t buf_size;
+
+            FileCache * cache;
         };
 
-        using Buffers = std::queue<Buffer>;
+        using BufferPtr = std::unique_ptr<Buffer>;
+        using Buffers = std::queue<BufferPtr>;
+
+        /// Buffer placeholder is put here in reserve() method. It will be moved from here
+        /// to Buffers queue when write() method is called.
+        BufferPtr reserved_buffer;
 
         /// A list of buffers which are waiting to be written into cache within current
         /// write state. Each buffer can be written one after another in direct order.
-        std::queue<Buffer> buffers;
+        std::queue<BufferPtr> buffers;
 
         struct SizeAndOffset
         {

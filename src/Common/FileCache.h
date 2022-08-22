@@ -32,6 +32,7 @@ friend class FileSegment;
 friend class IFileCachePriority;
 friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
+friend struct FileSegment::AsynchronousWriteState::Buffer;
 
 struct QueryContext;
 using QueryContextPtr = std::shared_ptr<QueryContext>;
@@ -140,17 +141,18 @@ private:
     const bool enable_filesystem_query_cache_limit;
     const size_t background_download_max_memory_usage;
 
-    Poco::Logger * log;
-    bool is_initialized = false;
-
     mutable std::mutex mutex;
+    Poco::Logger * log;
 
-    std::optional<ThreadPool> async_write_threadpool;
-    size_t current_background_download_memory_usage = 0;
+    bool is_initialized = false;
 
     void assertInitialized() const;
 
+    std::optional<ThreadPool> async_write_threadpool;
+    ssize_t background_download_current_memory_usage = 0;
+
     ThreadPool & getThreadPoolForAsyncWrite();
+    void incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & cache_lock);
 
     bool tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
 
