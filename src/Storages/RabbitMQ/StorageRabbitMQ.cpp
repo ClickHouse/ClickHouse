@@ -138,9 +138,6 @@ StorageRabbitMQ::StorageRabbitMQ(
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
 
-    rabbitmq_context = addSettings(getContext());
-    rabbitmq_context->makeQueryContext();
-
     if (queue_base.empty())
     {
         /* Make sure that local exchange name is unique for each table and is not the same as client's exchange name. It also needs to
@@ -236,14 +233,12 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 }
 
 
-ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
+ContextMutablePtr StorageRabbitMQ::createNewContext(ContextPtr local_context, bool query_context) const
 {
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
-    /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
-    modified_context->setSetting("max_analyze_depth", 0);
 
     if (!schema_name.empty())
         modified_context->setSetting("format_schema", schema_name);
@@ -256,6 +251,9 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
         if (!setting_name.starts_with("rabbitmq_"))
             modified_context->setSetting(setting_name, setting.getValue());
     }
+
+    if (query_context)
+        modified_context->makeQueryContext();
 
     return modified_context;
 }
@@ -695,7 +693,6 @@ void StorageRabbitMQ::read(
     std::lock_guard lock(loop_mutex);
 
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
-    auto modified_context = addSettings(local_context);
 
     if (!connection->isConnected())
     {
@@ -710,6 +707,7 @@ void StorageRabbitMQ::read(
     Pipes pipes;
     pipes.reserve(num_created_consumers);
 
+    auto modified_context = createNewContext(local_context)
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
@@ -742,7 +740,7 @@ void StorageRabbitMQ::read(
     {
         auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
         query_plan.addStep(std::move(read_step));
-        query_plan.addInterpreterContext(modified_context);
+        query_plan.addInterpreterContext(createNewContext(local_context));
     }
 }
 
@@ -1056,7 +1054,7 @@ bool StorageRabbitMQ::streamToViews()
     insert->table_id = table_id;
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, rabbitmq_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, createNewContext(getContext(), true), false, true, true);
     auto block_io = interpreter.execute();
 
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
@@ -1074,7 +1072,7 @@ bool StorageRabbitMQ::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
+            *this, storage_snapshot, createNewContext(getContext(), true), column_names, block_size, false);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 

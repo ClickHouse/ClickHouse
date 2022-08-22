@@ -64,7 +64,6 @@ public:
     void startStreaming() { if (!mv_attached) { streaming_task->activateAndSchedule(); } }
 
 private:
-    ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
     std::vector<String> subjects;
 
@@ -134,7 +133,7 @@ private:
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    ContextMutablePtr addSettings(ContextPtr context) const;
+    ContextMutablePtr createNewContext(ContextPtr local_context, bool query_context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
 
