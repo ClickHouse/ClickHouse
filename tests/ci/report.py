@@ -239,8 +239,8 @@ def create_test_html_report(
     )
 
     raw_log_name = os.path.basename(raw_log_url)
-    if raw_log_name.endswith("?check_suite_focus=true"):
-        raw_log_name = "Job (github actions)"
+    if "?" in raw_log_name:
+        raw_log_name = raw_log_name.split("?")[0]
 
     result = HTML_BASE_TEST_TEMPLATE.format(
         title=_format_header(header, branch_name),

@@ -31,16 +31,10 @@ ExternalDictionaryLibraryBridgeHelper::ExternalDictionaryLibraryBridgeHelper(
         const Block & sample_block_,
         const Field & dictionary_id_,
         const LibraryInitData & library_data_)
-    : IBridgeHelper(context_->getGlobalContext())
-    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeHelper"))
+    : LibraryBridgeHelper(context_->getGlobalContext())
     , sample_block(sample_block_)
-    , config(context_->getConfigRef())
-    , http_timeout(context_->getGlobalContext()->getSettingsRef().http_receive_timeout.value)
     , library_data(library_data_)
     , dictionary_id(dictionary_id_)
-    , bridge_host(config.getString("library_bridge.host", DEFAULT_HOST))
-    , bridge_port(config.getUInt("library_bridge.port", DEFAULT_PORT))
-    , http_timeouts(ConnectionTimeouts::getHTTPTimeouts(context_))
 {
 }
 
@@ -65,25 +59,10 @@ Poco::URI ExternalDictionaryLibraryBridgeHelper::getMainURI() const
 Poco::URI ExternalDictionaryLibraryBridgeHelper::createRequestURI(const String & method) const
 {
     auto uri = getMainURI();
+    uri.addQueryParameter("version", std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION));
     uri.addQueryParameter("dictionary_id", toString(dictionary_id));
     uri.addQueryParameter("method", method);
     return uri;
-}
-
-
-Poco::URI ExternalDictionaryLibraryBridgeHelper::createBaseURI() const
-{
-    Poco::URI uri;
-    uri.setHost(bridge_host);
-    uri.setPort(bridge_port);
-    uri.setScheme("http");
-    return uri;
-}
-
-
-void ExternalDictionaryLibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
-{
-    getContext()->addBridgeCommand(std::move(cmd));
 }
 
 
@@ -225,6 +204,14 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadAll()
 }
 
 
+static String getDictIdsString(const std::vector<UInt64> & ids)
+{
+    WriteBufferFromOwnString out;
+    writeVectorBinary(ids, out);
+    return out.str();
+}
+
+
 QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
 {
     startBridgeSync();
@@ -282,14 +269,5 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadBase(const Poco::URI & 
     source->addBuffer(std::move(read_buf_ptr));
     return QueryPipeline(std::move(source));
 }
-
-
-String ExternalDictionaryLibraryBridgeHelper::getDictIdsString(const std::vector<UInt64> & ids)
-{
-    WriteBufferFromOwnString out;
-    writeVectorBinary(ids, out);
-    return out.str();
-}
-
 
 }

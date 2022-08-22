@@ -153,6 +153,8 @@ if (COMPILER_CLANG)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
         endif()
     endif()
+
+    no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
 endif ()
 
 # If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
@@ -606,4 +608,3 @@ if (NATIVE_BUILD_TARGETS
         COMMAND ${CMAKE_COMMAND} --build "${NATIVE_BUILD_DIR}" --target ${NATIVE_BUILD_TARGETS}
         COMMAND_ECHO STDOUT)
 endif ()
-

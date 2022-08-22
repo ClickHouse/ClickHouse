@@ -6,29 +6,30 @@
 #include <Common/checkStackSize.h>
 #include <Core/SettingsEnums.h>
 
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/QueryNormalizer.h>
-#include <Interpreters/GroupingSetsRewriterVisitor.h>
-#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
-#include <Interpreters/TableJoin.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
-#include <Interpreters/getTableExpressions.h>
-#include <Interpreters/TreeOptimizer.h>
-#include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/GroupingSetsRewriterVisitor.h>
+#include <Interpreters/LogicalExpressionsOptimizer.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/RewriteOrderByVisitor.hpp>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/TreeOptimizer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/replaceForPositionalArguments.h>
 
 #include <Parsers/IAST_fwd.h>
@@ -1405,8 +1406,11 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_)
 {
-    UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
-    UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+    {
+        UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
+        UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
+    }
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
