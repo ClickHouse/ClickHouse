@@ -1378,7 +1378,7 @@ $REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/
 EOF
 
     # Also insert some data about the check into the CI checks table.
-    "${client[@]}" --query "INSERT INTO "'"'"gh-data"'"'".checks FORMAT TSVWithNamesAndTypes" \
+    "${client[@]}" --query "INSERT INTO "'"'"default"'"'".checks FORMAT TSVWithNamesAndTypes" \
         < ci-checks.tsv
 
     set -x
