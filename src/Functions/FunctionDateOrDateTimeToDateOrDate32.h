@@ -71,42 +71,19 @@ public:
                 "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
                     + ", should be 1 or 2",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        /// For DateTime, if time zone is specified, attach it to type.
         /// If the time zone is specified but empty, throw an exception.
-        if (which.isDateTime())
+        if (which.isDateTime() || which.isDateTime64())
         {
             std::string time_zone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-            /// only validate the time_zone part if the number of arguments is 2. This is mainly
-            /// to accommodate functions like toStartOfDay(today()), toStartOfDay(yesterday()) etc.
+            /// only validate the time_zone part if the number of arguments is 2.
             if (arguments.size() == 2 && time_zone.empty())
                 throw Exception(
                     "Function " + getName() + " supports a 2nd argument (optional) that must be non-empty and be a valid time zone",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            // return std::make_shared<DataTypeDate>(time_zone);
-            return std::make_shared<DataTypeDate>();
-        }
-        if (which.isDateTime64())
-        {
-            Int64 scale = DataTypeDateTime64::default_scale;
-            if (const auto * dt64 =  checkAndGetDataType<DataTypeDateTime64>(arguments[0].type.get()))
-                scale = dt64->getScale();
-            auto source_scale = scale;
-
-            if constexpr (std::is_same_v<ToStartOfMillisecondImpl, Transform>)
-            {
-                scale = std::max(source_scale, static_cast<Int64>(3));
-            }
-            else if constexpr (std::is_same_v<ToStartOfMicrosecondImpl, Transform>)
-            {
-                scale = std::max(source_scale, static_cast<Int64>(6));
-            }
-            else if constexpr (std::is_same_v<ToStartOfNanosecondImpl, Transform>)
-            {
-                scale = std::max(source_scale, static_cast<Int64>(9));
-            }
-
-            // return std::make_shared<DataTypeDate32>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-            return std::make_shared<DataTypeDate32>();
+            if (which.isDateTime64())
+                return std::make_shared<DataTypeDate32>();
+            else
+                return std::make_shared<DataTypeDate>();
         }
         if (which.isDate32())
             return std::make_shared<DataTypeDate32>();
