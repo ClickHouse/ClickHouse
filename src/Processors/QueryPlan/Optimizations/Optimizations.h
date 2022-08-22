@@ -12,6 +12,7 @@ namespace QueryPlanOptimizations
 /// This is the main function which optimizes the whole QueryPlan tree.
 void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
+void optimizeReadInOrder(QueryPlan::Node & node);
 void optimizePrimaryKeyCondition(QueryPlan::Node & root);
 
 /// Optimization is a function applied to QueryPlan::Node.
@@ -63,7 +64,7 @@ inline const auto & getOptimizations()
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::optimize_plan},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::optimize_plan},
-        {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan}
+        // {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::optimize_plan}
     }};
 
     return optimizations;

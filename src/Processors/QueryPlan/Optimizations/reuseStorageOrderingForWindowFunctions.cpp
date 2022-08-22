@@ -133,6 +133,66 @@ void buildSortingDAG(QueryPlan::Node * node, ActionsDAGPtr & dag, FixedColumns &
     }
 }
 
+void enreachFixedColumns(ActionsDAGPtr & dag, FixedColumns & fixed_columns)
+{
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    for (const auto & node : dag->getNodes())
+    {
+        if (visited.contains(&node))
+            continue;
+
+        stack.push({&node});
+        visited.insert(&node);
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+            for (; frame.next_child < frame.node->children.size(); ++frame.next_child)
+                if (!visited.contains(frame.node->children[frame.next_child]))
+                    break;
+
+            if (frame.next_child < frame.node->children.size())
+            {
+                const auto * child = frame.node->children[frame.next_child];
+                visited.insert(child);
+                stack.push({child});
+                ++frame.next_child;
+            }
+            else
+            {
+                /// Ignore constants here, will check them separately
+                if (!frame.node->column)
+                {
+                    if (frame.node->type == ActionsDAG::ActionType::ALIAS)
+                    {
+                        if (fixed_columns.contains(frame.node->children.at(0)))
+                            fixed_columns.insert(frame.node);
+                    }
+                    else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
+                    {
+                        if (frame.node->function_base->isDeterministicInScopeOfQuery())
+                        {
+                            bool all_args_fixed_or_const = true;
+                            for (const auto * child : frame.node->children)
+                                if (!child->column || !fixed_columns.contains(child))
+                                    all_args_fixed_or_const = false;
+
+                            if (all_args_fixed_or_const)
+                                fixed_columns.insert(frame.node);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Here we try to find inner DAG inside outer DAG.
 /// Build a map: inner.nodes -> outer.nodes.
 // using NodesMap = std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
@@ -311,66 +371,82 @@ int isMonotonicSubtree(const ActionsDAG::Node * inner, const ActionsDAG::Node * 
     return res;
 }
 
-
-/// Optimize in case of exact match with order key element
-/// or in some simple cases when order key element is wrapped into monotonic function.
-/// Returns on of {-1, 0, 1} - direction of the match. 0 means - doesn't match.
-int matchSortDescriptionAndKey(
-    const ActionsDAGPtr & dag,
-    const SortColumnDescription & sort_column,
-    const ActionsDAG & sort_column_dag,
-    const std::string & sorting_key_column)
-{
-    /// If required order depend on collation, it cannot be matched with primary key order.
-    /// Because primary keys cannot have collations.
-    if (sort_column.collator)
-        return 0;
-
-    /// For the path: order by (sort_column, ...)
-    if (!dag && sort_column.column_name == sorting_key_column)
-        return sort_column.direction;
-
-    const auto * outer = dag->tryFindInOutputs(sort_column.column_name);
-    /// It is possible when e.g. sort by array joined column.
-    if (!outer)
-        return 0;
-
-    const auto * inner = sort_column_dag.tryFindInOutputs(sorting_key_column);
-    /// This should not happen.
-    if (!inner)
-        return 0;
-
-    return isMonotonicSubtree(inner, outer) * sort_column.direction;
-}
-
 SortDescription buildPrefixSortDescription(
-    size_t fixed_prefix_size,
+    const FixedColumns & fixed_columns,
     const ActionsDAGPtr & dag,
     const SortDescription & description,
     const ActionsDAG & sorting_key_dag,
-    const Names & sorting_key_columns)
+    const Names & sorting_key_columns,
+    int & read_direction)
 {
-    size_t descr_prefix_size = std::min(description.size(), sorting_key_columns.size() - fixed_prefix_size);
-
     SortDescription order_key_prefix_descr;
     order_key_prefix_descr.reserve(description.size());
 
-    for (size_t i = 0; i < fixed_prefix_size; ++i)
-        order_key_prefix_descr.push_back(description[i]);
+    /// This is a result direction we will read from MergeTree
+    ///  1 - in order,
+    /// -1 - in reverse order,
+    ///  0 - usual read, don't apply optimization
+    ///
+    /// So far, 0 means any direction is possible. It is ok for constant prefix.
+    read_direction = 0;
 
-    int read_direction = description.at(0).direction;
-
-    for (size_t i = 0; i < descr_prefix_size; ++i)
+    for (size_t i = 0, next_sort_key = 0; i < description.size() && next_sort_key < sorting_key_columns.size(); ++i)
     {
-        int current_direction = matchSortDescriptionAndKey(
-            dag, description[i], sorting_key_dag, sorting_key_columns[i + fixed_prefix_size]);
+        const auto & sort_column = description[i];
+        const auto & sorting_key_column = sorting_key_columns[next_sort_key];
 
-        if (!current_direction || (i > 0 && current_direction != read_direction))
+        /// If required order depend on collation, it cannot be matched with primary key order.
+        /// Because primary keys cannot have collations.
+        if (sort_column.collator)
+            return order_key_prefix_descr;
+
+        /// Direction for current sort key.
+        int current_direction = 0;
+
+        if (!dag)
+        {
+            if (sort_column.column_name != sorting_key_column)
+                return order_key_prefix_descr;
+
+            current_direction = sort_column.direction;
+            ++next_sort_key;
+        }
+        else
+        {
+            const ActionsDAG::Node * sort_node = dag->tryFindInOutputs(sort_column.column_name);
+             /// It is possible when e.g. sort by array joined column.
+            if (!sort_node)
+                return order_key_prefix_descr;
+
+            const ActionsDAG::Node * sort_column_node = sorting_key_dag.tryFindInOutputs(sorting_key_column);
+            /// This should not happen.
+            if (!sort_column_node)
+                return order_key_prefix_descr;
+
+            bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
+
+            /// We try to find the match even if column is fixed. In this case, potentially more keys will match.
+            /// Example: 'table (x Int32, y Int32) ORDER BY x + 1, y + 1'
+            ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
+            /// Here, 'x + 1' would be a fixed point. But it is reasonable to read-in-order.
+            current_direction = isMonotonicSubtree(sort_column_node, sort_node) * sort_column.direction;
+
+            if (current_direction == 0 || !is_fixed_column)
+                return order_key_prefix_descr;
+
+            if (current_direction)
+                ++next_sort_key;
+
+            if (is_fixed_column)
+                current_direction = 0;
+        }
+
+        /// read_direction == 0 means we can choose any global direction.
+        /// current_direction == 0 means current key if fixed and any direction is possible for it.
+        if (current_direction && read_direction && current_direction != read_direction)
             break;
 
-        if (i == 0)
-            read_direction = current_direction;
-
+        read_direction = current_direction;
         order_key_prefix_descr.push_back(description[i]);
     }
 
@@ -401,12 +477,28 @@ void optimizeReadInOrder(QueryPlan::Node & node)
     const auto & description = sorting->getSortDescription();
     const auto & sorting_key_columns = sorting_key.column_names;
 
-    size_t fixed_prefix_size = 0;
-
+    int read_direction = 0;
     auto prefix_description = buildPrefixSortDescription(
-        fixed_prefix_size,
+        fixed_columns,
         dag, description,
-        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+        sorting_key.expression->getActionsDAG(), sorting_key_columns,
+        read_direction);
+
+    /// It is possible that prefix_description is not empty, but read_direction is 0.
+    /// It means that some prefix of sorting key matched, but it was constant.
+    /// In this case, read-in-order is useless.
+    if (read_direction == 0 || prefix_description.empty())
+        return;
+
+    auto limit = sorting->getLimit();
+
+    auto order_info = std::make_shared<InputOrderInfo>(
+        SortDescription{},
+        std::move(prefix_description),
+        read_direction, limit);
+
+    reading->setQueryInfoInputOrderInfo(order_info);
+    sorting->convertToFinishSorting(order_info->order_key_prefix_descr);
 }
 
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
