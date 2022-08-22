@@ -16,7 +16,7 @@ public:
     static constexpr inline auto PING_HANDLER = "/catboost_ping";
     static constexpr inline auto MAIN_HANDLER = "/catboost_request";
 
-    CatBoostLibraryBridgeHelper(ContextPtr context_, const String & library_path_, const String & model_path_);
+    CatBoostLibraryBridgeHelper(ContextPtr context_, std::string_view library_path_, std::string_view model_path_);
 
     size_t getTreeCount();
 

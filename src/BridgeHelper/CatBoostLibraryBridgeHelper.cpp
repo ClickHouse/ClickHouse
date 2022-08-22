@@ -20,8 +20,8 @@ namespace ErrorCodes
 
 CatBoostLibraryBridgeHelper::CatBoostLibraryBridgeHelper(
         ContextPtr context_,
-        const String & library_path_,
-        const String & model_path_)
+        std::string_view library_path_,
+        std::string_view model_path_)
     : LibraryBridgeHelper(context_->getGlobalContext())
     , library_path(library_path_)
     , model_path(model_path_)
@@ -96,7 +96,7 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
 
     WriteBufferFromOwnString string_write_buf;
     Block block(columns);
-    NativeWriter native_writer(string_write_buf, 0, block);
+    NativeWriter native_writer(string_write_buf, /*client_revision*/ 0, block);
     native_writer.write(block);
 
     ReadWriteBufferFromHTTP buf(
@@ -105,14 +105,14 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
         [this, serialized = string_write_buf.str()](std::ostream & os)
         {
             os << "model_path=" << escapeForFileName(model_path) << "&";
-            os << "data=" << serialized;
+            os << "data=" << escapeForFileName(serialized);
         },
         http_timeouts, credentials);
 
     String res;
     readStringBinary(res, buf);
     ReadBufferFromString string_read_buf(res);
-    NativeReader native_reader(string_read_buf, 0);
+    NativeReader native_reader(string_read_buf, /*server_revision*/ 0);
     Block block_read = native_reader.read();
 
     return block_read.getColumns()[0];
