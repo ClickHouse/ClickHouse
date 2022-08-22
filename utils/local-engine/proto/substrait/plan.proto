@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
 
 package substrait;
@@ -5,14 +6,16 @@ package substrait;
 import "substrait/algebra.proto";
 import "substrait/extensions/extensions.proto";
 
+option cc_enable_arenas = true;
+option csharp_namespace = "Substrait.Protobuf";
+option go_package = "github.com/substrait-io/substrait-go/proto";
 option java_multiple_files = true;
 option java_package = "io.substrait.proto";
-option csharp_namespace = "Substrait.Protobuf";
 
 // Either a relation or root relation
 message PlanRel {
   oneof rel_type {
-    // Any relation
+    // Any relation (used for references and CTEs)
     Rel rel = 1;
     // The root of a relation tree
     RelRoot root = 2;
@@ -22,7 +25,6 @@ message PlanRel {
 // Describe a set of operations to complete.
 // For compactness sake, identifiers are normalized at the plan level.
 message Plan {
-
   // a list of yaml specifications this plan may depend on
   repeated substrait.extensions.SimpleExtensionURI extension_uris = 1;
 

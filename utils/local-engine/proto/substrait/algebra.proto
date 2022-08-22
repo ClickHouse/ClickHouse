@@ -1,27 +1,38 @@
+// SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
 
 package substrait;
 
-import "substrait/type.proto";
-import "substrait/extensions/extensions.proto";
 import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+import "substrait/extensions/extensions.proto";
+import "substrait/type.proto";
 
+option cc_enable_arenas = true;
+option csharp_namespace = "Substrait.Protobuf";
+option go_package = "github.com/substrait-io/substrait-go/proto";
 option java_multiple_files = true;
 option java_package = "io.substrait.proto";
-option csharp_namespace = "Substrait.Protobuf";
 
+// Common fields for all relational operators
 message RelCommon {
-
   oneof emit_kind {
+    // The underlying relation is output as is (no reordering or projection of columns)
     Direct direct = 1;
+    // Allows to control for order and inclusion of fields
     Emit emit = 2;
   }
 
   Hint hint = 3;
   substrait.extensions.AdvancedExtension advanced_extension = 4;
 
+  // Direct indicates no change on presence and ordering of fields in the output
   message Direct {}
-  message Emit {repeated int32 output_mapping = 1;}
+
+  // Remap which fields are output and in which order
+  message Emit {
+    repeated int32 output_mapping = 1;
+  }
 
   // Changes to the operation that can influence efficiency/performance but
   // should not impact correctness.
@@ -30,6 +41,7 @@ message RelCommon {
     RuntimeConstraint constraint = 2;
     substrait.extensions.AdvancedExtension advanced_extension = 10;
 
+    // The statistics related to a hint (physical properties of records)
     message Stats {
       double row_count = 1;
       double record_size = 2;
@@ -44,6 +56,7 @@ message RelCommon {
   }
 }
 
+// The scan operator of base data (physical or virtual), including filtering and projection.
 message ReadRel {
   RelCommon common = 1;
   NamedStruct base_schema = 2;
@@ -51,6 +64,7 @@ message ReadRel {
   Expression.MaskExpression projection = 4;
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 
+  // Definition of which type of scan operation is to be performed
   oneof read_type {
     VirtualTable virtual_table = 5;
     LocalFiles local_files = 6;
@@ -58,20 +72,26 @@ message ReadRel {
     ExtensionTable extension_table = 8;
   }
 
+  // A base table. The list of string is used to represent namespacing (e.g., mydb.mytable).
+  // This assumes shared catalog between systems exchanging a message.
   message NamedTable {
     repeated string names = 1;
     substrait.extensions.AdvancedExtension advanced_extension = 10;
   }
 
-  // a table composed of literals.
-  message VirtualTable {repeated Expression.Literal.Struct values = 1;}
+  // A table composed of literals.
+  message VirtualTable {
+    repeated Expression.Literal.Struct values = 1;
+  }
 
-  // a stub type that can be used to extend/introduce new table types outside
+  // A stub type that can be used to extend/introduce new table types outside
   // the specification.
-  message ExtensionTable {google.protobuf.Any detail = 1;}
+  message ExtensionTable {
+    google.protobuf.Any detail = 1;
+  }
 
+  // Represents a list of files in input of a scan operation
   message LocalFiles {
-
     repeated FileOrFiles items = 1;
     substrait.extensions.AdvancedExtension advanced_extension = 10;
 
@@ -82,33 +102,50 @@ message ReadRel {
     // the midpoint of the chunk)
     message FileOrFiles {
       oneof path_type {
+        // A URI that can refer to either a single folder or a single file
         string uri_path = 1;
+        // A URI where the path portion is a glob expression that can
+        // identify zero or more paths.
+        // Consumers should support the POSIX syntax.  The recursive
+        // globstar (**) may not be supported.
         string uri_path_glob = 2;
+        // A URI that refers to a single file
         string uri_file = 3;
+        // A URI that refers to a single folder
         string uri_folder = 4;
       }
 
-      FileFormat format = 5;
+      // Original file format enum, superseded by the file_format oneof.
+      reserved 5;
+      reserved "format";
 
-      // the index of the partition this item belongs to
+      // The index of the partition this item belongs to
       uint64 partition_index = 6;
 
-      // the start position in byte to read from this item
+      // The start position in byte to read from this item
       uint64 start = 7;
 
-      // the length in byte to read from this item
+      // The length in byte to read from this item
       uint64 length = 8;
 
-      enum FileFormat {
-        FILE_FORMAT_UNSPECIFIED = 0;
-        FILE_FORMAT_PARQUET = 1;
-        FILE_FORMAT_ORC = 2;
-        FILE_FORMAT_DWRF = 3;
+      message ParquetReadOptions {}
+      message ArrowReadOptions {}
+      message OrcReadOptions {}
+      message DwrfReadOptions {}
+
+      // The format of the files.
+      oneof file_format {
+        ParquetReadOptions parquet = 9;
+        ArrowReadOptions arrow = 10;
+        OrcReadOptions orc = 11;
+        DwrfReadOptions dwrf = 12;
+        google.protobuf.Any extension = 13;
       }
     }
   }
 }
 
+// This operator allows to represent calculated expressions of fields (e.g., a+b). Direct/Emit are used to represent classical relational projections
 message ProjectRel {
   RelCommon common = 1;
   Rel input = 2;
@@ -116,6 +153,7 @@ message ProjectRel {
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
+// The binary JOIN relational operator left-join-right, including various join types, a join condition and post_join_filter expression
 message JoinRel {
   RelCommon common = 1;
   Rel left = 2;
@@ -133,12 +171,15 @@ message JoinRel {
     JOIN_TYPE_RIGHT = 4;
     JOIN_TYPE_SEMI = 5;
     JOIN_TYPE_ANTI = 6;
+    // This join is useful for nested sub-queries where we need exactly one tuple in output (or throw exception)
+    // See Section 3.2 of https://15721.courses.cs.cmu.edu/spring2018/papers/16-optimizer2/hyperjoins-btw2017.pdf
     JOIN_TYPE_SINGLE = 7;
   }
 
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
+// Cartesian product relational operator of two tables (left and right)
 message CrossRel {
   RelCommon common = 1;
   Rel left = 2;
@@ -147,23 +188,35 @@ message CrossRel {
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
+// The relational operator representing LIMIT/OFFSET or TOP type semantics.
 message FetchRel {
   RelCommon common = 1;
   Rel input = 2;
+  // the offset expressed in number of records
   int64 offset = 3;
+  // the amount of records to return
   int64 count = 4;
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
+// The relational operator representing a GROUP BY Aggregate
 message AggregateRel {
   RelCommon common = 1;
+
+  // Input of the aggregation
   Rel input = 2;
+
+  // A list of expression grouping that the aggregation measured should be calculated for.
   repeated Grouping groupings = 3;
+
+  // A list of one or more aggregate expressions along with an optional filter.
   repeated Measure measures = 4;
 
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 
-  message Grouping {repeated Expression grouping_expressions = 1;}
+  message Grouping {
+    repeated Expression grouping_expressions = 1;
+  }
 
   message Measure {
     AggregateFunction measure = 1;
@@ -171,10 +224,12 @@ message AggregateRel {
     // An optional boolean expression that acts to filter which records are
     // included in the measure. True means include this record for calculation
     // within the measure.
+    // Helps to support SUM(<c>) FILTER(WHERE...) syntax without masking opportunities for optimization
     Expression filter = 2;
   }
 }
 
+// The ORDERY BY (or sorting) relational operator. Beside describing a base relation, it includes a list of fields to sort on
 message SortRel {
   RelCommon common = 1;
   Rel input = 2;
@@ -182,6 +237,7 @@ message SortRel {
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
+// The relational operator capturing simple FILTERs (as in the WHERE clause of SQL)
 message FilterRel {
   RelCommon common = 1;
   Rel input = 2;
@@ -189,6 +245,7 @@ message FilterRel {
   substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
+// The relational set operators (intersection/union/etc..)
 message SetRel {
   RelCommon common = 1;
   repeated Rel inputs = 2;
@@ -226,6 +283,62 @@ message ExtensionMultiRel {
   google.protobuf.Any detail = 3;
 }
 
+// A redistribution operation
+message ExchangeRel {
+  RelCommon common = 1;
+  Rel input = 2;
+  int32 partition_count = 3;
+  repeated ExchangeTarget targets = 4;
+
+  // the type of exchange used
+  oneof exchange_kind {
+    ScatterFields scatter_by_fields = 5;
+    SingleBucketExpression single_target = 6;
+    MultiBucketExpression multi_target = 7;
+    RoundRobin round_robin = 8;
+    Broadcast broadcast = 9;
+  }
+
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
+
+  message ScatterFields {
+    repeated Expression.FieldReference fields = 1;
+  }
+
+  // Returns a single bucket number per record.
+  message SingleBucketExpression {
+    Expression expression = 1;
+  }
+
+  // Returns zero or more bucket numbers per record
+  message MultiBucketExpression {
+    Expression expression = 1;
+    bool constrained_to_count = 2;
+  }
+
+  // Send all data to every target.
+  message Broadcast {}
+
+  // Route approximately
+  message RoundRobin {
+    // whether the round robin behavior is required to exact (per record) or
+    // approximate. Defaults to approximate.
+    bool exact = 1;
+  }
+
+  // The message to describe partition targets of an exchange
+  message ExchangeTarget {
+    // Describes the partition id(s) to send. If this is empty, all data is sent
+    // to this target.
+    repeated int32 partition_id = 1;
+
+    oneof target_type {
+      string uri = 2;
+      google.protobuf.Any extended = 3;
+    }
+  }
+}
+
 // A relation with output field names.
 //
 // This is for use at the root of a `Rel` tree.
@@ -236,6 +349,7 @@ message RelRoot {
   repeated string names = 2;
 }
 
+// A relation (used internally in a plan)
 message Rel {
   oneof rel_type {
     ReadRel read = 1;
@@ -253,6 +367,22 @@ message Rel {
   }
 }
 
+// The argument of a function
+message FunctionArgument {
+  oneof arg_type {
+    Enum enum = 1;
+    Type type = 2;
+    Expression value = 3;
+  }
+
+  message Enum {
+    oneof enum_kind {
+      string specified = 1;
+      google.protobuf.Empty unspecified = 2;
+    }
+  }
+}
+
 message Expression {
   oneof rex_type {
     Literal literal = 1;
@@ -263,18 +393,26 @@ message Expression {
     SwitchExpression switch_expression = 7;
     SingularOrList singular_or_list = 8;
     MultiOrList multi_or_list = 9;
-    Enum enum = 10;
     Cast cast = 11;
     Subquery subquery = 12;
+
+    // deprecated: enum literals are only sensible in the context of
+    // function arguments, for which FunctionArgument should now be
+    // used
+    Enum enum = 10 [deprecated = true];
   }
 
   message Enum {
+    option deprecated = true;
+
     oneof enum_kind {
       string specified = 1;
       Empty unspecified = 2;
     }
 
-    message Empty {}
+    message Empty {
+      option deprecated = true;
+    }
   }
 
   message Literal {
@@ -309,12 +447,18 @@ message Expression {
       List list = 30;
       Type.List empty_list = 31;
       Type.Map empty_map = 32;
+      UserDefined user_defined = 33;
     }
 
     // whether the literal type should be treated as a nullable type. Applies to
     // all members of union other than the Typed null (which should directly
     // declare nullability).
     bool nullable = 50;
+
+    // optionally points to a type_variation_anchor defined in this plan.
+    // Applies to all members of union other than the Typed null (which should
+    // directly declare the type variation).
+    uint32 type_variation_reference = 51;
 
     message VarChar {
       string value = 1;
@@ -349,6 +493,7 @@ message Expression {
     message IntervalDayToSecond {
       int32 days = 1;
       int32 seconds = 2;
+      int32 microseconds = 3;
     }
 
     message Struct {
@@ -360,13 +505,29 @@ message Expression {
       // A homogeneously typed list of literals
       repeated Literal values = 1;
     }
+
+    message UserDefined {
+      // points to a type_anchor defined in this plan
+      uint32 type_reference = 1;
+
+      // The parameters to be bound to the type class, if the type class is
+      // parameterizable.
+      repeated Type.Parameter type_parameters = 3;
+
+      // the value of the literal, serialized using some type-specific
+      // protobuf message
+      google.protobuf.Any value = 2;
+    }
   }
 
   message ScalarFunction {
     // points to a function_anchor defined in this plan
     uint32 function_reference = 1;
-    repeated Expression args = 2;
+    repeated FunctionArgument arguments = 4;
     Type output_type = 3;
+
+    // deprecated; use args instead
+    repeated Expression args = 2 [deprecated = true];
   }
 
   message WindowFunction {
@@ -378,13 +539,19 @@ message Expression {
     Bound lower_bound = 5;
     AggregationPhase phase = 6;
     Type output_type = 7;
-    repeated Expression args = 8;
+    repeated FunctionArgument arguments = 9;
+
+    // deprecated; use args instead
+    repeated Expression args = 8 [deprecated = true];
 
     message Bound {
+      message Preceding {
+        int64 offset = 1;
+      }
 
-      message Preceding {int64 offset = 1;}
-
-      message Following {int64 offset = 1;}
+      message Following {
+        int64 offset = 1;
+      }
 
       message CurrentRow {}
 
@@ -400,7 +567,6 @@ message Expression {
   }
 
   message IfThen {
-
     repeated IfClause ifs = 1;
     Expression else = 2;
 
@@ -413,9 +579,17 @@ message Expression {
   message Cast {
     Type type = 1;
     Expression input = 2;
+    FailureBehavior failure_behavior = 3;
+
+    enum FailureBehavior {
+      FAILURE_BEHAVIOR_UNSPECIFIED = 0;
+      FAILURE_BEHAVIOR_RETURN_NULL = 1;
+      FAILURE_BEHAVIOR_THROW_EXCEPTION = 2;
+    }
   }
 
   message SwitchExpression {
+    Expression match = 3;
     repeated IfValue ifs = 1;
     Expression else = 2;
 
@@ -434,7 +608,9 @@ message Expression {
     repeated Expression value = 1;
     repeated Record options = 2;
 
-    message Record {repeated Expression fields = 1;}
+    message Record {
+      repeated Expression fields = 1;
+    }
   }
 
   message EmbeddedFunction {
@@ -464,7 +640,6 @@ message Expression {
   // (ordinalized in the internal representation here), [2] is a list offset
   // and ['my_map_key'] is a reference into a map field.
   message ReferenceSegment {
-
     oneof reference_type {
       MapKey map_key = 1;
       StructField struct_field = 2;
@@ -506,7 +681,6 @@ message Expression {
   // Note that this does not fundamentally alter the structure of data beyond
   // the elimination of unecessary elements.
   message MaskExpression {
-
     StructSelect select = 1;
     bool maintain_singular_struct = 2;
 
@@ -518,7 +692,9 @@ message Expression {
       }
     }
 
-    message StructSelect {repeated StructItem struct_items = 1;}
+    message StructSelect {
+      repeated StructItem struct_items = 1;
+    }
 
     message StructItem {
       int32 field = 1;
@@ -526,7 +702,6 @@ message Expression {
     }
 
     message ListSelect {
-
       repeated ListSelectItem selection = 1;
       Select child = 2;
 
@@ -536,7 +711,9 @@ message Expression {
           ListSlice slice = 2;
         }
 
-        message ListElement {int32 field = 1;}
+        message ListElement {
+          int32 field = 1;
+        }
 
         message ListSlice {
           int32 start = 1;
@@ -553,16 +730,19 @@ message Expression {
 
       Select child = 3;
 
-      message MapKey {string map_key = 1;}
+      message MapKey {
+        string map_key = 1;
+      }
 
-      message MapKeyExpression {string map_key_expression = 1;}
+      message MapKeyExpression {
+        string map_key_expression = 1;
+      }
     }
   }
 
   // A reference to an inner part of a complex object. Can reference reference a
   // single element or a masked version of elements
   message FieldReference {
-
     // Whether this is composed of a single element reference or a masked
     // element subtree
     oneof reference_type {
@@ -607,7 +787,9 @@ message Expression {
 
     // A subquery with one row and one column. This is often an aggregate
     // though not required to be.
-    message Scalar {Rel input = 1;}
+    message Scalar {
+      Rel input = 1;
+    }
 
     // Predicate checking that the left expression is contained in the right
     // subquery
@@ -669,6 +851,7 @@ message Expression {
   }
 }
 
+// The description of a field to sort on (including the direction of sorting and null semantics)
 message SortField {
   Expression expr = 1;
 
@@ -697,8 +880,22 @@ enum AggregationPhase {
 message AggregateFunction {
   // points to a function_anchor defined in this plan
   uint32 function_reference = 1;
-  repeated Expression args = 2;
+  repeated FunctionArgument arguments = 7;
   repeated SortField sorts = 3;
   AggregationPhase phase = 4;
   Type output_type = 5;
+  AggregationInvocation invocation = 6;
+
+  // deprecated; use args instead
+  repeated Expression args = 2 [deprecated = true];
+
+  enum AggregationInvocation {
+    AGGREGATION_INVOCATION_UNSPECIFIED = 0;
+
+    // Use all values in aggregation calculation
+    AGGREGATION_INVOCATION_ALL = 1;
+
+    // Use only distinct values in aggregation calculation
+    AGGREGATION_INVOCATION_DISTINCT = 2;
+  }
 }

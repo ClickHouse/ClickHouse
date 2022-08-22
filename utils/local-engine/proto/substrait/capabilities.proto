@@ -1,14 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
 
 package substrait;
 
+option cc_enable_arenas = true;
+option csharp_namespace = "Substrait.Protobuf";
+option go_package = "github.com/substrait-io/substrait-go/proto";
 option java_multiple_files = true;
 option java_package = "io.substrait.proto";
-option csharp_namespace = "Substrait.Protobuf";
 
 // Defines a set of Capabilities that a system (producer or consumer) supports.
 message Capabilities {
-
   // List of Substrait versions this system supports
   repeated string substrait_versions = 1;
 

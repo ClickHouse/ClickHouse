@@ -570,7 +570,7 @@ QueryPlanPtr SerializedPlanParser::parseOp(const substrait::Rel & rel)
                 std::vector<substrait::Type> measure_types;
                 for (int i=0; i<aggregate.measures_size(); i++)
                 {
-                    auto position = aggregate.measures(i).measure().args(0).selection().direct_reference().struct_field().field();
+                    auto position = aggregate.measures(i).measure().arguments(0).value().selection().direct_reference().struct_field().field();
                     measure_positions.emplace_back(position);
                     measure_types.emplace_back(aggregate.measures(i).measure().output_type());
                 }
@@ -670,11 +670,11 @@ QueryPlanStepPtr SerializedPlanParser::parseAggregate(QueryPlan & plan, const su
     for (const auto & measure : rel.measures())
     {
         auto which_measure_type = WhichDataType(parseType(measure.measure().output_type()));
-        if (measure.measure().args_size() != 1)
+        if (measure.measure().arguments_size() != 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "only support one argument aggregate function");
         }
-        auto arg = measure.measure().args(0);
+        auto arg = measure.measure().arguments(0).value();
 
         if (arg.has_scalar_function())
         {
@@ -809,7 +809,7 @@ NamesAndTypesList SerializedPlanParser::blockToNameAndTypeList(const Block & hea
 std::string SerializedPlanParser::getFunctionName(std::string function_signature, const substrait::Expression_ScalarFunction & function)
 {
     const auto & output_type = function.output_type();
-    auto args = function.args();
+    auto args = function.arguments();
     auto function_name_idx = function_signature.find(':');
     //    assert(function_name_idx != function_signature.npos && ("invalid function signature: " + function_signature).c_str());
     auto function_name = function_signature.substr(0, function_name_idx);
@@ -840,24 +840,24 @@ std::string SerializedPlanParser::getFunctionName(std::string function_signature
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "extract function requires two args.");
         }
         // Get the first arg: field
-        const auto & extractField = args.at(0);
+        const auto & extract_field = args.at(0);
 
-        if (extractField.has_literal())
+        if (extract_field.value().has_literal())
         {
-            const auto & fieldValue = extractField.literal().string();
-            if (fieldValue == "YEAR")
+            const auto & field_value = extract_field.value().literal().string();
+            if (field_value == "YEAR")
             {
                 ch_function_name = "toYear";
             }
-            else if (fieldValue == "MONTH")
+            else if (field_value == "MONTH")
             {
                 ch_function_name = "toMonth";
             }
-            else if (fieldValue == "DAYOFWEEK")
+            else if (field_value == "DAYOFWEEK")
             {
                 ch_function_name = "toDayOfWeek";
             }
-            else if (fieldValue == "DAYOFYEAR")
+            else if (field_value == "DAYOFYEAR")
             {
                 ch_function_name = "toDayOfYear";
             }
@@ -892,18 +892,18 @@ const ActionsDAG::Node * SerializedPlanParser::parseFunctionWithDAG(
     auto function_signature = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
     auto function_name = getFunctionName(function_signature, scalar_function);
     ActionsDAG::NodeRawConstPtrs args;
-    for (const auto & arg : scalar_function.args())
+    for (const auto & arg : scalar_function.arguments())
     {
-        if (arg.has_scalar_function())
+        if (arg.value().has_scalar_function())
         {
             std::string arg_name;
             bool keep_arg = FUNCTION_NEED_KEEP_ARGUMENTS.contains(function_name);
-            parseFunctionWithDAG(arg, arg_name, required_columns, actions_dag, keep_arg);
+            parseFunctionWithDAG(arg.value(), arg_name, required_columns, actions_dag, keep_arg);
             args.emplace_back(&actions_dag->getNodes().back());
         }
         else
         {
-            args.emplace_back(parseArgument(actions_dag, arg));
+            args.emplace_back(parseArgument(actions_dag, arg.value()));
         }
     }
     const ActionsDAG::Node * result_node;
@@ -1290,14 +1290,14 @@ DB::QueryPlanPtr SerializedPlanParser::parseJoin(substrait::JoinRel join, DB::Qu
         right->addStep(std::move(project_step));
     }
     // support multiple join key
-    bool multiple_keys = join.expression().scalar_function().args(0).has_scalar_function();
-    auto join_key_num = multiple_keys ? join.expression().scalar_function().args_size() : 1;
+    bool multiple_keys = join.expression().scalar_function().arguments(0).value().has_scalar_function();
+    auto join_key_num = multiple_keys ? join.expression().scalar_function().arguments_size() : 1;
     for (int32_t i = 0; i < join_key_num; i++)
     {
-        auto function = multiple_keys ? join.expression().scalar_function().args(i).scalar_function() : join.expression().scalar_function();
-        auto left_key_idx = function.args(0).selection().direct_reference().struct_field().field();
+        auto function = multiple_keys ? join.expression().scalar_function().arguments(i).value().scalar_function() : join.expression().scalar_function();
+        auto left_key_idx = function.arguments(0).value().selection().direct_reference().struct_field().field();
         auto right_key_idx
-            = function.args(1).selection().direct_reference().struct_field().field() - left->getCurrentDataStream().header.columns();
+            = function.arguments(1).value().selection().direct_reference().struct_field().field() - left->getCurrentDataStream().header.columns();
         ASTPtr left_key = std::make_shared<ASTIdentifier>(left->getCurrentDataStream().header.getByPosition(left_key_idx).name);
         ASTPtr right_key = std::make_shared<ASTIdentifier>(right->getCurrentDataStream().header.getByPosition(right_key_idx).name);
         table_join->addOnKeys(left_key, right_key);

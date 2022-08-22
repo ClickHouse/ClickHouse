@@ -1,14 +1,17 @@
+// SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
+
 package substrait;
 
 import "substrait/type.proto";
 
+option cc_enable_arenas = true;
+option csharp_namespace = "Substrait.Protobuf";
+option go_package = "github.com/substrait-io/substrait-go/proto";
 option java_multiple_files = true;
 option java_package = "io.substrait.proto";
-option csharp_namespace = "Substrait.Protobuf";
 
 message DerivationExpression {
-
   oneof kind {
     Type.Boolean bool = 1;
     Type.I8 i8 = 2;
@@ -36,7 +39,12 @@ message DerivationExpression {
     ExpressionList list = 27;
     ExpressionMap map = 28;
 
-    uint32 user_defined_pointer = 31;
+    ExpressionUserDefined user_defined = 30;
+
+    // Deprecated in favor of user_defined, which allows nullability and
+    // variations to be specified. If user_defined_pointer is encountered,
+    // treat it as being non-nullable and having the default variation.
+    uint32 user_defined_pointer = 31 [deprecated = true];
 
     string type_parameter_name = 33;
     string integer_parameter_name = 34;
@@ -97,6 +105,12 @@ message DerivationExpression {
     Type.Nullability nullability = 4;
   }
 
+  message ExpressionUserDefined {
+    uint32 type_pointer = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
   message IfElse {
     DerivationExpression if_condition = 1;
     DerivationExpression if_return = 2;
@@ -114,7 +128,6 @@ message DerivationExpression {
   }
 
   message BinaryOp {
-
     BinaryOpType op_type = 1;
     DerivationExpression arg1 = 2;
     DerivationExpression arg2 = 3;

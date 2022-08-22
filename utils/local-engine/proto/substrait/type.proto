@@ -1,12 +1,17 @@
+// SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
+
 package substrait;
 
+import "google/protobuf/empty.proto";
+
+option cc_enable_arenas = true;
+option csharp_namespace = "Substrait.Protobuf";
+option go_package = "github.com/substrait-io/substrait-go/proto";
 option java_multiple_files = true;
 option java_package = "io.substrait.proto";
-option csharp_namespace = "Substrait.Protobuf";
 
 message Type {
-
   oneof kind {
     Boolean bool = 1;
     I8 i8 = 2;
@@ -34,7 +39,13 @@ message Type {
     List list = 27;
     Map map = 28;
 
-    uint32 user_defined_type_reference = 31;
+    UserDefined user_defined = 30;
+
+    // Deprecated in favor of user_defined, which allows nullability and
+    // variations to be specified. If user_defined_type_reference is
+    // encountered, treat it as being non-nullable and having the default
+    // variation.
+    uint32 user_defined_type_reference = 31 [deprecated = true];
   }
 
   enum Nullability {
@@ -47,6 +58,7 @@ message Type {
     uint32 type_variation_reference = 1;
     Nullability nullability = 2;
   }
+
   message I8 {
     uint32 type_variation_reference = 1;
     Nullability nullability = 2;
@@ -165,6 +177,30 @@ message Type {
     Type value = 2;
     uint32 type_variation_reference = 3;
     Nullability nullability = 4;
+  }
+
+  message UserDefined {
+    uint32 type_reference = 1;
+    uint32 type_variation_reference = 2;
+    Nullability nullability = 3;
+    repeated Parameter type_parameters = 4;
+  }
+
+  message Parameter {
+    oneof parameter {
+      // Explicitly null/unspecified parameter, to select the default value (if
+      // any).
+      google.protobuf.Empty null = 1;
+
+      // Data type parameters, like the i32 in LIST<i32>.
+      Type data_type = 2;
+
+      // Value parameters, like the 10 in VARCHAR<10>.
+      bool boolean = 3;
+      int64 integer = 4;
+      string enum = 5;
+      string string = 6;
+    }
   }
 }
 
