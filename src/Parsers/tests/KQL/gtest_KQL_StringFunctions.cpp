@@ -176,6 +176,18 @@ INSTANTIATE_TEST_SUITE_P(ParserKQLQuery, ParserStringFuncTest,
         {
             "print res = bin_at(datetime(2017-05-15 10:20:00.0), 1d, datetime(1970-01-01 12:00:00.0))",
             "SELECT toDateTime64(toFloat64(toDateTime64('1970-01-01 12:00:00.0', 9, 'UTC')) + (toInt64(((toFloat64(toDateTime64('2017-05-15 10:20:00.0', 9, 'UTC')) - toFloat64(toDateTime64('1970-01-01 12:00:00.0', 9, 'UTC'))) / 86400) + 0) * 86400), 9, 'UTC') AS res"
+        },
+        {
+            "print bin(4.5, 1)",
+            "SELECT toInt64(toFloat64(4.5) / 1) * 1"
+        },
+        {
+            "print bin(time(16d), 7d)",
+            "SELECT concat(toString(toInt32(((toInt64(toFloat64(1382400.) / 604800) * 604800) AS x) / 3600)), ':', toString(toInt32((x % 3600) / 60)), ':', toString(toInt32((x % 3600) % 60)))"
+        },
+        {
+            "print bin(datetime(1970-05-11 13:45:07), 1d)",
+            "SELECT toDateTime64(toInt64(toFloat64(toDateTime64('1970-05-11 13:45:07', 9, 'UTC')) / 86400) * 86400, 9, 'UTC')"
         }
 
 })));   
