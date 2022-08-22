@@ -114,11 +114,7 @@ struct ToStartOfDayImpl
         if (t.whole < 0 || (t.whole >= 0 && t.fractional < 0))
             return 0;
 
-        Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(t.whole));
-        if (date_time <= 0xffffffff)
-            return date_time;
-        else
-            return time_zone.toDate(0xffffffff);
+        return time_zone.toDate(std::min(t.whole, time_t(0xffffffff)));
     }
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -199,7 +195,11 @@ struct ToLastDayOfMonthImpl
 
     static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return t < 0 ? 0 : time_zone.toLastDayNumOfMonth(ExtendedDayNum(std::min(time_t(time_zone.toDayNum(t)), time_t(DATE_LUT_MAX_DAY_NUM))));
+        if (t < 0)
+            return 0;
+
+        /// 0xFFF9 is Int value for 2149-05-31 -- the last day where we can actually find LastDayOfMonth. This will also be the return value.
+        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(std::min(time_t(time_zone.toDayNum(t)), time_t(0xFFF9))));
     }
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -207,11 +207,16 @@ struct ToLastDayOfMonthImpl
     }
     static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return d < 0 ? 0 : time_zone.toLastDayNumOfMonth(ExtendedDayNum(std::min(d, DATE_LUT_MAX_DAY_NUM)));
+        if (d < 0)
+            return 0;
+
+        /// 0xFFF9 is Int value for 2149-05-31 -- the last day where we can actually find LastDayOfMonth. This will also be the return value.
+        return time_zone.toLastDayNumOfMonth(ExtendedDayNum(std::min(d, 0xFFF9)));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toLastDayNumOfMonth(DayNum(d));
+        /// 0xFFF9 is Int value for 2149-05-31 -- the last day where we can actually find LastDayOfMonth. This will also be the return value.
+        return time_zone.toLastDayNumOfMonth(DayNum(std::min(d, UInt16(0xFFF9))));
     }
 
     using FactorTransform = ZeroTransform;
