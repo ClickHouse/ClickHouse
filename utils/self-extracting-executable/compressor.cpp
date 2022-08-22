@@ -287,6 +287,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         size_t nlen = strlen(names[i]) + 1;
         files_data[i].name_length = htole64(nlen);
         sum_file_size += nlen;
+        /// if no --exec is specified nor it's empty - file which is matching output name is executable
         if (!is_exec && !exec && strcmp(names[i], out_name) == 0)
             files_data[i].exec = true;
 

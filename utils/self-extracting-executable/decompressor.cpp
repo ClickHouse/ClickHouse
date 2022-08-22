@@ -226,6 +226,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         file_info = *reinterpret_cast<FileData*>(input + files_pointer);
         files_pointer += sizeof(FileData);
 
+        /// for output filename matching compressed allow additional 13 + 7 symbols for ".decompressed.XXXXXX" suffix
         size_t file_name_len = file_info.exec ? strlen(name) + 13 + 7 + 1 : le64toh(file_info.name_length);
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
