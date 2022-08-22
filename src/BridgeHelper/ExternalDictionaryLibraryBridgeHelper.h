@@ -2,10 +2,9 @@
 
 #include <Interpreters/Context.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
-#include <BridgeHelper/IBridgeHelper.h>
+#include <BridgeHelper/LibraryBridgeHelper.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 
@@ -14,7 +13,8 @@ namespace DB
 
 class Pipe;
 
-class ExternalDictionaryLibraryBridgeHelper : public IBridgeHelper
+// Class to access the external dictionary part of the clickhouse-library-bridge.
+class ExternalDictionaryLibraryBridgeHelper : public LibraryBridgeHelper
 {
 
 public:
@@ -25,7 +25,6 @@ public:
         String dict_attributes;
     };
 
-    static constexpr inline size_t DEFAULT_PORT = 9012;
     static constexpr inline auto PING_HANDLER = "/extdict_ping";
     static constexpr inline auto MAIN_HANDLER = "/extdict_request";
 
@@ -56,26 +55,6 @@ protected:
 
     bool bridgeHandShake() override;
 
-    void startBridge(std::unique_ptr<ShellCommand> cmd) const override;
-
-    String serviceAlias() const override { return "clickhouse-library-bridge"; }
-
-    String serviceFileName() const override { return serviceAlias(); }
-
-    size_t getDefaultPort() const override { return DEFAULT_PORT; }
-
-    bool startBridgeManually() const override { return false; }
-
-    String configPrefix() const override { return "library_bridge"; }
-
-    const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
-
-    Poco::Logger * getLog() const override { return log; }
-
-    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
-
-    Poco::URI createBaseURI() const override;
-
     QueryPipeline loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
     bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {}) const;
@@ -94,20 +73,10 @@ private:
 
     Poco::URI createRequestURI(const String & method) const;
 
-    static String getDictIdsString(const std::vector<UInt64> & ids);
-
-    Poco::Logger * log;
     const Block sample_block;
-    const Poco::Util::AbstractConfiguration & config;
-    const Poco::Timespan http_timeout;
-
     LibraryInitData library_data;
     Field dictionary_id;
-    std::string bridge_host;
-    size_t bridge_port;
     bool library_initialized = false;
-    ConnectionTimeouts http_timeouts;
-    Poco::Net::HTTPBasicCredentials credentials{};
 };
 
 }

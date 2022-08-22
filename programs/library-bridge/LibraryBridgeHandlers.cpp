@@ -5,6 +5,7 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Common/BridgeProtocolVersion.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTMLForm.h>
@@ -78,17 +79,38 @@ static void writeData(Block data, OutputFormatPtr format)
     executor.execute();
 }
 
-LibraryBridgeRequestHandler::LibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
+ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
     : WithContext(context_)
-    , log(&Poco::Logger::get("LibraryBridgeRequestHandler"))
+    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeRequestHandler"))
     , keep_alive_timeout(keep_alive_timeout_)
 {
 }
 
-void LibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
+
+    size_t version;
+
+    if (!params.has("version"))
+        version = 0; /// assumed version for too old servers which do not send a version
+    else
+    {
+        String version_str = params.get("version");
+        if (!tryParse(version, version_str))
+        {
+            processError(response, "Unable to parse 'version' string in request URL: '" + version_str + "' Check if the server and library-bridge have the same version.");
+            return;
+        }
+    }
+
+    if (version != LIBRARY_BRIDGE_PROTOCOL_VERSION)
+    {
+        /// backwards compatibility is considered unnecessary for now, just let the user know that the server and the bridge must be upgraded together
+        processError(response, "Server and library-bridge have different versions: '" + std::to_string(version) + "' vs. '" + std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION) + "'");
+        return;
+    }
 
     if (!params.has("method"))
     {
@@ -340,14 +362,14 @@ void LibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTT
     }
 }
 
-LibraryBridgeExistsHandler::LibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
+ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_)
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
-    , log(&Poco::Logger::get("LibraryBridgeExistsHandler"))
+    , log(&Poco::Logger::get("ExternalDictionaryLibraryBridgeExistsHandler"))
 {
 }
 
-void LibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -361,6 +383,7 @@ void LibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTP
         }
 
         std::string dictionary_id = params.get("dictionary_id");
+
         auto library_handler = ExternalDictionaryLibraryHandlerFactory::instance().get(dictionary_id);
 
         String res = library_handler ? "1" : "0";

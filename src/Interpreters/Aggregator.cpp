@@ -17,7 +17,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
@@ -34,11 +34,14 @@
 
 namespace ProfileEvents
 {
-extern const Event ExternalAggregationWritePart;
-extern const Event ExternalAggregationCompressedBytes;
-extern const Event ExternalAggregationUncompressedBytes;
-extern const Event AggregationPreallocatedElementsInHashTables;
-extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event ExternalAggregationWritePart;
+    extern const Event ExternalAggregationCompressedBytes;
+    extern const Event ExternalAggregationUncompressedBytes;
+    extern const Event AggregationPreallocatedElementsInHashTables;
+    extern const Event AggregationHashTablesInitializedAsTwoLevel;
+    extern const Event OverflowThrow;
+    extern const Event OverflowBreak;
+    extern const Event OverflowAny;
 }
 
 namespace
@@ -54,7 +57,7 @@ public:
         size_t median_size; // roughly the size we're going to preallocate on each thread
     };
 
-    using Cache = DB::LRUCache<UInt64, Entry>;
+    using Cache = DB::CacheBase<UInt64, Entry>;
     using CachePtr = std::shared_ptr<Cache>;
     using Params = DB::Aggregator::Params::StatsCollectingParams;
 
@@ -1667,14 +1670,17 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
         switch (params.group_by_overflow_mode)
         {
             case OverflowMode::THROW:
+                ProfileEvents::increment(ProfileEvents::OverflowThrow);
                 throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
                     + " rows, maximum: " + toString(params.max_rows_to_group_by),
                     ErrorCodes::TOO_MANY_ROWS);
 
             case OverflowMode::BREAK:
+                ProfileEvents::increment(ProfileEvents::OverflowBreak);
                 return false;
 
             case OverflowMode::ANY:
+                ProfileEvents::increment(ProfileEvents::OverflowAny);
                 no_more_keys = true;
                 break;
         }

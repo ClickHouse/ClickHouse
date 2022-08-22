@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/SettingsChanges.h>
+#include <Core/Names.h>
 #include <Parsers/IAST.h>
-
+#include <Common/SettingsChanges.h>
 
 namespace DB
 {
@@ -16,6 +16,7 @@ public:
     bool is_clone = false; /// If true, this AST is a clone from other part of the query and should not be printed in format()
 
     SettingsChanges changes;
+    NameToNameMap query_parameters;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Set"; }
