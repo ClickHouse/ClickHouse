@@ -1902,6 +1902,7 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
             {
                 out_cols->key_columns[0]->insertDefault();
                 insertAggregatesIntoColumns(data.getNullKeyData(), out_cols->final_aggregate_columns, arena);
+                data.hasNullKeyData() = false;
             }
         }
 
@@ -1974,6 +1975,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
                     out_cols->aggregate_columns_data[i]->push_back(data.getNullKeyData() + offsets_of_aggregate_states[i]);
 
                 data.getNullKeyData() = nullptr;
+                data.hasNullKeyData() = false;
             }
         }
 
