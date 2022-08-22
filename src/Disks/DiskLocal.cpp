@@ -8,6 +8,9 @@
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Disks/ObjectStorages/LocalObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/FakeMetadataStorageFromDisk.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -596,6 +599,26 @@ catch (...)
 {
     LOG_WARNING(logger, "Cannot achieve write over the disk directory: {}", disk_path);
     return false;
+}
+
+DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
+{
+    auto object_storage = std::make_shared<LocalObjectStorage>();
+    auto metadata_storage = std::make_shared<FakeMetadataStorageFromDisk>(
+        /* metadata_storage */std::static_pointer_cast<DiskLocal>(shared_from_this()),
+        object_storage,
+        /* object_storage_root_path */getPath());
+
+    return std::make_shared<DiskObjectStorage>(
+        getName(),
+        disk_path,
+        "Local",
+        metadata_storage,
+        object_storage,
+        DiskType::Local,
+        false,
+        /* threadpool_size */16
+    );
 }
 
 bool DiskLocal::setup()

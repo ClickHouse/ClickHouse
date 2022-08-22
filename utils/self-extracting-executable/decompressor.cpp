@@ -101,8 +101,8 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         {
             /// Decompress data in child process.
             if (0 != doDecompress(input, output, in_pointer, out_pointer, size, decompressed_size, dctx))
-                exit(1);
-            exit(0);
+                _exit(1);
+            _exit(0);
         }
         else
         {
