@@ -43,8 +43,7 @@ protected:
         String main_query;
     };
 
-    void makeNumericSeries(KQLMakeSeries & kql_make_series, const uint32_t & max_depth);
-    void makeTimeSeries(KQLMakeSeries & kql_make_series, const uint32_t & max_depth);
+    void makeSeries(KQLMakeSeries & kql_make_series, const uint32_t & max_depth);
     bool parseAggregationColumns(AggregationColumns & aggregation_columns, Pos & pos);
     bool parseFromToStepClause(FromToStepClause & from_to_step, Pos & pos);
     const char * getName() const override { return "KQL project"; }
