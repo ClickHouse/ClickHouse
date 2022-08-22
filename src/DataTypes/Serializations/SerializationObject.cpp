@@ -65,6 +65,8 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     for (size_t i = 0; i < paths.size(); ++i)
     {
         auto field_info = getFieldInfo(values[i]);
+        if (field_info.need_fold_dimension)
+            values[i] = applyVisitor(FieldVisitorFoldDimension(field_info.num_dimensions), std::move(values[i]));
         if (isNothing(field_info.scalar_type))
             continue;
 
