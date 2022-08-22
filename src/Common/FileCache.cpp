@@ -14,6 +14,11 @@
 
 namespace fs = std::filesystem;
 
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCacheBackgroundDownloadSize;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -497,6 +502,7 @@ ThreadPool & FileCache::getThreadPoolForAsyncWrite()
 void FileCache::incrementBackgroundDownloadSize(int64_t increment, std::lock_guard<std::mutex> & /* cache_lock */)
 {
     background_download_current_memory_usage += increment;
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheBackgroundDownloadSize, increment);
     assert(background_download_current_memory_usage >= 0);
 }
 
@@ -1207,7 +1213,7 @@ void FileCache::assertCacheCellsCorrectness(
     for (const auto & [_, cell] : cells_by_offset)
     {
         const auto & file_segment = cell.file_segment;
-        /// file_segment->assertCorrectness();
+        file_segment->assertCorrectness();
 
         if (file_segment->reserved_size != 0)
         {
@@ -1246,7 +1252,7 @@ void FileCache::assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lo
                 ErrorCodes::LOGICAL_ERROR,
                 "Cache is in inconsistent state: LRU queue contains entries with no cache cell (assertCorrectness())");
         }
-        /// assert(cell->size() == size);
+        assert(cell->size() == size);
         total_size += size;
     }
     assert(total_size == main_priority->getCacheSize(cache_lock));

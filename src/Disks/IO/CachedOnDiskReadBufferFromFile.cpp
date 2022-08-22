@@ -599,11 +599,10 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegmentPtr & file_segment)
                 {
                     nextimpl_working_buffer_offset = implementation_buffer->offset();
 
-                    if (!settings.filesystem_cache_asynchronous_write)
+                    auto current_write_offset = file_segment->getCurrentWriteOffset();
+                    if (current_write_offset != static_cast<size_t>(implementation_buffer->getPosition())
+                        || current_write_offset != file_offset_of_buffer_end)
                     {
-                        auto current_write_offset = file_segment->getCurrentWriteOffset();
-                        if (current_write_offset != static_cast<size_t>(implementation_buffer->getPosition())
-                            || current_write_offset != file_offset_of_buffer_end)
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
                             "Buffer's offsets mismatch after predownloading; download offset: {}, "
@@ -990,13 +989,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 success = writeCache(implementation_buffer->position(), size, file_offset_of_buffer_end, *file_segment);
                 if (success)
                 {
-                    if (!settings.filesystem_cache_asynchronous_write)
-                    {
-                        chassert(file_segment->getCurrentWriteOffset() <= file_segment->range().right + 1);
-                        chassert(
-                            std::next(current_file_segment_it) == file_segments_holder->file_segments.end()
-                            || file_segment->getCurrentWriteOffset() == implementation_buffer->getFileOffsetOfBufferEnd());
-                    }
+                    chassert(file_segment->getCurrentWriteOffset() <= file_segment->range().right + 1);
+                    chassert(
+                        std::next(current_file_segment_it) == file_segments_holder->file_segments.end()
+                        || file_segment->getCurrentWriteOffset() == implementation_buffer->getFileOffsetOfBufferEnd());
                 }
                 else
                 {

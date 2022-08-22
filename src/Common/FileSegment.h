@@ -16,6 +16,7 @@ namespace Poco { class Logger; }
 namespace CurrentMetrics
 {
 extern const Metric CacheFileSegments;
+extern const Metric FilesystemCacheBackgroundDownloadBuffers;
 }
 
 namespace DB
@@ -337,6 +338,8 @@ private:
             size_t buf_size;
 
             FileCache * cache;
+
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheBackgroundDownloadBuffers};
         };
 
         using BufferPtr = std::unique_ptr<Buffer>;
