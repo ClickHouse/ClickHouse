@@ -127,7 +127,6 @@ KeeperServer::KeeperServer(
         coordination_settings,
         keeper_context,
         checkAndGetSuperdigest(configuration_and_settings_->super_digest),
-        config.getBool("keeper_server.digest_enabled", true),
         std::move(commit_callback));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
