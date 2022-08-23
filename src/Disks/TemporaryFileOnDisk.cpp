@@ -1,5 +1,4 @@
-#include <Common/TemporaryFile.h>
-#include <Disks/IDisk.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Poco/TemporaryFile.h>
 
 
@@ -11,17 +10,17 @@ namespace ProfileEvents
 namespace DB
 {
 
-TemporaryFileOnDisk::TemporaryFileOnDisk(const String & prefix_)
-    : tmp_file(std::make_unique<Poco::TemporaryFile>(prefix_))
-    , filepath(tmp_file->path())
-{
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-}
+TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, std::unique_ptr<CurrentMetrics::Increment> increment_)
+    : TemporaryFileOnDisk(disk_, disk_->getPath(), std::move(increment_))
+{}
 
 TemporaryFileOnDisk::TemporaryFileOnDisk(const DiskPtr & disk_, const String & prefix_, std::unique_ptr<CurrentMetrics::Increment> increment_)
     : disk(disk_)
     , sub_metric_increment(std::move(increment_))
 {
+    /// is is possible to use with disk other than DickLocal ?
+    disk->createDirectories(prefix_);
+
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 
     /// Do not use default temporaty root path `/tmp/tmpXXXXXX`.

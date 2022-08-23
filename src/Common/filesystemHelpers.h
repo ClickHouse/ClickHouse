@@ -7,18 +7,17 @@
 #include <memory>
 #include <string>
 #include <sys/statvfs.h>
-#include <Common/TemporaryFile.h>
+#include <Poco/TemporaryFile.h>
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
 
-using TemporaryFile = TemporaryFileOnDisk;
+using TemporaryFile = Poco::TemporaryFile;
 
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path);
-std::unique_ptr<TemporaryFile> createTemporaryFile(const DiskPtr & disk, std::unique_ptr<CurrentMetrics::Increment> metric_increment = nullptr);
 
 
 // Determine what block device is responsible for specified path
