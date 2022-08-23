@@ -60,6 +60,7 @@ void KeeperDispatcher::requestThread()
     {
         if (coordination_settings->read_mode.toString() == "fastlinear")
         {
+            // we just want to know what's the current latest committed log on Leader node
             auto leader_info_result = server->getLeaderInfo();
             if (leader_info_result)
             {
@@ -96,12 +97,14 @@ void KeeperDispatcher::requestThread()
                     std::lock_guard lock(leader_waiter_mutex);
                     auto node_info = server->getNodeInfo();
 
+                    // we're behind, we need to wait
                     if (node_info.term < leader_info.term || node_info.last_committed_index < leader_info.last_committed_index)
                     {
                         auto & leader_waiter = leader_waiters[leader_info];
                         leader_waiter.insert(leader_waiter.end(), requests_for_sessions.begin(), requests_for_sessions.end());
-                        LOG_INFO(log, "waiting for {}, idx {}", leader_info.term, leader_info.last_committed_index);
+                        LOG_TRACE(log, "waiting for term {}, idx {}", leader_info.term, leader_info.last_committed_index);
                     }
+                    // process it in background thread
                     else if (!read_requests_queue.push(std::move(requests_for_sessions)))
                         throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push read requests to queue");
                 });
@@ -139,6 +142,10 @@ void KeeperDispatcher::requestThread()
         quorum_requests.clear();
     };
 
+    // ZooKeeper requires that the requests inside a single session are processed in a strict order
+    // (we cannot process later requests before all the previous once are processed)
+    // By making sure that at this point we can either have just read requests or just write requests
+    // from a single session, we can process them independently
     while (!shutdown_called)
     {
         KeeperStorage::RequestForSession request;
@@ -187,9 +194,13 @@ void KeeperDispatcher::requestThread()
                     }
                     else
                     {
+                        // batch of read requests can send at most one request
+                        // so we don't care if the previous batch hasn't received response
                         if (!read_requests.empty())
                             process_read_requests(coordination_settings);
 
+                        // if we still didn't process previous batch we can
+                        // increase are current batch even more
                         if (previous_quorum_done())
                             break;
                     }
@@ -262,6 +273,7 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
+// Background thread for processing read requests
 void KeeperDispatcher::readRequestThread()
 {
     setThreadName("KeeperReadT");
@@ -294,6 +306,9 @@ void KeeperDispatcher::readRequestThread()
     }
 }
 
+// We finalize requests every time we commit a single log with request
+// or process a batch of read requests.
+// Because it can get heavy, we do it in background thread.
 void KeeperDispatcher::finalizeRequestsThread()
 {
     setThreadName("KeeperFinalT");
@@ -385,6 +400,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         {
             auto & unprocessed_requests = unprocessed_requests_it->second;
 
+            // queue is not empty, or the request types don't match, put it in the waiting queue
             if (!unprocessed_requests.request_queue.empty() || unprocessed_requests.is_read != request->isReadRequest())
             {
                 unprocessed_requests.request_queue.push_back(std::move(request_info));
@@ -778,6 +794,7 @@ void KeeperDispatcher::finalizeRequests(const KeeperStorage::RequestsForSessions
             {
                 auto & request_queue = unprocessed_requests.request_queue;
                 unprocessed_requests.is_read = !unprocessed_requests.is_read;
+                // start adding next type of requests
                 while (!request_queue.empty() && request_queue.front().request->isReadRequest() == unprocessed_requests.is_read)
                 {
                     auto & front_request = request_queue.front();

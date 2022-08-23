@@ -84,6 +84,12 @@ private:
     std::unordered_map<KeeperServer::NodeInfo, std::vector<KeeperStorage::RequestForSession>> leader_waiters;
     std::mutex leader_waiter_mutex;
 
+    // We can be actively processing one type of requests (either read or write) from a single session.
+    // If we receive a request of a type that is not currently being processed, we put it in the waiting queue.
+    // Also, we want to process them in ariving order, so if we have a different type in the queue, we cannot process that request
+    // but wait for all the previous requests to finish.
+    // E.g. READ -> WRITE -> READ, the last READ will go to the waiting queue even though we are currently processing the first READ
+    // because we have WRITE request before it that needs to be processed.
     struct UnprocessedRequests
     {
         size_t unprocessed_num{0};
