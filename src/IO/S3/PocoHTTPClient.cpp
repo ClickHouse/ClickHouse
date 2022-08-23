@@ -356,9 +356,12 @@ void PocoHTTPClient::makeRequestInternal(
             /// Request is successful but for some special requests we can have actual error message in body
             if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {
+                /// After that stream will be empty, but it's not important because such check needed only
+                /// for responses without any data in body by default.
                 std::string response_string((std::istreambuf_iterator<char>(response_body_stream)),
                                std::istreambuf_iterator<char>());
 
+                /// Just trim string so it will not be so long
                 LOG_TRACE(log, "Got dangerous response with code 200, checking its body: '{}'", response_string.substr(0, 300));
                 const static std::string_view needle = "<Error>";
                 if (auto it = std::search(response_string.begin(), response_string.end(), std::default_searcher(needle.begin(), needle.end())); it != response_string.end())
