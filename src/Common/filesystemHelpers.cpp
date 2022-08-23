@@ -16,9 +16,16 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
+
+
+namespace ProfileEvents
+{
+    extern const Event ExternalProcessingFilesTotal;
+}
 
 namespace DB
 {
@@ -35,7 +42,6 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_FILE;
 }
 
-
 struct statvfs getStatVFS(const String & path)
 {
     struct statvfs fs;
@@ -47,7 +53,6 @@ struct statvfs getStatVFS(const String & path)
     }
     return fs;
 }
-
 
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 {
@@ -61,15 +66,9 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 {
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     fs::create_directories(path);
     return std::make_unique<TemporaryFile>(path);
-}
-
-std::unique_ptr<TemporaryFile> createTemporaryFile(const DiskPtr & disk, std::unique_ptr<CurrentMetrics::Increment> metric_increment)
-{
-    /// is is possible to use with disk other than DickLocal ?
-    disk->createDirectories(disk->getPath());
-    return std::make_unique<TemporaryFile>(disk, disk->getPath(), std::move(metric_increment));
 }
 
 #if !defined(OS_LINUX)

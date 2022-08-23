@@ -7,6 +7,7 @@
 #include <Processors/Sources/TemporaryFileLazySource.h>
 #include <Formats/TemporaryFileStream.h>
 #include <Disks/IVolume.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 
 namespace ProfileEvents
@@ -29,10 +30,9 @@ namespace DB
 
 namespace
 {
-
-std::unique_ptr<TemporaryFile> flushToFile(const DiskPtr & disk, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
+TemporaryFileOnDiskHolder flushToFile(const DiskPtr & disk, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
 {
-    auto tmp_file = createTemporaryFile(disk, std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::TemporaryFilesForJoin));
+    auto tmp_file = std::make_unsigned<TemporaryFileOnDisk>(disk, std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::TemporaryFilesForJoin));
     auto write_stat = TemporaryFileStream::write(tmp_file->getPath(), header, std::move(pipeline), codec);
 
     ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, write_stat.compressed_bytes);
@@ -48,7 +48,7 @@ std::unique_ptr<TemporaryFile> flushToFile(const DiskPtr & disk, const Block & h
 SortedBlocksWriter::SortedFiles flushToManyFiles(const DiskPtr & disk, const Block & header, QueryPipelineBuilder builder,
                                                  const String & codec, std::function<void(const Block &)> callback = [](const Block &){})
 {
-    std::vector<std::unique_ptr<TemporaryFile>> files;
+    std::vector<TemporaryFileOnDiskHolder> files;
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
 

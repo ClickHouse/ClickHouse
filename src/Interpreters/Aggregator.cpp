@@ -30,6 +30,7 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Core/ProtocolDefines.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 #include <Parsers/ASTSelectQuery.h>
 
@@ -1491,7 +1492,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
     auto file = createTempFile(max_temp_file_size);
 
-    std::string path = file->getPath();
+    const auto & path = file->getPath();
     WriteBufferFromFile file_buf(path);
     CompressedWriteBuffer compressed_buf(file_buf);
     NativeWriter block_out(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, getHeader(false));
@@ -1559,9 +1560,9 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 }
 
 
-std::unique_ptr<TemporaryFile> Aggregator::createTempFile(size_t max_temp_file_size) const
+std::unique_ptr<TemporaryFileOnDisk> Aggregator::createTempFile(size_t max_temp_file_size) const
 {
-    auto file = createTemporaryFile(params.tmp_volume->getDisk(),
+    auto file = std::make_unique<TemporaryFileOnDisk>(params.tmp_volume->getDisk(),
         std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::TemporaryFilesForAggregation));
 
     // enoughSpaceInDirectory() is not enough to make it right, since
