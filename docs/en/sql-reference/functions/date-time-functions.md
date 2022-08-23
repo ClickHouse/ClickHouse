@@ -272,7 +272,7 @@ Though these functions can take `Date32` and `DateTime64` values as an argument,
 In case argument is out of normal range:
   * `1970-01-01 (00:00:00)` will be returned for values prior to 1970,
   * `2106-02-07 08:28:15` will be taken as argument when actual argument is above this timestamp and return type is `DateTime`,
-  * `2149-06-06` will be taken as argument when actual argument is above this timestamp and return type is `Date`,
+  * If the return type is `Date` and the argument is larger than `2149-06-06`, the result will be calculated from the argument `2149-06-06` instead.
   * `2149-05-31` will be the result of execution of `toLastDayOfMonth` when argument is greater then `2149-05-31`.
 :::
 
