@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <map>
 #include <unordered_map>
+#include <fstream>
 
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
@@ -1129,8 +1130,65 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         /// If structure was received (thus, server has not thrown an exception),
         /// send our data with that structure.
+        bool change = false;
+        if (global_context->getInsertionTable().empty() && parsed_insert_query.table)
+        {
+            String table = parsed_insert_query.table->as<ASTIdentifier &>().shortName();
+            if (!table.empty())
+            {
+                change = true;
+                String database = parsed_insert_query.database ? parsed_insert_query.database->as<ASTIdentifier &>().shortName() : "";
+                global_context->setInsertionTable(StorageID(database, table));
+            }
+        }
+
         sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
+
+        if (change)
+            global_context->setInsertionTable(StorageID::createEmpty());
+    }
+}
+
+
+void ClientBase::errorRowsSink(const QueryPipeline & pipeline)
+{
+    const auto & processors = pipeline.getProcessors();
+    if (!processors.empty())
+    {
+        IInputFormat * input_format = dynamic_cast<IInputFormat *>(processors[0].get());
+        if (!input_format || input_format->isEmptyMultiErrorRows())
+            return;
+
+        String file_name = global_context->getSettingsRef().input_format_record_errors_table_or_file_name;
+        String database_name;
+        String table_name;
+        try
+        {
+            table_name = global_context->getInsertionTable().getTableName();
+            database_name = global_context->getInsertionTable().getDatabaseName();
+        }
+        catch (...)
+        {
+            /// Ignore
+        }
+
+        const auto & multi_error_rows = input_format->getMultiErrorRows();
+
+        std::ofstream out(file_name, std::ios::app);
+        if (out.is_open())
+        {
+            for (const auto & error_rows : multi_error_rows)
+                for (const auto & error_row : error_rows)
+                    out << "Time: " << error_row.time << "\nDatabase: " << database_name << "\nTable: " << table_name
+                        << "\nOffset: " << error_row.offset << "\nReason: \n"
+                        << error_row.reason << "\nRaw data: " << error_row.raw_data << "\n------\n";
+            out.close();
+        }
+        else
+        {
+            std::cout << "Failed to open file that records error rows." << std::endl;
+        }
     }
 }
 
@@ -1294,39 +1352,49 @@ try
     PullingAsyncPipelineExecutor executor(pipeline);
 
     Block block;
-    while (executor.pull(block))
+    try
     {
-        if (!cancelled && QueryInterruptHandler::cancelled())
+        while (executor.pull(block))
         {
-            cancelQuery();
-            executor.cancel();
-            return;
-        }
+            if (!cancelled && QueryInterruptHandler::cancelled())
+            {
+                cancelQuery();
+                executor.cancel();
+                return;
+            }
 
-        /// Check if server send Log packet
-        receiveLogsAndProfileEvents(parsed_query);
+            /// Check if server send Log packet
+            receiveLogsAndProfileEvents(parsed_query);
 
-        /// Check if server send Exception packet
-        auto packet_type = connection->checkPacket(0);
-        if (packet_type && *packet_type == Protocol::Server::Exception)
-        {
-            /**
+            /// Check if server send Exception packet
+            auto packet_type = connection->checkPacket(0);
+            if (packet_type && *packet_type == Protocol::Server::Exception)
+            {
+                /**
              * We're exiting with error, so it makes sense to kill the
              * input stream without waiting for it to complete.
              */
-            executor.cancel();
-            return;
+                executor.cancel();
+                return;
+            }
+
+            if (block)
+            {
+                connection->sendData(block, /* name */"", /* scalar */false);
+                processed_rows += block.rows();
+            }
         }
 
-        if (block)
-        {
-            connection->sendData(block, /* name */"", /* scalar */false);
-            processed_rows += block.rows();
-        }
+        errorRowsSink(pipeline);
+
+        if (!have_more_data)
+            connection->sendData({}, "", false);
     }
-
-    if (!have_more_data)
-        connection->sendData({}, "", false);
+    catch (...)
+    {
+        errorRowsSink(pipeline);
+        throw;
+    }
 }
 catch (...)
 {

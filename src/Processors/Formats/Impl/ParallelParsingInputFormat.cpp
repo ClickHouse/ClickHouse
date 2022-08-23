@@ -88,12 +88,30 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
         // We don't know how many blocks will be. So we have to read them all
         // until an empty block occurred.
         Chunk chunk;
-        while (!parsing_finished && (chunk = parser.getChunk()))
+        try
         {
-            /// Variable chunk is moved, but it is not really used in the next iteration.
-            /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
-            unit.chunk_ext.chunk.emplace_back(std::move(chunk));
-            unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
+            while (!parsing_finished && (chunk = parser.getChunk()))
+            {
+                /// Variable chunk is moved, but it is not really used in the next iteration.
+                /// NOLINTNEXTLINE(bugprone-use-after-move, hicpp-invalid-access-moved)
+                unit.chunk_ext.chunk.emplace_back(std::move(chunk));
+                unit.chunk_ext.block_missing_values.emplace_back(parser.getMissingValues());
+            }
+
+            if (!input_format->isEmptyErrorRows())
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                addErrorRows(input_format->getErrorRows());
+            }
+        }
+        catch (...)
+        {
+            if (!input_format->isEmptyErrorRows())
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                addErrorRows(input_format->getErrorRows());
+            }
+            throw;
         }
 
         /// Extract column_mapping from first parser to propagate it to others

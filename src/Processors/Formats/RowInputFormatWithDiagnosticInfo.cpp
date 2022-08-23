@@ -91,6 +91,63 @@ String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
     return out.str();
 }
 
+std::tuple<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawData()
+{
+    WriteBufferFromOwnString out_diag;
+    WriteBufferFromOwnString out_data;
+
+    if (in->eof())
+    {
+        out_diag << "Buffer has gone, cannot extract information about what has been parsed.";
+        out_data << "Buffer has gone, cannot extract information about what has been parsed.";
+        return std::make_tuple(out_diag.str(), out_data.str());
+    }
+
+    const auto & header = getPort().getHeader();
+    MutableColumns columns = header.cloneEmptyColumns();
+
+    /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
+    size_t bytes_read_at_start_of_buffer = in->count() - in->offset();
+    if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
+    {
+        out_diag << "Could not collect diagnostic because two last rows are not in buffer (rare case)";
+        out_data << "Could not collect raw data because two last rows are not in buffer (rare case)";
+        return std::make_tuple(out_diag.str(), out_data.str());
+    }
+
+    max_length_of_column_name = 0;
+    for (size_t i = 0; i < header.columns(); ++i)
+        if (header.safeGetByPosition(i).name.size() > max_length_of_column_name)
+            max_length_of_column_name = header.safeGetByPosition(i).name.size();
+
+    max_length_of_data_type_name = 0;
+    for (size_t i = 0; i < header.columns(); ++i)
+        if (header.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
+            max_length_of_data_type_name = header.safeGetByPosition(i).type->getName().size();
+
+    /// Roll back the cursor to the beginning of the current row and parse all over again.
+
+    if (in->buffer().size() < offset_of_current_row)
+    {
+        out_diag << "Could not collect diagnostic because parsing of data has not started.";
+        out_data << "Could not collect raw data because parsing of data has not started.";
+        return std::make_tuple(out_diag.str(), out_data.str());
+    }
+
+    in->position() = in->buffer().begin() + offset_of_current_row;
+
+    char * data = in->position();
+    while (*data != '\n' && *data != '\r' && *data != '\0' && data < in->buffer().end())
+    {
+        out_data << *data;
+        ++data;
+    }
+
+    parseRowAndPrintDiagnosticInfo(columns, out_diag);
+
+    return std::make_tuple(out_diag.str(), out_data.str());
+}
+
 bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(const String & col_name,
                                                                               const DataTypePtr & type,
                                                                               IColumn & column,

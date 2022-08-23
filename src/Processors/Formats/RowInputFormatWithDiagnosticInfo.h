@@ -15,6 +15,7 @@ public:
     RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_);
 
     String getDiagnosticInfo() override;
+    std::tuple<String, String> getDiagnosticAndRawData() override;
 
     void resetParser() override;
 
