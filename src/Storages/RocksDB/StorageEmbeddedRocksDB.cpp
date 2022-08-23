@@ -166,14 +166,23 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         bool attach,
         ContextPtr context_,
         const String & primary_key_,
-        Int32 ttl_)
+        Int32 ttl_,
+        String rocksdb_dir_,
+        bool read_only_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
     , ttl(ttl_)
+    , read_only(read_only_)
 {
     setInMemoryMetadata(metadata_);
-    rocksdb_dir = context_->getPath() + relative_data_path_;
+    if (rocksdb_dir_.empty())
+    {
+        rocksdb_dir = context_->getPath() + relative_data_path_;
+    }
+    else {
+        rocksdb_dir = rocksdb_dir_;
+    }
     if (!attach)
     {
         fs::create_directories(rocksdb_dir);
@@ -280,7 +289,14 @@ void StorageEmbeddedRocksDB::initDB()
     else
     {
         rocksdb::DB * db;
-        status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+        if (read_only)
+        {
+            status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
+        }
+        else
+        {
+            status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+        }
         if (!status.ok())
         {
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
@@ -351,15 +367,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 {
     // TODO custom RocksDBSettings, table function
     auto engine_args = args.engine_args;
-    if (engine_args.size() > 1)
+    if (engine_args.size() > 3)
     {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} requires at most 1 parameter. ({} given). Correct usage: EmbeddedRocksDB([ttl])",
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} requires at most 3 parameters. ({} given). Correct usage: EmbeddedRocksDB([ttl, rocksdb_dir, read_only])",
             args.engine_name, engine_args.size());
     }
 
     Int32 ttl{0};
+    String rocksdb_dir;
+    bool read_only{false};
     if (!engine_args.empty())
         ttl = checkAndGetLiteralArgument<UInt64>(engine_args[0], "ttl");
+    if (engine_args.size() > 1)
+        rocksdb_dir = checkAndGetLiteralArgument<String>(engine_args[1], "rocksdb_dir");
+    if (engine_args.size() > 2)
+        read_only = checkAndGetLiteralArgument<bool>(engine_args[2], "read_only");
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
@@ -374,7 +396,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl);
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, rocksdb_dir, read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
