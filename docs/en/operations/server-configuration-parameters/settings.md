@@ -441,6 +441,8 @@ For more information, see the section “[Configuration files](../../operations/
 ## interserver_listen_host {#interserver-listen-host}
 
 Restriction on hosts that can exchange data between ClickHouse servers.
+If Keeper is used, the same restriction will be applied to the communication
+between different Keeper instances.
 The default value equals to `listen_host` setting.
 
 Examples:
