@@ -74,7 +74,7 @@ function(build_cargo target_name project_dir)
         COMMENT ${compile_message}
         COMMAND export BUILD_FOR_OSX=${OSX_RUST_ROOT}
         COMMAND env CARGO_TARGET_DIR=${CMAKE_CURRENT_BINARY_DIR} cargo rustc -v ${CARGO_RELEASE_FLAG} ${TARGET_SPEC_FLAG}
-        COMMAND if [ ${TARGET_CP} = 0 ]\; then cp ${output_library} ${CMAKE_CURRENT_BINARY_DIR}\; else cp ./libblake_test/* ${CMAKE_CURRENT_BINARY_DIR}/${TARGET_SPEC}/${TARGET_DIR}\; fi
+        #COMMAND if [ ${TARGET_CP} = 0 ]\; then cp ${output_library} ${CMAKE_CURRENT_BINARY_DIR}\; else cp ./libblake_test/* ${CMAKE_CURRENT_BINARY_DIR}/${TARGET_SPEC}/${TARGET_DIR}\; fi
         OUTPUT ${output_library}
         WORKING_DIRECTORY ${project_dir})
 
