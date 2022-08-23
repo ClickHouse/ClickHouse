@@ -16,4 +16,5 @@
     <max_concurrent_queries>500</max_concurrent_queries>
     <path>./clickhouse/</path>
     <users_config>users.xml</users_config>
+    <enable_system_unfreeze>true</enable_system_unfreeze>
 </clickhouse>
