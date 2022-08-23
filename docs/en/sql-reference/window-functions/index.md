@@ -537,7 +537,7 @@ ORDER BY
 
 ### Moving / Sliding Average (per 10 days)
 
-Temperature is stored with second precision, but using `Range` and `ORDER BY toDate(ts)`, we form a frame with the size of 10 units, and because of `toDate(ts)` the unit is a day.
+Temperature is stored with second precision, but using `Range` and `ORDER BY toDate(ts)` we form a frame with the size of 10 units, and because of `toDate(ts)` the unit is a day.
 
 ```sql
 CREATE TABLE sensors
