@@ -12,6 +12,7 @@
 #include <atomic>
 #include <optional>
 #include <string_view>
+#include "DNSPTRResolverProvider.h"
 
 namespace ProfileEvents
 {
@@ -138,16 +139,17 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     return addresses;
 }
 
-static String reverseResolveImpl(const Poco::Net::IPAddress & address)
+static Strings reverseResolveImpl(const Poco::Net::IPAddress & address)
 {
-    Poco::Net::SocketAddress sock_addr(address, 0);
+    auto ptr_resolver = DB::DNSPTRResolverProvider::get();
 
-    /// Resolve by hand, because Poco::Net::DNS::hostByAddress(...) does getaddrinfo(...) after getnameinfo(...)
-    char host[1024];
-    int err = getnameinfo(sock_addr.addr(), sock_addr.length(), host, sizeof(host), nullptr, 0, NI_NAMEREQD);
-    if (err)
-        throw Exception("Cannot getnameinfo(" + address.toString() + "): " + gai_strerror(err), ErrorCodes::DNS_ERROR);
-    return host;
+    if (address.family() == Poco::Net::IPAddress::Family::IPv4)
+    {
+        return ptr_resolver->resolve(address.toString());
+    } else
+    {
+        return ptr_resolver->resolve_v6(address.toString());
+    }
 }
 
 struct DNSResolver::Impl
@@ -235,7 +237,7 @@ std::vector<Poco::Net::SocketAddress> DNSResolver::resolveAddressList(const std:
     return addresses;
 }
 
-String DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)
+Strings DNSResolver::reverseResolve(const Poco::Net::IPAddress & address)
 {
     if (impl->disable_cache)
         return reverseResolveImpl(address);

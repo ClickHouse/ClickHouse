@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/SettingsChanges.h>
+#include <Core/Names.h>
 #include <Parsers/IAST.h>
-
+#include <Common/SettingsChanges.h>
 
 namespace DB
 {
@@ -15,6 +15,7 @@ public:
     bool is_standalone = true; /// If false, this AST is a part of another query, such as SELECT.
 
     SettingsChanges changes;
+    NameToNameMap query_parameters;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Set"; }

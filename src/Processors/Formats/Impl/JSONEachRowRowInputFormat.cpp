@@ -3,6 +3,7 @@
 
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -62,7 +63,7 @@ const String & JSONEachRowRowInputFormat::columnName(size_t i) const
     return getPort().getHeader().getByPosition(i).name;
 }
 
-inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
+inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
@@ -124,7 +125,7 @@ static inline void skipColonDelimeter(ReadBuffer & istr)
     skipWhitespaceIfAny(istr);
 }
 
-void JSONEachRowRowInputFormat::skipUnknownField(const StringRef & name_ref)
+void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
 {
     if (!format_settings.skip_unknown_fields)
         throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
@@ -306,17 +307,11 @@ void JSONEachRowRowInputFormat::readSuffix()
     assertEOF(*in);
 }
 
-JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings)
-    : IRowWithNamesSchemaReader(in_)
+JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, bool json_strings_, const FormatSettings & format_settings_)
+    : IRowWithNamesSchemaReader(in_, format_settings_)
     , json_strings(json_strings_)
 {
-    bool allow_bools_as_numbers = format_settings.json.read_bools_as_numbers;
-    setCommonTypeChecker([allow_bools_as_numbers](const DataTypePtr & first, const DataTypePtr & second)
-    {
-        return JSONUtils::getCommonTypeForJSONFormats(first, second, allow_bools_as_numbers);
-    });
 }
-
 
 NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
 {
@@ -350,7 +345,12 @@ NamesAndTypesList JSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
         return {};
     }
 
-    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, json_strings);
+    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, json_strings);
+}
+
+void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)

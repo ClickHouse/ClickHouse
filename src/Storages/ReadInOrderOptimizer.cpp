@@ -6,6 +6,7 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 

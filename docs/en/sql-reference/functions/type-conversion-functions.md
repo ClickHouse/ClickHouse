@@ -218,23 +218,23 @@ SELECT toDate32('1955-01-01') AS value, toTypeName(value);
 2. The value is outside the range:
 
 ``` sql
-SELECT toDate32('1924-01-01') AS value, toTypeName(value);
+SELECT toDate32('1899-01-01') AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
-│ 1925-01-01 │ Date32                             │
+┌──────value─┬─toTypeName(toDate32('1899-01-01'))─┐
+│ 1900-01-01 │ Date32                             │
 └────────────┴────────────────────────────────────┘
 ```
 
 3. With `Date`-type argument:
 
 ``` sql
-SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
+SELECT toDate32(toDate('1899-01-01')) AS value, toTypeName(value);
 ```
 
 ``` text
-┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
+┌──────value─┬─toTypeName(toDate32(toDate('1899-01-01')))─┐
 │ 1970-01-01 │ Date32                                     │
 └────────────┴────────────────────────────────────────────┘
 ```
@@ -248,14 +248,14 @@ The same as [toDate32](#todate32) but returns the min value of [Date32](../../sq
 Query:
 
 ``` sql
-SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
+SELECT toDate32OrZero('1899-01-01'), toDate32OrZero('');
 ```
 
 Result:
 
 ``` text
-┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
-│                   1925-01-01 │         1925-01-01 │
+┌─toDate32OrZero('1899-01-01')─┬─toDate32OrZero('')─┐
+│                   1900-01-01 │         1900-01-01 │
 └──────────────────────────────┴────────────────────┘
 ```
 
@@ -1072,7 +1072,7 @@ For all of the formats with separator the function parses months names expressed
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('12/12/2020 12:12:57')
+SELECT parseDateTimeBestEffort('23/10/2020 12:12:57')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1080,7 +1080,7 @@ Result:
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2020-12-12 12:12:57 │
+│     2020-10-23 12:12:57 │
 └─────────────────────────┘
 ```
 
@@ -1117,7 +1117,7 @@ Result:
 Query:
 
 ``` sql
-SELECT parseDateTimeBestEffort('2018-12-12 10:12:12')
+SELECT parseDateTimeBestEffort('2018-10-23 10:12:12')
 AS parseDateTimeBestEffort;
 ```
 
@@ -1125,7 +1125,7 @@ Result:
 
 ``` text
 ┌─parseDateTimeBestEffort─┐
-│     2018-12-12 10:12:12 │
+│     2018-10-23 10:12:12 │
 └─────────────────────────┘
 ```
 
@@ -1152,77 +1152,7 @@ Result:
 
 ## parseDateTimeBestEffortUS
 
-This function is similar to [parseDateTimeBestEffort](#parsedatetimebesteffort), the only difference is that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
-
-**Syntax**
-
-``` sql
-parseDateTimeBestEffortUS(time_string [, time_zone])
-```
-
-**Arguments**
-
--   `time_string` — String containing a date and time to convert. [String](../../sql-reference/data-types/string.md).
--   `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql-reference/data-types/string.md).
-
-**Supported non-standard formats**
-
--   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
--   A string with a date and a time component: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
--   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY` etc.
--   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case, `YYYY-MM` are substituted as `2000-01`.
--   A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
-
-**Returned value**
-
--   `time_string` converted to the `DateTime` data type.
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUS('09/12/2020 12:12:57')
-AS parseDateTimeBestEffortUS;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUS─┐
-│     2020-09-12 12:12:57   │
-└─────────────────────────——┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUS('09-12-2020 12:12:57')
-AS parseDateTimeBestEffortUS;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUS─┐
-│     2020-09-12 12:12:57   │
-└─────────────────────────——┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUS('09.12.2020 12:12:57')
-AS parseDateTimeBestEffortUS;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUS─┐
-│     2020-09-12 12:12:57   │
-└─────────────────────────——┘
-```
+This function behaves like [parseDateTimeBestEffort](#parsedatetimebesteffort) for ISO date formats, e.g. `YYYY-MM-DD hh:mm:ss`, and other date formats where the month and date components can be unambiguously extracted, e.g. `YYYYMMDDhhmmss`, `YYYY-MM`, `DD hh`, or `YYYY-MM-DD hh:mm:ss ±h:mm`. If the month and the date components cannot be unambiguously extracted, e.g. `MM/DD/YYYY`, `MM-DD-YYYY`, or `MM-DD-YY`, it prefers the US date format instead of `DD/MM/YYYY`, `DD-MM-YYYY`, or `DD-MM-YY`. As an exception from the latter, if the month is bigger than 12 and smaller or equal than 31, this function falls back to the behavior of [parseDateTimeBestEffort](#parsedatetimebesteffort), e.g. `15/08/2020` is parsed as `2020-08-15`.
 
 ## parseDateTimeBestEffortOrNull
 ## parseDateTime32BestEffortOrNull
@@ -1238,173 +1168,9 @@ Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it r
 
 Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS) function except that it returns `NULL` when it encounters a date format that cannot be processed.
 
-**Syntax**
-
-``` sql
-parseDateTimeBestEffortUSOrNull(time_string[, time_zone])
-```
-
-**Parameters**
-
--   `time_string` — String containing a date or date with time to convert. The date must be in the US date format (`MM/DD/YYYY`, etc). [String](../../sql-reference/data-types/string.md).
--   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
-
-**Supported non-standard formats**
-
--   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
--   A string with a date and a time components: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
--   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY`, etc.
--   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case, `YYYY-MM` are substituted with `2000-01`.
--   A string that includes date and time along with timezone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
-
-**Returned values**
-
--   `time_string` converted to the [DateTime](../../sql-reference/data-types/datetime.md) data type.
--   `NULL` if the input string cannot be converted to the `DateTime` data type.
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02/10/2021 21:12:57') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│             2021-02-10 21:12:57 │
-└─────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02-10-2021 21:12:57 GMT', 'Asia/Istanbul') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│             2021-02-11 00:12:57 │
-└─────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('02.10.2021') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│             2021-02-10 00:00:00 │
-└─────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrNull('10.2021') AS parseDateTimeBestEffortUSOrNull;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrNull─┐
-│                            ᴺᵁᴸᴸ │
-└─────────────────────────────────┘
-```
-
 ## parseDateTimeBestEffortUSOrZero
 
 Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortUS) function except that it returns zero date (`1970-01-01`) or zero date with time (`1970-01-01 00:00:00`) when it encounters a date format that cannot be processed.
-
-**Syntax**
-
-``` sql
-parseDateTimeBestEffortUSOrZero(time_string[, time_zone])
-```
-
-**Parameters**
-
--   `time_string` — String containing a date or date with time to convert. The date must be in the US date format (`MM/DD/YYYY`, etc). [String](../../sql-reference/data-types/string.md).
--   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
-
-**Supported non-standard formats**
-
--   A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
--   A string with a date and a time components: `YYYYMMDDhhmmss`, `MM/DD/YYYY hh:mm:ss`, `MM-DD-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
--   A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `MM/DD/YYYY`, `MM-DD-YY`, etc.
--   A string with a day and time: `DD`, `DD hh`, `DD hh:mm`. In this case, `YYYY-MM` are substituted with `2000-01`.
--   A string that includes date and time along with timezone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
-
-**Returned values**
-
--   `time_string` converted to the [DateTime](../../sql-reference/data-types/datetime.md) data type.
--   Zero date or zero date with time if the input string cannot be converted to the `DateTime` data type.
-
-**Examples**
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02/10/2021 21:12:57') AS parseDateTimeBestEffortUSOrZero;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrZero─┐
-│             2021-02-10 21:12:57 │
-└─────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02-10-2021 21:12:57 GMT', 'Asia/Istanbul') AS parseDateTimeBestEffortUSOrZero;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrZero─┐
-│             2021-02-11 00:12:57 │
-└─────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02.10.2021') AS parseDateTimeBestEffortUSOrZero;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrZero─┐
-│             2021-02-10 00:00:00 │
-└─────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOrZero;
-```
-
-Result:
-
-``` text
-┌─parseDateTimeBestEffortUSOrZero─┐
-│             1970-01-01 00:00:00 │
-└─────────────────────────────────┘
-```
 
 ## parseDateTime64BestEffort
 
@@ -1452,18 +1218,30 @@ Result:
 └────────────────────────────┴────────────────────────────────┘
 ```
 
+## parseDateTime64BestEffortUS
+
+Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity.
+
 ## parseDateTime64BestEffortOrNull
 
 Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTime64BestEffortOrZero
 
-Same as for [parseDateTime64BestEffort](#parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+
+## parseDateTime64BestEffortUSOrNull
+
+Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns `NULL` when it encounters a date format that cannot be processed.
+
+## parseDateTime64BestEffortUSOrZero
+
+Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns zero date or zero date time when it encounters a date format that cannot be processed.
 
 
 ## toLowCardinality
 
-Converts input parameter to the [LowCardianlity](../../sql-reference/data-types/lowcardinality.md) version of same data type.
+Converts input parameter to the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) version of same data type.
 
 To convert data from the `LowCardinality` data type use the [CAST](#type_conversion_function-cast) function. For example, `CAST(x as String)`.
 

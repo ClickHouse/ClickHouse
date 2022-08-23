@@ -90,6 +90,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!out_file_p.parse(pos, query_with_output.out_file, expected))
             return false;
 
+        ParserKeyword s_stdout("AND STDOUT");
+        if (s_stdout.ignore(pos, expected))
+        {
+            query_with_output.is_into_outfile_with_stdout = true;
+        }
+
         ParserKeyword s_compression_method("COMPRESSION");
         if (s_compression_method.ignore(pos, expected))
         {
@@ -107,6 +113,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
 
         query_with_output.children.push_back(query_with_output.out_file);
+
     }
 
     ParserKeyword s_format("FORMAT");

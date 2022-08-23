@@ -9,6 +9,7 @@
 #include <sys/statvfs.h>
 #include <Poco/TemporaryFile.h>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -66,6 +67,12 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
+std::optional<size_t> tryGetSizeFromFilePath(const String & path);
+
+/// Get inode number for a file path.
+/// Will not work correctly if filesystem does not support inodes.
+int getINodeNumberFromPath(const String & path);
+
 }
 
 namespace FS
@@ -83,4 +90,8 @@ Poco::Timestamp getModificationTimestamp(const std::string & path);
 void setModificationTime(const std::string & path, time_t time);
 /// st_ctime
 time_t getChangeTime(const std::string & path);
+
+bool isSymlink(const fs::path & path);
+fs::path readSymlink(const fs::path & path);
+
 }

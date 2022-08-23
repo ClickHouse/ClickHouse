@@ -123,7 +123,7 @@ void StorageMergeTree::startup()
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_"});
+    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();
@@ -505,12 +505,18 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
 
 void StorageMergeTree::waitForMutation(Int64 version)
 {
-    waitForMutation(MergeTreeMutationEntry::versionToFileName(version));
+    String mutation_id = MergeTreeMutationEntry::versionToFileName(version);
+    waitForMutation(version, mutation_id);
 }
 
 void StorageMergeTree::waitForMutation(const String & mutation_id)
 {
-    UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
+    Int64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
+    waitForMutation(version, mutation_id);
+}
+
+void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id)
+{
     LOG_INFO(log, "Waiting mutation: {}", mutation_id);
     {
         auto check = [version, this]()
@@ -556,6 +562,11 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
+}
+
+bool StorageMergeTree::hasLightweightDeletedMask() const
+{
+    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
 }
 
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(Int64 mutation_version, std::set<String> * mutation_ids) const
@@ -932,8 +943,9 @@ bool StorageMergeTree::merge(
         return false;
 
     /// Copying a vector of columns `deduplicate bu columns.
+    IExecutableTask::TaskResultCallback f = [](bool) {};
     auto task = std::make_shared<MergePlainMergeTreeTask>(
-        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, [](bool){});
+        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, f);
 
     task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
@@ -1582,6 +1594,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
     MutableDataPartsVector dst_parts;
+    std::vector<scope_guard> dst_parts_locks;
 
     static const String TMP_PREFIX = "tmp_replace_from_";
 
@@ -1596,8 +1609,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
+        auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, my_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
         dst_parts.emplace_back(std::move(dst_part));
+        dst_parts_locks.emplace_back(std::move(part_lock));
     }
 
     /// ATTACH empty part set
@@ -1675,6 +1689,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
     MutableDataPartsVector dst_parts;
+    std::vector<scope_guard> dst_parts_locks;
 
     static const String TMP_PREFIX = "tmp_move_from_";
 
@@ -1689,8 +1704,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-        auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
+        auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot, local_context->getCurrentTransaction(), {}, false);
         dst_parts.emplace_back(std::move(dst_part));
+        dst_parts_locks.emplace_back(std::move(part_lock));
     }
 
     /// empty part set

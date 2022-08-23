@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToDayOfYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToDayOfYearImpl>;
 
-void registerFunctionToDayOfYear(FunctionFactory & factory)
+REGISTER_FUNCTION(ToDayOfYear)
 {
     factory.registerFunction<FunctionToDayOfYear>();
 

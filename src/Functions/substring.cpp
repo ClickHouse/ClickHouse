@@ -186,7 +186,7 @@ public:
 
 }
 
-void registerFunctionSubstring(FunctionFactory & factory)
+REGISTER_FUNCTION(Substring)
 {
     factory.registerFunction<FunctionSubstring<false>>(FunctionFactory::CaseInsensitive);
     factory.registerAlias("substr", "substring", FunctionFactory::CaseInsensitive);

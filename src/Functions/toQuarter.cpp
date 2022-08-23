@@ -9,7 +9,7 @@ namespace DB
 
 using FunctionToQuarter = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToQuarterImpl>;
 
-void registerFunctionToQuarter(FunctionFactory & factory)
+REGISTER_FUNCTION(ToQuarter)
 {
     factory.registerFunction<FunctionToQuarter>();
     /// MysQL compatibility alias.

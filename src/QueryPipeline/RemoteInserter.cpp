@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -66,7 +67,8 @@ RemoteInserter::RemoteInserter(
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, {});
+    connection.sendQuery(
+        timeouts, query, /* query_parameters */ {}, "", QueryProcessingStage::Complete, &settings, &modified_client_info, false, {});
 
     while (true)
     {

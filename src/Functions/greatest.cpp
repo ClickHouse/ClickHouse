@@ -63,7 +63,7 @@ using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<
 struct NameGreatest { static constexpr auto name = "greatest"; };
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
-void registerFunctionGreatest(FunctionFactory & factory)
+REGISTER_FUNCTION(Greatest)
 {
     factory.registerFunction<LeastGreatestOverloadResolver<LeastGreatest::Greatest, FunctionGreatest>>(FunctionFactory::CaseInsensitive);
 }

@@ -48,10 +48,10 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     std::map<String, size_t> stream_counts;
     for (const auto & column : columns)
     {
-        data_part->getSerialization(column)->enumerateStreams(
+        data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
+                ++stream_counts[ISerialization::getFileNameForStream(column.name, substream_path)];
             });
     }
 
@@ -59,13 +59,13 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
-        auto column_with_type = columns.tryGetByName(column_name);
-        if (!column_with_type)
-           continue;
+        auto serialization = data_part->tryGetSerialization(column_name);
+        if (!serialization)
+            continue;
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            String stream_name = ISerialization::getFileNameForStream(*column_with_type, substream_path);
+            String stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
             /// Delete files if they are no longer shared with another column.
             if (--stream_counts[stream_name] == 0)
             {
@@ -74,15 +74,23 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        data_part->getSerialization(*column_with_type)->enumerateStreams(callback);
+        serialization->enumerateStreams(callback);
         serialization_infos.erase(column_name);
     }
 
     /// Remove files on disk and checksums
-    for (const String & removed_file : remove_files)
+    for (auto itr = remove_files.begin(); itr != remove_files.end();)
     {
-        if (checksums.files.contains(removed_file))
-            checksums.files.erase(removed_file);
+        if (checksums.files.contains(*itr))
+        {
+            checksums.files.erase(*itr);
+            ++itr;
+        }
+        else /// If we have no file in checksums it doesn't exist on disk
+        {
+            LOG_TRACE(storage.log, "Files {} doesn't exist in checksums so it doesn't exist on disk, will not try to remove it", *itr);
+            itr = remove_files.erase(itr);
+        }
     }
 
     /// Remove columns from columns array
