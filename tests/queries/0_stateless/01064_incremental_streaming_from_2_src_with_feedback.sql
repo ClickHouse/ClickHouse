@@ -1,4 +1,5 @@
 SET joined_subquery_requires_alias = 0;
+SET max_threads = 1;
 
 -- incremental streaming usecase
 -- that has sense only if data filling order has guarantees of chronological order
@@ -22,8 +23,6 @@ AS
      maxState( toUInt64(0) ) as biggest_inactivity_period
 FROM numbers(50000)
 GROUP BY id;
-
-OPTIMIZE TABLE target_table FINAL;
 
 -- source table #1
 
