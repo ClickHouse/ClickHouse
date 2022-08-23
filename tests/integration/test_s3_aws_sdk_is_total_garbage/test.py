@@ -82,5 +82,7 @@ def test_dataloss(cluster):
         """
     )
 
-    with pytest.raises(Exception) as err:
+    # Must throw an exception because we use proxy which always fail
+    # CompleteMultipartUpload requests
+    with pytest.raises(Exception):
         node.query("INSERT INTO s3_failover_test VALUES (1, 'Hello')")
