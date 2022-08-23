@@ -125,7 +125,7 @@ struct ToStartOfDayImpl
         if (d < 0)
             return 0;
 
-        Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(d));
+        auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
         if (date_time <= 0xffffffff)
             return date_time;
         else
@@ -133,7 +133,7 @@ struct ToStartOfDayImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        Int64 date_time = time_zone.fromDayNum(ExtendedDayNum(d));
+        auto date_time = time_zone.fromDayNum(ExtendedDayNum(d));
         return date_time < 0xffffffff ? date_time : time_zone.toDate(0xffffffff);
     }
 
