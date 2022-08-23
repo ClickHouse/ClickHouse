@@ -39,7 +39,8 @@ enum class QueryTreeNodeType
     TABLE_FUNCTION,
     QUERY,
     ARRAY_JOIN,
-    JOIN
+    JOIN,
+    UNION
 };
 
 /// Convert query tree node type to string
