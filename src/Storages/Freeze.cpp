@@ -117,21 +117,23 @@ String FreezeMetaData::getFileName(const String & path)
     return fs::path(path) / "frozen_metadata.txt";
 }
 
-Unfreezer::Unfreezer(ContextPtr context) : local_context(context), zookeeper()
+Unfreezer::Unfreezer(ContextPtr context) : local_context(context)
 {
+    if (local_context->hasZooKeeper())
+        zookeeper = local_context->getZooKeeper();
+}
+
+BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
+{
+    LOG_DEBUG(log, "Unfreezing backup {}", escapeForFileName(backup_name));
+
     const auto & config = local_context->getConfigRef();
     static constexpr auto config_key = "enable_system_unfreeze";
     if (!config.getBool(config_key, false))
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting", config_key);
     }
-    if (local_context->hasZooKeeper())
-        zookeeper = local_context->getZooKeeper();
-}
-
-BlockIO Unfreezer::unfreeze(const String & backup_name)
-{
-    LOG_DEBUG(log, "Unfreezing backup {}", escapeForFileName(backup_name));
+    
     auto disks_map = local_context->getDisksMap();
     Disks disks;
     for (auto & [name, disk]: disks_map)
@@ -145,7 +147,7 @@ BlockIO Unfreezer::unfreeze(const String & backup_name)
 
     for (const auto & disk: disks)
     {
-        for (auto store_path: store_paths)
+        for (const auto& store_path: store_paths)
         {
             if (!disk->exists(store_path))
                 continue;
