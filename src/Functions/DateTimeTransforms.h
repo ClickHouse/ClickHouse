@@ -159,7 +159,7 @@ struct ToStartOfMonthImpl
 {
     static constexpr auto name = "toStartOfMonth";
 
-    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t));
     }
@@ -167,7 +167,7 @@ struct ToStartOfMonthImpl
     {
         return time_zone.toFirstDayNumOfMonth(time_zone.toDayNum(t));
     }
-    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
     }
@@ -207,7 +207,7 @@ struct ToStartOfQuarterImpl
 {
     static constexpr auto name = "toStartOfQuarter";
 
-    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfQuarter(time_zone.toDayNum(t));
     }
@@ -215,7 +215,7 @@ struct ToStartOfQuarterImpl
     {
         return time_zone.toFirstDayNumOfQuarter(time_zone.toDayNum(t));
     }
-    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
     }
@@ -231,7 +231,7 @@ struct ToStartOfYearImpl
 {
     static constexpr auto name = "toStartOfYear";
 
-    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfYear(time_zone.toDayNum(t));
     }
@@ -239,7 +239,7 @@ struct ToStartOfYearImpl
     {
         return time_zone.toFirstDayNumOfYear(time_zone.toDayNum(t));
     }
-    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
     }
@@ -866,7 +866,7 @@ struct ToStartOfISOYearImpl
 {
     static constexpr auto name = "toStartOfISOYear";
 
-    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int64 t, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfISOYear(time_zone.toDayNum(t));
     }
@@ -874,7 +874,7 @@ struct ToStartOfISOYearImpl
     {
         return time_zone.toFirstDayNumOfISOYear(time_zone.toDayNum(t));
     }
-    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
     }
